@@ -8,7 +8,7 @@ This service automatically controls your SigEnergy battery system based on elect
 - Monitors your battery charge level, solar power, and current electricity price
 - Automatically switches between charging from the grid, discharging to the grid, or using solar power
 - Maximizes profit by charging when prices are cheap and exporting when prices are high
-- Includes a dashboard at `http://your-machine:7123` where you can see what it's doing and override it manually
+- Includes a dashboard (Open Web UI from the add-on page) where you can see what it's doing and override it manually
 
 ---
 
@@ -18,15 +18,17 @@ This service automatically controls your SigEnergy battery system based on elect
 - **SigEnergy integration** added to Home Assistant (your battery and inverter already connected)
 - **Amber integration** (for electricity prices)
 - **Solcast integration** (for solar forecasts)
-- **Docker and Docker Compose** installed on the same or similar machine
-  - If you're on Raspberry Pi, Windows, Mac, or Linux: [Get Docker here](https://docs.docker.com/get-docker/)
-- A **Home Assistant Long-Lived Access Token** (instructions below)
+- **Home Assistant OS** install type
+- A **Home Assistant Long-Lived Access Token** (required)
 
 ---
 
 ## Home Assistant OS (Recommended Path)
 
 If your install type is **Home Assistant OS**, run this as a Home Assistant Add-on instead of external Docker.
+
+You still need a Long-Lived Access Token because the optimizer authenticates to Home Assistant REST/WebSocket APIs using `ha_token`.
+Create it under your Home Assistant user profile, then paste it into the add-on configuration.
 
 1. Open **Settings -> Add-ons -> Add-on Store -> Repositories**.
 2. Add this repository URL:
@@ -39,7 +41,7 @@ If your install type is **Home Assistant OS**, run this as a Home Assistant Add-
 
 Add-on files are in `sigenergy_optimizer_addon/` and repository metadata is in `repository.yaml`.
 
-If you are **not** on Home Assistant OS, continue with the Docker steps below.
+If you are **not** on Home Assistant OS, use the Docker deployment method from an earlier release of this guide.
 
 ---
 
@@ -126,105 +128,12 @@ Save and **restart Home Assistant** (Settings → System → Restart).
 
 ---
 
-### Step 3: Get Your Home Assistant Access Token
-
-1. Log in as an admin user
-2. Click your **profile picture** (bottom-left corner)
-3. Scroll to **Long-Lived Access Tokens**
-4. Click **Create Token**
-5. Give it a name: `sigenergy-optimizer`
-6. Copy the long text string
-7. **Save it somewhere safe** — you'll need it in the next step
-
----
-
-### Step 4: Download and Configure the Optimizer
-
-**On Windows (PowerShell):**
-```powershell
-# Create a folder for the optimizer
-mkdir C:\sigenergy-optimizer
-cd C:\sigenergy-optimizer
-
-# Copy the files from this directory into C:\sigenergy-optimizer
-# (Download the repository or copy the folder here)
-```
-
-**On Mac/Linux:**
-```bash
-mkdir ~/sigenergy-optimizer
-cd ~/sigenergy-optimizer
-# Copy the files here
-```
-
-**Create the `.env` file:**
-
-1. In the `sigenergy-optimizer` folder, look for a file named `.env.example`
-2. Make a copy and rename it to `.env`
-3. Open `.env` in any text editor
-4. **Change these values:**
-
-```
-# Your Home Assistant IP address or hostname
-HA_URL=http://192.168.1.100:8123
-
-# Your Long-Lived Access Token from Step 3
-HA_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ...
-
-# Your SigEnergy battery system's entity IDs
-# (Find these in Home Assistant Settings → Devices & Services)
-PV_POWER_SENSOR=sensor.sigen_plant_pv_power
-CONSUMED_POWER_SENSOR=sensor.sigen_plant_consumed_power
-BATTERY_SOC_SENSOR=sensor.sigen_plant_battery_state_of_charge
-
-# Amber/price entity IDs
-PRICE_SENSOR=sensor.amber_general_price
-FEEDIN_SENSOR=sensor.amber_feed_in_price
-
-# Everything else can stay default
-```
-
-**How to find entity IDs:**
-
-In Home Assistant, go to **Developer Tools → States** and search for your sensors. Copy the entity ID exactly.
-
----
-
-### Step 5: Start the Docker Container
-
-**On Windows (PowerShell):**
-```powershell
-cd C:\sigenergy-optimizer
-docker-compose up -d
-```
-
-**On Mac/Linux:**
-```bash
-cd ~/sigenergy-optimizer
-docker-compose up -d
-```
-
-Wait 10 seconds, then check that it started:
-```bash
-docker-compose logs -f
-```
-
-You should see output like:
-```
-Starting SigEnergy Optimizer
-Optimizer event loop started (debounce=3s, heartbeat=60s)
-```
-
----
-
-### Step 6: Access the Dashboard
+### Step 3: Access the Dashboard
 
 Open your web browser and go to:
 ```
-http://192.168.1.100:7123
+Home Assistant -> Settings -> Add-ons -> SigEnergy Optimizer -> Open Web UI
 ```
-
-(Replace `192.168.1.100` with the IP address of the machine running Docker)
 
 You should see:
 - **Current Status:** Battery %, power in/out, prices
@@ -237,9 +146,8 @@ You should see:
 ## Testing & Verification
 
 ### Check the logs:
-```bash
-docker-compose logs -f optimizer
-```
+- Go to **Settings -> Add-ons -> SigEnergy Optimizer -> Logs**
+- Or from HA CLI: `ha addons logs local_sigenergy_optimizer`
 
 ### Test a mode override from the dashboard:
 1. Click **Force Full Export** button
@@ -255,32 +163,34 @@ The optimizer creates a notification whenever it changes modes. Go to **Settings
 
 ### "Connection refused" error
 - Check Home Assistant is running: `http://192.168.1.100:8123`
-- Verify `HA_URL` in `.env` is correct
+- Verify `ha_url` in add-on configuration is correct
 - Check firewall isn't blocking port 8123
 
 ### "Entity not found" errors in logs
 - Go to Home Assistant **Developer Tools → States**
 - Search for your sensor (e.g., `sigen_plant_pv_power`)
-- Copy the exact entity ID to `.env`
-- Restart: `docker-compose restart`
+- Copy the exact entity ID into add-on config (`extra_env` as `KEY=value`)
+- Restart the add-on
 
 ### Dashboard shows nothing / blank page
 - Wait up to 60 seconds (first startup and first heartbeat can take a moment)
-- Check logs: `docker-compose logs -f`
+- Check add-on logs in Home Assistant
 - Clear browser cache (Ctrl+Shift+Del)
-- Verify URL is correct: `http://your-ip:7123`
+- Open via **Open Web UI** from the add-on page
 
 ### Optimizer stops working
-- Check logs: `docker-compose logs -f`
-- Verify `.env` hasn't been corrupted
-- Restart: `docker-compose restart`
-- If still stuck, restart everything: `docker-compose down && docker-compose up -d`
+- Check add-on logs in Home Assistant
+- Verify add-on config values are valid
+- Restart the add-on
+- If still stuck, stop/start the add-on, then reboot Home Assistant host if needed
 
 ---
 
 ## Configuration Tuning
 
-Once it's running, you can adjust behavior either from the web GUI (Apply & Save Thresholds writes to `.env`) or by editing environment variables in `.env` directly:
+Once it's running, you can adjust behavior from the web GUI using **Apply & Save Thresholds**.
+
+For advanced config keys, use the add-on configuration field `extra_env` with one `KEY=value` per line, for example:
 
 ```
 # When to charge from grid (price threshold, in $ per kWh)
@@ -303,22 +213,18 @@ EXPORT_LIMIT_HIGH=25.0
 SUNRISE_RESERVE_SOC=10.0
 ```
 
-After changing `.env`, restart: `docker-compose restart`
+After changing add-on config, restart the add-on.
 
 ---
 
 ## Stopping & Uninstalling
 
 ### Stop temporarily:
-```bash
-docker-compose stop
-```
+- Go to **Settings -> Add-ons -> SigEnergy Optimizer** and click **Stop**.
 
 ### Stop and remove everything:
-```bash
-docker-compose down
-# Type 'y' to confirm
-```
+1. Stop the add-on.
+2. Click **Uninstall**.
 
 ### Re-enable old blueprint automations:
 Go back to Home Assistant and re-enable the automations you disabled in Step 1.
@@ -328,12 +234,10 @@ Go back to Home Assistant and re-enable the automations you disabled in Step 1.
 ## Support & Troubleshooting
 
 ### View detailed logs:
-```bash
-docker-compose logs -f optimizer
-```
+- **Settings -> Add-ons -> SigEnergy Optimizer -> Logs**
 
 ### Monitor in real-time:
-Dashboard is always at: `http://your-machine:7123`
+Open the add-on page and click **Open Web UI**
 
 ### Check Home Assistant integration:
 All automations are logged in Home Assistant **Settings → System → Logs**
@@ -361,11 +265,11 @@ The decision rules are:
 
 1. Let it run for 24 hours and watch the dashboard
 2. If behavior looks good, it's done — you can forget about it
-3. If you want to tweak, adjust the price thresholds in `.env` and restart
+3. If you want to tweak, adjust thresholds in the dashboard and save
 4. Check logs monthly to ensure it's still running smoothly
 
 ---
 
 **Questions?** Check the logs first — most issues are explained there.
 
-**Version:** 2.1.1 (March 2026)
+**Version:** 2.1.2 (March 2026)
