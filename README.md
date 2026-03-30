@@ -24,6 +24,25 @@ This service automatically controls your SigEnergy battery system based on elect
 
 ---
 
+## Home Assistant OS (Recommended Path)
+
+If your install type is **Home Assistant OS**, run this as a Home Assistant Add-on instead of external Docker.
+
+1. Open **Settings -> Add-ons -> Add-on Store -> Repositories**.
+2. Add this repository URL:
+  - `https://github.com/Belot77/sigenergy-optimizer`
+3. Install **SigEnergy Optimizer** from the Add-on Store.
+4. In the add-on config, set at least:
+  - `ha_url`
+  - `ha_token`
+5. Start the add-on and open via Ingress.
+
+Add-on files are in `sigenergy_optimizer_addon/` and repository metadata is in `repository.yaml`.
+
+If you are **not** on Home Assistant OS, continue with the Docker steps below.
+
+---
+
 ## Installation — Step by Step
 
 ### Step 1: Disable the Old Blueprint Automations

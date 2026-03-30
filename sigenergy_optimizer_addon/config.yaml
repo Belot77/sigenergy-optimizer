@@ -1,0 +1,27 @@
+name: SigEnergy Optimizer
+version: "2.1.2-haos1"
+slug: sigenergy_optimizer
+description: Event-driven SigEnergy optimizer for Home Assistant OS
+author: Belot77
+url: https://github.com/Belot77/sigenergy-optimizer
+arch:
+  - amd64
+  - aarch64
+startup: services
+boot: auto
+init: false
+ingress: true
+ingress_port: 7123
+panel_icon: mdi:battery-heart-variant
+ports: {}
+ports_description: {}
+options:
+  ha_url: "http://homeassistant.local:8123"
+  ha_token: ""
+  ui_api_key: ""
+  extra_env: ""
+schema:
+  ha_url: str
+  ha_token: password
+  ui_api_key: str?
+  extra_env: str?

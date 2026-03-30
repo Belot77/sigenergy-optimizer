@@ -1,0 +1,8 @@
+build_from:
+  amd64: ghcr.io/home-assistant/amd64-base-python:3.12
+  aarch64: ghcr.io/home-assistant/aarch64-base-python:3.12
+labels:
+  io.hass.name: "SigEnergy Optimizer"
+  io.hass.description: "SigEnergy optimizer with dashboard and HA control"
+  io.hass.type: "addon"
+  io.hass.version: "2.1.2-haos1"
