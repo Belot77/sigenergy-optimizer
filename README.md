@@ -246,7 +246,7 @@ The optimizer creates a notification whenever it changes modes. Go to **Settings
 - Restart: `docker-compose restart`
 
 ### Dashboard shows nothing / blank page
-- Wait 30 seconds (first startup takes time)
+- Wait up to 60 seconds (first startup and first heartbeat can take a moment)
 - Check logs: `docker-compose logs -f`
 - Clear browser cache (Ctrl+Shift+Del)
 - Verify URL is correct: `http://your-ip:7123`
@@ -323,9 +323,9 @@ All automations are logged in Home Assistant **Settings → System → Logs**
 
 ## How It Works — The Short Version
 
-Each cycle (every 30 seconds by default):
+Each cycle (event-driven on watched state changes, with a 60-second heartbeat fallback):
 
-1. **Read state:** Battery %, solar power, current prices
+1. **Read state:** Battery %, solar power, load power, current prices
 2. **Decide:** Should we charge, export, or idle?
 3. **Apply:** Change EMS mode, set export/import limits
 4. **Notify:** Send update to Home Assistant and dashboard
