@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SigEnergy Optimizer Control</title>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.2/dist/apexcharts.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e8f5e9;font-family:'Inter',sans-serif;font-size:14px;color:#1a202c;min-height:100vh}
+
+/* Header */
+.app-header{background:#fff;border-bottom:1px solid #e2e8f0;padding:0 20px;display:flex;align-items:center;gap:12px;height:60px}
+.app-title{font-size:17px;font-weight:700;color:#1a202c;line-height:1.2}
+.app-subtitle{font-size:11px;color:#718096}
+.header-sim{flex:1;font-size:12px;color:#2d3748;text-align:center;font-weight:500}
+.header-sim .pos{color:#276749;font-weight:700}
+.header-sim .neg{color:#c53030;font-weight:700}
+.pos{color:#276749}
+.neg{color:#c53030}
+.hbtn{border:1.5px solid #cbd5e0;background:#fff;color:#2d3748;border-radius:20px;padding:7px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap}
+.hbtn:hover{border-color:#4a5568;background:#f7fafc}
+.hbtn.primary{background:#276749;color:#fff;border-color:#276749}
+.hbtn.primary:hover{background:#22543d}
+.hbtn:disabled{opacity:.45;cursor:not-allowed}
+
+/* Nav */
+.nav{background:#fff;border-bottom:1px solid #e2e8f0;padding:0 20px;display:flex}
+.ntab{background:none;border:none;border-bottom:3px solid transparent;padding:12px 18px;font-size:13px;font-weight:500;color:#718096;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s}
+.ntab.active{color:#276749;border-bottom-color:#276749;font-weight:600}
+.ntab:hover:not(.active){color:#2d3748}
+
+/* Pages */
+.page{display:none}
+.page.active{display:block}
+#tab-overview.active{display:flex;gap:16px;align-items:flex-start;padding:16px}
+#tab-entities.active,#tab-config.active,#tab-logs.active{padding:20px}
+
+/* Sidebar */
+.sidebar{width:296px;flex-shrink:0;display:flex;flex-direction:column;gap:12px}
+.main-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
+
+/* Cards */
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px}
+.card-title{font-size:13px;font-weight:700;color:#2d3748;margin-bottom:10px}
+.flabel{font-size:11px;font-weight:600;color:#718096;text-transform:uppercase;letter-spacing:.05em;margin:8px 0 4px}
+.flabel:first-child{margin-top:0}
+
+/* Inputs */
+select,input[type=number],input[type=text]{width:100%;border:1.5px solid #e2e8f0;border-radius:6px;padding:7px 10px;font-size:13px;font-family:'Inter',sans-serif;color:#2d3748;background:#fff;outline:none;transition:border-color .15s}
+select:focus,input:focus{border-color:#276749}
+.sbtn{width:100%;background:#276749;color:#fff;border:none;border-radius:6px;padding:9px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;margin-top:4px;transition:background .15s}
+.sbtn:hover{background:#22543d}
+.sbtn:disabled{opacity:.45}
+
+/* Threshold grid */
+.thresh-grid{display:grid;grid-template-columns:1fr auto auto;gap:4px 8px;align-items:center;margin-bottom:4px}
+.thresh-header{font-size:10px;font-weight:700;color:#a0aec0;text-transform:uppercase;letter-spacing:.06em;text-align:center}
+.thresh-label{font-size:12px;font-weight:600;color:#4a5568}
+.thresh-input{border:1.5px solid #e2e8f0;border-radius:5px;padding:5px 7px;font-size:12px;font-family:'Inter',sans-serif;color:#2d3748;width:72px;outline:none}
+.thresh-input:focus{border-color:#276749}
+.preview-card{margin:8px 0 6px;padding:10px 11px;border:1px solid #d6e9d8;border-radius:8px;background:#f6fbf7}
+.preview-title{font-size:11px;font-weight:700;color:#276749;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.preview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.preview-cell{background:#fff;border:1px solid #e2e8f0;border-radius:7px;padding:8px 9px}
+.preview-lbl{font-size:10px;font-weight:700;color:#718096;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.preview-val{font-size:14px;font-weight:700;color:#1a202c;line-height:1.3}
+.preview-sub{font-size:11px;color:#4a5568;line-height:1.35;margin-top:2px}
+.preview-note{font-size:11px;color:#4a5568;line-height:1.45;margin-top:8px}
+.preview-note strong{color:#276749}
+
+/* Point-and-click tuning */
+.tune-row{display:flex;gap:6px}
+.tune-btn{flex:1;border:1px solid #cbd5e0;background:#fff;color:#2d3748;border-radius:18px;padding:6px 8px;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s}
+.tune-btn:hover{border-color:#276749;background:#edf7f0}
+.tune-btn.active{background:#276749;color:#fff;border-color:#276749}
+.tune-help{font-size:11px;color:#4a5568;line-height:1.35;margin-top:8px}
+.scenario-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px}
+.scenario-hdr{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+.scenario-title{font-size:13px;font-weight:700;color:#2d3748}
+.scenario-note{font-size:11px;color:#718096}
+.scenario-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.scenario-card{border:1px solid #e2e8f0;border-radius:8px;padding:10px;background:#f8faf9;transition:border-color .15s,box-shadow .15s}
+.scenario-card.active{border-color:#2f855a;box-shadow:0 0 0 2px rgba(47,133,90,.12)}
+.scenario-name{font-size:11px;font-weight:700;color:#2d3748;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.scenario-metric{font-size:11px;color:#4a5568;line-height:1.35}
+.scenario-metric strong{color:#1a202c}
+.scenario-btn{margin-top:8px;border:1px solid #a0aec0;background:#fff;color:#2d3748;border-radius:14px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer}
+.scenario-btn:hover{border-color:#276749;background:#edf7f0}
+
+/* Chart cards */
+.chart-card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 14px 6px}
+.chart-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px}
+.chart-title{font-size:13px;font-weight:700;color:#2d3748}
+.chart-now{font-size:11px;color:#718096;text-align:right;max-width:52%;line-height:1.5}
+
+/* Status cards grid */
+.status-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.scell{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px}
+.scell .slbl{font-size:10px;font-weight:600;color:#a0aec0;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.scell .sval{font-size:14px;font-weight:700;color:#1a202c;line-height:1.3;word-break:break-word}
+.scell .sval.small{font-size:12px}
+
+/* Reason bar */
+.reason-bar{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;font-size:12px;color:#4a5568;border-left:3px solid #276749}
+
+/* Entities table */
+.etable{width:100%;border-collapse:collapse;font-size:13px}
+.etable th{text-align:left;padding:8px 12px;font-size:11px;font-weight:700;color:#718096;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid #e2e8f0;background:#f7fafc}
+.etable td{padding:9px 12px;border-bottom:1px solid #f0f4f8;color:#2d3748}
+.etable td:first-child{font-weight:600;color:#4a5568;width:160px}
+.etable td:nth-child(2){font-family:monospace;font-size:12px;color:#718096}
+.etable td:last-child{font-weight:700;color:#1a202c;text-align:right}
+.etable tbody tr:hover{background:#f7fafc}
+
+/* Config / logs */
+.code-block{background:#1a202c;color:#a8dadc;font-family:monospace;font-size:12px;padding:20px;border-radius:8px;overflow-x:auto;white-space:pre;line-height:1.7}
+.log-block{background:#1a202c;color:#a0aec0;font-family:monospace;font-size:12px;padding:16px;border-radius:8px;white-space:pre-wrap;line-height:1.8;max-height:600px;overflow-y:auto}
+.log-block .info{color:#68d391}
+.log-block .warn{color:#f6e05e}
+.log-block .err{color:#fc8181}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="app-header">
+  <div>
+    <div class="app-title">SigEnergy Optimizer Control</div>
+    <div class="app-subtitle">Web UI + background worker (uvicorn/FastAPI)</div>
+  </div>
+  <div class="header-sim" id="simResult"></div>
+  <div style="display:flex;gap:8px;margin-left:auto;flex-shrink:0">
+    <button class="hbtn" id="btnSim" onclick="runSimulation()">Simulate Automated</button>
+    <button class="hbtn" onclick="exportCSV()">Export CSV</button>
+    <button class="hbtn primary" id="btnRun" onclick="runCycle()">Run Cycle Now</button>
+  </div>
+</div>
+
+<!-- Nav -->
+<nav class="nav">
+  <button class="ntab active" onclick="showTab('overview',this)">Overview</button>
+  <button class="ntab" onclick="showTab('entities',this)">Entities</button>
+  <button class="ntab" onclick="showTab('config',this)">Config</button>
+  <button class="ntab" onclick="showTab('logs',this)">Logs</button>
+</nav>
+
+<!-- ═══ OVERVIEW ═══ -->
+<div id="tab-overview" class="page active">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- SigEnergy Mode -->
+    <div class="card">
+      <div class="card-title">SigEnergy Mode</div>
+      <div class="flabel">Mode</div>
+      <select id="modeSelect" style="margin-bottom:8px">
+        <option>Automated</option>
+        <option>Force Full Export</option>
+        <option>Force Full Import</option>
+        <option>Force Full Import + PV</option>
+        <option>Prevent Import &amp; Export</option>
+        <option>Manual</option>
+      </select>
+      <div class="flabel">API Key (optional, remote control)</div>
+      <input type="text" id="uiApiKey" placeholder="Paste UI_API_KEY for non-local access" style="margin-bottom:8px">
+      <button class="sbtn" onclick="applyMode(this)">Apply Mode</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Algorithm Tuning</div>
+      <div class="tune-row">
+        <button class="tune-btn active" id="profile-maxConsumption" onclick="selectProfile('maxConsumption')">Max Consumption</button>
+        <button class="tune-btn" id="profile-balancedCurrent" onclick="selectProfile('balancedCurrent')">Balanced Current</button>
+        <button class="tune-btn" id="profile-maxProfits" onclick="selectProfile('maxProfits')">Max Profits</button>
+      </div>
+      <div class="tune-help" id="profileHelp">Max Consumption prioritizes lower import and conservative export behavior.</div>
+    </div>
+
+    <!-- ESS Mode & Limits -->
+    <div class="card">
+      <div class="card-title">ESS Mode &amp; Limits</div>
+      <div class="flabel">Sigen Plant Remote EMS Control Mode</div>
+      <select id="emsMode" style="margin-bottom:6px">
+        <option>Maximum Self Consumption</option>
+        <option>Command Discharging (PV First)</option>
+        <option>Command Discharging (ESS First)</option>
+        <option>Command Charging (PV First)</option>
+        <option>Command Charging (Grid First)</option>
+      </select>
+      <div class="flabel">Home Assistant Control</div>
+      <select id="haCtrl" style="margin-bottom:6px">
+        <option value="on">On</option>
+        <option value="off">Off</option>
+      </select>
+      <div class="flabel">Grid Export Limitation (kW)</div>
+      <input type="number" id="expLim" min="0" max="50" step="0.1" value="0.0" style="margin-bottom:6px">
+      <div class="flabel">Grid Import Limitation (kW)</div>
+      <input type="number" id="impLim" min="0" max="50" step="0.1" value="0.0" style="margin-bottom:6px">
+      <div class="flabel">PV Max Power Limit (kW)</div>
+      <input type="number" id="pvMax" min="0" max="50" step="0.1" value="25.0" style="margin-bottom:6px">
+      <button class="sbtn" onclick="applyESS(this)">Apply ESS Controls</button>
+    </div>
+
+    <!-- Export / Import Thresholds -->
+    <div class="card">
+      <div class="card-title">Export / Import Thresholds</div>
+      <div class="thresh-grid" style="margin-bottom:6px">
+        <div></div>
+        <div class="thresh-header">Price (c)</div>
+        <div class="thresh-header">Limit (kW)</div>
+
+        <div class="thresh-label">Export Low</div>
+        <input class="thresh-input" id="tExpLowPrice" type="number" step="0.01" value="5.00">
+        <input class="thresh-input" id="tExpLowLimit" type="number" step="0.1" value="3">
+
+        <div class="thresh-label">Export Medium</div>
+        <input class="thresh-input" id="tExpMedPrice" type="number" step="0.01" value="10.00">
+        <input class="thresh-input" id="tExpMedLimit" type="number" step="0.1" value="8">
+
+        <div class="thresh-label">Export High</div>
+        <input class="thresh-input" id="tExpHighPrice" type="number" step="0.01" value="25.00">
+        <input class="thresh-input" id="tExpHighLimit" type="number" step="0.1" value="25">
+
+        <div class="thresh-label">Import Low</div>
+        <input class="thresh-input" id="tImpLowPrice" type="number" step="0.01" value="0.00">
+        <input class="thresh-input" id="tImpLowLimit" type="number" step="0.1" value="5">
+
+        <div class="thresh-label">Import Medium</div>
+        <input class="thresh-input" id="tImpMedPrice" type="number" step="0.01" value="-15.00">
+        <input class="thresh-input" id="tImpMedLimit" type="number" step="0.1" value="15">
+
+        <div class="thresh-label">Import High</div>
+        <input class="thresh-input" id="tImpHighPrice" type="number" step="0.01" value="-30.00">
+        <input class="thresh-input" id="tImpHighLimit" type="number" step="0.1" value="25">
+      </div>
+      <div class="preview-card" id="thresholdPreview">
+        <div class="preview-title">Live Threshold Preview</div>
+        <div class="preview-note">Waiting for live status from Home Assistant...</div>
+      </div>
+      <button class="sbtn" onclick="applyThresholds(this)">Apply Thresholds</button>
+    </div>
+
+  </div>
+
+  <!-- MAIN COLUMN -->
+  <div class="main-col">
+
+    <div class="scenario-wrap">
+      <div class="scenario-hdr">
+        <div class="scenario-title">Simulation Comparison</div>
+        <div class="scenario-note">Click a scenario to update computed import/export view.</div>
+      </div>
+      <div class="scenario-grid" id="scenarioGrid"></div>
+    </div>
+
+    <!-- Power & SoC chart -->
+    <div class="chart-card">
+      <div class="chart-hdr">
+        <div class="chart-title">Today Power &amp; SoC</div>
+        <div class="chart-now" id="nowPower">—</div>
+      </div>
+      <div id="chartPower" style="height:260px"></div>
+    </div>
+
+    <!-- Price Curves chart -->
+    <div class="chart-card">
+      <div class="chart-hdr">
+        <div class="chart-title">Today Price Curves (Import vs Feed-In)</div>
+        <div class="chart-now" id="nowPrice">—</div>
+      </div>
+      <div id="chartPrice" style="height:210px"></div>
+    </div>
+
+    <!-- Cycle status bar -->
+    <div class="status-grid" style="grid-template-columns:1fr 1fr 1fr">
+      <div class="scell"><div class="slbl">Cycle Started</div><div class="sval small" id="cycleStart">—</div></div>
+      <div class="scell"><div class="slbl">Cycle Completed</div><div class="sval small" id="cycleDone">—</div></div>
+      <div class="scell"><div class="slbl">Poll (s)</div><div class="sval" id="pollVal">30</div></div>
+    </div>
+
+    <!-- Second status row -->
+    <div class="status-grid">
+      <div class="scell"><div class="slbl">Control Mode</div><div class="sval small" id="sCtrl">—</div></div>
+      <div class="scell"><div class="slbl">Last Error</div><div class="sval small" id="sErr">none</div></div>
+      <div class="scell"><div class="slbl">Mode</div><div class="sval small" id="sMode">—</div></div>
+    </div>
+
+    <div class="status-grid">
+      <div class="scell"><div class="slbl">Battery SoC %</div><div class="sval" id="sBat">—</div></div>
+      <div class="scell"><div class="slbl">Sunrise SoC Req %</div><div class="sval" id="sSunrise">—</div></div>
+      <div class="scell"></div>
+    </div>
+
+    <div class="status-grid">
+      <div class="scell"><div class="slbl">Import Price</div><div class="sval" id="sImpPrice">—</div></div>
+      <div class="scell"><div class="slbl">Export Limit kW</div><div class="sval" id="sExpLimVal">—</div></div>
+    </div>
+
+    <div class="status-grid">
+      <div class="scell"><div class="slbl">FIT / Export Price</div><div class="sval" id="sFIT">—</div></div>
+      <div class="scell"><div class="slbl">Import Limit kW</div><div class="sval" id="sImpLimVal">—</div></div>
+    </div>
+
+    <div class="status-grid">
+      <div class="scell"><div class="slbl">PV Max kW</div><div class="sval" id="sPVMax">—</div></div>
+      <div class="scell"><div class="slbl">ESS-First PV Thresh</div><div class="sval" id="sESSThresh">1.0 kW</div></div>
+    </div>
+
+    <!-- Reason bar -->
+    <div class="reason-bar" id="reasonBar">Waiting for first cycle…</div>
+
+  </div>
+</div>
+
+<!-- ═══ ENTITIES ═══ -->
+<div id="tab-entities" class="page">
+  <div id="entContent"><div style="color:#a0aec0">Loading…</div></div>
+</div>
+
+<!-- ═══ CONFIG ═══ -->
+<div id="tab-config" class="page">
+  <div id="cfgContent"><div style="color:#a0aec0">Loading…</div></div>
+</div>
+
+<!-- ═══ LOGS ═══ -->
+<div id="tab-logs" class="page">
+  <div id="logContent"><div class="log-block" style="color:#718096">Loading…</div></div>
+</div>
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let S = {};
+let powerChart = null, priceChart = null;
+let histPow = [], histPri = [];
+let simActive = false;
+let activeProfile = 'maxConsumption';
+let uiCfg = null;
+const POLL = 15000;
+
+const PROFILE_META = {
+  maxConsumption: { label: 'Max Consumption', help: 'Max Consumption prioritizes lower import and conservative export behavior.' },
+  balancedCurrent: { label: 'Balanced Current', help: 'Balanced Current keeps a middle ground between self-consumption and arbitrage.' },
+  maxProfits: { label: 'Max Profits', help: 'Max Profits pushes stronger import/export limits for higher arbitrage potential.' },
+};
+
+// ── Tab routing ───────────────────────────────────────────────────────────────
+function showTab(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.ntab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'entities') loadEntities();
+  if (name === 'config')   loadConfig();
+  if (name === 'logs')     loadLogs();
+}
+
+// ── Chart initialisation ──────────────────────────────────────────────────────
+function mkChart(el, series, colors, yaxis, extra) {
+  return new ApexCharts(document.getElementById(el), {
+    chart: { type:'line', height:'100%', background:'#fff', animations:{enabled:false},
+      toolbar:{ show:true, tools:{zoom:true,pan:true,reset:true,download:true} },
+      zoom:{type:'x',enabled:true,autoScaleYaxis:true} },
+    series, colors,
+    stroke:{ curve:'smooth', width:2 },
+    fill:{ type:'gradient', gradient:{opacityFrom:.35,opacityTo:.05} },
+    xaxis:{ type:'datetime', labels:{datetimeUTC:false, style:{fontSize:'10px',colors:'#718096'}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
+    tooltip:{ x:{format:'HH:mm'}, shared:true },
+    legend:{ show:true, labels:{colors:'#4a5568'}, fontSize:'11px', itemMargin:{horizontal:8} },
+    grid:{ borderColor:'#f0f4f8' },
+    dataLabels:{ enabled:false },
+    yaxis,
+    ...extra
+  });
+}
+
+function initCharts() {
+  const powY = [
+    { seriesName:'Battery %',    min:0, max:100, opposite:true, labels:{style:{fontSize:'10px',colors:'#718096'}}, title:{text:'SoC %',style:{color:'#718096',fontSize:'10px'}} },
+    { seriesName:'Min SoC %',    show:false, min:0, max:100 },
+    { seriesName:'PV Output kW', opposite:false, labels:{style:{fontSize:'10px',colors:'#718096'}}, title:{text:'kW',style:{color:'#718096',fontSize:'10px'}} },
+    { seriesName:'PV Forecast kW',   show:false },
+    { seriesName:'Grid Import kW',   show:false },
+    { seriesName:'Grid Export kW',   show:false },
+    { seriesName:'Consumption kW',   show:false },
+  ];
+  powerChart = mkChart('chartPower', [
+    {name:'Battery %',     data:[]},
+    {name:'Min SoC %',     data:[]},
+    {name:'PV Output kW',  data:[]},
+    {name:'PV Forecast kW',data:[]},
+    {name:'Grid Import kW',data:[]},
+    {name:'Grid Export kW',data:[]},
+    {name:'Consumption kW',data:[]},
+  ], ['#3182ce','#38b2ac','#dd6b20','#ed8936','#e53e3e','#38a169','#805ad5'], powY, {
+    fill:{ type:['gradient','solid','gradient','gradient','solid','solid','solid'],
+           opacity:[0.25,0.9,0.2,0.12,0.6,0.5,0.45] }
+  });
+  powerChart.render();
+
+  priceChart = mkChart('chartPrice', [
+    {name:'Import price',            data:[]},
+    {name:'Feed-in price',           data:[]},
+    {name:'PV forecast (kWh interval)', data:[]},
+  ], ['#e53e3e','#38a169','#ed8936'], [
+    { labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} } },
+    { show:false },
+    { opposite:true, labels:{ formatter: v => v!=null ? v.toFixed(1)+'kWh' : '', style:{fontSize:'10px',colors:'#718096'} } },
+  ], {
+    stroke:{ curve:'smooth', width:[2,2,0] },
+    fill:{ type:['solid','solid','gradient'], opacity:[1,1,0.15] },
+    annotations:{ yaxis:[{y:0, borderColor:'#000', strokeDashArray:3, label:{text:'0',style:{fontSize:'10px'}}}] },
+  });
+  priceChart.render();
+}
+
+// ── History backfill from server on load ──────────────────────────────────────
+async function backfillHistory() {
+  try {
+    const r = await fetch('/api/history');
+    if (!r.ok) return;
+    const h = await r.json();
+    if (h.power) histPow = h.power;
+    if (h.price) histPri = h.price;
+    refreshCharts();
+  } catch(e) {}
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+async function poll() {
+  try {
+    const r = await fetch('/api/status');
+    if (!r.ok) throw new Error(r.status);
+    S = await r.json();
+    const now = Date.now();
+    histPow.push({ t:now, battery:S.battery_soc, pv:S.pv_kw, load:S.load_kw,
+                   exp:S.export_limit, imp:S.import_limit,
+                   minSoc:S.min_soc_to_sunrise, pvForecast:S.solar_power_now_kw });
+    histPri.push({ t:now, imp:S.current_price, fit:S.feedin_price });
+    const cut = now - 86400000;
+    histPow = histPow.filter(x => x.t >= cut);
+    histPri = histPri.filter(x => x.t >= cut);
+    if (!simActive) refreshCharts();
+    updateOverview();
+  } catch(e) { console.warn('poll failed', e); }
+}
+
+function refreshCharts() {
+  if (!powerChart || !priceChart) return;
+  powerChart.updateSeries([
+    {name:'Battery %',     data: histPow.map(x=>[x.t,x.battery])},
+    {name:'Min SoC %',     data: histPow.map(x=>[x.t,x.minSoc])},
+    {name:'PV Output kW',  data: histPow.map(x=>[x.t,x.pv])},
+    {name:'PV Forecast kW',data: histPow.map(x=>[x.t,x.pvForecast])},
+    {name:'Grid Import kW',data: histPow.map(x=>[x.t,x.imp])},
+    {name:'Grid Export kW',data: histPow.map(x=>[x.t,x.exp])},
+    {name:'Consumption kW',data: histPow.map(x=>[x.t,x.load])},
+  ]);
+  priceChart.updateSeries([
+    {name:'Import price',              data: histPri.map(x=>[x.t,x.imp])},
+    {name:'Feed-in price',             data: histPri.map(x=>[x.t,x.fit])},
+    {name:'PV forecast (kWh interval)',data: []},
+  ]);
+}
+
+// ── UI update ─────────────────────────────────────────────────────────────────
+function fc(v,d=2){ return (v==null)?'—':Number(v).toFixed(d); }
+function fcc(v){ if(v==null) return '—'; const c=Number(v)*100; return Math.abs(c)<1 ? c.toFixed(1)+'c' : Math.round(c)+'c'; }
+function ts(){ return new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+function tsISO(iso){ return iso ? new Date(iso).toLocaleString('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).replace(',','T').replace(' ','') : '—'; }
+
+function updateOverview() {
+  const s = S;
+  // Chart now labels
+  document.getElementById('nowPower').textContent =
+    `Now: Battery ${fc(s.battery_soc,1)}%, Min SoC ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Forecast ${fc(s.solar_power_now_kw,1)}kW`;
+  document.getElementById('nowPrice').textContent =
+    `Now: import ${fcc(s.current_price)}/kWh, feed-in ${fcc(s.feedin_price)}/kWh, PV today ${fc(s.forecast_today,1)}kWh`;
+
+  // Cycle timing
+  document.getElementById('cycleStart').textContent  = tsISO(s.last_update);
+  document.getElementById('cycleDone').textContent   = new Date().toISOString().replace('T',' ').slice(0,19);
+  document.getElementById('pollVal').textContent     = String(Math.round(POLL / 1000));
+
+  // Status cards
+  document.getElementById('sCtrl').textContent  = s.sigenergy_mode === 'Automated' ? 'automated' : (s.sigenergy_mode||'—');
+  document.getElementById('sErr').textContent   = 'none';
+  document.getElementById('sMode').textContent  = s.ems_mode || '—';
+  document.getElementById('sBat').textContent   = fc(s.battery_soc,1);
+  document.getElementById('sSunrise').textContent = fc(s.sunrise_soc_target,2);
+  document.getElementById('sImpPrice').textContent  = fcc(s.current_price);
+  document.getElementById('sExpLimVal').textContent = fc(s.export_limit,2)+' kW';
+  document.getElementById('sFIT').textContent       = fcc(s.feedin_price);
+  document.getElementById('sImpLimVal').textContent = fc(s.import_limit,2)+' kW';
+  document.getElementById('sPVMax').textContent     = fc(s.pv_max_power_limit,2)+' kW';
+  document.getElementById('sESSThresh').textContent = '1.0 kW';
+
+  // Reason
+  document.getElementById('reasonBar').textContent = s.outcome_reason || '—';
+
+  // Sync controls
+  const focusedId = document.activeElement?.id;
+  if (focusedId !== 'modeSelect') {
+    syncSel('modeSelect', s.sigenergy_mode);
+  }
+  // Only sync ESS inputs when none of them have focus (avoids overwriting mid-edit)
+  const essInputIds = new Set(['emsMode', 'expLim', 'impLim', 'pvMax', 'haCtrl']);
+  if (!essInputIds.has(focusedId)) {
+    syncSel('emsMode', s.ems_mode);
+    document.getElementById('expLim').value = fc(s.export_limit, 2);
+    document.getElementById('impLim').value = fc(s.import_limit, 2);
+    document.getElementById('pvMax').value  = fc(s.pv_max_power_limit, 2);
+    document.getElementById('haCtrl').value = s.ha_control_enabled ? 'on' : 'off';
+  }
+
+  updateScenarioComparison();
+  updateThresholdPreview();
+}
+
+function syncSel(id, val) {
+  if (!val) return;
+  const sel = document.getElementById(id);
+  for (let i=0; i<sel.options.length; i++) if (sel.options[i].text===val){sel.selectedIndex=i;break;}
+}
+function setV(id, val) { const el=document.getElementById(id); if(el&&val!=null) el.value=val; }
+
+function getDischargeClampMax() {
+  // Ceiling for export/discharge — exclude sentinel 999 (hardware not yet reported)
+  const n = Number(S?.ess_max_discharge_kw);
+  return (Number.isFinite(n) && n > 0 && n < 999) ? n : 50;
+}
+
+function getChargeClampMax() {
+  // Ceiling for import/charge — exclude sentinel 999
+  const n = Number(S?.ess_max_charge_kw);
+  return (Number.isFinite(n) && n > 0 && n < 999) ? n : 50;
+}
+
+function getKwClampMax() {
+  // Conservative fallback (used when direction is unknown): use the more restrictive of the two
+  return Math.min(getDischargeClampMax(), getChargeClampMax());
+}
+
+function clampKw(v, min=0, max=null) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return min;
+  const hi = Number.isFinite(max) ? max : getKwClampMax();
+  return Math.max(min, Math.min(hi, n));
+}
+
+function normalizeProfileKey(profile) {
+  return PROFILE_META[profile] ? profile : 'maxConsumption';
+}
+
+function syncThresholdInputsFromConfig(cfg) {
+  if (!cfg) return;
+  setV('tExpLowPrice',  (cfg.export_threshold_low  *100).toFixed(2));
+  setV('tExpMedPrice',  (cfg.export_threshold_medium*100).toFixed(2));
+  setV('tExpHighPrice', (cfg.export_threshold_high *100).toFixed(2));
+  setV('tExpLowLimit',   cfg.export_limit_low);
+  setV('tExpMedLimit',   cfg.export_limit_medium);
+  setV('tExpHighLimit',  cfg.export_limit_high);
+  setV('tImpLowPrice',  (cfg.import_threshold_low  *100).toFixed(2));
+  setV('tImpMedPrice',  (cfg.import_threshold_medium*100).toFixed(2));
+  setV('tImpHighPrice', (cfg.import_threshold_high *100).toFixed(2));
+  setV('tImpLowLimit',   cfg.import_limit_low);
+  setV('tImpMedLimit',   cfg.import_limit_medium);
+  setV('tImpHighLimit',  cfg.import_limit_high);
+}
+
+function numInput(id, fallback=0) {
+  const el = document.getElementById(id);
+  const val = el ? Number(el.value) : NaN;
+  return Number.isFinite(val) ? val : fallback;
+}
+
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+
+function lerp(a, b, t) { return a + (b - a) * clamp01(t); }
+
+function formatTier(name, limit) {
+  if (limit <= 0) return name;
+  return `${name} · ${fc(limit,2)} kW`;
+}
+
+function getBaseThresholdConfig() {
+  return {
+    expLowPrice: numInput('tExpLowPrice') / 100,
+    expMedPrice: numInput('tExpMedPrice') / 100,
+    expHighPrice: numInput('tExpHighPrice') / 100,
+    expLowLimit: numInput('tExpLowLimit'),
+    expMedLimit: numInput('tExpMedLimit'),
+    expHighLimit: numInput('tExpHighLimit'),
+    impLowPrice: numInput('tImpLowPrice') / 100,
+    impMedPrice: numInput('tImpMedPrice') / 100,
+    impHighPrice: numInput('tImpHighPrice') / 100,
+    impLowLimit: numInput('tImpLowLimit'),
+    impMedLimit: numInput('tImpMedLimit'),
+    impHighLimit: numInput('tImpHighLimit'),
+  };
+}
+
+function applyProfileToConfig(baseCfg, profile) {
+  const cfg = { ...baseCfg };
+  const p = normalizeProfileKey(profile);
+  if (p === 'balancedCurrent') {
+    cfg.expLowLimit *= 0.85;
+    cfg.expMedLimit *= 0.85;
+    cfg.expHighLimit *= 0.9;
+    cfg.impLowLimit *= 0.85;
+    cfg.impMedLimit *= 0.8;
+    cfg.impHighLimit *= 0.75;
+  } else if (p === 'maxProfits') {
+    cfg.expLowLimit *= 1.15;
+    cfg.expMedLimit *= 1.2;
+    cfg.expHighLimit *= 1.25;
+    cfg.impLowLimit *= 1.1;
+    cfg.impMedLimit *= 1.15;
+    cfg.impHighLimit *= 1.2;
+  }
+  cfg.expLowLimit = clampKw(cfg.expLowLimit, 0, getDischargeClampMax());
+  cfg.expMedLimit = clampKw(cfg.expMedLimit, 0, getDischargeClampMax());
+  cfg.expHighLimit = clampKw(cfg.expHighLimit, 0, getDischargeClampMax());
+  cfg.impLowLimit = clampKw(cfg.impLowLimit, 0, getChargeClampMax());
+  cfg.impMedLimit = clampKw(cfg.impMedLimit, 0, getChargeClampMax());
+  cfg.impHighLimit = clampKw(cfg.impHighLimit, 0, getChargeClampMax());
+  return cfg;
+}
+
+function profileNetEstimate(s, exp, imp) {
+  const fit = Number(s.feedin_price || 0);
+  const price = Number(s.current_price || 0);
+  const expLimit = Number(exp.limit || 0);
+  const impLimit = Number(imp.limit || 0);
+  const exportRev = expLimit * fit;
+  const importCost = impLimit * price;
+  return { exportRev, importCost, net: exportRev - importCost };
+}
+
+function selectProfile(profile) {
+  activeProfile = normalizeProfileKey(profile);
+  document.querySelectorAll('.tune-btn').forEach(btn => btn.classList.remove('active'));
+  const btn = document.getElementById(`profile-${activeProfile}`);
+  if (btn) btn.classList.add('active');
+  const help = document.getElementById('profileHelp');
+  if (help) help.textContent = PROFILE_META[activeProfile].help;
+  updateScenarioComparison();
+  updateThresholdPreview();
+}
+
+function updateScenarioComparison() {
+  const grid = document.getElementById('scenarioGrid');
+  if (!grid) return;
+  if (!S || (!Number.isFinite(Number(S.current_price)) && !Number.isFinite(Number(S.feedin_price)))) {
+    grid.innerHTML = '<div class="scenario-note">Waiting for live pricing data...</div>';
+    return;
+  }
+
+  const base = getBaseThresholdConfig();
+  const profiles = ['maxConsumption', 'balancedCurrent', 'maxProfits'];
+  const cards = profiles.map(p => {
+    const cfg = applyProfileToConfig(base, p);
+    const exp = computePreviewExport(S, cfg);
+    const imp = computePreviewImport(S, cfg);
+    const est = profileNetEstimate(S, exp, imp);
+    const cls = p === activeProfile ? 'scenario-card active' : 'scenario-card';
+    const signCls = est.net >= 0 ? 'pos' : 'neg';
+    const signedNet = `${est.net >= 0 ? '+' : '-'}$${Math.abs(est.net).toFixed(2)}`;
+    return `
+      <div class="${cls}">
+        <div class="scenario-name">${PROFILE_META[p].label}</div>
+        <div class="scenario-metric">Computed export: <strong>${exp.limit == null ? '—' : fc(exp.limit,2) + ' kW'}</strong></div>
+        <div class="scenario-metric">Computed import: <strong>${imp.limit == null ? '—' : fc(imp.limit,2) + ' kW'}</strong></div>
+        <div class="scenario-metric">Est. net/h: <strong class="${signCls}">${signedNet}</strong></div>
+        <button class="scenario-btn" onclick="selectProfile('${p}')">Preview This</button>
+      </div>`;
+  });
+  grid.innerHTML = cards.join('');
+}
+
+function computePreviewExport(s, cfg) {
+  const fit = Number(s.feedin_price);
+  if (!Number.isFinite(fit)) return { limit:null, band:'Waiting for FIT', detail:'No live feed-in price yet.' };
+  if (fit < 0) return { limit:0, band:'Off', detail:'Feed-in price is negative.' };
+  if (fit === 0) {
+    return {
+      limit: clampKw(cfg.expLowLimit, 0, getDischargeClampMax()),
+      band: 'Zero FIT tier',
+      detail: 'Feed-in price is zero, so export is allowed at the low-tier limit.',
+    };
+  }
+  if (fit < cfg.expLowPrice) return { limit:0, band:'Off', detail:'Below export low threshold.' };
+  if (fit >= cfg.expHighPrice) return { limit:clampKw(cfg.expHighLimit, 0, getDischargeClampMax()), band:'High tier', detail:`FIT ${fcc(fit)}/kWh is at or above the high threshold.` };
+  if (fit >= cfg.expMedPrice) {
+    const span = Math.max(cfg.expHighPrice - cfg.expMedPrice, 0.0001);
+    const limit = lerp(cfg.expMedLimit, cfg.expHighLimit, (fit - cfg.expMedPrice) / span);
+    return { limit:clampKw(limit, 0, getDischargeClampMax()), band:'Medium to High', detail:`Interpolated from medium to high using FIT ${fcc(fit)}/kWh.` };
+  }
+  const span = Math.max(cfg.expMedPrice - cfg.expLowPrice, 0.0001);
+  const limit = lerp(cfg.expLowLimit, cfg.expMedLimit, (fit - cfg.expLowPrice) / span);
+  return { limit:clampKw(limit, 0, getDischargeClampMax()), band:'Low to Medium', detail:`Interpolated from low to medium using FIT ${fcc(fit)}/kWh.` };
+}
+
+function computePreviewImport(s, cfg) {
+  const price = Number(s.current_price);
+  const fit = Number(s.feedin_price);
+  if (!Number.isFinite(price)) return { limit:null, band:'Waiting for import price', detail:'No live import price yet.' };
+  if (s.demand_window) return { limit:0, band:'Blocked', detail:'Demand window is active, so import is blocked.' };
+  if (Number.isFinite(fit) && fit >= cfg.expLowPrice) {
+    return { limit:0, band:'Blocked', detail:'Feed-in price is high enough that the optimizer prefers export over import.' };
+  }
+  if (price <= cfg.impHighPrice) return { limit:clampKw(cfg.impHighLimit, 0, getChargeClampMax()), band:'High tier', detail:`Import price ${fcc(price)}/kWh is at or below the high threshold.` };
+  if (price <= cfg.impMedPrice) return { limit:clampKw(cfg.impMedLimit, 0, getChargeClampMax()), band:'Medium tier', detail:`Import price ${fcc(price)}/kWh is at or below the medium threshold.` };
+  if (price <= cfg.impLowPrice) return { limit:clampKw(cfg.impLowLimit, 0, getChargeClampMax()), band:'Low tier', detail:`Import price ${fcc(price)}/kWh is at or below the low threshold.` };
+  return { limit:0, band:'Off', detail:'Import price is above the configured import thresholds.' };
+}
+
+function updateThresholdPreview() {
+  const el = document.getElementById('thresholdPreview');
+  if (!el) return;
+  if (!S) {
+    el.innerHTML = `
+      <div class="preview-title">Live Threshold Preview</div>
+      <div class="preview-note">Waiting for live status from Home Assistant...</div>`;
+    return;
+  }
+
+  const p = normalizeProfileKey(activeProfile);
+  const cfg = applyProfileToConfig(getBaseThresholdConfig(), p);
+
+  const exp = computePreviewExport(S, cfg);
+  const imp = computePreviewImport(S, cfg);
+  const notes = [];
+  if (S.battery_full_safeguard) notes.push('battery full safeguard is active');
+  if (S.standby_holdoff_active) notes.push('standby holdoff is active');
+  if (S.morning_dump_active) notes.push('morning dump is active');
+  if (S.price_is_estimated) notes.push('current prices are estimated, not actual');
+
+  el.innerHTML = `
+    <div class="preview-title">Live Threshold Preview · ${PROFILE_META[p].label}</div>
+    <div class="preview-grid">
+      <div class="preview-cell">
+        <div class="preview-lbl">Threshold-Based Export</div>
+        <div class="preview-val">${exp.limit == null ? '—' : fc(exp.limit,2) + ' kW'}</div>
+        <div class="preview-sub">${formatTier(exp.band, exp.limit || 0)}</div>
+        <div class="preview-sub">Actual optimizer now: ${fc(S.export_limit,2)} kW</div>
+      </div>
+      <div class="preview-cell">
+        <div class="preview-lbl">Threshold-Based Import</div>
+        <div class="preview-val">${imp.limit == null ? '—' : fc(imp.limit,2) + ' kW'}</div>
+        <div class="preview-sub">${formatTier(imp.band, imp.limit || 0)}</div>
+        <div class="preview-sub">Actual optimizer now: ${fc(S.import_limit,2)} kW</div>
+      </div>
+      <div class="preview-cell">
+        <div class="preview-lbl">Current Live Prices</div>
+        <div class="preview-val">Import ${fcc(S.current_price)}</div>
+        <div class="preview-sub">Feed-in ${fcc(S.feedin_price)}</div>
+      </div>
+      <div class="preview-cell">
+        <div class="preview-lbl">Why It May Differ</div>
+        <div class="preview-sub">Export: ${exp.detail}</div>
+        <div class="preview-sub">Import: ${imp.detail}</div>
+      </div>
+    </div>
+    <div class="preview-note"><strong>Note:</strong> this preview follows the selected profile plus price-threshold rules and live prices. The final optimizer output can still be changed by SoC floors, manual mode, demand windows, holdoffs, morning dump, solar surplus, and other safeguards${notes.length ? ' currently including ' + notes.join(', ') : ''}.</div>`;
+}
+</script>
+<script>
+// ── Actions ───────────────────────────────────────────────────────────────────
+function getUiApiKey() {
+  const el = document.getElementById('uiApiKey');
+  const fromInput = (el?.value || '').trim();
+  if (fromInput) return fromInput;
+  return (sessionStorage.getItem('sigenergy_ui_api_key') || '').trim();
+}
+
+function buildAuthHeaders(base = {}) {
+  const headers = { ...base };
+  const apiKey = getUiApiKey();
+  if (apiKey) headers['x-api-key'] = apiKey;
+  return headers;
+}
+
+async function getJson(url) {
+  const r = await fetch(url, { headers: buildAuthHeaders() });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+async function post(url, body) {
+  const headers = buildAuthHeaders({ 'Content-Type': 'application/json' });
+  const r = await fetch(url, {method:'POST', headers, body: JSON.stringify(body)});
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+async function applyMode(btn) {
+  if (!btn) return;
+  btn.disabled=true; btn.textContent='Applying…';
+  try { await post('/api/set_mode', {mode: document.getElementById('modeSelect').value}); btn.textContent='Applied ✓'; poll(); }
+  catch(e){ btn.textContent='Error'; btn.title=e.message||String(e); console.error('applyMode:', e.message); }
+  setTimeout(()=>{ btn.textContent='Apply Mode'; btn.title=''; btn.disabled=false; }, 2000);
+}
+
+async function applyESS(btn) {
+  if (!btn) return;
+  btn.disabled=true; btn.textContent='Applying…';
+  try {
+    await post('/api/set_ess', {
+      ems_mode: document.getElementById('emsMode').value,
+      grid_export_limit: +document.getElementById('expLim').value||0,
+      grid_import_limit: +document.getElementById('impLim').value||0,
+      pv_max_power_limit: +document.getElementById('pvMax').value||25,
+      ha_control: document.getElementById('haCtrl').value === 'on',
+    });
+    btn.textContent='Applied ✓'; poll();
+  } catch(e){ btn.textContent='Error'; btn.title=e.message||String(e); console.error('applyESS:', e.message); }
+  setTimeout(()=>{ btn.textContent='Apply ESS Controls'; btn.title=''; btn.disabled=false; }, 2000);
+}
+
+async function applyThresholds(btn) {
+  if (!btn) return;
+  btn.disabled=true; btn.textContent='Applying…';
+  const pairs = [
+    ['export_threshold_low',   +document.getElementById('tExpLowPrice').value/100],
+    ['export_threshold_medium',+document.getElementById('tExpMedPrice').value/100],
+    ['export_threshold_high',  +document.getElementById('tExpHighPrice').value/100],
+    ['export_limit_low',       +document.getElementById('tExpLowLimit').value],
+    ['export_limit_medium',    +document.getElementById('tExpMedLimit').value],
+    ['export_limit_high',      +document.getElementById('tExpHighLimit').value],
+    ['import_threshold_low',   +document.getElementById('tImpLowPrice').value/100],
+    ['import_threshold_medium',+document.getElementById('tImpMedPrice').value/100],
+    ['import_threshold_high',  +document.getElementById('tImpHighPrice').value/100],
+    ['import_limit_low',       +document.getElementById('tImpLowLimit').value],
+    ['import_limit_medium',    +document.getElementById('tImpMedLimit').value],
+    ['import_limit_high',      +document.getElementById('tImpHighLimit').value],
+  ];
+  try {
+    const updates = pairs.map(([key, value]) => ({ key, value }));
+    await post('/api/config/batch', { updates });
+    btn.textContent='Applied ✓';
+    await loadConfig();
+  } catch(e){ btn.textContent='Error'; btn.title=e.message||String(e); console.error('applyThresholds:', e.message); }
+  setTimeout(()=>{ btn.textContent='Apply Thresholds'; btn.title=''; btn.disabled=false; }, 2000);
+}
+
+async function runCycle() {
+  const btn = document.getElementById('btnRun'); btn.disabled=true; btn.textContent='Running…';
+  try { await post('/api/run_cycle', {}); await poll(); btn.textContent='Done ✓'; }
+  catch(e){ btn.textContent='Error'; btn.title=e.message||String(e); console.error('runCycle:', e.message); }
+  setTimeout(()=>{ btn.textContent='Run Cycle Now'; btn.title=''; btn.disabled=false; }, 2000);
+}
+
+function exportCSV() { window.location='/api/export_csv'; }
+
+// ── Simulation ────────────────────────────────────────────────────────────────
+async function runSimulation() {
+  const btn = document.getElementById('btnSim'); btn.disabled=true; btn.textContent='Simulating…';
+  const resEl = document.getElementById('simResult');
+  if (!S || (!Number.isFinite(Number(S.current_price)) && !Number.isFinite(Number(S.feedin_price)))) {
+    resEl.textContent = 'Waiting for live data from Home Assistant…';
+    btn.textContent='Simulate Automated'; btn.disabled=false;
+    return;
+  }
+  try {
+    // Compare all 3 profiles against live prices and pick the best net outcome
+    const base = getBaseThresholdConfig();
+    let bestNet = -Infinity, bestProfile = 'maxConsumption', bestExpLimit = 0, bestImpLimit = 0;
+    for (const p of ['maxConsumption', 'balancedCurrent', 'maxProfits']) {
+      const cfg = applyProfileToConfig(base, p);
+      const exp = computePreviewExport(S, cfg);
+      const imp = computePreviewImport(S, cfg);
+      const est = profileNetEstimate(S, exp, imp);
+      if (est.net > bestNet) {
+        bestNet = est.net;
+        bestProfile = p;
+        bestExpLimit = exp.limit ?? 0;
+        bestImpLimit = imp.limit ?? 0;
+      }
+    }
+    const netSign = bestNet >= 0 ? 'pos' : 'neg';
+    resEl.innerHTML =
+      `Best profile: <strong>${PROFILE_META[bestProfile].label}</strong> &middot; ` +
+      `Export <strong>${fc(bestExpLimit,2)} kW</strong> &middot; ` +
+      `Import <strong>${fc(bestImpLimit,2)} kW</strong> &middot; ` +
+      `Est. net/h <span class="${netSign}">${bestNet >= 0 ? '+' : '-'}$${Math.abs(bestNet).toFixed(2)}</span>`;
+    simActive = true;
+    btn.textContent='Clear Simulation';
+    btn.onclick = clearSim;
+    btn.disabled=false;
+
+    // Overlay best-profile limits on chart
+    const now = Date.now();
+    powerChart.updateSeries([
+      {name:'Sim Battery %',     data:[...histPow.map(x=>[x.t,x.battery]),   [now+1200000, Math.min(100,(S.battery_soc||50)+2)]]},
+      {name:'Min SoC %',         data: histPow.map(x=>[x.t,x.minSoc])},
+      {name:'Sim PV Output kW',  data:[...histPow.map(x=>[x.t,x.pv]),        [now+1200000, S.solar_power_now_kw||0]]},
+      {name:'PV Forecast kW',    data: histPow.map(x=>[x.t,x.pvForecast])},
+      {name:'Sim Import kW',     data:[...histPow.map(x=>[x.t,x.imp]),       [now+1200000, bestImpLimit]]},
+      {name:'Sim Export kW',     data:[...histPow.map(x=>[x.t,x.exp]),       [now+1200000, bestExpLimit]]},
+      {name:'Sim Consumption kW',data:[...histPow.map(x=>[x.t,x.load]),      [now+1200000, S.load_kw||0]]},
+    ]);
+  } catch(e){ console.error(e); btn.textContent='Simulate Automated'; btn.disabled=false; }
+}
+
+function clearSim() {
+  simActive = false;
+  document.getElementById('simResult').innerHTML = '';
+  const btn = document.getElementById('btnSim');
+  btn.textContent='Simulate Automated'; btn.onclick=runSimulation;
+  refreshCharts();
+}
+
+// ── Entities tab ──────────────────────────────────────────────────────────────
+async function loadEntities() {
+  const el = document.getElementById('entContent');
+  try {
+    const r = await fetch('/api/status'); const s = await r.json();
+    const rows = [
+      ['battery_soc',       'sensor.sigen_plant_battery_state_of_charge',      s.battery_soc],
+      ['pv_power',          'sensor.sigen_plant_pv_power',                     s.pv_kw],
+      ['load_power',        'sensor.sigen_plant_consumed_power',                s.load_kw],
+      ['price',             'sensor.amber_general_price',                       s.current_price],
+      ['feedin',            'sensor.amber_feed_in_price',                       s.feedin_price],
+      ['mode',              'select.sigen_plant_remote_ems_control_mode',       s.ems_mode],
+      ['grid_export_limit', 'number.sigen_plant_grid_export_limitation',        s.export_limit],
+      ['grid_import_limit', 'number.sigen_plant_grid_import_limitation',        s.import_limit],
+      ['pv_max_power_limit','number.sigen_plant_pv_max_power_limit',            s.pv_max_power_limit],
+      ['forecast_today',    'sensor.solcast_pv_forecast_forecast_today',        s.forecast_today],
+      ['forecast_tomorrow', 'sensor.solcast_pv_forecast_forecast_tomorrow',     s.forecast_tomorrow],
+      ['forecast_remaining','sensor.solcast_pv_forecast_forecast_remaining_today', s.forecast_remaining],
+    ];
+    el.innerHTML = `
+      <div class="card" style="padding:0;overflow:hidden">
+        <table class="etable">
+          <thead><tr><th>Key</th><th>Entity</th><th>State</th></tr></thead>
+          <tbody>
+            ${rows.map(([k,e,v])=>`<tr><td>${k}</td><td>${e}</td><td>${v??'—'}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } catch(e){ el.innerHTML='<div style="color:#e53e3e">Failed to load.</div>'; }
+}
+
+// ── Config tab ────────────────────────────────────────────────────────────────
+async function loadConfig() {
+  const el = document.getElementById('cfgContent');
+  try {
+    const cfg = await getJson('/api/config');
+    uiCfg = cfg;
+    syncThresholdInputsFromConfig(cfg);
+    const display = {
+      home_assistant: { url: cfg.ha_url, token: '****' },
+      service: { poll_seconds: cfg.poll_interval_seconds, notification_service: cfg.notification_service,
+                 notify_daily_summary: cfg.notify_daily_summary, daily_summary_time: cfg.daily_summary_time,
+                 notify_morning_summary: cfg.notify_morning_summary, morning_summary_time: cfg.morning_summary_time },
+      entities: { manual_mode_select: cfg.sigenergy_mode_select, ems_mode_select: cfg.ems_mode_select,
+                  grid_export_limit: cfg.grid_export_limit, grid_import_limit: cfg.grid_import_limit,
+                  pv_max_power_limit: cfg.pv_max_power_limit, battery_soc_sensor: cfg.battery_soc_sensor,
+                  pv_power_sensor: cfg.pv_power_sensor, price_sensor: cfg.price_sensor,
+                  feedin_sensor: cfg.feedin_sensor, demand_window_sensor: cfg.demand_window_sensor,
+                  price_spike_sensor: cfg.price_spike_sensor, forecast_today_sensor: cfg.forecast_today_sensor,
+                  forecast_tomorrow_sensor: cfg.forecast_tomorrow_sensor },
+      thresholds: { export_threshold_low: cfg.export_threshold_low, export_threshold_medium: cfg.export_threshold_medium,
+                    export_threshold_high: cfg.export_threshold_high, export_limit_low: cfg.export_limit_low,
+                    export_limit_medium: cfg.export_limit_medium, export_limit_high: cfg.export_limit_high,
+                    import_threshold_low: cfg.import_threshold_low, import_threshold_medium: cfg.import_threshold_medium,
+                    import_threshold_high: cfg.import_threshold_high, import_limit_low: cfg.import_limit_low,
+                    import_limit_medium: cfg.import_limit_medium, import_limit_high: cfg.import_limit_high },
+      soc_reserves: { min_export_target_soc: cfg.min_export_target_soc, min_soc_floor: cfg.min_soc_floor,
+                      night_reserve_soc: cfg.night_reserve_soc, night_reserve_buffer: cfg.night_reserve_buffer,
+                      sunrise_reserve_soc: cfg.sunrise_reserve_soc, sunrise_safety_factor: cfg.sunrise_safety_factor },
+    };
+    el.innerHTML = `<pre class="code-block">${JSON.stringify(display, null, 2)}</pre>`;
+    updateScenarioComparison();
+    updateThresholdPreview();
+  } catch(e){ el.innerHTML='<div style="color:#e53e3e">Failed.</div>'; }
+}
+
+// ── Logs tab ──────────────────────────────────────────────────────────────────
+async function loadLogs() {
+  const el = document.getElementById('logContent');
+  try {
+    const r = await fetch('/api/logs?n=200'); const text = await r.text();
+    const coloured = text.split('\n').map(line => {
+      if (!line.trim()) return '';
+      const cls = line.includes(' ERROR ') ? 'err' : line.includes(' WARNING ') ? 'warn' : 'info';
+      return `<span class="${cls}">${escH(line)}</span>`;
+    }).join('\n');
+    el.innerHTML = `<div class="log-block">${coloured}</div>`;
+  } catch(e){ el.innerHTML=`<div class="log-block" style="color:#718096">No logs yet.</div>`; }
+}
+
+function escH(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+const uiApiKeyInput = document.getElementById('uiApiKey');
+if (uiApiKeyInput) {
+  uiApiKeyInput.value = sessionStorage.getItem('sigenergy_ui_api_key') || '';
+  uiApiKeyInput.addEventListener('input', () => {
+    sessionStorage.setItem('sigenergy_ui_api_key', uiApiKeyInput.value || '');
+  });
+}
+document.querySelectorAll('.thresh-input').forEach(el => el.addEventListener('input', updateThresholdPreview));
+document.querySelectorAll('.thresh-input').forEach(el => el.addEventListener('input', updateScenarioComparison));
+initCharts();
+loadConfig();
+selectProfile('maxConsumption');
+backfillHistory().then(() => poll());
+setInterval(poll, POLL);
+</script>
+</body>
+</html>
