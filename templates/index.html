@@ -240,7 +240,7 @@ select:focus,input:focus{border-color:#276749}
         <div class="preview-title">Live Threshold Preview</div>
         <div class="preview-note">Waiting for live status from Home Assistant...</div>
       </div>
-      <button class="sbtn" onclick="applyThresholds(this)">Apply Thresholds</button>
+      <button class="sbtn" onclick="applyThresholds(this)">Apply &amp; Save Thresholds</button>
     </div>
 
   </div>
@@ -844,11 +844,11 @@ async function applyThresholds(btn) {
   ];
   try {
     const updates = pairs.map(([key, value]) => ({ key, value }));
-    await post('/api/config/batch', { updates });
-    btn.textContent='Applied ✓';
+    await post('/api/config/batch', { updates, persist: true });
+    btn.textContent='Applied + Saved ✓';
     await loadConfig();
   } catch(e){ btn.textContent='Error'; btn.title=e.message||String(e); console.error('applyThresholds:', e.message); }
-  setTimeout(()=>{ btn.textContent='Apply Thresholds'; btn.title=''; btn.disabled=false; }, 2000);
+  setTimeout(()=>{ btn.textContent='Apply & Save Thresholds'; btn.title=''; btn.disabled=false; }, 2000);
 }
 
 async function runCycle() {

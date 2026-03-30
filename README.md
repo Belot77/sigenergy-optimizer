@@ -261,7 +261,7 @@ The optimizer creates a notification whenever it changes modes. Go to **Settings
 
 ## Configuration Tuning
 
-Once it's running, you can adjust behavior via environment variables in `.env`:
+Once it's running, you can adjust behavior either from the web GUI (Apply & Save Thresholds writes to `.env`) or by editing environment variables in `.env` directly:
 
 ```
 # When to charge from grid (price threshold, in $ per kWh)

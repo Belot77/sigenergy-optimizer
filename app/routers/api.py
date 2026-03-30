@@ -1,5 +1,7 @@
 from __future__ import annotations
 import logging
+import re
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Request, HTTPException
@@ -110,6 +112,54 @@ def _coerce_config_value(cfg: Any, key: str, raw: Any) -> Any:
         raise ValueError(f"Invalid boolean value for {key}: {raw!r}")
 
     return current_type(raw)
+
+
+def _config_key_to_env_var(key: str) -> str:
+    return key.upper()
+
+
+def _to_env_literal(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _persist_config_keys_to_env(cfg: Any, keys: list[str]) -> list[str]:
+    env_path = Path(".env")
+    lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+
+    updates: dict[str, str] = {}
+    for key in keys:
+        if not hasattr(cfg, key):
+            raise ValueError(f"Unknown config key: {key}")
+        value = getattr(cfg, key)
+        if key in _MASKED_KEYS and value == "****":
+            raise ValueError(f"Refusing to persist masked value for {key}")
+        updates[_config_key_to_env_var(key)] = _to_env_literal(value)
+
+    if not updates:
+        return []
+
+    remaining = set(updates.keys())
+    out: list[str] = []
+    for line in lines:
+        replaced = False
+        for env_key, env_val in updates.items():
+            if re.match(rf"^\s*{re.escape(env_key)}\s*=", line):
+                out.append(f"{env_key}={env_val}")
+                remaining.discard(env_key)
+                replaced = True
+                break
+        if not replaced:
+            out.append(line)
+
+    for env_key in sorted(remaining):
+        out.append(f"{env_key}={updates[env_key]}")
+
+    env_path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+    return sorted(updates.keys())
 
 
 @router.get("/status")
@@ -264,10 +314,12 @@ async def get_config(request: Request) -> dict[str, Any]:
 class ConfigUpdateRequest(BaseModel):
     key: str
     value: Any
+    persist: bool = False
 
 
 class ConfigBatchUpdateRequest(BaseModel):
     updates: list[ConfigUpdateRequest]
+    persist: bool = False
 
 
 @router.post("/config")
@@ -282,8 +334,17 @@ async def update_config(request: Request, body: ConfigUpdateRequest) -> dict[str
         opt = _opt(request)
         if hasattr(opt, "refresh_config_time_warnings"):
             opt.refresh_config_time_warnings()
+        persisted_keys: list[str] = []
+        if body.persist:
+            persisted_keys = _persist_config_keys_to_env(cfg, [body.key])
         safe_value = "****" if body.key in _MASKED_KEYS else getattr(cfg, body.key)
-        return {"ok": True, "key": body.key, "value": safe_value}
+        return {
+            "ok": True,
+            "key": body.key,
+            "value": safe_value,
+            "persisted": body.persist,
+            "persisted_keys": persisted_keys,
+        }
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -314,8 +375,17 @@ async def update_config_batch(request: Request, body: ConfigBatchUpdateRequest) 
     if hasattr(opt, "refresh_config_time_warnings"):
         opt.refresh_config_time_warnings()
 
+    persisted_keys: list[str] = []
+    if body.persist:
+        persisted_keys = _persist_config_keys_to_env(cfg, list(coerced_updates.keys()))
+
     safe_updated = {k: ("****" if k in _MASKED_KEYS else v) for k, v in coerced_updates.items()}
-    return {"ok": True, "updated": safe_updated}
+    return {
+        "ok": True,
+        "updated": safe_updated,
+        "persisted": body.persist,
+        "persisted_keys": persisted_keys,
+    }
 
 
 # ── In-process log ring buffer ────────────────────────────────────────────────
