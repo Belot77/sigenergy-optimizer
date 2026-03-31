@@ -784,8 +784,22 @@ function buildAuthHeaders(base = {}) {
 }
 
 function apiUrl(path) {
-  return String(path || '').replace(/^\/+/, '');
+  const clean = String(path || '').replace(/^\/+/, '');
+  const m = window.location.pathname.match(/^\/api\/hassio_ingress\/[^/]+/);
+  const basePath = m ? m[0] : '';
+  return `${window.location.origin}${basePath}/${clean}`;
 }
+
+const _origFetch = window.fetch.bind(window);
+window.fetch = (input, init) => {
+  if (typeof input === 'string' && input.startsWith('/api/')) {
+    return _origFetch(apiUrl(input), init);
+  }
+  if (input && typeof input.url === 'string' && input.url.startsWith('/api/')) {
+    return _origFetch(apiUrl(input.url), init);
+  }
+  return _origFetch(input, init);
+};
 
 
 async function getJson(url) {
