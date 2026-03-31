@@ -390,10 +390,10 @@ class SigEnergyOptimizer:
 
         # ---- PV / battery ---------------------------------------------
         pv_raw = _fv(cfg.pv_power_sensor)
-        s.pv_kw = pv_raw / 1000 if pv_raw >= 1000 else pv_raw
+        s.pv_kw = pv_raw / 1000 if pv_raw > 100 else pv_raw
 
         load_raw = _fv(cfg.consumed_power_sensor)
-        s.load_kw = load_raw / 1000 if load_raw >= 1000 else load_raw
+        s.load_kw = load_raw / 1000 if load_raw > 100 else load_raw
 
         s.battery_soc = max(0.0, min(100.0, _fv(cfg.battery_soc_sensor)))
 

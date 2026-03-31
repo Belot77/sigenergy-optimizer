@@ -15,6 +15,7 @@ router = APIRouter()
 
 _POWER_LIMIT_MAX_KW: float = 100.0  # absolute hard cap for ESS/PV limits
 _MASKED_KEYS: set[str] = {"ha_token", "ui_api_key"}
+_CHART_RESAMPLE_MS = 300000
 
 
 def _opt(request: Request):
@@ -245,7 +246,7 @@ def _history_kw(item: dict[str, Any], *, solar_now: bool = False) -> float | Non
         return value
     if solar_now:
         return value / 1000 if value > 100 else value
-    return value / 1000 if value >= 1000 else value
+    return value / 1000 if value > 100 else value
 
 
 def _build_series(points: list[dict[str, Any]], value_fn) -> list[dict[str, Any]]:
@@ -269,11 +270,51 @@ def _merge_points(*series_lists: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [merged[ts] for ts in sorted(merged.keys())]
 
 
+def _to_ms(dt: datetime) -> int:
+    return int(dt.timestamp() * 1000)
+
+
+def _resample_combined_rows(
+    rows: list[dict[str, Any]],
+    keys: list[str],
+    start_ms: int,
+    end_ms: int,
+    step_ms: int = _CHART_RESAMPLE_MS,
+) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+
+    sorted_rows = sorted(
+        [row for row in rows if isinstance(row.get("t"), int)],
+        key=lambda row: row["t"],
+    )
+    if not sorted_rows:
+        return []
+
+    idx = 0
+    latest: dict[str, Any] = {key: None for key in keys}
+    out: list[dict[str, Any]] = []
+
+    for ts in range(start_ms, end_ms + 1, step_ms):
+        while idx < len(sorted_rows) and sorted_rows[idx]["t"] <= ts:
+            row = sorted_rows[idx]
+            for key in keys:
+                value = row.get(key)
+                if value is not None:
+                    latest[key] = value
+            idx += 1
+        out.append({"t": ts, **latest})
+
+    return out
+
+
 async def _history_backfill(request: Request) -> dict[str, Any]:
     opt = _opt(request)
     ha = _ha(request)
     cfg = opt.cfg
     start, end = _today_bounds_local()
+    start_ms = _to_ms(start)
+    end_ms = _to_ms(end)
     entity_ids = [
         cfg.battery_soc_sensor,
         cfg.min_soc_to_sunrise_helper,
@@ -350,9 +391,21 @@ async def _history_backfill(request: Request) -> dict[str, Any]:
 
     memory_power = getattr(opt, "_chart_history_power", [])
     memory_price = getattr(opt, "_chart_history_price", [])
+    merged_power = _merge_points(power, memory_power)
+    merged_price = _merge_points(price, memory_price)
     return {
-        "power": _merge_points(power, memory_power),
-        "price": _merge_points(price, memory_price),
+        "power": _resample_combined_rows(
+            merged_power,
+            ["battery", "minSoc", "pv", "pvForecast", "imp", "exp", "load"],
+            start_ms,
+            end_ms,
+        ),
+        "price": _resample_combined_rows(
+            merged_price,
+            ["imp", "fit"],
+            start_ms,
+            end_ms,
+        ),
     }
 
 
