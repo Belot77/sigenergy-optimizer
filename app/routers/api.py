@@ -310,7 +310,6 @@ async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
 
 @router.get("/config")
 async def get_config(request: Request) -> dict[str, Any]:
-    _require_config_read_auth(request)
     cfg = _opt(request).cfg
     data = cfg.dict()
     for key in _MASKED_KEYS:
