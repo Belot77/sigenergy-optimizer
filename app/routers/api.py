@@ -438,6 +438,7 @@ async def get_history(request: Request) -> dict[str, Any]:
 async def export_csv(request: Request) -> StreamingResponse:
     """Download current entities as CSV."""
     opt = _opt(request)
+    cfg = opt.cfg
     s = opt.last_state
     d = opt.last_decision
     if not s:
@@ -445,22 +446,22 @@ async def export_csv(request: Request) -> StreamingResponse:
 
     rows = [
         ["key", "entity", "value", "unit"],
-        ["battery_soc", "sensor.sigen_plant_battery_state_of_charge", s.battery_soc, "%"],
-        ["pv_power", "sensor.sigen_plant_pv_power", s.pv_kw, "kW"],
-        ["load_power", "sensor.sigen_plant_consumed_power", s.load_kw, "kW"],
-        ["price", "sensor.amber_general_price", s.current_price, "$/kWh"],
-        ["feedin", "sensor.amber_feed_in_price", s.feedin_price, "$/kWh"],
-        ["mode", "select.sigen_plant_remote_ems_control_mode", s.current_ems_mode, ""],
-        ["grid_export_limit", "number.sigen_plant_grid_export_limitation", s.current_export_limit, "kW"],
-        ["grid_import_limit", "number.sigen_plant_grid_import_limitation", s.current_import_limit, "kW"],
-        ["pv_max_power_limit", "number.sigen_plant_pv_max_power_limit", s.current_pv_max_power_limit, "kW"],
-        ["forecast_today", "sensor.solcast_pv_forecast_forecast_today", s.forecast_today_kwh, "kWh"],
-        ["forecast_tomorrow", "sensor.solcast_pv_forecast_forecast_tomorrow", s.forecast_tomorrow_kwh, "kWh"],
-        ["forecast_remaining", "sensor.solcast_pv_forecast_forecast_remaining_today", s.forecast_remaining_kwh, "kWh"],
-        ["daily_export", "sensor.sigen_plant_daily_grid_export_energy", s.daily_export_kwh, "kWh"],
-        ["daily_import", "sensor.sigen_plant_daily_grid_import_energy", s.daily_import_kwh, "kWh"],
-        ["daily_pv", "sensor.sigen_plant_daily_pv_generation", s.daily_pv_kwh, "kWh"],
-        ["daily_load", "sensor.sigen_plant_daily_load_consumption", s.daily_load_kwh, "kWh"],
+        ["battery_soc", cfg.battery_soc_sensor, s.battery_soc, "%"],
+        ["pv_power", cfg.pv_power_sensor, s.pv_kw, "kW"],
+        ["load_power", cfg.consumed_power_sensor, s.load_kw, "kW"],
+        ["price", cfg.price_sensor, s.current_price, "$/kWh"],
+        ["feedin", cfg.feedin_sensor, s.feedin_price, "$/kWh"],
+        ["mode", cfg.ems_mode_select, s.current_ems_mode, ""],
+        ["grid_export_limit", cfg.grid_export_limit, s.current_export_limit, "kW"],
+        ["grid_import_limit", cfg.grid_import_limit, s.current_import_limit, "kW"],
+        ["pv_max_power_limit", cfg.pv_max_power_limit, s.current_pv_max_power_limit, "kW"],
+        ["forecast_today", cfg.forecast_today_sensor, s.forecast_today_kwh, "kWh"],
+        ["forecast_tomorrow", cfg.forecast_tomorrow_sensor, s.forecast_tomorrow_kwh, "kWh"],
+        ["forecast_remaining", cfg.forecast_remaining_sensor, s.forecast_remaining_kwh, "kWh"],
+        ["daily_export", cfg.daily_export_energy, s.daily_export_kwh, "kWh"],
+        ["daily_import", cfg.daily_import_energy, s.daily_import_kwh, "kWh"],
+        ["daily_pv", cfg.daily_pv_energy, s.daily_pv_kwh, "kWh"],
+        ["daily_load", cfg.daily_load_energy, s.daily_load_kwh, "kWh"],
         ["sunrise_soc_target", "calculated", d.sunrise_soc_target if d else "", "%"],
         ["min_soc_to_sunrise", "calculated", d.min_soc_to_sunrise if d else "", "%"],
         ["outcome_reason", "calculated", d.outcome_reason if d else "", ""],

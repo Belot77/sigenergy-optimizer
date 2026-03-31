@@ -994,24 +994,92 @@ async function loadEntities() {
 }
 
 // ── Config tab ────────────────────────────────────────────────────────────────
+const _ENTITY_GROUPS = [
+  { title: 'EMS Controls', keys: [
+    ['ha_control_switch',         'HA Control Switch'],
+    ['ems_mode_select',           'EMS Mode Select'],
+    ['grid_export_limit',         'Grid Export Limit'],
+    ['grid_import_limit',         'Grid Import Limit'],
+    ['pv_max_power_limit',        'PV Max Power Limit'],
+    ['ess_max_charging_limit',    'ESS Max Charging Limit'],
+    ['ess_max_discharging_limit', 'ESS Max Discharging Limit'],
+  ]},
+  { title: 'SigEnergy Sensors', keys: [
+    ['pv_power_sensor',                   'PV Power'],
+    ['consumed_power_sensor',             'Consumed Power'],
+    ['battery_soc_sensor',                'Battery SoC'],
+    ['rated_capacity_sensor',             'Rated Capacity'],
+    ['available_discharge_sensor',        'Available Discharge'],
+    ['ess_rated_discharge_power_sensor',  'ESS Rated Discharge Power'],
+    ['ess_rated_charge_power_sensor',     'ESS Rated Charge Power'],
+    ['daily_export_energy',               'Daily Export Energy'],
+    ['daily_import_energy',               'Daily Import Energy'],
+    ['daily_load_energy',                 'Daily Load Energy'],
+    ['daily_battery_charge_energy',       'Daily Battery Charge'],
+    ['daily_battery_discharge_energy',    'Daily Battery Discharge'],
+    ['daily_pv_energy',                   'Daily PV Energy'],
+    ['sun_entity',                        'Sun Entity'],
+  ]},
+  { title: 'Price / Amber', keys: [
+    ['price_sensor',          'Import Price'],
+    ['feedin_sensor',         'Feed-in Price'],
+    ['feedin_forecast_sensor','Feed-in Forecast'],
+    ['demand_window_sensor',  'Demand Window'],
+    ['price_spike_sensor',    'Price Spike'],
+    ['price_forecast_sensor', 'Price Forecast'],
+  ]},
+  { title: 'Solcast / Forecast', keys: [
+    ['forecast_remaining_sensor', 'Forecast Remaining Today'],
+    ['forecast_today_sensor',     'Forecast Today'],
+    ['forecast_tomorrow_sensor',  'Forecast Tomorrow'],
+    ['solar_power_now_sensor',    'Solar Power Now'],
+  ]},
+  { title: 'HA Helpers', keys: [
+    ['sigenergy_mode_select',      'Mode Select'],
+    ['automated_export_flag',      'Automated Export Flag'],
+    ['export_session_start',       'Export Session Start'],
+    ['import_session_start',       'Import Session Start'],
+    ['last_export_notification',   'Last Export Notification'],
+    ['last_import_notification',   'Last Import Notification'],
+    ['reason_text_helper',         'Reason Text'],
+    ['min_soc_to_sunrise_helper',  'Min SoC to Sunrise'],
+  ]},
+];
+
 async function loadConfig() {
   const el = document.getElementById('cfgContent');
   try {
     const cfg = await getJson('api/config');
     uiCfg = cfg;
     syncThresholdInputsFromConfig(cfg);
-    const display = {
+
+    // Entity editor
+    let entityHtml = `<div class="card" style="margin-bottom:14px">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+        Entity IDs
+        <button class="hbtn primary" id="btnSaveEntities" onclick="applyEntities(this)">Save Entities</button>
+      </div>
+      <div id="entityMsg" style="font-size:12px;color:#276749;margin-bottom:6px;display:none"></div>
+      <div style="display:grid;gap:14px">`;
+    for (const group of _ENTITY_GROUPS) {
+      entityHtml += `<div><div class="flabel">${group.title}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px">`;
+      for (const [key, label] of group.keys) {
+        entityHtml += `<div>
+          <div style="font-size:11px;color:#718096;margin-bottom:2px">${label}</div>
+          <input type="text" id="ent_${key}" value="${escH(String(cfg[key] ?? ''))}" style="font-size:12px">
+        </div>`;
+      }
+      entityHtml += '</div></div>';
+    }
+    entityHtml += '</div></div>';
+
+    // Other config summary (read-only)
+    const summary = {
       home_assistant: { url: cfg.ha_url, token: '****' },
       service: { poll_seconds: cfg.poll_interval_seconds, notification_service: cfg.notification_service,
                  notify_daily_summary: cfg.notify_daily_summary, daily_summary_time: cfg.daily_summary_time,
                  notify_morning_summary: cfg.notify_morning_summary, morning_summary_time: cfg.morning_summary_time },
-      entities: { manual_mode_select: cfg.sigenergy_mode_select, ems_mode_select: cfg.ems_mode_select,
-                  grid_export_limit: cfg.grid_export_limit, grid_import_limit: cfg.grid_import_limit,
-                  pv_max_power_limit: cfg.pv_max_power_limit, battery_soc_sensor: cfg.battery_soc_sensor,
-                  pv_power_sensor: cfg.pv_power_sensor, price_sensor: cfg.price_sensor,
-                  feedin_sensor: cfg.feedin_sensor, demand_window_sensor: cfg.demand_window_sensor,
-                  price_spike_sensor: cfg.price_spike_sensor, forecast_today_sensor: cfg.forecast_today_sensor,
-                  forecast_tomorrow_sensor: cfg.forecast_tomorrow_sensor },
       thresholds: { export_threshold_low: cfg.export_threshold_low, export_threshold_medium: cfg.export_threshold_medium,
                     export_threshold_high: cfg.export_threshold_high, export_limit_low: cfg.export_limit_low,
                     export_limit_medium: cfg.export_limit_medium, export_limit_high: cfg.export_limit_high,
@@ -1022,10 +1090,33 @@ async function loadConfig() {
                       night_reserve_soc: cfg.night_reserve_soc, night_reserve_buffer: cfg.night_reserve_buffer,
                       sunrise_reserve_soc: cfg.sunrise_reserve_soc, sunrise_safety_factor: cfg.sunrise_safety_factor },
     };
-    el.innerHTML = `<pre class="code-block">${JSON.stringify(display, null, 2)}</pre>`;
+    const summaryHtml = `<div class="card"><div class="card-title">Other Config</div><pre class="code-block">${JSON.stringify(summary, null, 2)}</pre></div>`;
+
+    el.innerHTML = entityHtml + summaryHtml;
     updateScenarioComparison();
     updateThresholdPreview();
   } catch(e){ el.innerHTML='<div style="color:#e53e3e">Failed.</div>'; }
+}
+
+async function applyEntities(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  const msg = document.getElementById('entityMsg');
+  const allKeys = _ENTITY_GROUPS.flatMap(g => g.keys.map(([k]) => k));
+  try {
+    const updates = allKeys
+      .map(key => ({ key, value: document.getElementById('ent_' + key)?.value ?? '' }))
+      .filter(u => u.value !== '');
+    await post('api/config/batch', { updates, persist: true });
+    btn.textContent = 'Saved ✓';
+    if (msg) { msg.textContent = 'Entity IDs saved.'; msg.style.color = '#276749'; msg.style.display = ''; }
+  } catch(e) {
+    btn.textContent = 'Error';
+    btn.title = e.message || String(e);
+    console.error('applyEntities:', e.message);
+    if (msg) { msg.textContent = 'Save failed: ' + (e.message || String(e)); msg.style.color = '#e53e3e'; msg.style.display = ''; }
+  }
+  setTimeout(() => { btn.textContent = 'Save Entities'; btn.title = ''; btn.disabled = false; if (msg) msg.style.display = 'none'; }, 3000);
 }
 
 // ── Logs tab ──────────────────────────────────────────────────────────────────
