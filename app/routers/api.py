@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -188,6 +189,171 @@ def _serialize_forecast_curve(entries: Any, time_key: str, value_key: str) -> li
         curve.append({"t": ts, "value": value})
 
     return curve
+
+
+def _today_bounds_local() -> tuple[datetime, datetime]:
+    now = datetime.now().astimezone()
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return start, start + timedelta(days=1)
+
+
+def _parse_history_groups(groups: Any) -> dict[str, list[dict[str, Any]]]:
+    out: dict[str, list[dict[str, Any]]] = {}
+    if not isinstance(groups, list):
+        return out
+    for group in groups:
+        if not isinstance(group, list) or not group:
+            continue
+        entity_id = None
+        items: list[dict[str, Any]] = []
+        for item in group:
+            if not isinstance(item, dict):
+                continue
+            entity_id = entity_id or item.get("entity_id")
+            items.append(item)
+        if entity_id:
+            out[entity_id] = items
+    return out
+
+
+def _history_ts_ms(item: dict[str, Any]) -> int | None:
+    raw = item.get("last_changed") or item.get("last_updated")
+    if not raw:
+        return None
+    try:
+        return int(datetime.fromisoformat(str(raw).replace("Z", "+00:00")).timestamp() * 1000)
+    except Exception:
+        return None
+
+
+def _history_float(item: dict[str, Any]) -> float | None:
+    raw = item.get("state")
+    try:
+        return float(raw)
+    except Exception:
+        return None
+
+
+def _history_kw(item: dict[str, Any], *, solar_now: bool = False) -> float | None:
+    value = _history_float(item)
+    if value is None:
+        return None
+    unit = str(item.get("attributes", {}).get("unit_of_measurement", "")).lower()
+    if unit == "w":
+        return value / 1000
+    if unit == "kw":
+        return value
+    if solar_now:
+        return value / 1000 if value > 100 else value
+    return value / 1000 if value >= 1000 else value
+
+
+def _build_series(points: list[dict[str, Any]], value_fn) -> list[dict[str, Any]]:
+    series: list[dict[str, Any]] = []
+    for item in points:
+        ts = _history_ts_ms(item)
+        value = value_fn(item)
+        if ts is None or value is None:
+            continue
+        series.append({"t": ts, "value": value})
+    return series
+
+
+def _merge_points(*series_lists: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[int, dict[str, Any]] = {}
+    for series in series_lists:
+        for item in series:
+            ts = item.get("t")
+            if isinstance(ts, int):
+                merged[ts] = item
+    return [merged[ts] for ts in sorted(merged.keys())]
+
+
+async def _history_backfill(request: Request) -> dict[str, Any]:
+    opt = _opt(request)
+    ha = _ha(request)
+    cfg = opt.cfg
+    start, end = _today_bounds_local()
+    entity_ids = [
+        cfg.battery_soc_sensor,
+        cfg.min_soc_to_sunrise_helper,
+        cfg.pv_power_sensor,
+        cfg.solar_power_now_sensor,
+        cfg.grid_import_limit,
+        cfg.grid_export_limit,
+        cfg.consumed_power_sensor,
+        cfg.price_sensor,
+        cfg.feedin_sensor,
+    ]
+    history = await ha.get_history_period(start_time=start, end_time=end, entity_ids=entity_ids)
+    by_entity = _parse_history_groups(history)
+
+    battery_series = _build_series(by_entity.get(cfg.battery_soc_sensor, []), _history_float)
+    min_soc_series = _build_series(by_entity.get(cfg.min_soc_to_sunrise_helper, []), _history_float)
+    pv_series = _build_series(by_entity.get(cfg.pv_power_sensor, []), _history_kw)
+    pv_forecast_series = _build_series(by_entity.get(cfg.solar_power_now_sensor, []), lambda item: _history_kw(item, solar_now=True))
+    grid_import_series = _build_series(by_entity.get(cfg.grid_import_limit, []), _history_float)
+    grid_export_series = _build_series(by_entity.get(cfg.grid_export_limit, []), _history_float)
+    load_series = _build_series(by_entity.get(cfg.consumed_power_sensor, []), _history_kw)
+    import_price_series = _build_series(by_entity.get(cfg.price_sensor, []), _history_float)
+    feedin_price_series = _build_series(by_entity.get(cfg.feedin_sensor, []), _history_float)
+
+    power_timestamps = sorted({
+        item["t"]
+        for series in (battery_series, min_soc_series, pv_series, pv_forecast_series, grid_import_series, grid_export_series, load_series)
+        for item in series
+    })
+    power_lookup = {
+        "battery": {item["t"]: item["value"] for item in battery_series},
+        "minSoc": {item["t"]: item["value"] for item in min_soc_series},
+        "pv": {item["t"]: item["value"] for item in pv_series},
+        "pvForecast": {item["t"]: item["value"] for item in pv_forecast_series},
+        "imp": {item["t"]: item["value"] for item in grid_import_series},
+        "exp": {item["t"]: item["value"] for item in grid_export_series},
+        "load": {item["t"]: item["value"] for item in load_series},
+    }
+    power = [
+        {
+            "t": ts,
+            "battery": power_lookup["battery"].get(ts),
+            "minSoc": power_lookup["minSoc"].get(ts),
+            "pv": power_lookup["pv"].get(ts),
+            "pvForecast": power_lookup["pvForecast"].get(ts),
+            "imp": power_lookup["imp"].get(ts),
+            "exp": power_lookup["exp"].get(ts),
+            "load": power_lookup["load"].get(ts),
+        }
+        for ts in power_timestamps
+    ]
+
+    price = [
+        {
+            "t": ts,
+            "imp": imp.get("value"),
+            "fit": fit.get("value"),
+        }
+        for ts, imp, fit in [
+            (
+                item["t"],
+                item,
+                next((x for x in feedin_price_series if x["t"] == item["t"]), {"value": None}),
+            )
+            for item in import_price_series
+        ]
+    ]
+    feedin_only = [
+        {"t": item["t"], "imp": None, "fit": item["value"]}
+        for item in feedin_price_series
+        if not any(existing["t"] == item["t"] for existing in price)
+    ]
+    price = _merge_points(price, feedin_only)
+
+    memory_power = getattr(opt, "_chart_history_power", [])
+    memory_price = getattr(opt, "_chart_history_price", [])
+    return {
+        "power": _merge_points(power, memory_power),
+        "price": _merge_points(price, memory_price),
+    }
 
 
 @router.get("/status")
@@ -460,12 +626,16 @@ async def get_logs(request: Request, n: int = 200) -> PlainTextResponse:
 
 @router.get("/history")
 async def get_history(request: Request) -> dict[str, Any]:
-    """Return rolling in-memory history for chart backfill."""
-    opt = _opt(request)
-    return {
-        "power": getattr(opt, "_chart_history_power", []),
-        "price": getattr(opt, "_chart_history_price", []),
-    }
+    """Return chart history backfilled from Home Assistant recorder plus runtime memory."""
+    try:
+        return await _history_backfill(request)
+    except Exception as exc:
+        logger.warning("History backfill failed, falling back to in-memory history: %s", exc)
+        opt = _opt(request)
+        return {
+            "power": getattr(opt, "_chart_history_power", []),
+            "price": getattr(opt, "_chart_history_price", []),
+        }
 
 
 @router.get("/export_csv")

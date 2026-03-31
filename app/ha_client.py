@@ -4,7 +4,9 @@ Uses httpx for async HTTP.
 """
 from __future__ import annotations
 import logging
+from datetime import datetime
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -83,6 +85,27 @@ class HAClient:
         except Exception as exc:
             logger.warning("bulk_states failed: %s", exc)
             return {}
+
+    async def get_history_period(
+        self,
+        start_time: datetime,
+        end_time: datetime | None = None,
+        entity_ids: list[str] | None = None,
+    ) -> list[Any]:
+        """Return recorder history for the requested entity IDs over a period."""
+        try:
+            path = f"/api/history/period/{quote(start_time.isoformat())}"
+            params: dict[str, str] = {}
+            if end_time is not None:
+                params["end_time"] = end_time.isoformat()
+            if entity_ids:
+                params["filter_entity_id"] = ",".join(entity_ids)
+            r = await self._client.get(path, params=params)
+            r.raise_for_status()
+            return r.json()
+        except Exception as exc:
+            logger.warning("get_history_period failed: %s", exc)
+            return []
 
     # ------------------------------------------------------------------
     # Service calls
