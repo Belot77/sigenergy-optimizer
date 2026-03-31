@@ -407,9 +407,9 @@ function mkChart(el, series, colors, yaxis, extra) {
 
 function initCharts() {
   const powY = [
-    { seriesName:'Battery %',    min:0, max:100, opposite:true, labels:{style:{fontSize:'10px',colors:'#718096'}}, title:{text:'SoC %',style:{color:'#718096',fontSize:'10px'}} },
+    { seriesName:'Battery %',    min:0, max:100, opposite:true,  labels:{formatter: v => v!=null ? Math.round(v)+'%'  : '', style:{fontSize:'10px',colors:'#718096'}}, title:{text:'SoC %',style:{color:'#718096',fontSize:'10px'}} },
     { seriesName:'Min SoC %',    show:false, min:0, max:100 },
-    { seriesName:'PV Output kW', opposite:false, labels:{style:{fontSize:'10px',colors:'#718096'}}, title:{text:'kW',style:{color:'#718096',fontSize:'10px'}} },
+    { seriesName:'PV Output kW', opposite:false, labels:{formatter: v => v!=null ? Number(v).toFixed(1)+'kW' : '', style:{fontSize:'10px',colors:'#718096'}}, title:{text:'kW',style:{color:'#718096',fontSize:'10px'}} },
     { seriesName:'PV Forecast kW',   show:false },
     { seriesName:'Grid Import kW',   show:false },
     { seriesName:'Grid Export kW',   show:false },
