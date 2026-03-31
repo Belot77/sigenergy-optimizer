@@ -75,6 +75,12 @@ def _allowed_manual_modes(cfg: Any) -> set[str]:
 
 
 def _state_power_caps_kw(opt: Any) -> tuple[float, float]:
+    if hasattr(opt, "get_power_caps_kw"):
+        try:
+            return opt.get_power_caps_kw()
+        except Exception:
+            pass
+
     s = opt.last_state
 
     def _valid_cap(v: Any) -> bool:

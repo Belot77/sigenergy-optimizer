@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, time, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from .config import Settings
 from .ha_client import HAClient
@@ -55,6 +55,8 @@ _TRIGGER_ENTITY_ATTRS = [
     "sigenergy_mode_select",
 ]
 
+_POWER_LIMIT_MAX_KW = 100.0
+
 
 class SigEnergyOptimizer:
     def __init__(self, ha: HAClient, cfg: Settings) -> None:
@@ -70,6 +72,8 @@ class SigEnergyOptimizer:
         self._config_time_warnings: list[str] = self._validate_time_config()
         self._sensor_parse_warning_cache: dict[tuple[str, str], float] = {}
         self._holdoff_entry_floor: Optional[float] = None  # Stable SoC floor for holdoff window
+        self._last_hw_charge_cap_kw: Optional[float] = None
+        self._last_hw_discharge_cap_kw: Optional[float] = None
 
         # Shared queue — HAWebSocketClient puts entity_ids here; we consume them
         self.trigger_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
@@ -97,6 +101,32 @@ class SigEnergyOptimizer:
 
     def refresh_config_time_warnings(self) -> None:
         self._config_time_warnings = self._validate_time_config()
+
+    @staticmethod
+    def _valid_hw_cap_kw(v: Any) -> bool:
+        return isinstance(v, (int, float)) and 0 < float(v) < 999
+
+    def get_power_caps_kw(self, s: Optional[SolarState] = None) -> tuple[float, float]:
+        fallback = float(self.cfg.ess_limit_fallback_kw)
+        if not (0 < fallback <= _POWER_LIMIT_MAX_KW):
+            fallback = min(max(fallback, 1.0), _POWER_LIMIT_MAX_KW)
+
+        state = s if s is not None else self._last_state
+
+        charge_cap = fallback
+        discharge_cap = fallback
+
+        if state and self._valid_hw_cap_kw(state.ess_max_charge_kw):
+            charge_cap = float(state.ess_max_charge_kw)
+        elif self._valid_hw_cap_kw(self._last_hw_charge_cap_kw):
+            charge_cap = float(self._last_hw_charge_cap_kw)
+
+        if state and self._valid_hw_cap_kw(state.ess_max_discharge_kw):
+            discharge_cap = float(state.ess_max_discharge_kw)
+        elif self._valid_hw_cap_kw(self._last_hw_discharge_cap_kw):
+            discharge_cap = float(self._last_hw_discharge_cap_kw)
+
+        return charge_cap, discharge_cap
 
     def _validate_time_config(self) -> list[str]:
         warnings: list[str] = []
@@ -385,6 +415,10 @@ class SigEnergyOptimizer:
 
         s.ess_max_discharge_kw = _kw_from_sensor(_fv(cfg.ess_rated_discharge_power_sensor))
         s.ess_max_charge_kw = _kw_from_sensor(_fv(cfg.ess_rated_charge_power_sensor))
+        if self._valid_hw_cap_kw(s.ess_max_charge_kw):
+            self._last_hw_charge_cap_kw = float(s.ess_max_charge_kw)
+        if self._valid_hw_cap_kw(s.ess_max_discharge_kw):
+            self._last_hw_discharge_cap_kw = float(s.ess_max_discharge_kw)
 
         # ---- Grid limits / EMS mode -----------------------------------
         s.current_export_limit = _fv(cfg.grid_export_limit)
@@ -878,14 +912,8 @@ class SigEnergyOptimizer:
         if mode_label == cfg.manual_option:
             return  # just disables optimizer, no limit changes
 
-        # Resolve rated limits
-        s = self._last_state
-        if s:
-            export_cap = s.ess_max_discharge_kw if s.ess_max_discharge_kw < 999 else cfg.export_limit_value
-            import_cap = s.ess_max_charge_kw if s.ess_max_charge_kw < 999 else cfg.import_limit_value
-        else:
-            export_cap = cfg.export_limit_value
-            import_cap = cfg.import_limit_value
+        # Resolve rated limits from live state, then last-known-good cache.
+        import_cap, export_cap = self.get_power_caps_kw(self._last_state)
 
         block = cfg.block_flow_limit_value
         pv_max = cfg.pv_max_power_value
@@ -1615,7 +1643,7 @@ class SigEnergyOptimizer:
                                    morning_slow_charge: bool, desired_export: float,
                                    pv_surplus: float) -> float:
         cfg = self.cfg
-        hw_charge = s.ess_max_charge_kw if 0 < s.ess_max_charge_kw < 999 else cfg.ess_charge_limit_value
+        hw_charge, _ = self.get_power_caps_kw(s)
         max_charge = max(0.1, hw_charge)
         if desired_import > 0:
             return min(max_charge, desired_import)
@@ -1632,7 +1660,7 @@ class SigEnergyOptimizer:
     def _desired_ess_discharge_limit(self, s: SolarState, standby_holdoff: bool,
                                       positive_fit_override: bool, evening_boost: bool) -> float:
         cfg = self.cfg
-        hw_discharge = s.ess_max_discharge_kw if 0 < s.ess_max_discharge_kw < 999 else cfg.ess_discharge_limit_value
+        _, hw_discharge = self.get_power_caps_kw(s)
         max_dis = max(0.1, hw_discharge)
         if s.price_is_negative and s.current_price <= cfg.import_threshold_low:
             return 0.01

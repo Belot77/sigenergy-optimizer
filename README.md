@@ -61,7 +61,22 @@ This prevents conflicts when your new optimizer starts.
 
 ### Step 2: Create Home Assistant Helpers
 
-The optimizer needs several helper entities. Add them to Home Assistant:
+The optimizer needs several helper entities. If you already used the original YAML automation, these may already exist.
+
+Before creating anything new, check **Developer Tools -> States** for these exact entity IDs:
+
+- `input_boolean.sigenergy_automated_export`
+- `input_number.sigenergy_export_session_start_kwh`
+- `input_number.sigenergy_import_session_start_kwh`
+- `input_number.battery_min_soc_to_last_till_sunrise`
+- `input_text.sigenergy_last_export_notification`
+- `input_text.sigenergy_last_import_notification`
+- `input_text.sigenergy_reason`
+- `input_select.sigenergy_mode`
+
+If they already exist, skip creation and continue to Step 3. Only create missing helpers.
+
+To create missing helpers:
 
 1. Open Home Assistant → **Settings → Devices & Services → Helpers**
 2. Click **Create Helper → Automation**
