@@ -414,8 +414,11 @@ class _UILogHandler(_logging.Handler):
 _handler = _UILogHandler()
 _handler.setFormatter(_logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s", datefmt="%Y-%m-%dT%H:%M:%S"))
 _handler._sigenergy_ui_log_handler = True
-if not any(getattr(h, "_sigenergy_ui_log_handler", False) for h in _logging.getLogger().handlers):
-    _logging.getLogger().addHandler(_handler)
+_root_logger = _logging.getLogger()
+if not any(getattr(h, "_sigenergy_ui_log_handler", False) for h in _root_logger.handlers):
+    _root_logger.addHandler(_handler)
+if _root_logger.level == _logging.NOTSET or _root_logger.level > _logging.INFO:
+    _root_logger.setLevel(_logging.INFO)
 
 
 @router.get("/logs")
