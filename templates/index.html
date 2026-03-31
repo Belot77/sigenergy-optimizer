@@ -782,9 +782,15 @@ function buildAuthHeaders(base = {}) {
   return headers;
 }
 
+const INGRESS_PATH = {{ request.headers.get('X-Ingress-Path', '') | tojson }};
+
 function apiUrl(path) {
-  const base = window.location.href.endsWith('/') ? window.location.href : window.location.href + '/';
   const clean = String(path || '').replace(/^\/+/, '');
+  if (INGRESS_PATH) {
+    const prefix = String(INGRESS_PATH).replace(/\/+$/, '');
+    return `${prefix}/${clean}`;
+  }
+  const base = window.location.href.endsWith('/') ? window.location.href : window.location.href + '/';
   return new URL(clean, base).toString();
 }
 
