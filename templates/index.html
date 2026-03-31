@@ -3,7 +3,36 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script>window.__SIGENERGY_UI_BUILD__='haos16';console.info('SigEnergy UI build',window.__SIGENERGY_UI_BUILD__);</script>
+<script>
+window.__SIGENERGY_UI_BUILD__='haos18';
+window.__SIGENERGY_BOOTSTRAP__='haos18';
+window.addonApiUrl = function(path) {
+  const clean = String(path || '').replace(/^\/+/, '');
+  return './' + clean;
+};
+window.apiUrl = window.addonApiUrl;
+(function() {
+  const nativeFetch = window.fetch.bind(window);
+  const rewrite = (u) => {
+    if (typeof u !== 'string') return u;
+    return u.startsWith('/api/') ? ('./' + u.replace(/^\/+/, '')) : u;
+  };
+  window.fetch = function(input, init) {
+    if (typeof input === 'string') {
+      return nativeFetch(rewrite(input), init);
+    }
+    if (input instanceof Request) {
+      const rewritten = rewrite(input.url);
+      if (rewritten !== input.url) {
+        return nativeFetch(new Request(rewritten, input), init);
+      }
+      return nativeFetch(input, init);
+    }
+    return nativeFetch(input, init);
+  };
+})();
+console.info('SigEnergy UI build', window.__SIGENERGY_UI_BUILD__);
+</script>
 <title>SigEnergy Optimizer Control</title>
 <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.2/dist/apexcharts.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
