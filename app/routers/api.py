@@ -59,6 +59,8 @@ def _require_mutation_auth(request: Request) -> None:
 
 
 def _require_config_read_auth(request: Request) -> None:
+    if _is_loopback_client(request):
+        return
     if settings.require_api_key_for_config_read:
         _require_mutation_auth(request)
 
