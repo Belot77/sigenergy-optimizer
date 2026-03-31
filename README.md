@@ -1,92 +1,60 @@
-# SigEnergy Optimizer — Complete Setup Guide
+﻿# SigEnergy Optimizer for Home Assistant OS
 
-## What This Does
+This guide is for Home Assistant OS users running the SigEnergy Optimizer as a Home Assistant Add-on.
 
-This service automatically controls your SigEnergy battery system based on electricity prices and solar forecasts. It replaces the Home Assistant blueprint automations.
+## Scope and Safety
 
-**How it works:**
-- Monitors your battery charge level, solar power, and current electricity price
-- Automatically switches between charging from the grid, discharging to the grid, or using solar power
-- Maximizes profit by charging when prices are cheap and exporting when prices are high
-- Includes a dashboard (Open Web UI from the add-on page) where you can see what it's doing and override it manually
+This optimizer replaces the old blueprint automations for SigEnergy control.
+Do not run both at the same time.
 
----
+Safe order:
+1. Disable old blueprint automations.
+2. Verify or create required helpers.
+3. Install and configure the add-on.
+4. Start the add-on.
+5. Verify behavior and logs.
 
-## Prerequisites — What You Need
+## Prerequisites
 
-- **Home Assistant** up and running on your network (with admin access)
-- **SigEnergy integration** added to Home Assistant (your battery and inverter already connected)
-- **Amber integration** (for electricity prices)
-- **Solcast integration** (for solar forecasts)
-- **Home Assistant OS** install type
-- A **Home Assistant Long-Lived Access Token** (required)
+- Home Assistant OS
+- SigEnergy entities available in Home Assistant
+- Amber price entities available in Home Assistant
+- Solcast entities available in Home Assistant
+- Home Assistant Long-Lived Access Token
 
----
+## Install the Add-on Repository
 
-## Home Assistant OS (Recommended Path)
+1. Open Home Assistant: Settings -> Add-ons -> Add-on Store -> Repositories
+2. Add repository URL:
+   - https://github.com/Belot77/sigenergy-optimizer
+3. Find SigEnergy Optimizer in the Add-on Store
 
-If your install type is **Home Assistant OS**, run this as a Home Assistant Add-on instead of external Docker.
+## Step 1 - Disable Old Blueprint Automations
 
-You still need a Long-Lived Access Token because the optimizer authenticates to Home Assistant REST/WebSocket APIs using `ha_token`.
-Create it under your Home Assistant user profile, then paste it into the add-on configuration.
+Go to Settings -> Automations and Scenes and disable or remove:
+- sigenergy_optimiser
+- sigenergy_manual_control
 
-**Important safety order:** Complete **Installation Step 1 (disable old blueprint automations)** before installing or starting the add-on.
+## Step 2 - Verify or Create Required Helpers
 
-1. Open **Settings -> Add-ons -> Add-on Store -> Repositories**.
-2. Add this repository URL:
-  - `https://github.com/Belot77/sigenergy-optimizer`
-3. Install **SigEnergy Optimizer** from the Add-on Store.
-4. In the add-on config, set at least:
-  - `ha_url`
-  - `ha_token`
-5. Start the add-on and open via Ingress.
+If you previously used the YAML automations, these may already exist.
+Check Developer Tools -> States for these exact entity IDs:
 
-Add-on files are in `sigenergy_optimizer_addon/` and repository metadata is in `repository.yaml`.
+- input_boolean.sigenergy_automated_export
+- input_number.sigenergy_export_session_start_kwh
+- input_number.sigenergy_import_session_start_kwh
+- input_number.battery_min_soc_to_last_till_sunrise
+- input_text.sigenergy_last_export_notification
+- input_text.sigenergy_last_import_notification
+- input_text.sigenergy_reason
+- input_select.sigenergy_mode
 
-If you are **not** on Home Assistant OS, use the Docker deployment method from an earlier release of this guide.
+If all exist, continue to Step 3.
+If any are missing, create only the missing helpers.
 
----
+### Helper YAML (optional)
 
-## Installation — Step by Step
-
-### Step 1: Disable the Old Blueprint Automations
-
-Log into Home Assistant and go to **Settings → Automations & Scenes**.
-
-Find and disable (or delete) these two automations:
-- `sigenergy_optimiser`
-- `sigenergy_manual_control`
-
-This prevents conflicts when your new optimizer starts.
-
----
-
-### Step 2: Create Home Assistant Helpers
-
-The optimizer needs several helper entities. If you already used the original YAML automation, these may already exist.
-
-Before creating anything new, check **Developer Tools -> States** for these exact entity IDs:
-
-- `input_boolean.sigenergy_automated_export`
-- `input_number.sigenergy_export_session_start_kwh`
-- `input_number.sigenergy_import_session_start_kwh`
-- `input_number.battery_min_soc_to_last_till_sunrise`
-- `input_text.sigenergy_last_export_notification`
-- `input_text.sigenergy_last_import_notification`
-- `input_text.sigenergy_reason`
-- `input_select.sigenergy_mode`
-
-If they already exist, skip creation and continue to Step 3. Only create missing helpers.
-
-To create missing helpers:
-
-1. Open Home Assistant → **Settings → Devices & Services → Helpers**
-2. Click **Create Helper → Automation**
-3. Add these helpers:
-
-**Easiest way: Copy/paste YAML**
-
-Go to **Settings → System → YAML Configuration** (or edit `configuration.yaml`):
+If you prefer YAML helper creation, add this and restart Home Assistant:
 
 ```yaml
 input_boolean:
@@ -100,14 +68,14 @@ input_number:
     max: 9999
     step: 0.001
     unit_of_measurement: "kWh"
-    
+
   sigenergy_import_session_start_kwh:
     name: "Import Session Start (kWh)"
     min: 0
     max: 9999
     step: 0.001
     unit_of_measurement: "kWh"
-    
+
   battery_min_soc_to_last_till_sunrise:
     name: "Min SoC to Last Till Sunrise"
     min: 0
@@ -119,11 +87,11 @@ input_text:
   sigenergy_last_export_notification:
     name: "Last Export Notification"
     max: 255
-    
+
   sigenergy_last_import_notification:
     name: "Last Import Notification"
     max: 255
-    
+
   sigenergy_reason:
     name: "Current Reason"
     max: 255
@@ -141,152 +109,86 @@ input_select:
     initial: Automated
 ```
 
-Save and **restart Home Assistant** (Settings → System → Restart).
+## Step 3 - Configure the Add-on
 
----
+Open the add-on Configuration tab and set at least:
 
-### Step 3: Access the Dashboard
+- ha_url
+- ha_token
 
-Open your web browser and go to:
-```
-Home Assistant -> Settings -> Add-ons -> SigEnergy Optimizer -> Open Web UI
-```
+Notes:
+- The token is required. The optimizer authenticates to Home Assistant REST and WebSocket APIs using ha_token.
+- Advanced overrides can be added in extra_env as KEY=value lines.
 
-You should see:
-- **Current Status:** Battery %, power in/out, prices
-- **Decision:** What it's doing (charging, exporting, idle)
-- **Reason:** Why it made that decision
-- **Manual Overrides:** Buttons to force different modes
+## Step 4 - Start and Open
 
----
+1. Start the add-on.
+2. Open Web UI from the add-on page.
 
-## Testing & Verification
+You should see current state, active decision, and manual override controls.
 
-### Check the logs:
-- Go to **Settings -> Add-ons -> SigEnergy Optimizer -> Logs**
-- Or from HA CLI: `ha addons logs local_sigenergy_optimizer`
+## Step 5 - Verify Correct Operation
 
-### Test a mode override from the dashboard:
-1. Click **Force Full Export** button
-2. Check Home Assistant — the EMS mode should change to "Command Discharging (PV First)"
-3. Click **Automated** to resume auto control
+- Add-on logs: Settings -> Add-ons -> SigEnergy Optimizer -> Logs
+- Optional CLI: ha addons logs local_sigenergy_optimizer
 
-### Check Home Assistant automations:
-The optimizer creates a notification whenever it changes modes. Go to **Settings → System → Logs** and search for "SigEnergy" to see recent actions.
-
----
-
-## Common Issues & Fixes
-
-### "Connection refused" error
-- Check Home Assistant is running: `http://192.168.1.100:8123`
-- Verify `ha_url` in add-on configuration is correct
-- Check firewall isn't blocking port 8123
-
-### "Entity not found" errors in logs
-- Go to Home Assistant **Developer Tools → States**
-- Search for your sensor (e.g., `sigen_plant_pv_power`)
-- Copy the exact entity ID into add-on config (`extra_env` as `KEY=value`)
-- Restart the add-on
-
-### Dashboard shows nothing / blank page
-- Wait up to 60 seconds (first startup and first heartbeat can take a moment)
-- Check add-on logs in Home Assistant
-- Clear browser cache (Ctrl+Shift+Del)
-- Open via **Open Web UI** from the add-on page
-
-### Optimizer stops working
-- Check add-on logs in Home Assistant
-- Verify add-on config values are valid
-- Restart the add-on
-- If still stuck, stop/start the add-on, then reboot Home Assistant host if needed
-
----
+Quick check:
+1. Use a manual override in the UI.
+2. Confirm expected EMS mode and limits are written.
+3. Return to Automated mode.
 
 ## Configuration Tuning
 
-Once it's running, you can adjust behavior from the web GUI using **Apply & Save Thresholds**.
+Use the dashboard for day-to-day threshold tuning (Apply and Save).
 
-For advanced config keys, use the add-on configuration field `extra_env` with one `KEY=value` per line, for example:
+For advanced keys, use extra_env in add-on config, for example:
 
-```
-# When to charge from grid (price threshold, in $ per kWh)
+```text
 MAX_PRICE_THRESHOLD=0.015
-
-# How much to charge when price is cheap
 TARGET_BATTERY_CHARGE=2.0
-
-# Morning export minimum price (in $/kWh)
 EXPORT_THRESHOLD_LOW=0.10
 EXPORT_THRESHOLD_MEDIUM=0.20
 EXPORT_THRESHOLD_HIGH=1.00
-
-# How much to export at each price tier
 EXPORT_LIMIT_LOW=5.0
 EXPORT_LIMIT_MEDIUM=12.0
 EXPORT_LIMIT_HIGH=25.0
-
-# Battery preservation (don't go below this before sunrise)
 SUNRISE_RESERVE_SOC=10.0
 ```
 
 After changing add-on config, restart the add-on.
 
----
+## Common Issues
 
-## Stopping & Uninstalling
+Connection refused:
+- Check ha_url in add-on config
+- Ensure Home Assistant is reachable from add-on runtime
 
-### Stop temporarily:
-- Go to **Settings -> Add-ons -> SigEnergy Optimizer** and click **Stop**.
+Entity not found:
+- Verify entity IDs in Developer Tools -> States
+- Add missing helper entities from Step 2
+- Use extra_env for non-default sensor/entity IDs if needed
 
-### Stop and remove everything:
-1. Stop the add-on.
-2. Click **Uninstall**.
+Blank UI or stale state:
+- Wait up to 60 seconds for initial cycle/heartbeat
+- Check add-on logs
+- Reopen via Open Web UI
 
-### Re-enable old blueprint automations:
-Go back to Home Assistant and re-enable the automations you disabled in Step 1.
+## Stop or Uninstall
 
----
+Stop:
+- Add-on page -> Stop
 
-## Support & Troubleshooting
+Uninstall:
+1. Stop add-on
+2. Uninstall add-on
+3. Re-enable old blueprint automations only if you are rolling back
 
-### View detailed logs:
-- **Settings -> Add-ons -> SigEnergy Optimizer -> Logs**
+## Operational Notes
 
-### Monitor in real-time:
-Open the add-on page and click **Open Web UI**
+- Decision loop is event-driven with a 60-second heartbeat fallback.
+- State inputs include battery, PV, load, and price signals.
+- Hardware limit clamping uses live ESS caps, then cached last-known-good caps, then fallback.
 
-### Check Home Assistant integration:
-All automations are logged in Home Assistant **Settings → System → Logs**
+## Version
 
----
-
-## How It Works — The Short Version
-
-Each cycle (event-driven on watched state changes, with a 60-second heartbeat fallback):
-
-1. **Read state:** Battery %, solar power, load power, current prices
-2. **Decide:** Should we charge, export, or idle?
-3. **Apply:** Change EMS mode, set export/import limits
-4. **Notify:** Send update to Home Assistant and dashboard
-
-The decision rules are:
-- **Charge from grid:** If price is low (< $0.015) and battery not full
-- **Export:** If FIT price is high (> $0.10) and battery high enough
-- **Use solar:** Maximize self-consumption during day
-- **Prepare for sunrise:** Charge if forecast shows low solar tomorrow
-
----
-
-## Next Steps
-
-1. Let it run for 24 hours and watch the dashboard
-2. If behavior looks good, it's done — you can forget about it
-3. If you want to tweak, adjust thresholds in the dashboard and save
-4. Check logs monthly to ensure it's still running smoothly
-
----
-
-**Questions?** Check the logs first — most issues are explained there.
-
-**Version:** 2.1.2 (March 2026)
+2.1.3 (March 2026)
