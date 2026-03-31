@@ -30,6 +30,8 @@ If your install type is **Home Assistant OS**, run this as a Home Assistant Add-
 You still need a Long-Lived Access Token because the optimizer authenticates to Home Assistant REST/WebSocket APIs using `ha_token`.
 Create it under your Home Assistant user profile, then paste it into the add-on configuration.
 
+**Important safety order:** Complete **Installation Step 1 (disable old blueprint automations)** before installing or starting the add-on.
+
 1. Open **Settings -> Add-ons -> Add-on Store -> Repositories**.
 2. Add this repository URL:
   - `https://github.com/Belot77/sigenergy-optimizer`
