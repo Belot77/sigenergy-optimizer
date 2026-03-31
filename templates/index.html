@@ -418,7 +418,7 @@ function initCharts() {
 // ── History backfill from server on load ──────────────────────────────────────
 async function backfillHistory() {
   try {
-    const r = await fetch('/api/history');
+    const r = await fetch('api/history', { headers: buildAuthHeaders() });
     if (!r.ok) return;
     const h = await r.json();
     if (h.power) histPow = h.power;
@@ -430,7 +430,7 @@ async function backfillHistory() {
 // ── Polling ───────────────────────────────────────────────────────────────────
 async function poll() {
   try {
-    const r = await fetch('/api/status');
+    const r = await fetch('api/status', { headers: buildAuthHeaders() });
     if (!r.ok) throw new Error(r.status);
     S = await r.json();
     const now = Date.now();
@@ -804,7 +804,7 @@ async function post(url, body) {
 async function applyMode(btn) {
   if (!btn) return;
   btn.disabled=true; btn.textContent='Applying…';
-  try { await post('/api/set_mode', {mode: document.getElementById('modeSelect').value}); btn.textContent='Applied ✓'; poll(); }
+  try { await post('api/set_mode', {mode: document.getElementById('modeSelect').value}); btn.textContent='Applied ✓'; poll(); }
   catch(e){ btn.textContent='Error'; btn.title=e.message||String(e); console.error('applyMode:', e.message); }
   setTimeout(()=>{ btn.textContent='Apply Mode'; btn.title=''; btn.disabled=false; }, 2000);
 }
@@ -813,7 +813,7 @@ async function applyESS(btn) {
   if (!btn) return;
   btn.disabled=true; btn.textContent='Applying…';
   try {
-    await post('/api/set_ess', {
+    await post('api/set_ess', {
       ems_mode: document.getElementById('emsMode').value,
       grid_export_limit: +document.getElementById('expLim').value||0,
       grid_import_limit: +document.getElementById('impLim').value||0,
@@ -844,7 +844,7 @@ async function applyThresholds(btn) {
   ];
   try {
     const updates = pairs.map(([key, value]) => ({ key, value }));
-    await post('/api/config/batch', { updates, persist: true });
+    await post('api/config/batch', { updates, persist: true });
     btn.textContent='Applied + Saved ✓';
     await loadConfig();
   } catch(e){ btn.textContent='Error'; btn.title=e.message||String(e); console.error('applyThresholds:', e.message); }
@@ -853,12 +853,12 @@ async function applyThresholds(btn) {
 
 async function runCycle() {
   const btn = document.getElementById('btnRun'); btn.disabled=true; btn.textContent='Running…';
-  try { await post('/api/run_cycle', {}); await poll(); btn.textContent='Done ✓'; }
+  try { await post('api/run_cycle', {}); await poll(); btn.textContent='Done ✓'; }
   catch(e){ btn.textContent='Error'; btn.title=e.message||String(e); console.error('runCycle:', e.message); }
   setTimeout(()=>{ btn.textContent='Run Cycle Now'; btn.title=''; btn.disabled=false; }, 2000);
 }
 
-function exportCSV() { window.location='/api/export_csv'; }
+function exportCSV() { window.location='api/export_csv'; }
 
 // ── Simulation ────────────────────────────────────────────────────────────────
 async function runSimulation() {
@@ -922,7 +922,7 @@ function clearSim() {
 async function loadEntities() {
   const el = document.getElementById('entContent');
   try {
-    const r = await fetch('/api/status'); const s = await r.json();
+    const r = await fetch('api/status', { headers: buildAuthHeaders() }); const s = await r.json();
     const rows = [
       ['battery_soc',       'sensor.sigen_plant_battery_state_of_charge',      s.battery_soc],
       ['pv_power',          'sensor.sigen_plant_pv_power',                     s.pv_kw],
@@ -953,7 +953,7 @@ async function loadEntities() {
 async function loadConfig() {
   const el = document.getElementById('cfgContent');
   try {
-    const cfg = await getJson('/api/config');
+    const cfg = await getJson('api/config');
     uiCfg = cfg;
     syncThresholdInputsFromConfig(cfg);
     const display = {
@@ -988,7 +988,7 @@ async function loadConfig() {
 async function loadLogs() {
   const el = document.getElementById('logContent');
   try {
-    const r = await fetch('/api/logs?n=200'); const text = await r.text();
+    const r = await fetch('api/logs?n=200', { headers: buildAuthHeaders() }); const text = await r.text();
     const coloured = text.split('\n').map(line => {
       if (!line.trim()) return '';
       const cls = line.includes(' ERROR ') ? 'err' : line.includes(' WARNING ') ? 'warn' : 'info';
