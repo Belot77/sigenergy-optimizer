@@ -783,10 +783,33 @@ function buildAuthHeaders(base = {}) {
   return headers;
 }
 
+function detectIngressPrefix() {
+  const candidates = [];
+  try { candidates.push(String(window.location.href || '')); } catch(_) {}
+  try { candidates.push(String(window.location.pathname || '')); } catch(_) {}
+  try { candidates.push(String(document.baseURI || '')); } catch(_) {}
+  try {
+    const nav = performance.getEntriesByType('navigation');
+    if (nav && nav[0] && nav[0].name) candidates.push(String(nav[0].name));
+  } catch(_) {}
+  try {
+    if (window.frameElement && window.frameElement.src) {
+      candidates.push(String(window.frameElement.src));
+    }
+  } catch(_) {}
+
+  for (const c of candidates) {
+    const m = c.match(/\/api\/hassio_ingress\/[^/]+/);
+    if (m) return m[0];
+  }
+  return '';
+}
+
+const INGRESS_PREFIX = detectIngressPrefix();
+
 function apiUrl(path) {
   const clean = String(path || '').replace(/^\/+/, '');
-  const pagePath = String(window.location.pathname || '/').replace(/\/+$/, '');
-  return `${window.location.origin}${pagePath}/${clean}`;
+  return `${window.location.origin}${INGRESS_PREFIX}/${clean}`;
 }
 
 const _origFetch = window.fetch.bind(window);
