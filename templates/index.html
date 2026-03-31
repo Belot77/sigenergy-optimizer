@@ -476,6 +476,52 @@ function parseCurvePoints(points) {
     .sort((a, b) => a[0] - b[0]);
 }
 
+function buildSeriesAnnotation(points, color, formatter, offsetY=0) {
+  if (!Array.isArray(points) || !points.length) return null;
+  const [x, y] = points[points.length - 1];
+  if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return null;
+  return {
+    x,
+    y,
+    marker:{ size:4, fillColor:color, strokeColor:'#fff', strokeWidth:1 },
+    label:{
+      borderColor: color,
+      style:{ background: color, color:'#fff', fontSize:'10px', fontWeight:700 },
+      text: formatter(y),
+      offsetY,
+    },
+  };
+}
+
+function compactPriceLabel(value) {
+  if (!Number.isFinite(Number(value))) return '—';
+  const cents = Number(value) * 100;
+  return `${Math.abs(cents) >= 10 ? cents.toFixed(0) : cents.toFixed(1)}`;
+}
+
+function compactKwLabel(value) {
+  if (!Number.isFinite(Number(value))) return '—';
+  return `${Math.abs(Number(value)) >= 10 ? Number(value).toFixed(0) : Number(value).toFixed(1)}`;
+}
+
+function compactPctLabel(value) {
+  if (!Number.isFinite(Number(value))) return '—';
+  return `${Math.round(Number(value))}`;
+}
+
+function priceAxisBounds(seriesList) {
+  const values = seriesList.flatMap(points => points.map(([, value]) => Number(value))).filter(Number.isFinite);
+  if (!values.length) return { min: 0, max: 0.2 };
+  const minValue = Math.min(...values, 0);
+  const maxValue = Math.max(...values, 0.01);
+  const span = Math.max(maxValue - minValue, 0.02);
+  const pad = span * 0.1;
+  return {
+    min: Math.max(Math.floor((minValue - pad) * 1000) / 1000, Math.min(0, minValue - pad)),
+    max: Math.ceil((maxValue + pad) * 1000) / 1000,
+  };
+}
+
 function initCharts() {
   const powY = [
     { seriesName:'Battery %',    min:0, max:100, opposite:true,  labels:{formatter: v => v!=null ? Math.round(v)+'%'  : '', style:{fontSize:'10px',colors:'#718096'}}, title:{text:'SoC %',style:{color:'#718096',fontSize:'10px'}} },
@@ -495,6 +541,7 @@ function initCharts() {
     {name:'Grid Export kW',data:[]},
     {name:'Consumption kW',data:[]},
   ], ['#3182ce','#38b2ac','#dd6b20','#ed8936','#e53e3e','#38a169','#805ad5'], powY, {
+    stroke:{ curve:'straight', width:[2,2,2,2,2,2,2], dashArray:[0,0,0,0,0,0,0] },
     fill:{ type:['gradient','solid','gradient','gradient','solid','solid','solid'],
            opacity:[0.25,0.9,0.2,0.12,0.6,0.5,0.45] },
     tooltip:{
@@ -503,6 +550,7 @@ function initCharts() {
       y:{ formatter:(value, { seriesIndex, w }) => powerSeriesValue(w.config.series[seriesIndex].name, value) },
     },
     legend:{ show:true, labels:{colors:'#4a5568'}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(powerSeriesValue) },
+    xaxis:{ type:'datetime', min:startOfTodayMs(), max:endOfTodayMs(), labels:{datetimeUTC:false, style:{fontSize:'10px',colors:'#718096'}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
   });
   powerChart.render();
 
@@ -517,7 +565,7 @@ function initCharts() {
     { seriesName:'Feed-in price', opposite:true, labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} }, title:{text:'Export price',style:{color:'#718096',fontSize:'10px'}} },
     { seriesName:'Feed-in forecast', show:false },
   ], {
-    stroke:{ curve:'straight', width:[2,2,2,2], dashArray:[0,0,5,5] },
+    stroke:{ curve:'straight', width:[2,2,2,2], dashArray:[0,0,0,0] },
     fill:{ type:['solid','solid','solid','solid'], opacity:[1,1,1,1] },
     tooltip:{
       x:{format:'HH:mm'},
@@ -525,6 +573,7 @@ function initCharts() {
       y:{ formatter:(value, { seriesIndex, w }) => priceSeriesValue(w.config.series[seriesIndex].name, value) },
     },
     legend:{ show:true, labels:{colors:'#4a5568'}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(priceSeriesValue) },
+    xaxis:{ type:'datetime', min:startOfTodayMs(), max:endOfTodayMs(), labels:{datetimeUTC:false, style:{fontSize:'10px',colors:'#718096'}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
     annotations:{ yaxis:[{y:0, borderColor:'#000', strokeDashArray:3, label:{text:'0',style:{fontSize:'10px'}}}] },
   });
   priceChart.render();
@@ -563,24 +612,62 @@ async function poll() {
 
 function refreshCharts() {
   if (!powerChart || !priceChart) return;
+  const batterySeries = histPow.map(x=>[x.t,x.battery]);
+  const minSocSeries = histPow.map(x=>[x.t,x.minSoc]);
+  const pvSeries = histPow.map(x=>[x.t,x.pv]);
+  const pvForecastSeries = histPow.map(x=>[x.t,x.pvForecast]);
+  const gridImportSeries = histPow.map(x=>[x.t,x.imp]);
+  const gridExportSeries = histPow.map(x=>[x.t,x.exp]);
+  const loadSeries = histPow.map(x=>[x.t,x.load]);
   powerChart.updateSeries([
-    {name:'Battery %',     data: histPow.map(x=>[x.t,x.battery])},
-    {name:'Min SoC %',     data: histPow.map(x=>[x.t,x.minSoc])},
-    {name:'PV Output kW',  data: histPow.map(x=>[x.t,x.pv])},
-    {name:'PV Forecast kW',data: histPow.map(x=>[x.t,x.pvForecast])},
-    {name:'Grid Import kW',data: histPow.map(x=>[x.t,x.imp])},
-    {name:'Grid Export kW',data: histPow.map(x=>[x.t,x.exp])},
-    {name:'Consumption kW',data: histPow.map(x=>[x.t,x.load])},
+    {name:'Battery %',     data: batterySeries},
+    {name:'Min SoC %',     data: minSocSeries},
+    {name:'PV Output kW',  data: pvSeries},
+    {name:'PV Forecast kW',data: pvForecastSeries},
+    {name:'Grid Import kW',data: gridImportSeries},
+    {name:'Grid Export kW',data: gridExportSeries},
+    {name:'Consumption kW',data: loadSeries},
   ]);
+  powerChart.updateOptions({
+    xaxis:{ min:startOfTodayMs(), max:endOfTodayMs() },
+    annotations:{
+      points:[
+        buildSeriesAnnotation(batterySeries, '#3182ce', v => compactPctLabel(v), -14),
+        buildSeriesAnnotation(minSocSeries, '#38b2ac', v => compactPctLabel(v), 14),
+        buildSeriesAnnotation(gridExportSeries, '#38a169', v => compactKwLabel(v), -14),
+        buildSeriesAnnotation(loadSeries, '#805ad5', v => compactKwLabel(v), 14),
+      ].filter(Boolean),
+    },
+  }, false, false);
   const importForecastSeries = parseCurvePoints(S?.price_forecast_curve);
   const feedinForecastSeries = parseCurvePoints(S?.feedin_forecast_curve);
+  const importPriceSeries = histPri.map(x=>[x.t,x.imp]);
+  const feedinPriceSeries = histPri.map(x=>[x.t,x.fit]);
+  const bounds = priceAxisBounds([importPriceSeries, feedinPriceSeries, importForecastSeries, feedinForecastSeries]);
   priceChart.updateSeries([
-    {name:'Import price',              data: histPri.map(x=>[x.t,x.imp])},
-    {name:'Feed-in price',             data: histPri.map(x=>[x.t,x.fit])},
+    {name:'Import price',              data: importPriceSeries},
+    {name:'Feed-in price',             data: feedinPriceSeries},
     {name:'Import forecast',           data: importForecastSeries},
     {name:'Feed-in forecast',          data: feedinForecastSeries},
   ]);
-  priceChart.updateOptions({ xaxis:{ min:startOfTodayMs(), max:endOfTodayMs() } }, false, false);
+  priceChart.updateOptions({
+    xaxis:{ min:startOfTodayMs(), max:endOfTodayMs() },
+    yaxis:[
+      { min:bounds.min, max:bounds.max, seriesName:'Import price', labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} }, title:{text:'Import price',style:{color:'#718096',fontSize:'10px'}} },
+      { seriesName:'Import forecast', show:false, min:bounds.min, max:bounds.max },
+      { min:bounds.min, max:bounds.max, seriesName:'Feed-in price', opposite:true, labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} }, title:{text:'Export price',style:{color:'#718096',fontSize:'10px'}} },
+      { seriesName:'Feed-in forecast', show:false, min:bounds.min, max:bounds.max },
+    ],
+    annotations:{
+      yaxis:[{y:0, borderColor:'#000', strokeDashArray:3, label:{text:'0',style:{fontSize:'10px'}}}],
+      points:[
+        buildSeriesAnnotation(importPriceSeries, '#e53e3e', v => compactPriceLabel(v), -14),
+        buildSeriesAnnotation(feedinPriceSeries, '#38a169', v => compactPriceLabel(v), 14),
+        buildSeriesAnnotation(importForecastSeries, '#f6ad55', v => compactPriceLabel(v), -14),
+        buildSeriesAnnotation(feedinForecastSeries, '#68d391', v => compactPriceLabel(v), 14),
+      ].filter(Boolean),
+    },
+  }, false, false);
 }
 
 // ── UI update ─────────────────────────────────────────────────────────────────
