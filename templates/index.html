@@ -150,6 +150,19 @@ select:focus,input:focus{border-color:#276749}
 .log-block .info{color:#68d391}
 .log-block .warn{color:#f6e05e}
 .log-block .err{color:#fc8181}
+.cfg-stack{display:grid;gap:12px}
+.cfg-section{background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
+.cfg-section summary{display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none;cursor:pointer;padding:14px 16px;font-size:13px;font-weight:700;color:#2d3748}
+.cfg-section summary::-webkit-details-marker{display:none}
+.cfg-section[open] summary{border-bottom:1px solid #e2e8f0;background:#f7fafc}
+.cfg-summary-note{font-size:11px;font-weight:500;color:#718096;margin-left:auto}
+.cfg-body{padding:14px 16px}
+.cfg-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px}
+.cfg-field{display:flex;flex-direction:column;gap:4px}
+.cfg-field label{font-size:11px;font-weight:600;color:#718096;text-transform:uppercase;letter-spacing:.05em}
+.cfg-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px}
+.cfg-msg{font-size:12px;color:#276749;min-height:16px}
+@media (max-width: 900px){.cfg-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -1125,77 +1138,258 @@ const _ENTITY_GROUPS = [
   ]},
 ];
 
+const _CONFIG_SECTIONS = [
+  { key:'control_notifications', title:'Control & Notifications', fields:[
+    ['notification_service', 'Notification Service', 'text'],
+    ['auto_enable_ha_control', 'Auto-enable HA Control', 'bool'],
+    ['notify_daily_summary', 'Send Daily Summary', 'bool'],
+    ['daily_summary_time', 'Daily Summary Time', 'text'],
+    ['notify_morning_summary', 'Send Morning Forecast', 'bool'],
+    ['morning_summary_time', 'Morning Forecast Time', 'text'],
+    ['automated_export_flag', 'Automated Export Flag', 'text'],
+  ]},
+  { key:'session_tracking', title:'Session Tracking & Notification State', fields:[
+    ['export_session_start', 'Export Session Start', 'text'],
+    ['import_session_start', 'Import Session Start', 'text'],
+    ['last_export_notification', 'Last Export Notification', 'text'],
+    ['last_import_notification', 'Last Import Notification', 'text'],
+    ['reason_text_helper', 'Reason Text Helper', 'text'],
+    ['min_soc_to_sunrise_helper', 'Min SoC to Sunrise Helper', 'text'],
+    ['sigenergy_mode_select', 'SigEnergy Mode Select', 'text'],
+  ]},
+  { key:'ems_limits', title:'EMS Control & Limits', fields:[
+    ['ha_control_switch', 'HA Control Switch', 'text'],
+    ['ems_mode_select', 'EMS Mode Select', 'text'],
+    ['grid_export_limit', 'Grid Export Limit', 'text'],
+    ['grid_import_limit', 'Grid Import Limit', 'text'],
+    ['pv_max_power_limit', 'PV Max Power Limit', 'text'],
+    ['ess_max_charging_limit', 'ESS Max Charging Limit', 'text'],
+    ['ess_max_discharging_limit', 'ESS Max Discharging Limit', 'text'],
+  ]},
+  { key:'sigenergy_sensors', title:'SigEnergy Sensors', fields:[
+    ['pv_power_sensor', 'PV Power Sensor', 'text'],
+    ['consumed_power_sensor', 'Consumed Power Sensor', 'text'],
+    ['battery_soc_sensor', 'Battery SoC Sensor', 'text'],
+    ['rated_capacity_sensor', 'Rated Capacity Sensor', 'text'],
+    ['available_discharge_sensor', 'Available Discharge Sensor', 'text'],
+    ['ess_rated_discharge_power_sensor', 'ESS Rated Discharge Power Sensor', 'text'],
+    ['ess_rated_charge_power_sensor', 'ESS Rated Charge Power Sensor', 'text'],
+    ['daily_export_energy', 'Daily Export Energy', 'text'],
+    ['daily_import_energy', 'Daily Import Energy', 'text'],
+    ['daily_load_energy', 'Daily Load Energy', 'text'],
+    ['daily_battery_charge_energy', 'Daily Battery Charge Energy', 'text'],
+    ['daily_battery_discharge_energy', 'Daily Battery Discharge Energy', 'text'],
+    ['daily_pv_energy', 'Daily PV Energy', 'text'],
+    ['sun_entity', 'Sun Entity', 'text'],
+  ]},
+  { key:'price_forecast_sensors', title:'Price & Forecast Sensors', fields:[
+    ['price_sensor', 'Import Price Sensor', 'text'],
+    ['feedin_sensor', 'Feed-in Price Sensor', 'text'],
+    ['feedin_forecast_sensor', 'Feed-in Forecast Sensor', 'text'],
+    ['demand_window_sensor', 'Demand Window Sensor', 'text'],
+    ['price_spike_sensor', 'Price Spike Sensor', 'text'],
+    ['price_forecast_sensor', 'Price Forecast Sensor', 'text'],
+    ['forecast_remaining_sensor', 'Forecast Remaining Sensor', 'text'],
+    ['forecast_today_sensor', 'Forecast Today Sensor', 'text'],
+    ['forecast_tomorrow_sensor', 'Forecast Tomorrow Sensor', 'text'],
+    ['solar_power_now_sensor', 'Solar Power Now Sensor', 'text'],
+    ['price_forecast_attribute', 'Price Forecast Attribute', 'text'],
+    ['price_forecast_value_key', 'Price Forecast Value Key', 'text'],
+    ['price_forecast_time_key', 'Price Forecast Time Key', 'text'],
+    ['feedin_forecast_attribute', 'Feed-in Forecast Attribute', 'text'],
+    ['feedin_forecast_value_key', 'Feed-in Forecast Value Key', 'text'],
+    ['price_multiplier', 'Price Multiplier', 'number', '0.1'],
+    ['productive_solar_threshold_kw', 'Productive Solar Threshold kW', 'number', '0.1'],
+    ['solcast_forecast_period_hours', 'Solcast Forecast Period Hours', 'number', '0.1'],
+  ]},
+  { key:'export_pricing_caps', title:'Export Pricing & Caps', fields:[
+    ['export_threshold_low', 'Export Threshold Low', 'number', '0.01'],
+    ['export_threshold_medium', 'Export Threshold Medium', 'number', '0.01'],
+    ['export_threshold_high', 'Export Threshold High', 'number', '0.01'],
+    ['export_limit_low', 'Export Limit Low', 'number', '0.1'],
+    ['export_limit_medium', 'Export Limit Medium', 'number', '0.1'],
+    ['export_limit_high', 'Export Limit High', 'number', '0.1'],
+    ['export_spike_threshold', 'Export Spike Threshold', 'number', '0.01'],
+    ['export_spike_min_soc', 'Export Spike Min SoC', 'number', '0.1'],
+    ['export_spike_full_power', 'Export Spike Full Power', 'bool'],
+    ['allow_low_medium_export_positive_fit', 'Allow Low/Medium Positive FIT', 'bool'],
+    ['allow_positive_fit_battery_discharging', 'Allow Positive FIT Battery Discharging', 'bool'],
+  ]},
+  { key:'import_pricing_caps', title:'Import Pricing & Caps', fields:[
+    ['import_threshold_low', 'Import Threshold Low', 'number', '0.01'],
+    ['import_threshold_medium', 'Import Threshold Medium', 'number', '0.01'],
+    ['import_threshold_high', 'Import Threshold High', 'number', '0.01'],
+    ['import_limit_low', 'Import Limit Low', 'number', '0.1'],
+    ['import_limit_medium', 'Import Limit Medium', 'number', '0.1'],
+    ['import_limit_high', 'Import Limit High', 'number', '0.1'],
+  ]},
+  { key:'soc_reserves', title:'SoC Floors & Reserves', fields:[
+    ['min_export_target_soc', 'Min Export Target SoC', 'number', '0.1'],
+    ['min_soc_floor', 'Min SoC Floor', 'number', '0.1'],
+    ['night_reserve_soc', 'Night Reserve SoC', 'number', '0.1'],
+    ['night_reserve_buffer', 'Night Reserve Buffer', 'number', '0.1'],
+    ['max_battery_soc', 'Max Battery SoC', 'number', '0.1'],
+    ['sunrise_reserve_soc', 'Sunrise Reserve SoC', 'number', '0.1'],
+    ['sunrise_safety_factor', 'Sunrise Safety Factor', 'number', '0.1'],
+    ['sunrise_buffer_percent', 'Sunrise Buffer Percent', 'number', '0.1'],
+    ['sunrise_export_relax_percent', 'Sunrise Export Relax Percent', 'number', '0.1'],
+  ]},
+  { key:'evening_boost', title:'Evening Boost Settings', fields:[
+    ['evening_boost_enabled', 'Evening Boost Enabled', 'bool'],
+    ['evening_aggressive_floor', 'Evening Aggressive Floor', 'number', '0.1'],
+  ]},
+  { key:'cheap_import_topup', title:'Cheap Import Top Up', fields:[
+    ['max_price_threshold', 'Max Price Threshold', 'number', '0.001'],
+    ['target_battery_charge', 'Target Battery Charge', 'number', '0.1'],
+    ['cap_total_import', 'Cap Total Import', 'number', '0.1'],
+    ['pv_max_power_normal', 'PV Max Power Normal', 'number', '0.1'],
+    ['daytime_topup_max_soc', 'Daytime Top Up Max SoC', 'number', '0.1'],
+  ]},
+  { key:'forecast_holdoff', title:'Forecast-based Holdoff', fields:[
+    ['standby_holdoff_enabled', 'Standby Holdoff Enabled', 'bool'],
+    ['slow_charge_holdoff', 'Slow Charge Holdoff', 'bool'],
+    ['slow_charge_limit_kw', 'Slow Charge Limit kW', 'number', '0.1'],
+    ['pv_forecast_holdoff_kwh', 'PV Forecast Holdoff kWh', 'number', '0.1'],
+    ['negative_price_forecast_lookahead_hours', 'Negative Price Forecast Lookahead Hours', 'number', '1'],
+    ['standby_holdoff_end_time', 'Standby Holdoff End Time', 'text'],
+  ]},
+  { key:'morning_slow_charge', title:'Morning Slow Charge', fields:[
+    ['morning_slow_charge_enabled', 'Morning Slow Charge Enabled', 'bool'],
+    ['morning_slow_charge_until', 'Morning Slow Charge Until', 'text'],
+    ['morning_slow_charge_rate_kw', 'Morning Slow Charge Rate kW', 'number', '0.1'],
+    ['morning_slow_charge_min_feedin_price', 'Morning Slow Charge Min Feed-in Price', 'number', '0.01'],
+    ['morning_slow_charge_base_load_kw', 'Morning Slow Charge Base Load kW', 'number', '0.1'],
+    ['morning_slow_charge_sunset_cutoff', 'Morning Slow Charge Sunset Cutoff', 'number', '0.1'],
+  ]},
+  { key:'morning_dump', title:'Morning Dump', fields:[
+    ['morning_dump_enabled', 'Morning Dump Enabled', 'bool'],
+    ['morning_dump_hours_before_sunrise', 'Hours Before Sunrise', 'number', '0.1'],
+  ]},
+  { key:'battery_full_safeguard', title:'Battery Full Safeguard', fields:[
+    ['battery_full_safeguard_enabled', 'Battery Full Safeguard Enabled', 'bool'],
+    ['battery_full_hours_before_sunset', 'Hours Before Sunset', 'number', '0.1'],
+    ['battery_full_forecast_multiplier', 'Forecast Multiplier', 'number', '0.1'],
+  ]},
+  { key:'solar_surplus_bypass', title:'Solar Surplus Bypass', fields:[
+    ['solar_surplus_bypass_enabled', 'Solar Surplus Bypass Enabled', 'bool'],
+    ['solar_surplus_start_multiplier', 'Start Multiplier', 'number', '0.1'],
+    ['solar_surplus_stop_multiplier', 'Stop Multiplier', 'number', '0.1'],
+    ['solar_surplus_min_pv_margin', 'Min PV Margin', 'number', '0.1'],
+  ]},
+  { key:'stability_hysteresis', title:'Stability & Hysteresis', fields:[
+    ['soc_hysteresis', 'SoC Hysteresis', 'number', '0.1'],
+    ['min_change_threshold', 'Min Change Threshold', 'number', '0.1'],
+    ['min_grid_transfer_kw', 'Min Grid Transfer kW', 'number', '0.1'],
+    ['export_hysteresis_percent', 'Export Hysteresis Percent', 'number', '0.1'],
+    ['price_hysteresis', 'Price Hysteresis', 'number', '0.001'],
+  ]},
+  { key:'forecast_safety', title:'Forecast Safety', fields:[
+    ['forecast_safety_charging', 'Forecast Safety Charging', 'number', '0.1'],
+    ['forecast_safety_export', 'Forecast Safety Export', 'number', '0.1'],
+  ]},
+  { key:'export_scheduling', title:'Export Scheduling', fields:[
+    ['export_soc_span_day', 'Export SoC Span Day', 'number', '0.1'],
+    ['export_discharge_window_hours', 'Export Discharge Window Hours', 'number', '0.1'],
+    ['sun_elevation_evening_threshold', 'Sun Elevation Evening Threshold', 'number', '0.1'],
+    ['sunset_export_grace_hours', 'Sunset Export Grace Hours', 'number', '0.1'],
+    ['evening_mode_hours_before_sunset', 'Evening Mode Hours Before Sunset', 'number', '0.1'],
+    ['export_guard_relax_soc', 'Export Guard Relax SoC', 'number', '0.1'],
+  ]},
+  { key:'manual_mode_labels', title:'Manual Mode Labels & Values', fields:[
+    ['automated_option', 'Automated Option', 'text'],
+    ['full_export_option', 'Full Export Option', 'text'],
+    ['full_import_option', 'Full Import Option', 'text'],
+    ['full_import_pv_option', 'Full Import + PV Option', 'text'],
+    ['block_flow_option', 'Block Flow Option', 'text'],
+    ['manual_option', 'Manual Option', 'text'],
+    ['block_flow_limit_value', 'Block Flow Limit Value', 'number', '0.01'],
+    ['ess_charge_limit_value', 'ESS Charge Limit Value', 'number', '0.1'],
+    ['ess_discharge_limit_value', 'ESS Discharge Limit Value', 'number', '0.1'],
+    ['export_limit_value', 'Export Limit Value', 'number', '0.1'],
+    ['import_limit_value', 'Import Limit Value', 'number', '0.1'],
+    ['pv_max_power_value', 'PV Max Power Value', 'number', '0.1'],
+  ]},
+  { key:'service_runtime', title:'Service & Runtime', fields:[
+    ['ha_url', 'Home Assistant URL', 'text'],
+    ['poll_interval_seconds', 'Poll Interval Seconds', 'number', '1'],
+    ['allow_loopback_without_api_key', 'Allow Loopback Without API Key', 'bool'],
+    ['require_api_key_for_all_mutations', 'Require API Key For All Mutations', 'bool'],
+    ['require_api_key_for_config_read', 'Require API Key For Config Read', 'bool'],
+    ['ess_limit_fallback_kw', 'ESS Limit Fallback kW', 'number', '0.1'],
+    ['cors_allowed_origins', 'CORS Allowed Origins', 'text'],
+  ]},
+];
+
+function cfgFieldId(sectionKey, key) { return `cfg_${sectionKey}_${key}`; }
+
+function renderConfigField(sectionKey, cfg, field) {
+  const [key, label, type, step] = field;
+  const value = cfg[key];
+  let input = '';
+  if (type === 'bool') {
+    input = `<select id="${cfgFieldId(sectionKey, key)}"><option value="true" ${value ? 'selected' : ''}>True</option><option value="false" ${!value ? 'selected' : ''}>False</option></select>`;
+  } else if (type === 'number') {
+    input = `<input type="number" id="${cfgFieldId(sectionKey, key)}" step="${step || '0.1'}" value="${escH(String(value ?? ''))}">`;
+  } else {
+    input = `<input type="text" id="${cfgFieldId(sectionKey, key)}" value="${escH(String(value ?? ''))}">`;
+  }
+  return `<div class="cfg-field"><label for="${cfgFieldId(sectionKey, key)}">${label}</label>${input}</div>`;
+}
+
+function renderConfigSection(cfg, section, initiallyOpen=false) {
+  const fields = section.fields.map(field => renderConfigField(section.key, cfg, field)).join('');
+  return `<details class="cfg-section" ${initiallyOpen ? 'open' : ''}>
+    <summary><span>${section.title}</span><span class="cfg-summary-note">${section.fields.length} settings</span></summary>
+    <div class="cfg-body">
+      <div class="cfg-grid">${fields}</div>
+      <div class="cfg-actions">
+        <div class="cfg-msg" id="msg_${section.key}"></div>
+        <button class="hbtn primary" onclick="applyConfigSection(this, '${section.key}')">Save ${section.title}</button>
+      </div>
+    </div>
+  </details>`;
+}
+
+function readConfigFieldValue(sectionKey, field) {
+  const [key, , type] = field;
+  const el = document.getElementById(cfgFieldId(sectionKey, key));
+  if (!el) return { key, value: null };
+  if (type === 'bool') return { key, value: el.value === 'true' };
+  if (type === 'number') return { key, value: Number(el.value) };
+  return { key, value: el.value ?? '' };
+}
+
 async function loadConfig() {
   const el = document.getElementById('cfgContent');
   try {
     const cfg = await getJson('api/config');
     uiCfg = cfg;
     syncThresholdInputsFromConfig(cfg);
-
-    // Entity editor
-    let entityHtml = `<div class="card" style="margin-bottom:14px">
-      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
-        Entity IDs
-        <button class="hbtn primary" id="btnSaveEntities" onclick="applyEntities(this)">Save Entities</button>
-      </div>
-      <div id="entityMsg" style="font-size:12px;color:#276749;margin-bottom:6px;display:none"></div>
-      <div style="display:grid;gap:14px">`;
-    for (const group of _ENTITY_GROUPS) {
-      entityHtml += `<div><div class="flabel">${group.title}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px">`;
-      for (const [key, label] of group.keys) {
-        entityHtml += `<div>
-          <div style="font-size:11px;color:#718096;margin-bottom:2px">${label}</div>
-          <input type="text" id="ent_${key}" value="${escH(String(cfg[key] ?? ''))}" style="font-size:12px">
-        </div>`;
-      }
-      entityHtml += '</div></div>';
-    }
-    entityHtml += '</div></div>';
-
-    // Other config summary (read-only)
-    const summary = {
-      home_assistant: { url: cfg.ha_url, token: '****' },
-      service: { poll_seconds: cfg.poll_interval_seconds, notification_service: cfg.notification_service,
-                 notify_daily_summary: cfg.notify_daily_summary, daily_summary_time: cfg.daily_summary_time,
-                 notify_morning_summary: cfg.notify_morning_summary, morning_summary_time: cfg.morning_summary_time },
-      thresholds: { export_threshold_low: cfg.export_threshold_low, export_threshold_medium: cfg.export_threshold_medium,
-                    export_threshold_high: cfg.export_threshold_high, export_limit_low: cfg.export_limit_low,
-                    export_limit_medium: cfg.export_limit_medium, export_limit_high: cfg.export_limit_high,
-                    import_threshold_low: cfg.import_threshold_low, import_threshold_medium: cfg.import_threshold_medium,
-                    import_threshold_high: cfg.import_threshold_high, import_limit_low: cfg.import_limit_low,
-                    import_limit_medium: cfg.import_limit_medium, import_limit_high: cfg.import_limit_high },
-      soc_reserves: { min_export_target_soc: cfg.min_export_target_soc, min_soc_floor: cfg.min_soc_floor,
-                      night_reserve_soc: cfg.night_reserve_soc, night_reserve_buffer: cfg.night_reserve_buffer,
-                      sunrise_reserve_soc: cfg.sunrise_reserve_soc, sunrise_safety_factor: cfg.sunrise_safety_factor },
-    };
-    const summaryHtml = `<div class="card"><div class="card-title">Other Config</div><pre class="code-block">${JSON.stringify(summary, null, 2)}</pre></div>`;
-
-    el.innerHTML = entityHtml + summaryHtml;
+    const sectionsHtml = _CONFIG_SECTIONS.map((section, index) => renderConfigSection(cfg, section, index === 0)).join('');
+    el.innerHTML = `<div class="cfg-stack">${sectionsHtml}</div>`;
     updateScenarioComparison();
     updateThresholdPreview();
   } catch(e){ el.innerHTML='<div style="color:#e53e3e">Failed.</div>'; }
 }
 
-async function applyEntities(btn) {
+async function applyConfigSection(btn, sectionKey) {
   btn.disabled = true;
+  const originalText = btn.textContent;
   btn.textContent = 'Saving…';
-  const msg = document.getElementById('entityMsg');
-  const allKeys = _ENTITY_GROUPS.flatMap(g => g.keys.map(([k]) => k));
+  const section = _CONFIG_SECTIONS.find(s => s.key === sectionKey);
+  const msg = document.getElementById(`msg_${sectionKey}`);
   try {
-    const updates = allKeys
-      .map(key => ({ key, value: document.getElementById('ent_' + key)?.value ?? '' }))
-      .filter(u => u.value !== '');
+    const updates = section.fields.map(field => readConfigFieldValue(sectionKey, field));
     await post('api/config/batch', { updates, persist: true });
     btn.textContent = 'Saved ✓';
-    if (msg) { msg.textContent = 'Entity IDs saved.'; msg.style.color = '#276749'; msg.style.display = ''; }
+    if (msg) { msg.textContent = 'Saved.'; msg.style.color = '#276749'; }
   } catch(e) {
     btn.textContent = 'Error';
     btn.title = e.message || String(e);
-    console.error('applyEntities:', e.message);
-    if (msg) { msg.textContent = 'Save failed: ' + (e.message || String(e)); msg.style.color = '#e53e3e'; msg.style.display = ''; }
+    console.error('applyConfigSection:', e.message);
+    if (msg) { msg.textContent = 'Save failed: ' + (e.message || String(e)); msg.style.color = '#e53e3e'; }
   }
-  setTimeout(() => { btn.textContent = 'Save Entities'; btn.title = ''; btn.disabled = false; if (msg) msg.style.display = 'none'; }, 3000);
+  setTimeout(() => { btn.textContent = originalText; btn.title = ''; btn.disabled = false; if (msg) msg.textContent = ''; }, 3000);
 }
 
 // ── Logs tab ──────────────────────────────────────────────────────────────────
