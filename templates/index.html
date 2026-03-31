@@ -966,20 +966,23 @@ function clearSim() {
 async function loadEntities() {
   const el = document.getElementById('entContent');
   try {
-    const r = await fetch(addonApiUrl('api/status'), { headers: buildAuthHeaders() }); const s = await r.json();
+    const [s, cfg] = await Promise.all([
+      getJson('api/status'),
+      getJson('api/config'),
+    ]);
     const rows = [
-      ['battery_soc',       'sensor.sigen_plant_battery_state_of_charge',      s.battery_soc],
-      ['pv_power',          'sensor.sigen_plant_pv_power',                     s.pv_kw],
-      ['load_power',        'sensor.sigen_plant_consumed_power',                s.load_kw],
-      ['price',             'sensor.amber_general_price',                       s.current_price],
-      ['feedin',            'sensor.amber_feed_in_price',                       s.feedin_price],
-      ['mode',              'select.sigen_plant_remote_ems_control_mode',       s.ems_mode],
-      ['grid_export_limit', 'number.sigen_plant_grid_export_limitation',        s.export_limit],
-      ['grid_import_limit', 'number.sigen_plant_grid_import_limitation',        s.import_limit],
-      ['pv_max_power_limit','number.sigen_plant_pv_max_power_limit',            s.pv_max_power_limit],
-      ['forecast_today',    'sensor.solcast_pv_forecast_forecast_today',        s.forecast_today],
-      ['forecast_tomorrow', 'sensor.solcast_pv_forecast_forecast_tomorrow',     s.forecast_tomorrow],
-      ['forecast_remaining','sensor.solcast_pv_forecast_forecast_remaining_today', s.forecast_remaining],
+      ['battery_soc',       cfg.battery_soc_sensor,          s.battery_soc],
+      ['pv_power',          cfg.pv_power_sensor,             s.pv_kw],
+      ['load_power',        cfg.consumed_power_sensor,       s.load_kw],
+      ['price',             cfg.price_sensor,                s.current_price],
+      ['feedin',            cfg.feedin_sensor,               s.feedin_price],
+      ['mode',              cfg.ems_mode_select,             s.ems_mode],
+      ['grid_export_limit', cfg.grid_export_limit,           s.export_limit],
+      ['grid_import_limit', cfg.grid_import_limit,           s.import_limit],
+      ['pv_max_power_limit',cfg.pv_max_power_limit,          s.pv_max_power_limit],
+      ['forecast_today',    cfg.forecast_today_sensor,       s.forecast_today],
+      ['forecast_tomorrow', cfg.forecast_tomorrow_sensor,    s.forecast_tomorrow],
+      ['forecast_remaining',cfg.forecast_remaining_sensor,   s.forecast_remaining],
     ];
     el.innerHTML = `
       <div class="card" style="padding:0;overflow:hidden">
