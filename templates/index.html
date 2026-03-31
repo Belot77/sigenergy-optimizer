@@ -787,6 +787,14 @@ function apiUrl(path) {
   return String(path || '').replace(/^\/+/, '');
 }
 
+const _nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init) => {
+  if (typeof input === 'string' && input.startsWith('/api/')) {
+    return _nativeFetch(input.replace(/^\/+/, ''), init);
+  }
+  return _nativeFetch(input, init);
+};
+
 
 async function getJson(url) {
   const r = await fetch(apiUrl(url), { headers: buildAuthHeaders() });
