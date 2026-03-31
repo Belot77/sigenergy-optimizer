@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<base href="{{ ingress_path }}/">
 <title>SigEnergy Optimizer Control</title>
 <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.2/dist/apexcharts.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -782,28 +783,10 @@ function buildAuthHeaders(base = {}) {
   return headers;
 }
 
-const INGRESS_PATH = {{ request.headers.get('X-Ingress-Path', '') | tojson }};
-
 function apiUrl(path) {
-  const clean = String(path || '').replace(/^\/+/, '');
-  if (INGRESS_PATH) {
-    const prefix = String(INGRESS_PATH).replace(/\/+$/, '');
-    return `${prefix}/${clean}`;
-  }
-  const base = window.location.href.endsWith('/') ? window.location.href : window.location.href + '/';
-  return new URL(clean, base).toString();
+  return String(path || '').replace(/^\/+/, '');
 }
 
-const _origFetch = window.fetch.bind(window);
-window.fetch = (input, init) => {
-  let target = input;
-  if (typeof input === 'string') {
-    if (input.startsWith('/api/')) target = apiUrl(input);
-  } else if (input && typeof input.url === 'string' && input.url.startsWith('/api/')) {
-    target = apiUrl(input.url);
-  }
-  return _origFetch(target, init);
-};
 
 async function getJson(url) {
   const r = await fetch(apiUrl(url), { headers: buildAuthHeaders() });
