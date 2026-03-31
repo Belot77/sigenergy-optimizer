@@ -1,6 +1,6 @@
 build_from:
-  amd64: ghcr.io/home-assistant/amd64-base-python:3.12
-  aarch64: ghcr.io/home-assistant/aarch64-base-python:3.12
+  amd64: docker.io/library/python:3.12-alpine
+  aarch64: docker.io/library/python:3.12-alpine
 labels:
   io.hass.name: "SigEnergy Optimizer"
   io.hass.description: "SigEnergy optimizer with dashboard and HA control"
