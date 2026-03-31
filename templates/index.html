@@ -599,7 +599,7 @@ async function poll() {
     S = await r.json();
     const now = Date.now();
     histPow.push({ t:now, battery:S.battery_soc, pv:S.pv_kw, load:S.load_kw,
-                   exp:S.export_limit, imp:S.import_limit,
+                   exp:S.grid_export_power_kw, imp:S.grid_import_power_kw,
                    minSoc:S.min_soc_to_sunrise, pvForecast:S.solar_power_now_kw });
     histPri.push({ t:now, imp:S.current_price, fit:S.feedin_price });
     const cut = now - 86400000;
@@ -1186,6 +1186,8 @@ const _ENTITY_GROUPS = [
   { title: 'SigEnergy Sensors', keys: [
     ['pv_power_sensor',                   'PV Power'],
     ['consumed_power_sensor',             'Consumed Power'],
+    ['grid_import_power_sensor',          'Grid Import Power'],
+    ['grid_export_power_sensor',          'Grid Export Power'],
     ['battery_soc_sensor',                'Battery SoC'],
     ['rated_capacity_sensor',             'Rated Capacity'],
     ['available_discharge_sensor',        'Available Discharge'],
@@ -1256,6 +1258,8 @@ const _CONFIG_SECTIONS = [
   { key:'sigenergy_sensors', title:'SigEnergy Sensors', fields:[
     ['pv_power_sensor', 'PV Power Sensor', 'text'],
     ['consumed_power_sensor', 'Consumed Power Sensor', 'text'],
+    ['grid_import_power_sensor', 'Grid Import Power Sensor', 'text'],
+    ['grid_export_power_sensor', 'Grid Export Power Sensor', 'text'],
     ['battery_soc_sensor', 'Battery SoC Sensor', 'text'],
     ['rated_capacity_sensor', 'Rated Capacity Sensor', 'text'],
     ['available_discharge_sensor', 'Available Discharge Sensor', 'text'],

@@ -327,8 +327,8 @@ class SigEnergyOptimizer:
         cutoff = now_ms - 86_400_000
         self._chart_history_power.append({
             "t": now_ms, "battery": s.battery_soc, "pv": s.pv_kw,
-            "load": s.load_kw, "exp": s.current_export_limit,
-            "imp": s.current_import_limit, "minSoc": d.min_soc_to_sunrise,
+            "load": s.load_kw, "exp": s.grid_export_power_kw,
+            "imp": s.grid_import_power_kw, "minSoc": d.min_soc_to_sunrise,
             "pvForecast": s.solar_power_now_kw,
         })
         self._chart_history_price.append({"t": now_ms, "imp": s.current_price, "fit": s.feedin_price})
@@ -361,6 +361,10 @@ class SigEnergyOptimizer:
             cfg.last_export_notification, cfg.last_import_notification,
             cfg.sigenergy_mode_select,
         ]
+        if cfg.grid_import_power_sensor:
+            entity_ids.append(cfg.grid_import_power_sensor)
+        if cfg.grid_export_power_sensor:
+            entity_ids.append(cfg.grid_export_power_sensor)
         bulk = await self.ha.bulk_states(entity_ids)
 
         def _fv(eid: str, default: float = 0.0) -> float:
@@ -394,6 +398,12 @@ class SigEnergyOptimizer:
 
         load_raw = _fv(cfg.consumed_power_sensor)
         s.load_kw = load_raw / 1000 if load_raw > 100 else load_raw
+        if cfg.grid_import_power_sensor:
+            grid_import_raw = _fv(cfg.grid_import_power_sensor)
+            s.grid_import_power_kw = grid_import_raw / 1000 if grid_import_raw > 100 else grid_import_raw
+        if cfg.grid_export_power_sensor:
+            grid_export_raw = _fv(cfg.grid_export_power_sensor)
+            s.grid_export_power_kw = grid_export_raw / 1000 if grid_export_raw > 100 else grid_export_raw
 
         s.battery_soc = max(0.0, min(100.0, _fv(cfg.battery_soc_sensor)))
 

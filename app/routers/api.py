@@ -320,12 +320,14 @@ async def _history_backfill(request: Request) -> dict[str, Any]:
         cfg.min_soc_to_sunrise_helper,
         cfg.pv_power_sensor,
         cfg.solar_power_now_sensor,
-        cfg.grid_import_limit,
-        cfg.grid_export_limit,
         cfg.consumed_power_sensor,
         cfg.price_sensor,
         cfg.feedin_sensor,
     ]
+    if cfg.grid_import_power_sensor:
+        entity_ids.append(cfg.grid_import_power_sensor)
+    if cfg.grid_export_power_sensor:
+        entity_ids.append(cfg.grid_export_power_sensor)
     history = await ha.get_history_period(start_time=start, end_time=end, entity_ids=entity_ids)
     by_entity = _parse_history_groups(history)
 
@@ -333,8 +335,8 @@ async def _history_backfill(request: Request) -> dict[str, Any]:
     min_soc_series = _build_series(by_entity.get(cfg.min_soc_to_sunrise_helper, []), _history_float)
     pv_series = _build_series(by_entity.get(cfg.pv_power_sensor, []), _history_kw)
     pv_forecast_series = _build_series(by_entity.get(cfg.solar_power_now_sensor, []), lambda item: _history_kw(item, solar_now=True))
-    grid_import_series = _build_series(by_entity.get(cfg.grid_import_limit, []), _history_float)
-    grid_export_series = _build_series(by_entity.get(cfg.grid_export_limit, []), _history_float)
+    grid_import_series = _build_series(by_entity.get(cfg.grid_import_power_sensor, []), _history_kw) if cfg.grid_import_power_sensor else []
+    grid_export_series = _build_series(by_entity.get(cfg.grid_export_power_sensor, []), _history_kw) if cfg.grid_export_power_sensor else []
     load_series = _build_series(by_entity.get(cfg.consumed_power_sensor, []), _history_kw)
     import_price_series = _build_series(by_entity.get(cfg.price_sensor, []), _history_float)
     feedin_price_series = _build_series(by_entity.get(cfg.feedin_sensor, []), _history_float)
@@ -425,6 +427,8 @@ async def get_status(request: Request) -> dict[str, Any]:
         "battery_soc": s.battery_soc if s else None,
         "pv_kw": s.pv_kw if s else None,
         "load_kw": s.load_kw if s else None,
+        "grid_import_power_kw": s.grid_import_power_kw if s else None,
+        "grid_export_power_kw": s.grid_export_power_kw if s else None,
         "feedin_price": s.feedin_price if s else None,
         "current_price": s.current_price if s else None,
         "feedin_price_cents": s.feedin_price_cents if s else None,
