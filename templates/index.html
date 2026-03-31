@@ -794,6 +794,17 @@ function apiUrl(path) {
   return new URL(clean, base).toString();
 }
 
+const _origFetch = window.fetch.bind(window);
+window.fetch = (input, init) => {
+  let target = input;
+  if (typeof input === 'string') {
+    if (input.startsWith('/api/')) target = apiUrl(input);
+  } else if (input && typeof input.url === 'string' && input.url.startsWith('/api/')) {
+    target = apiUrl(input.url);
+  }
+  return _origFetch(target, init);
+};
+
 async function getJson(url) {
   const r = await fetch(apiUrl(url), { headers: buildAuthHeaders() });
   if (!r.ok) {
