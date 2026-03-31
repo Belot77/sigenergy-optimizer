@@ -474,7 +474,9 @@ class SigEnergyOptimizer:
         s.forecast_tomorrow_kwh = _fv(cfg.forecast_tomorrow_sensor)
 
         solar_raw = _fv(cfg.solar_power_now_sensor)
-        s.solar_power_now_kw = solar_raw / 1000 if solar_raw >= 1000 else solar_raw
+        # Solcast power_now can return Watts (e.g. 554 W) or kW (e.g. 0.554 kW).
+        # Values > 100 are assumed to be in Watts and converted; <= 100 assumed already kW.
+        s.solar_power_now_kw = solar_raw / 1000 if solar_raw > 100 else solar_raw
 
         s.solcast_detailed = _attr(cfg.forecast_today_sensor, "detailedForecast") or []
         s.price_forecast_entries = _attr(cfg.price_forecast_sensor, cfg.price_forecast_attribute) or []

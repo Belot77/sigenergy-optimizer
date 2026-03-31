@@ -434,8 +434,8 @@ function initCharts() {
     {name:'Feed-in price',           data:[]},
     {name:'PV forecast (kWh interval)', data:[]},
   ], ['#e53e3e','#38a169','#ed8936'], [
-    { labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} } },
-    { show:false },
+    { seriesName:'Import price', labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} } },
+    { seriesName:'Import price', show:false },
     { opposite:true, labels:{ formatter: v => v!=null ? v.toFixed(1)+'kWh' : '', style:{fontSize:'10px',colors:'#718096'} } },
   ], {
     stroke:{ curve:'smooth', width:[2,2,0] },
