@@ -405,6 +405,64 @@ function mkChart(el, series, colors, yaxis, extra) {
   });
 }
 
+function fmtPct(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? '—' : Number(v).toFixed(d)+'%'; }
+function fmtKwLabel(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? '—' : Number(v).toFixed(d)+'kW'; }
+function fmtKwhLabel(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? '—' : Number(v).toFixed(d)+'kWh'; }
+function fmtPriceLabel(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? '—' : (Number(v)*100).toFixed(d)+'c/kWh'; }
+
+function lastSeriesValue(opts) {
+  const seriesCfg = opts?.w?.config?.series?.[opts.seriesIndex]?.data || [];
+  for (let i = seriesCfg.length - 1; i >= 0; i--) {
+    const point = seriesCfg[i];
+    const value = Array.isArray(point) ? point[1] : point?.y;
+    if (Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+}
+
+function powerSeriesValue(name, value) {
+  if (name === 'Battery %' || name === 'Min SoC %') return fmtPct(value, 1);
+  return fmtKwLabel(value, 1);
+}
+
+function priceSeriesValue(name, value) {
+  return fmtPriceLabel(value, 1);
+}
+
+function legendFormatterFor(valueFormatter) {
+  return function(seriesName, opts) {
+    const value = lastSeriesValue(opts);
+    const rendered = valueFormatter(seriesName, value);
+    return rendered === '—' ? seriesName : `${seriesName}: ${rendered}`;
+  };
+}
+
+function startOfTodayMs() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return now.getTime();
+}
+
+function endOfTodayMs() {
+  return startOfTodayMs() + 86400000;
+}
+
+function parseCurvePoints(points) {
+  if (!Array.isArray(points)) return [];
+  const todayStart = startOfTodayMs();
+  const todayEnd = endOfTodayMs();
+  return points
+    .map(p => {
+      const t = Date.parse(p?.t);
+      const value = Number(p?.value);
+      if (!Number.isFinite(t) || !Number.isFinite(value)) return null;
+      return [t, value];
+    })
+    .filter(Boolean)
+    .filter(([t]) => t >= todayStart && t <= todayEnd)
+    .sort((a, b) => a[0] - b[0]);
+}
+
 function initCharts() {
   const powY = [
     { seriesName:'Battery %',    min:0, max:100, opposite:true,  labels:{formatter: v => v!=null ? Math.round(v)+'%'  : '', style:{fontSize:'10px',colors:'#718096'}}, title:{text:'SoC %',style:{color:'#718096',fontSize:'10px'}} },
@@ -425,21 +483,35 @@ function initCharts() {
     {name:'Consumption kW',data:[]},
   ], ['#3182ce','#38b2ac','#dd6b20','#ed8936','#e53e3e','#38a169','#805ad5'], powY, {
     fill:{ type:['gradient','solid','gradient','gradient','solid','solid','solid'],
-           opacity:[0.25,0.9,0.2,0.12,0.6,0.5,0.45] }
+           opacity:[0.25,0.9,0.2,0.12,0.6,0.5,0.45] },
+    tooltip:{
+      x:{format:'HH:mm'},
+      shared:true,
+      y:{ formatter:(value, { seriesIndex, w }) => powerSeriesValue(w.config.series[seriesIndex].name, value) },
+    },
+    legend:{ show:true, labels:{colors:'#4a5568'}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(powerSeriesValue) },
   });
   powerChart.render();
 
   priceChart = mkChart('chartPrice', [
     {name:'Import price',            data:[]},
     {name:'Feed-in price',           data:[]},
-    {name:'PV forecast (kWh interval)', data:[]},
-  ], ['#e53e3e','#38a169','#ed8936'], [
-    { seriesName:'Import price', labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} } },
-    { seriesName:'Import price', show:false },
-    { opposite:true, labels:{ formatter: v => v!=null ? v.toFixed(1)+'kWh' : '', style:{fontSize:'10px',colors:'#718096'} } },
+    {name:'Import forecast',         data:[]},
+    {name:'Feed-in forecast',        data:[]},
+  ], ['#e53e3e','#38a169','#f6ad55','#68d391'], [
+    { seriesName:'Import price', labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} }, title:{text:'Import price',style:{color:'#718096',fontSize:'10px'}} },
+    { seriesName:'Import forecast', show:false },
+    { seriesName:'Feed-in price', opposite:true, labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} }, title:{text:'Export price',style:{color:'#718096',fontSize:'10px'}} },
+    { seriesName:'Feed-in forecast', show:false },
   ], {
-    stroke:{ curve:'smooth', width:[2,2,0] },
-    fill:{ type:['solid','solid','gradient'], opacity:[1,1,0.15] },
+    stroke:{ curve:'straight', width:[2,2,2,2], dashArray:[0,0,5,5] },
+    fill:{ type:['solid','solid','solid','solid'], opacity:[1,1,1,1] },
+    tooltip:{
+      x:{format:'HH:mm'},
+      shared:true,
+      y:{ formatter:(value, { seriesIndex, w }) => priceSeriesValue(w.config.series[seriesIndex].name, value) },
+    },
+    legend:{ show:true, labels:{colors:'#4a5568'}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(priceSeriesValue) },
     annotations:{ yaxis:[{y:0, borderColor:'#000', strokeDashArray:3, label:{text:'0',style:{fontSize:'10px'}}}] },
   });
   priceChart.render();
@@ -487,11 +559,15 @@ function refreshCharts() {
     {name:'Grid Export kW',data: histPow.map(x=>[x.t,x.exp])},
     {name:'Consumption kW',data: histPow.map(x=>[x.t,x.load])},
   ]);
+  const importForecastSeries = parseCurvePoints(S?.price_forecast_curve);
+  const feedinForecastSeries = parseCurvePoints(S?.feedin_forecast_curve);
   priceChart.updateSeries([
     {name:'Import price',              data: histPri.map(x=>[x.t,x.imp])},
     {name:'Feed-in price',             data: histPri.map(x=>[x.t,x.fit])},
-    {name:'PV forecast (kWh interval)',data: []},
+    {name:'Import forecast',           data: importForecastSeries},
+    {name:'Feed-in forecast',          data: feedinForecastSeries},
   ]);
+  priceChart.updateOptions({ xaxis:{ min:startOfTodayMs(), max:endOfTodayMs() } }, false, false);
 }
 
 // ── UI update ─────────────────────────────────────────────────────────────────

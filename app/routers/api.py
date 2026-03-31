@@ -170,10 +170,31 @@ def _persist_config_keys_to_env(cfg: Any, keys: list[str]) -> list[str]:
     return sorted(updates.keys())
 
 
+def _serialize_forecast_curve(entries: Any, time_key: str, value_key: str) -> list[dict[str, Any]]:
+    curve: list[dict[str, Any]] = []
+    if not isinstance(entries, list):
+        return curve
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        ts = entry.get(time_key)
+        if not ts:
+            continue
+        try:
+            value = float(entry.get(value_key, 0))
+        except Exception:
+            continue
+        curve.append({"t": ts, "value": value})
+
+    return curve
+
+
 @router.get("/status")
 async def get_status(request: Request) -> dict[str, Any]:
     opt = _opt(request)
     ha = _ha(request)
+    cfg = opt.cfg
     connected = await ha.ping()
     s = opt.last_state
     d = opt.last_decision
@@ -213,6 +234,16 @@ async def get_status(request: Request) -> dict[str, Any]:
         "forecast_remaining": s.forecast_remaining_kwh if s else None,
         "forecast_today": s.forecast_today_kwh if s else None,
         "forecast_tomorrow": s.forecast_tomorrow_kwh if s else None,
+        "price_forecast_curve": _serialize_forecast_curve(
+            s.price_forecast_entries if s else [],
+            cfg.price_forecast_time_key,
+            cfg.price_forecast_value_key,
+        ),
+        "feedin_forecast_curve": _serialize_forecast_curve(
+            s.feedin_forecast_entries if s else [],
+            cfg.price_forecast_time_key,
+            cfg.feedin_forecast_value_key,
+        ),
         "demand_window": s.demand_window_active if s else None,
         "price_spike": s.price_spike_active if s else None,
         "ha_control_enabled": s.ha_control_enabled if s else None,
