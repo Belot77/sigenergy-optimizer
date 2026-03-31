@@ -5,10 +5,13 @@ WORKDIR /app
 
 RUN apk add --no-cache bash ca-certificates git
 
+COPY buildstamp.txt /tmp/buildstamp.txt
+
 ARG REPO_URL="https://github.com/Belot77/sigenergy-optimizer.git"
 ARG REPO_REF="main"
 
 RUN git clone --depth 1 --branch "${REPO_REF}" "${REPO_URL}" /src \
+    && echo "Building source stamp: $(cat /tmp/buildstamp.txt)" \
     && sed -i 's/^uvicorn\[standard\]/uvicorn/' /src/requirements.txt \
     && pip3 install --no-cache-dir -r /src/requirements.txt \
     && cp -r /src/app /src/templates /src/static /app/ \
