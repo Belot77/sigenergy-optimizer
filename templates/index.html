@@ -493,7 +493,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           <div class="chart-hdr">
             <div class="chart-title-wrap">
               <div class="chart-title">Today Power &amp; SoC</div>
-              <div class="chart-sub">Battery, reserve floor, PV output and grid flow in one view. Solid lines show live history, dashed lines show forecast or simulated projection.</div>
+              <div class="chart-sub">Battery, reserve floor, PV output and grid flow in one view. Solid lines show measured history up to now. Dashed lines appear only for explicit forecast or simulation data.</div>
             </div>
             <div class="chart-now" id="nowPower">—</div>
           </div>
@@ -514,7 +514,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           <div class="chart-hdr">
             <div class="chart-title-wrap">
               <div class="chart-title">Today Grid Flow &amp; Solar Window</div>
-              <div class="chart-sub">Grid import/export with forecast overlay to quickly spot import spikes and export opportunities.</div>
+              <div class="chart-sub">Grid import/export through the day window. Future flat carry-forward lines are suppressed so only real measured data is shown.</div>
             </div>
             <div class="chart-now" id="nowFlow">—</div>
           </div>
@@ -522,7 +522,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
             <div id="chartFlow" style="height:220px"></div>
           </div>
           <div class="chart-foot">
-            <div class="chart-note">Solid lines show measured flow. Dashed line shows forecast context.</div>
+            <div class="chart-note">Solid lines show measured flow only. Dashed lines are shown only when explicit forecast data is available.</div>
             <div style="display:flex;gap:12px;flex-wrap:wrap">
               <span class="chart-key">Measured</span>
               <span class="chart-key dashed">Forecast</span>
@@ -741,6 +741,22 @@ function fmtKwLabel(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? '
 function fmtKwhLabel(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? '—' : Number(v).toFixed(d)+'kWh'; }
 function fmtPriceLabel(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? '—' : (Number(v)*100).toFixed(d)+'c/kWh'; }
 
+function fmtKwAxisLabel(v) {
+  if (v == null || !Number.isFinite(Number(v))) return '';
+  const n = Number(v);
+  const abs = Math.abs(n);
+  const d = abs >= 10 ? 0 : (abs >= 1 ? 1 : 2);
+  return `${n.toFixed(d)}kW`;
+}
+
+function trimFuture(points, cutoffMs = Date.now()) {
+  return (Array.isArray(points) ? points : []).map(([t, value]) => [t, t <= cutoffMs ? value : null]);
+}
+
+function trimPast(points, cutoffMs = Date.now()) {
+  return (Array.isArray(points) ? points : []).map(([t, value]) => [t, t >= cutoffMs ? value : null]);
+}
+
 function lastSeriesValue(opts) {
   const seriesCfg = opts?.w?.config?.series?.[opts.seriesIndex]?.data || [];
   for (let i = seriesCfg.length - 1; i >= 0; i--) {
@@ -800,7 +816,18 @@ function parseCurvePoints(points) {
 
 function buildSeriesAnnotation(points, seriesName, color, formatter, offsetY=0) {
   if (!Array.isArray(points) || !points.length) return null;
-  const [x, y] = points[points.length - 1];
+  let x = null;
+  let y = null;
+  for (let i = points.length - 1; i >= 0; i--) {
+    const pt = points[i];
+    const px = Array.isArray(pt) ? pt[0] : null;
+    const py = Array.isArray(pt) ? pt[1] : null;
+    if (Number.isFinite(Number(px)) && Number.isFinite(Number(py))) {
+      x = px;
+      y = py;
+      break;
+    }
+  }
   if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return null;
   return {
     x,
@@ -883,7 +910,7 @@ function buildPowerYAxisConfig(simulation = false) {
   return [
     { seriesName: simulation ? 'Sim Battery %' : 'Battery %', min:0, max:100, opposite:true, labels:{formatter: v => v!=null ? Math.round(v)+'%' : '', style:{fontSize:'10px',colors:t.axis}}, title:{text:'SoC %',style:{color:t.axis,fontSize:'10px'}} },
     { seriesName:'Min SoC %', show:false, min:0, max:100 },
-    { seriesName: simulation ? 'Sim PV Output kW' : 'PV Output kW', opposite:false, labels:{formatter: v => v!=null ? Number(v).toFixed(1)+'kW' : '', style:{fontSize:'10px',colors:t.axis}}, title:{text:'kW',style:{color:t.axis,fontSize:'10px'}} },
+    { seriesName: simulation ? 'Sim PV Output kW' : 'PV Output kW', opposite:false, labels:{formatter: v => fmtKwAxisLabel(v), style:{fontSize:'11px',colors:t.axis}}, title:{text:'kW',style:{color:t.axis,fontSize:'11px'}} },
     { seriesName:'PV Forecast kW', show:false },
     { seriesName: simulation ? 'Sim Consumption kW' : 'Consumption kW', show:false },
   ];
@@ -966,7 +993,7 @@ function initCharts() {
     {name:'Grid export',   data:[]},
     {name:'PV Forecast kW', data:[]},
   ], ['#dc2626','#16a34a','#f59e0b'], [
-    { seriesName:'Grid import', labels:{ formatter: v => v!=null ? Number(v).toFixed(1)+'kW' : '', style:{fontSize:'10px',colors:t.axis} }, title:{text:'Grid kW',style:{color:t.axis,fontSize:'10px'}} },
+    { seriesName:'Grid import', labels:{ formatter: v => fmtKwAxisLabel(v), style:{fontSize:'11px',colors:t.axis} }, title:{text:'Grid kW',style:{color:t.axis,fontSize:'11px'}} },
     { seriesName:'Grid export', show:false },
     { seriesName:'PV Forecast kW', show:false },
   ], {
@@ -985,18 +1012,16 @@ function initCharts() {
   priceChart = mkChart('chartPrice', [
     {name:'Import price',            data:[]},
     {name:'Feed-in price',           data:[]},
-    {name:'PV forecast (kWh interval)', data:[]},
     {name:'Import forecast',         data:[]},
     {name:'Feed-in forecast',        data:[]},
-  ], ['#b91c1c','#047857','#d97706','#f59e0b','#22c55e'], [
+  ], ['#b91c1c','#047857','#f59e0b','#22c55e'], [
     { seriesName:'Import price', labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:t.axis} }, title:{text:'Import price',style:{color:t.axis,fontSize:'10px'}} },
-    { seriesName:'PV forecast (kWh interval)', show:false },
     { seriesName:'Import forecast', show:false },
     { seriesName:'Feed-in price', opposite:true, labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:t.axis} }, title:{text:'Export price',style:{color:t.axis,fontSize:'10px'}} },
     { seriesName:'Feed-in forecast', show:false },
   ], {
-    stroke:{ curve:'straight', width:[2.2,2.2,1.8,2.0,2.0], dashArray:[0,0,0,6,6] },
-    fill:{ type:['solid','solid','gradient','gradient','gradient'], opacity:[0,0,0.12,0.14,0.10] },
+    stroke:{ curve:'straight', width:[2.2,2.2,2.0,2.0], dashArray:[0,0,6,6] },
+    fill:{ type:['solid','solid','gradient','gradient'], opacity:[0,0,0.14,0.10] },
     tooltip:{
       x:{format:'HH:mm'},
       shared:true,
@@ -1093,13 +1118,14 @@ function connectLiveWs() {
 function refreshCharts() {
   if (!powerChart || !flowChart || !priceChart) return;
   const t = chartTheme();
-  const batterySeries = histPow.map(x=>[x.t,x.battery]);
-  const minSocSeries = histPow.map(x=>[x.t,x.minSoc]);
-  const pvSeries = histPow.map(x=>[x.t,x.pv]);
-  const pvForecastSeries = histPow.map(x=>[x.t,x.pvForecast]);
-  const gridImportSeries = histPow.map(x=>[x.t,x.imp]);
-  const gridExportSeries = histPow.map(x=>[x.t,x.exp]);
-  const loadSeries = histPow.map(x=>[x.t,x.load]);
+  const nowMs = Date.now();
+  const batterySeries = trimFuture(histPow.map(x=>[x.t,x.battery]), nowMs);
+  const minSocSeries = trimFuture(histPow.map(x=>[x.t,x.minSoc]), nowMs);
+  const pvSeries = trimFuture(histPow.map(x=>[x.t,x.pv]), nowMs);
+  const pvForecastSeries = trimFuture(histPow.map(x=>[x.t,x.pvForecast]), nowMs);
+  const gridImportSeries = trimFuture(histPow.map(x=>[x.t,x.imp]), nowMs);
+  const gridExportSeries = trimFuture(histPow.map(x=>[x.t,x.exp]), nowMs);
+  const loadSeries = trimFuture(histPow.map(x=>[x.t,x.load]), nowMs);
   const powerSeries = [
     {name:'Battery %',     data: batterySeries},
     {name:'Min SoC %',     data: minSocSeries},
@@ -1110,7 +1136,7 @@ function refreshCharts() {
   applyPowerChartMode(powerSeries, { batterySeries, minSocSeries, pvSeries, pvForecastSeries, loadSeries }, false);
   setPowerChartNarrative(false);
 
-  const flowPvForecastSeries = histPow.map(x=>[x.t,x.pvForecast]);
+  const flowPvForecastSeries = trimFuture(histPow.map(x=>[x.t,x.pvForecast]), nowMs);
   flowChart.updateSeries([
     {name:'Grid import', data: gridImportSeries},
     {name:'Grid export', data: gridExportSeries},
@@ -1122,7 +1148,7 @@ function refreshCharts() {
     grid:{ borderColor:t.grid },
     legend:{ show:true, labels:{colors:t.legend}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(flowSeriesValue) },
     yaxis:[
-      { seriesName:'Grid import', labels:{ formatter: v => v!=null ? Number(v).toFixed(1)+'kW' : '', style:{fontSize:'10px',colors:t.axis} }, title:{text:'Grid kW',style:{color:t.axis,fontSize:'10px'}} },
+      { seriesName:'Grid import', labels:{ formatter: v => fmtKwAxisLabel(v), style:{fontSize:'11px',colors:t.axis} }, title:{text:'Grid kW',style:{color:t.axis,fontSize:'11px'}} },
       { seriesName:'Grid export', show:false },
       { seriesName:'PV Forecast kW', show:false },
     ],
@@ -1137,16 +1163,14 @@ function refreshCharts() {
     },
   }, false, false);
 
-  const importForecastSeries = parseCurvePoints(S?.price_forecast_curve);
-  const feedinForecastSeries = parseCurvePoints(S?.feedin_forecast_curve);
-  const importPriceSeries = histPri.map(x=>[x.t,x.imp]);
-  const feedinPriceSeries = histPri.map(x=>[x.t,x.fit]);
-  const pvForecastPriceSeries = histPow.map((x) => [x.t, x.pvForecast]);
+  const importForecastSeries = trimPast(parseCurvePoints(S?.price_forecast_curve), nowMs);
+  const feedinForecastSeries = trimPast(parseCurvePoints(S?.feedin_forecast_curve), nowMs);
+  const importPriceSeries = trimFuture(histPri.map(x=>[x.t,x.imp]), nowMs);
+  const feedinPriceSeries = trimFuture(histPri.map(x=>[x.t,x.fit]), nowMs);
   const bounds = priceAxisBounds([importPriceSeries, feedinPriceSeries, importForecastSeries, feedinForecastSeries]);
   priceChart.updateSeries([
     {name:'Import price',              data: importPriceSeries},
     {name:'Feed-in price',             data: feedinPriceSeries},
-    {name:'PV forecast (kWh interval)',data: pvForecastPriceSeries},
     {name:'Import forecast',           data: importForecastSeries},
     {name:'Feed-in forecast',          data: feedinForecastSeries},
   ]);
@@ -1157,7 +1181,6 @@ function refreshCharts() {
     legend:{ show:true, labels:{colors:t.legend}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(priceSeriesValue) },
     yaxis:[
       { min:bounds.min, max:bounds.max, seriesName:'Import price', labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:t.axis} }, title:{text:'Import price',style:{color:t.axis,fontSize:'10px'}} },
-      { seriesName:'PV forecast (kWh interval)', show:false },
       { seriesName:'Import forecast', show:false, min:bounds.min, max:bounds.max },
       { min:bounds.min, max:bounds.max, seriesName:'Feed-in price', opposite:true, labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:t.axis} }, title:{text:'Export price',style:{color:t.axis,fontSize:'10px'}} },
       { seriesName:'Feed-in forecast', show:false, min:bounds.min, max:bounds.max },
@@ -1168,7 +1191,6 @@ function refreshCharts() {
       points:[
         buildSeriesAnnotation(importPriceSeries, 'Import price', '#b91c1c', v => compactPriceLabel(v), -14),
         buildSeriesAnnotation(feedinPriceSeries, 'Feed-in price', '#047857', v => compactPriceLabel(v), 14),
-        buildSeriesAnnotation(pvForecastPriceSeries, 'PV forecast (kWh interval)', '#d97706', v => compactKwLabel(v), -14),
         buildSeriesAnnotation(importForecastSeries, 'Import forecast', '#f59e0b', v => compactPriceLabel(v), -14),
         buildSeriesAnnotation(feedinForecastSeries, 'Feed-in forecast', '#22c55e', v => compactPriceLabel(v), 14),
       ].filter(Boolean),
