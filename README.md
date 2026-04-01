@@ -135,6 +135,7 @@ These buttons are easy to confuse at first. Here is what each one does in everyd
 
 - Think of this as a practice run.
 - It tries different strategy styles and shows which one looks best right now.
+- The simulation comparison panel is hidden by default and appears after you press this button.
 - It only changes what you see on the screen.
 - It does not change your real inverter settings.
 
@@ -164,6 +165,12 @@ Quick rule of thumb:
 - Overlay = show it on the chart.
 - Simulate Automated = run a what-if comparison.
 - Run Cycle Now = run the real optimizer immediately.
+
+### Clear Simulation
+
+- After running simulation, the Simulate Automated button changes to Clear Simulation.
+- Clear Simulation removes the visual simulation overlay and hides the simulation comparison panel again.
+- It does not change live inverter settings.
 
 ## Step 5 - Verify Correct Operation
 
