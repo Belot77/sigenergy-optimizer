@@ -1007,6 +1007,36 @@ class SigEnergyOptimizer:
             parts.append("*est")
         d.outcome_reason = "; ".join(p for p in parts if p and p != "n/a")
 
+        export_branch = "normal_tier"
+        if morning_dump_active:
+            export_branch = "morning_dump"
+        elif morning_slow_charge_active:
+            export_branch = "morning_slow_charge"
+        elif export_spike_active:
+            export_branch = "export_spike"
+        elif export_solar_override:
+            export_branch = "solar_override"
+        elif solar_surplus_bypass:
+            export_branch = "solar_surplus_bypass"
+        elif battery_full_safeguard_block:
+            export_branch = "battery_full_safeguard_block"
+        elif export_blocked_effective or export_forecast_guard:
+            export_branch = "forecast_guard_block"
+        elif desired_export_limit <= 0:
+            export_branch = "blocked_or_zero"
+
+        import_branch = "blocked"
+        if morning_dump_active:
+            import_branch = "morning_dump_block"
+        elif s.demand_window_active:
+            import_branch = "demand_window_block"
+        elif standby_holdoff_active:
+            import_branch = "standby_holdoff_block"
+        elif desired_import_limit > 0 and s.price_is_negative:
+            import_branch = "negative_price_import"
+        elif desired_import_limit > 0:
+            import_branch = "cheap_topup_import"
+
         d.trace_gates = {
             "is_evening_or_night": is_evening_or_night,
             "close_to_sunset": close_to_sunset,
@@ -1065,6 +1095,22 @@ class SigEnergyOptimizer:
             "current_import_limit": s.current_import_limit,
             "current_pv_max_power_limit": s.current_pv_max_power_limit,
             "current_ems_mode": s.current_ems_mode,
+            "export_branch": export_branch,
+            "import_branch": import_branch,
+            "cfg_morning_slow_charge_enabled": cfg.morning_slow_charge_enabled,
+            "cfg_morning_slow_charge_rate_kw": cfg.morning_slow_charge_rate_kw,
+            "cfg_target_battery_charge": cfg.target_battery_charge,
+            "cfg_max_price_threshold": cfg.max_price_threshold,
+            "cfg_export_threshold_low": cfg.export_threshold_low,
+            "cfg_export_threshold_medium": cfg.export_threshold_medium,
+            "cfg_export_threshold_high": cfg.export_threshold_high,
+            "cfg_export_limit_low": cfg.export_limit_low,
+            "cfg_export_limit_medium": cfg.export_limit_medium,
+            "cfg_export_limit_high": cfg.export_limit_high,
+            "cfg_min_export_target_soc": cfg.min_export_target_soc,
+            "cfg_min_soc_floor": cfg.min_soc_floor,
+            "cfg_sunrise_export_relax_percent": cfg.sunrise_export_relax_percent,
+            "cfg_pv_max_power_normal": cfg.pv_max_power_normal,
         }
 
         return d
