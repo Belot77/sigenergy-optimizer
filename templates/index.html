@@ -34,11 +34,10 @@ window.apiUrl = window.addonApiUrl;
 console.info('SigEnergy UI build', window.__SIGENERGY_UI_BUILD__);
 </script>
 <title>SigEnergy Optimizer Control</title>
-<script src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.2/dist/apexcharts.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="./static/js/apexcharts-lite.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#e8f5e9;font-family:'Inter',sans-serif;font-size:14px;color:#1a202c;min-height:100vh}
+body{background:#e8f5e9;font-family:"Segoe UI",Tahoma,Geneva,Verdana,sans-serif;font-size:14px;color:#1a202c;min-height:100vh}
 
 /* Header */
 .app-header{background:#fff;border-bottom:1px solid #e2e8f0;padding:0 20px;display:flex;align-items:center;gap:12px;height:60px}
@@ -49,11 +48,40 @@ body{background:#e8f5e9;font-family:'Inter',sans-serif;font-size:14px;color:#1a2
 .header-sim .neg{color:#c53030;font-weight:700}
 .pos{color:#276749}
 .neg{color:#c53030}
-.hbtn{border:1.5px solid #cbd5e0;background:#fff;color:#2d3748;border-radius:20px;padding:7px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap}
+.hbtn{border:1.5px solid #cbd5e0;background:#fff;color:#2d3748;border-radius:20px;padding:7px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;white-space:nowrap}
 .hbtn:hover{border-color:#4a5568;background:#f7fafc}
 .hbtn.primary{background:#276749;color:#fff;border-color:#276749}
 .hbtn.primary:hover{background:#22543d}
 .hbtn:disabled{opacity:.45;cursor:not-allowed}
+.ws-dot{width:9px;height:9px;border-radius:50%;background:#a0aec0;display:inline-block;flex-shrink:0;transition:background .2s}
+.ws-dot.live{background:#38a169}
+.pending-badge{display:none;font-size:10px;font-weight:700;color:#334155;background:#e2e8f0;border:1px solid #cbd5e1;border-radius:999px;padding:2px 7px;vertical-align:middle;margin-left:8px}
+.pending-badge.on{display:inline-block}
+.pending-badge::before{display:inline-block;margin-right:4px;font-weight:800}
+.pending-badge.saving{color:#0f5132;background:#d1fae5;border-color:#86efac}
+.pending-badge.saved{color:#155e75;background:#cffafe;border-color:#67e8f9}
+.pending-badge.failed{color:#7f1d1d;background:#fee2e2;border-color:#fca5a5}
+.pending-badge.saving::before{content:'...';letter-spacing:.5px;animation:badgePulse .9s ease-in-out infinite}
+.pending-badge.saved::before{content:'+'}
+.pending-badge.failed::before{content:'x'}
+
+@keyframes badgePulse {
+  0% { opacity:.45; }
+  50% { opacity:1; }
+  100% { opacity:.45; }
+}
+
+@keyframes liveFlash {
+  0% { color:#276749; }
+  100% { color:inherit; }
+}
+.live-flash{animation:liveFlash .6s ease-out}
+.stale-banner{display:none;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:8px 14px;font-size:12px;font-weight:600}
+.stale-banner.on{display:block}
+.action-msg{min-height:15px;margin-top:6px;font-size:11px;color:#64748b}
+.action-msg.ok{color:#0f766e}
+.action-msg.warn{color:#92400e}
+.action-msg.err{color:#b91c1c}
 
 /* Nav */
 .nav{background:#fff;border-bottom:1px solid #e2e8f0;padding:0 20px;display:flex}
@@ -65,7 +93,7 @@ body{background:#e8f5e9;font-family:'Inter',sans-serif;font-size:14px;color:#1a2
 .page{display:none}
 .page.active{display:block}
 #tab-overview.active{display:flex;gap:16px;align-items:flex-start;padding:16px}
-#tab-entities.active,#tab-config.active,#tab-logs.active{padding:20px}
+#tab-entities.active,#tab-config.active,#tab-logs.active,#tab-audit.active{padding:20px}
 
 /* Sidebar */
 .sidebar{width:296px;flex-shrink:0;display:flex;flex-direction:column;gap:12px}
@@ -78,9 +106,9 @@ body{background:#e8f5e9;font-family:'Inter',sans-serif;font-size:14px;color:#1a2
 .flabel:first-child{margin-top:0}
 
 /* Inputs */
-select,input[type=number],input[type=text]{width:100%;border:1.5px solid #e2e8f0;border-radius:6px;padding:7px 10px;font-size:13px;font-family:'Inter',sans-serif;color:#2d3748;background:#fff;outline:none;transition:border-color .15s}
+select,input[type=number],input[type=text]{width:100%;border:1.5px solid #e2e8f0;border-radius:6px;padding:7px 10px;font-size:13px;font-family:inherit;color:#2d3748;background:#fff;outline:none;transition:border-color .15s}
 select:focus,input:focus{border-color:#276749}
-.sbtn{width:100%;background:#276749;color:#fff;border:none;border-radius:6px;padding:9px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;margin-top:4px;transition:background .15s}
+.sbtn{width:100%;background:#276749;color:#fff;border:none;border-radius:6px;padding:9px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:4px;transition:background .15s}
 .sbtn:hover{background:#22543d}
 .sbtn:disabled{opacity:.45}
 
@@ -88,7 +116,7 @@ select:focus,input:focus{border-color:#276749}
 .thresh-grid{display:grid;grid-template-columns:1fr auto auto;gap:4px 8px;align-items:center;margin-bottom:4px}
 .thresh-header{font-size:10px;font-weight:700;color:#a0aec0;text-transform:uppercase;letter-spacing:.06em;text-align:center}
 .thresh-label{font-size:12px;font-weight:600;color:#4a5568}
-.thresh-input{border:1.5px solid #e2e8f0;border-radius:5px;padding:5px 7px;font-size:12px;font-family:'Inter',sans-serif;color:#2d3748;width:72px;outline:none}
+.thresh-input{border:1.5px solid #e2e8f0;border-radius:5px;padding:5px 7px;font-size:12px;font-family:inherit;color:#2d3748;width:72px;outline:none}
 .thresh-input:focus{border-color:#276749}
 .preview-card{margin:8px 0 6px;padding:10px 11px;border:1px solid #d6e9d8;border-radius:8px;background:#f6fbf7}
 .preview-title{font-size:11px;font-weight:700;color:#276749;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
@@ -120,10 +148,30 @@ select:focus,input:focus{border-color:#276749}
 .scenario-btn:hover{border-color:#276749;background:#edf7f0}
 
 /* Chart cards */
-.chart-card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 14px 6px}
-.chart-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px}
-.chart-title{font-size:13px;font-weight:700;color:#2d3748}
-.chart-now{font-size:11px;color:#718096;text-align:right;max-width:52%;line-height:1.5}
+.chart-card{background:linear-gradient(180deg,#ffffff 0%,#f7fbf9 100%);border:1px solid #d7e6dd;border-radius:14px;padding:14px;box-shadow:0 10px 28px rgba(39,103,73,.06)}
+.chart-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:12px}
+.chart-title-wrap{display:flex;flex-direction:column;gap:4px}
+.chart-title{font-size:13px;font-weight:700;color:#1f3b2f;letter-spacing:.01em}
+.chart-sub{font-size:11px;color:#6b7f77;line-height:1.45;max-width:520px}
+.chart-now{font-size:11px;color:#5d6f67;text-align:right;max-width:52%;line-height:1.5;font-weight:600}
+.chart-frame{position:relative;border:1px solid #d7e6dd;border-radius:12px;padding:8px;background:linear-gradient(180deg,#f8fcfb 0%,#eff7f3 100%)}
+.chart-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+.chart-note{font-size:11px;color:#718096;line-height:1.45}
+.chart-key{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#4a5568;font-weight:600}
+.chart-key::before{content:"";width:18px;height:0;border-top:2px solid currentColor;display:inline-block}
+.chart-key.dashed::before{border-top-style:dashed}
+.apx-root{position:relative}
+.apx-surface{position:relative;overflow:hidden;border-radius:10px}
+.apx-surface svg{display:block;width:100%;height:100%}
+.apx-tooltip{position:absolute;display:none;z-index:4;pointer-events:none;min-width:180px;max-width:280px;background:rgba(15,23,42,.94);color:#f8fafc;border:1px solid rgba(148,163,184,.35);border-radius:10px;padding:9px 11px;box-shadow:0 12px 28px rgba(15,23,42,.24);font-size:12px;line-height:1.4}
+.apx-tooltip-time{font-weight:700;color:#d1fae5;margin-bottom:4px}
+.apx-tooltip-row{display:flex;justify-content:space-between;gap:12px;white-space:nowrap}
+.apx-tooltip-label{color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;max-width:170px}
+.apx-tooltip-value{font-weight:700;color:#f8fafc}
+.apx-legend{display:flex;gap:10px 12px;flex-wrap:wrap;padding-top:8px}
+.apx-legend-item{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:#43574f;font-weight:600}
+.apx-legend-swatch{width:11px;height:11px;border-radius:999px;display:inline-block;box-shadow:0 0 0 2px rgba(255,255,255,.9) inset}
+.apx-empty{display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;color:#718096;background:linear-gradient(180deg,#f8fcfb 0%,#eff7f3 100%);border-radius:10px}
 
 /* Status cards grid */
 .status-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -150,6 +198,19 @@ select:focus,input:focus{border-color:#276749}
 .log-block .info{color:#68d391}
 .log-block .warn{color:#f6e05e}
 .log-block .err{color:#fc8181}
+.log-block .dbg{color:#93c5fd}
+.log-block .trace{color:#94a3b8}
+.log-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.log-meta{font-size:12px;color:#64748b}
+.audit-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.audit-toolbar input,.audit-toolbar select{max-width:220px}
+.audit-meta{font-size:12px;color:#64748b}
+.audit-table-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:auto}
+.audit-table{width:100%;border-collapse:collapse;font-size:12px;min-width:940px}
+.audit-table th{position:sticky;top:0;background:#f8fafc;border-bottom:2px solid #e2e8f0;padding:8px 10px;text-align:left;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#64748b}
+.audit-table td{border-bottom:1px solid #f1f5f9;padding:8px 10px;color:#1f2937;vertical-align:top}
+.audit-code{font-family:Consolas,Monaco,monospace;font-size:11px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:5px 7px;max-width:380px;overflow:auto;white-space:pre-wrap}
+.audit-empty{padding:18px;border:1px dashed #cbd5e1;border-radius:10px;background:#f8fafc;color:#64748b}
 .cfg-stack{display:grid;gap:12px}
 .cfg-section{background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
 .cfg-section summary{display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none;cursor:pointer;padding:14px 16px;font-size:13px;font-weight:700;color:#2d3748}
@@ -163,15 +224,20 @@ select:focus,input:focus{border-color:#276749}
 .cfg-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px}
 .cfg-msg{font-size:12px;color:#276749;min-height:16px}
 @media (max-width: 900px){.cfg-grid{grid-template-columns:1fr}}
+@media (max-width: 900px){.chart-hdr{flex-direction:column}.chart-now{max-width:none;text-align:left}.chart-frame{padding:6px}.scenario-grid{grid-template-columns:1fr 1fr}}
+@media (max-width: 640px){.scenario-grid{grid-template-columns:1fr}.apx-tooltip{max-width:220px;min-width:150px}.apx-tooltip-label{max-width:120px}}
 </style>
 </head>
 <body>
 
 <!-- Header -->
 <div class="app-header">
-  <div>
-    <div class="app-title">SigEnergy Optimizer Control</div>
-    <div class="app-subtitle">Web UI + background worker (uvicorn/FastAPI)</div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <div>
+      <div class="app-title">SigEnergy Optimizer Control</div>
+      <div class="app-subtitle">Web UI + background worker (uvicorn/FastAPI)</div>
+    </div>
+    <span id="wsDot" class="ws-dot" title="Live updates disconnected"></span>
   </div>
   <div class="header-sim" id="simResult"></div>
   <div style="display:flex;gap:8px;margin-left:auto;flex-shrink:0">
@@ -184,10 +250,13 @@ select:focus,input:focus{border-color:#276749}
 <!-- Nav -->
 <nav class="nav">
   <button class="ntab active" onclick="showTab('overview',this)">Overview</button>
+  <button class="ntab" onclick="showTab('earnings',this)">Earnings</button>
   <button class="ntab" onclick="showTab('entities',this)">Entities</button>
   <button class="ntab" onclick="showTab('config',this)">Config</button>
   <button class="ntab" onclick="showTab('logs',this)">Logs</button>
+  <button class="ntab" onclick="showTab('audit',this)">Audit</button>
 </nav>
+<div id="staleBanner" class="stale-banner">Live data is stale. Waiting for fresh status from Home Assistant...</div>
 
 <!-- ═══ OVERVIEW ═══ -->
 <div id="tab-overview" class="page active">
@@ -198,7 +267,7 @@ select:focus,input:focus{border-color:#276749}
     <!-- SigEnergy Mode -->
     <div class="card">
       <div class="card-title">SigEnergy Mode</div>
-      <div class="flabel">Mode</div>
+        <div class="flabel">Mode <span id="pending-mode" class="pending-badge">Pending...</span></div>
       <select id="modeSelect" style="margin-bottom:8px">
         <option>Automated</option>
         <option>Force Full Export</option>
@@ -210,13 +279,14 @@ select:focus,input:focus{border-color:#276749}
       <div class="flabel">API Key (optional, remote control)</div>
       <input type="text" id="uiApiKey" placeholder="Paste UI_API_KEY for non-local access" style="margin-bottom:8px">
       <button class="sbtn" onclick="applyMode(this)">Apply Mode</button>
+      <div class="action-msg" id="msgMode"></div>
     </div>
 
     <div class="card">
       <div class="card-title">Algorithm Tuning</div>
       <div class="tune-row">
         <button class="tune-btn active" id="profile-maxConsumption" onclick="selectProfile('maxConsumption')">Max Consumption</button>
-        <button class="tune-btn" id="profile-balancedCurrent" onclick="selectProfile('balancedCurrent')">Balanced Current</button>
+        <button class="tune-btn" id="profile-balanced" onclick="selectProfile('balanced')">Balanced</button>
         <button class="tune-btn" id="profile-maxProfits" onclick="selectProfile('maxProfits')">Max Profits</button>
       </div>
       <div class="tune-help" id="profileHelp">Max Consumption prioritizes lower import and conservative export behavior.</div>
@@ -225,7 +295,7 @@ select:focus,input:focus{border-color:#276749}
     <!-- ESS Mode & Limits -->
     <div class="card">
       <div class="card-title">ESS Mode &amp; Limits</div>
-      <div class="flabel">Sigen Plant Remote EMS Control Mode</div>
+      <div class="flabel">Sigen Plant Remote EMS Control Mode <span id="pending-ess" class="pending-badge">Pending...</span></div>
       <select id="emsMode" style="margin-bottom:6px">
         <option>Maximum Self Consumption</option>
         <option>Command Discharging (PV First)</option>
@@ -245,11 +315,13 @@ select:focus,input:focus{border-color:#276749}
       <div class="flabel">PV Max Power Limit (kW)</div>
       <input type="number" id="pvMax" min="0" max="50" step="0.1" value="25.0" style="margin-bottom:6px">
       <button class="sbtn" onclick="applyESS(this)">Apply ESS Controls</button>
+      <div class="action-msg" id="msgEss"></div>
     </div>
 
     <!-- Export / Import Thresholds -->
     <div class="card">
       <div class="card-title">Export / Import Thresholds</div>
+      <div class="flabel">Threshold Writes <span id="pending-thresholds" class="pending-badge">Pending...</span></div>
       <div class="thresh-grid" style="margin-bottom:6px">
         <div></div>
         <div class="thresh-header">Price (c)</div>
@@ -283,7 +355,19 @@ select:focus,input:focus{border-color:#276749}
         <div class="preview-title">Live Threshold Preview</div>
         <div class="preview-note">Waiting for live status from Home Assistant...</div>
       </div>
+      <div class="flabel">Threshold Presets</div>
+      <input type="text" id="presetName" placeholder="Preset name (e.g. Winter Conservative)" style="margin-bottom:6px">
+      <select id="presetSelect" style="margin-bottom:6px">
+        <option value="">Select saved preset...</option>
+      </select>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+        <button class="sbtn" type="button" onclick="savePreset()" style="padding:7px">Save</button>
+        <button class="sbtn" type="button" onclick="loadPreset()" style="padding:7px">Load</button>
+        <button class="sbtn" type="button" onclick="deletePreset()" style="padding:7px;background:#9f1239">Delete</button>
+      </div>
+      <div class="action-msg" id="msgPreset"></div>
       <button class="sbtn" onclick="applyThresholds(this)">Apply &amp; Save Thresholds</button>
+      <div class="action-msg" id="msgThresholds"></div>
     </div>
 
   </div>
@@ -293,8 +377,8 @@ select:focus,input:focus{border-color:#276749}
 
     <div class="scenario-wrap">
       <div class="scenario-hdr">
-        <div class="scenario-title">Simulation Comparison</div>
-        <div class="scenario-note">Click a scenario to update computed import/export view.</div>
+        <div class="scenario-title">Simulation Tuning Comparison</div>
+        <div class="scenario-note" id="scenarioNote">Click a scenario to update computed import/export view.</div>
       </div>
       <div class="scenario-grid" id="scenarioGrid"></div>
     </div>
@@ -302,19 +386,43 @@ select:focus,input:focus{border-color:#276749}
     <!-- Power & SoC chart -->
     <div class="chart-card">
       <div class="chart-hdr">
-        <div class="chart-title">Today Power &amp; SoC</div>
+        <div class="chart-title-wrap">
+          <div class="chart-title">Today Power &amp; SoC</div>
+          <div class="chart-sub">Battery, reserve floor, PV output and grid flow in one view. Solid lines show live history, dashed lines show forecast or simulated projection.</div>
+        </div>
         <div class="chart-now" id="nowPower">—</div>
       </div>
-      <div id="chartPower" style="height:260px"></div>
+      <div class="chart-frame">
+        <div id="chartPower" style="height:280px"></div>
+      </div>
+      <div class="chart-foot">
+        <div class="chart-note" id="powerChartNote">Hover to inspect exact values. The daylight band is aligned to Home Assistant sunrise and sunset.</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <span class="chart-key">Live</span>
+          <span class="chart-key dashed">Forecast / Simulated</span>
+        </div>
+      </div>
     </div>
 
     <!-- Price Curves chart -->
     <div class="chart-card">
       <div class="chart-hdr">
-        <div class="chart-title">Today Price Curves (Import vs Feed-In)</div>
+        <div class="chart-title-wrap">
+          <div class="chart-title">Today Price Curves (Import vs Feed-In)</div>
+          <div class="chart-sub">Import and export price traces share the same day window with a daylight context band so you can see arbitrage windows at a glance.</div>
+        </div>
         <div class="chart-now" id="nowPrice">—</div>
       </div>
-      <div id="chartPrice" style="height:210px"></div>
+      <div class="chart-frame">
+        <div id="chartPrice" style="height:230px"></div>
+      </div>
+      <div class="chart-foot">
+        <div class="chart-note">The zero line is emphasised so negative import periods and export spikes stand out immediately.</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <span class="chart-key">Measured</span>
+          <span class="chart-key dashed">Forecast</span>
+        </div>
+      </div>
     </div>
 
     <!-- Cycle status bar -->
@@ -359,6 +467,11 @@ select:focus,input:focus{border-color:#276749}
 </div>
 
 <!-- ═══ ENTITIES ═══ -->
+<div id="tab-earnings" class="page">
+  <div class="card" id="earningsContent"><div style="color:#a0aec0">Loading…</div></div>
+</div>
+
+<!-- ═══ ENTITIES ═══ -->
 <div id="tab-entities" class="page">
   <div id="entContent"><div style="color:#a0aec0">Loading…</div></div>
 </div>
@@ -370,7 +483,40 @@ select:focus,input:focus{border-color:#276749}
 
 <!-- ═══ LOGS ═══ -->
 <div id="tab-logs" class="page">
+  <div class="log-toolbar">
+    <button class="hbtn" type="button" onclick="loadLogs()">Refresh Logs</button>
+    <button class="hbtn" type="button" onclick="downloadLogs()">Download Logs</button>
+    <select id="logLineLimit" onchange="loadLogs()" title="Number of recent lines to fetch">
+      <option value="200">200 lines</option>
+      <option value="500" selected>500 lines</option>
+      <option value="1000">1000 lines</option>
+      <option value="2000">2000 lines</option>
+    </select>
+    <select id="logLevelFilter" onchange="loadLogs()">
+      <option value="info" selected>info+</option>
+      <option value="warning">warning+</option>
+      <option value="error">error+</option>
+      <option value="critical">critical+</option>
+    </select>
+    <span class="log-meta" id="logMeta">Loading...</span>
+  </div>
   <div id="logContent"><div class="log-block" style="color:#718096">Loading…</div></div>
+</div>
+
+<!-- ═══ AUDIT ═══ -->
+<div id="tab-audit" class="page">
+  <div class="audit-toolbar">
+    <button class="hbtn" type="button" onclick="loadAudit()">Refresh Audit</button>
+    <select id="auditLimit" onchange="loadAudit()">
+      <option value="50">Last 50</option>
+      <option value="100" selected>Last 100</option>
+      <option value="200">Last 200</option>
+      <option value="500">Last 500</option>
+    </select>
+    <input type="text" id="auditFilter" placeholder="Filter by actor, action, field, source..." oninput="renderAuditTable()">
+    <span class="audit-meta" id="auditMeta">Loading audit history...</span>
+  </div>
+  <div id="auditContent" class="audit-empty">Loading...</div>
 </div>
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -378,13 +524,20 @@ let S = {};
 let powerChart = null, priceChart = null;
 let histPow = [], histPri = [];
 let simActive = false;
+let simPreview = null;
+let simComparisons = [];
+let wsConn = null;
+let wsReconnectTimer = null;
 let activeProfile = 'maxConsumption';
 let uiCfg = null;
+let auditRows = [];
 const POLL = 15000;
+const LIVE_POWER_COLORS = ['#1d4ed8','#14b8a6','#f59e0b','#d97706','#dc2626','#16a34a','#7c3aed'];
+const SIM_POWER_COLORS = ['#1e88e5','#4fd1c5','#f59e0b','#d97706','#0891b2','#ea580c','#a855f7'];
 
 const PROFILE_META = {
   maxConsumption: { label: 'Max Consumption', help: 'Max Consumption prioritizes lower import and conservative export behavior.' },
-  balancedCurrent: { label: 'Balanced Current', help: 'Balanced Current keeps a middle ground between self-consumption and arbitrage.' },
+  balanced: { label: 'Balanced', help: 'Balanced keeps a middle ground between self-consumption and arbitrage.' },
   maxProfits: { label: 'Max Profits', help: 'Max Profits pushes stronger import/export limits for higher arbitrage potential.' },
 };
 
@@ -394,9 +547,11 @@ function showTab(name, btn) {
   document.querySelectorAll('.ntab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
+  if (name === 'earnings') loadEarnings();
   if (name === 'entities') loadEntities();
   if (name === 'config')   loadConfig();
   if (name === 'logs')     loadLogs();
+  if (name === 'audit')    loadAudit();
 }
 
 // ── Chart initialisation ──────────────────────────────────────────────────────
@@ -476,13 +631,14 @@ function parseCurvePoints(points) {
     .sort((a, b) => a[0] - b[0]);
 }
 
-function buildSeriesAnnotation(points, color, formatter, offsetY=0) {
+function buildSeriesAnnotation(points, seriesName, color, formatter, offsetY=0) {
   if (!Array.isArray(points) || !points.length) return null;
   const [x, y] = points[points.length - 1];
   if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return null;
   return {
     x,
     y,
+    seriesName,
     marker:{ size:4, fillColor:color, strokeColor:'#fff', strokeWidth:1 },
     label:{
       borderColor: color,
@@ -522,16 +678,97 @@ function priceAxisBounds(seriesList) {
   };
 }
 
-function initCharts() {
-  const powY = [
-    { seriesName:'Battery %',    min:0, max:100, opposite:true,  labels:{formatter: v => v!=null ? Math.round(v)+'%'  : '', style:{fontSize:'10px',colors:'#718096'}}, title:{text:'SoC %',style:{color:'#718096',fontSize:'10px'}} },
-    { seriesName:'Min SoC %',    show:false, min:0, max:100 },
-    { seriesName:'PV Output kW', opposite:false, labels:{formatter: v => v!=null ? Number(v).toFixed(1)+'kW' : '', style:{fontSize:'10px',colors:'#718096'}}, title:{text:'kW',style:{color:'#718096',fontSize:'10px'}} },
-    { seriesName:'PV Forecast kW',   show:false },
-    { seriesName:'Grid Import kW',   show:false },
-    { seriesName:'Grid Export kW',   show:false },
-    { seriesName:'Consumption kW',   show:false },
+function normalizeDayMarker(ts) {
+  const ms = Date.parse(ts || '');
+  if (!Number.isFinite(ms)) return null;
+  const dayStart = startOfTodayMs();
+  const dayEnd = endOfTodayMs();
+  if (ms > dayEnd) return ms - 86400000;
+  if (ms < dayStart && (ms + 86400000) <= dayEnd) return ms + 86400000;
+  return ms;
+}
+
+function buildDaylightAnnotations() {
+  const items = [];
+  const sunrise = normalizeDayMarker(S?.next_sunrise_ts);
+  const sunset = normalizeDayMarker(S?.next_sunset_ts);
+  if (Number.isFinite(sunrise) && Number.isFinite(sunset) && sunset > sunrise) {
+    items.push({
+      x: sunrise,
+      x2: sunset,
+      fillColor: '#c36a1f',
+      opacity: 0.10,
+      label: { text: 'Daylight', color: '#9a5b13', background: 'rgba(255,247,237,0.92)' },
+    });
+  }
+  items.push({
+    x: Date.now(),
+    borderColor: '#0891b2',
+    strokeDashArray: 4,
+    label: { text: 'Now', color: '#0f4c5c', background: 'rgba(224,242,254,0.96)' },
+  });
+  return items;
+}
+
+function buildPowerYAxisConfig(simulation = false) {
+  return [
+    { seriesName: simulation ? 'Sim Battery %' : 'Battery %', min:0, max:100, opposite:true, labels:{formatter: v => v!=null ? Math.round(v)+'%' : '', style:{fontSize:'10px',colors:'#718096'}}, title:{text:'SoC %',style:{color:'#718096',fontSize:'10px'}} },
+    { seriesName:'Min SoC %', show:false, min:0, max:100 },
+    { seriesName: simulation ? 'Sim PV Output kW' : 'PV Output kW', opposite:false, labels:{formatter: v => v!=null ? Number(v).toFixed(1)+'kW' : '', style:{fontSize:'10px',colors:'#718096'}}, title:{text:'kW',style:{color:'#718096',fontSize:'10px'}} },
+    { seriesName:'PV Forecast kW', show:false },
+    { seriesName: simulation ? 'Sim Import kW' : 'Grid Import kW', show:false },
+    { seriesName: simulation ? 'Sim Export kW' : 'Grid Export kW', show:false },
+    { seriesName: simulation ? 'Sim Consumption kW' : 'Consumption kW', show:false },
   ];
+}
+
+function setPowerChartNarrative(simulation = false, meta = null) {
+  const noteEl = document.getElementById('powerChartNote');
+  if (!noteEl) return;
+  if (!simulation || !meta) {
+    noteEl.textContent = 'Hover to inspect exact values. The daylight band is aligned to Home Assistant sunrise and sunset.';
+    return;
+  }
+  noteEl.textContent = `Simulation overlay active for ${PROFILE_META[meta.profile]?.label || 'selected profile'}: projected import ${fc(meta.importLimit,2)}kW, export ${fc(meta.exportLimit,2)}kW, estimated net ${meta.net >= 0 ? '+' : '-'}$${Math.abs(meta.net).toFixed(2)}/h.`;
+}
+
+function buildPowerAnnotations(seriesMap, simulation = false) {
+  const points = simulation
+    ? [
+        buildSeriesAnnotation(seriesMap.batterySeries, 'Sim Battery %', '#1e88e5', v => compactPctLabel(v), -14),
+        buildSeriesAnnotation(seriesMap.minSocSeries, 'Min SoC %', '#4fd1c5', v => compactPctLabel(v), 14),
+        buildSeriesAnnotation(seriesMap.importSeries, 'Sim Import kW', '#0891b2', v => compactKwLabel(v), -14),
+        buildSeriesAnnotation(seriesMap.exportSeries, 'Sim Export kW', '#ea580c', v => compactKwLabel(v), 14),
+      ]
+    : [
+        buildSeriesAnnotation(seriesMap.batterySeries, 'Battery %', '#1d4ed8', v => compactPctLabel(v), -14),
+        buildSeriesAnnotation(seriesMap.minSocSeries, 'Min SoC %', '#14b8a6', v => compactPctLabel(v), 14),
+        buildSeriesAnnotation(seriesMap.exportSeries, 'Grid Export kW', '#16a34a', v => compactKwLabel(v), -14),
+        buildSeriesAnnotation(seriesMap.loadSeries, 'Consumption kW', '#7c3aed', v => compactKwLabel(v), 14),
+      ];
+  return {
+    xaxis: buildDaylightAnnotations(),
+    points: points.filter(Boolean),
+  };
+}
+
+function applyPowerChartMode(series, seriesMap, simulation = false) {
+  powerChart.updateSeries(series);
+  powerChart.updateOptions({
+    colors: simulation ? SIM_POWER_COLORS : LIVE_POWER_COLORS,
+    yaxis: buildPowerYAxisConfig(simulation),
+    stroke: simulation
+      ? { curve:'straight', width:[2.2,2.0,2.0,1.9,2.2,2.2,1.9], dashArray:[6,0,6,6,6,6,6] }
+      : { curve:'straight', width:[2.4,2.0,2.2,1.9,1.9,1.9,1.9], dashArray:[0,0,0,6,0,0,0] },
+    fill: simulation
+      ? { type:['solid','solid','solid','gradient','solid','solid','solid'], opacity:[0,0,0,0.12,0,0,0] }
+      : { type:['solid','solid','solid','gradient','solid','solid','solid'], opacity:[0,0,0,0.18,0,0,0] },
+    xaxis:{ min:startOfTodayMs(), max:endOfTodayMs(), tickAmount:8 },
+    annotations: buildPowerAnnotations(seriesMap, simulation),
+  }, false, false);
+}
+
+function initCharts() {
   powerChart = mkChart('chartPower', [
     {name:'Battery %',     data:[]},
     {name:'Min SoC %',     data:[]},
@@ -540,17 +777,17 @@ function initCharts() {
     {name:'Grid Import kW',data:[]},
     {name:'Grid Export kW',data:[]},
     {name:'Consumption kW',data:[]},
-  ], ['#3182ce','#38b2ac','#dd6b20','#ed8936','#e53e3e','#38a169','#805ad5'], powY, {
-    stroke:{ curve:'straight', width:[2,2,2,2,2,2,2], dashArray:[0,0,0,0,0,0,0] },
-    fill:{ type:['gradient','solid','gradient','gradient','solid','solid','solid'],
-           opacity:[0.25,0.9,0.2,0.12,0.6,0.5,0.45] },
+  ], LIVE_POWER_COLORS, buildPowerYAxisConfig(false), {
+    stroke:{ curve:'straight', width:[2.4,2.0,2.2,1.9,1.9,1.9,1.9], dashArray:[0,0,0,6,0,0,0] },
+    fill:{ type:['solid','solid','solid','gradient','solid','solid','solid'],
+           opacity:[0,0,0,0.18,0,0,0] },
     tooltip:{
       x:{format:'HH:mm'},
       shared:true,
       y:{ formatter:(value, { seriesIndex, w }) => powerSeriesValue(w.config.series[seriesIndex].name, value) },
     },
     legend:{ show:true, labels:{colors:'#4a5568'}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(powerSeriesValue) },
-    xaxis:{ type:'datetime', min:startOfTodayMs(), max:endOfTodayMs(), labels:{datetimeUTC:false, style:{fontSize:'10px',colors:'#718096'}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
+    xaxis:{ type:'datetime', min:startOfTodayMs(), max:endOfTodayMs(), tickAmount:8, labels:{datetimeUTC:false, style:{fontSize:'10px',colors:'#718096'}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
   });
   powerChart.render();
 
@@ -559,21 +796,21 @@ function initCharts() {
     {name:'Feed-in price',           data:[]},
     {name:'Import forecast',         data:[]},
     {name:'Feed-in forecast',        data:[]},
-  ], ['#e53e3e','#38a169','#f6ad55','#68d391'], [
+  ], ['#b91c1c','#047857','#f59e0b','#22c55e'], [
     { seriesName:'Import price', labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} }, title:{text:'Import price',style:{color:'#718096',fontSize:'10px'}} },
     { seriesName:'Import forecast', show:false },
     { seriesName:'Feed-in price', opposite:true, labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} }, title:{text:'Export price',style:{color:'#718096',fontSize:'10px'}} },
     { seriesName:'Feed-in forecast', show:false },
   ], {
-    stroke:{ curve:'straight', width:[2,2,2,2], dashArray:[0,0,0,0] },
-    fill:{ type:['solid','solid','solid','solid'], opacity:[1,1,1,1] },
+    stroke:{ curve:'straight', width:[2.2,2.2,2.0,2.0], dashArray:[0,0,6,6] },
+    fill:{ type:['solid','solid','gradient','gradient'], opacity:[0,0,0.14,0.10] },
     tooltip:{
       x:{format:'HH:mm'},
       shared:true,
       y:{ formatter:(value, { seriesIndex, w }) => priceSeriesValue(w.config.series[seriesIndex].name, value) },
     },
     legend:{ show:true, labels:{colors:'#4a5568'}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(priceSeriesValue) },
-    xaxis:{ type:'datetime', min:startOfTodayMs(), max:endOfTodayMs(), labels:{datetimeUTC:false, style:{fontSize:'10px',colors:'#718096'}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
+    xaxis:{ type:'datetime', min:startOfTodayMs(), max:endOfTodayMs(), tickAmount:8, labels:{datetimeUTC:false, style:{fontSize:'10px',colors:'#718096'}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
     annotations:{ yaxis:[{y:0, borderColor:'#000', strokeDashArray:3, label:{text:'0',style:{fontSize:'10px'}}}] },
   });
   priceChart.render();
@@ -597,17 +834,67 @@ async function poll() {
     const r = await fetch(addonApiUrl('api/status'), { headers: buildAuthHeaders() });
     if (!r.ok) throw new Error(r.status);
     S = await r.json();
-    const now = Date.now();
-    histPow.push({ t:now, battery:S.battery_soc, pv:S.pv_kw, load:S.load_kw,
-                   exp:S.grid_export_power_kw, imp:S.grid_import_power_kw,
-                   minSoc:S.min_soc_to_sunrise, pvForecast:S.solar_power_now_kw });
-    histPri.push({ t:now, imp:S.current_price, fit:S.feedin_price });
-    const cut = now - 86400000;
-    histPow = histPow.filter(x => x.t >= cut);
-    histPri = histPri.filter(x => x.t >= cut);
-    if (!simActive) refreshCharts();
+    ingestStatusSample(S);
+    if (simActive && simPreview) applySimulationOverlay(simPreview.profile, { silent: true });
+    else refreshCharts();
     updateOverview();
   } catch(e) { console.warn('poll failed', e); }
+}
+
+function ingestStatusSample(status) {
+  const now = Date.now();
+  histPow.push({ t:now, battery:status.battery_soc, pv:status.pv_kw, load:status.load_kw,
+                 exp:status.grid_export_power_kw, imp:status.grid_import_power_kw,
+                 minSoc:status.min_soc_to_sunrise, pvForecast:status.solar_power_now_kw });
+  histPri.push({ t:now, imp:status.current_price, fit:status.feedin_price });
+  const cut = now - 86400000;
+  histPow = histPow.filter(x => x.t >= cut);
+  histPri = histPri.filter(x => x.t >= cut);
+}
+
+function setWsDot(isLive) {
+  const dot = document.getElementById('wsDot');
+  if (!dot) return;
+  dot.classList.toggle('live', !!isLive);
+  dot.title = isLive ? 'Live updates connected' : 'Live updates disconnected';
+}
+
+function connectLiveWs() {
+  if (wsConn && (wsConn.readyState === WebSocket.OPEN || wsConn.readyState === WebSocket.CONNECTING)) return;
+  const wsUrl = new URL(addonApiUrl('api/ws'), window.location.href);
+  wsUrl.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  wsConn = new WebSocket(wsUrl.toString());
+
+  wsConn.onopen = () => {
+    setWsDot(true);
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
+    }
+  };
+
+  wsConn.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+      if (!payload || typeof payload !== 'object') return;
+      S = { ...S, ...payload };
+      ingestStatusSample(S);
+      if (simActive && simPreview) applySimulationOverlay(simPreview.profile, { silent: true });
+      else refreshCharts();
+      updateOverview();
+    } catch (err) {
+      console.warn('ws parse failed', err);
+    }
+  };
+
+  wsConn.onclose = () => {
+    setWsDot(false);
+    wsReconnectTimer = setTimeout(connectLiveWs, 5000);
+  };
+
+  wsConn.onerror = () => {
+    setWsDot(false);
+  };
 }
 
 function refreshCharts() {
@@ -619,7 +906,7 @@ function refreshCharts() {
   const gridImportSeries = histPow.map(x=>[x.t,x.imp]);
   const gridExportSeries = histPow.map(x=>[x.t,x.exp]);
   const loadSeries = histPow.map(x=>[x.t,x.load]);
-  powerChart.updateSeries([
+  const powerSeries = [
     {name:'Battery %',     data: batterySeries},
     {name:'Min SoC %',     data: minSocSeries},
     {name:'PV Output kW',  data: pvSeries},
@@ -627,18 +914,9 @@ function refreshCharts() {
     {name:'Grid Import kW',data: gridImportSeries},
     {name:'Grid Export kW',data: gridExportSeries},
     {name:'Consumption kW',data: loadSeries},
-  ]);
-  powerChart.updateOptions({
-    xaxis:{ min:startOfTodayMs(), max:endOfTodayMs() },
-    annotations:{
-      points:[
-        buildSeriesAnnotation(batterySeries, '#3182ce', v => compactPctLabel(v), -14),
-        buildSeriesAnnotation(minSocSeries, '#38b2ac', v => compactPctLabel(v), 14),
-        buildSeriesAnnotation(gridExportSeries, '#38a169', v => compactKwLabel(v), -14),
-        buildSeriesAnnotation(loadSeries, '#805ad5', v => compactKwLabel(v), 14),
-      ].filter(Boolean),
-    },
-  }, false, false);
+  ];
+  applyPowerChartMode(powerSeries, { batterySeries, minSocSeries, pvSeries, pvForecastSeries, importSeries: gridImportSeries, exportSeries: gridExportSeries, loadSeries }, false);
+  setPowerChartNarrative(false);
   const importForecastSeries = parseCurvePoints(S?.price_forecast_curve);
   const feedinForecastSeries = parseCurvePoints(S?.feedin_forecast_curve);
   const importPriceSeries = histPri.map(x=>[x.t,x.imp]);
@@ -659,12 +937,13 @@ function refreshCharts() {
       { seriesName:'Feed-in forecast', show:false, min:bounds.min, max:bounds.max },
     ],
     annotations:{
+      xaxis: buildDaylightAnnotations(),
       yaxis:[{y:0, borderColor:'#000', strokeDashArray:3, label:{text:'0',style:{fontSize:'10px'}}}],
       points:[
-        buildSeriesAnnotation(importPriceSeries, '#e53e3e', v => compactPriceLabel(v), -14),
-        buildSeriesAnnotation(feedinPriceSeries, '#38a169', v => compactPriceLabel(v), 14),
-        buildSeriesAnnotation(importForecastSeries, '#f6ad55', v => compactPriceLabel(v), -14),
-        buildSeriesAnnotation(feedinForecastSeries, '#68d391', v => compactPriceLabel(v), 14),
+        buildSeriesAnnotation(importPriceSeries, 'Import price', '#b91c1c', v => compactPriceLabel(v), -14),
+        buildSeriesAnnotation(feedinPriceSeries, 'Feed-in price', '#047857', v => compactPriceLabel(v), 14),
+        buildSeriesAnnotation(importForecastSeries, 'Import forecast', '#f59e0b', v => compactPriceLabel(v), -14),
+        buildSeriesAnnotation(feedinForecastSeries, 'Feed-in forecast', '#22c55e', v => compactPriceLabel(v), 14),
       ].filter(Boolean),
     },
   }, false, false);
@@ -676,31 +955,81 @@ function fcc(v){ if(v==null) return '—'; const c=Number(v)*100; return Math.ab
 function ts(){ return new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
 function tsISO(iso){ return iso ? new Date(iso).toLocaleString('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).replace(',','T').replace(' ','') : '—'; }
 
+function setPendingBadge(id, on, status='pending', text='Pending...') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle('on', !!on);
+  el.classList.remove('saving', 'saved', 'failed');
+  if (on && ['saving','saved','failed'].includes(status)) {
+    el.classList.add(status);
+  }
+  el.textContent = text;
+}
+
+function setActionMessage(id, level, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('ok', 'warn', 'err');
+  if (level) el.classList.add(level);
+  el.textContent = text || '';
+}
+
+function clearActionMessage(id, delayMs = 6000) {
+  setTimeout(() => setActionMessage(id, '', ''), delayMs);
+}
+
+function formatFieldErrors(fieldErrors) {
+  if (!Array.isArray(fieldErrors) || !fieldErrors.length) return '';
+  return fieldErrors.map((e) => `${e.key || 'field'}: ${e.error || 'invalid'}`).join(' | ');
+}
+
+function setTextWithFlash(id, nextText) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const text = String(nextText ?? '—');
+  if (el.textContent !== text) {
+    el.textContent = text;
+    el.classList.remove('live-flash');
+    void el.offsetWidth;
+    el.classList.add('live-flash');
+  }
+}
+
 function updateOverview() {
   const s = S;
+  const staleEl = document.getElementById('staleBanner');
+  const age = Number(s?.data_age_seconds);
+  const stale = !!s?.stale_data || (Number.isFinite(age) && age > Math.max(45, Math.round(POLL / 1000) * 2));
+  if (staleEl) {
+    staleEl.classList.toggle('on', stale);
+    if (stale && Number.isFinite(age)) {
+      staleEl.textContent = `Live data is stale (${Math.round(age)}s old). Waiting for fresh status from Home Assistant...`;
+    }
+  }
   // Chart now labels
-  document.getElementById('nowPower').textContent =
-    `Now: Battery ${fc(s.battery_soc,1)}%, Min SoC ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Forecast ${fc(s.solar_power_now_kw,1)}kW`;
+  document.getElementById('nowPower').textContent = simActive && simPreview
+    ? `Simulation: ${PROFILE_META[simPreview.profile]?.label || 'Selected profile'} | Battery ${fc(s.battery_soc,1)}% -> ${fc(simPreview.projectedBattery,1)}%, Import ${fc(simPreview.importLimit,1)}kW, Export ${fc(simPreview.exportLimit,1)}kW`
+    : `Now: Battery ${fc(s.battery_soc,1)}%, Min SoC ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Forecast ${fc(s.solar_power_now_kw,1)}kW`;
   document.getElementById('nowPrice').textContent =
     `Now: import ${fcc(s.current_price)}/kWh, feed-in ${fcc(s.feedin_price)}/kWh, PV today ${fc(s.forecast_today,1)}kWh`;
 
   // Cycle timing
-  document.getElementById('cycleStart').textContent  = tsISO(s.last_update);
-  document.getElementById('cycleDone').textContent   = new Date().toISOString().replace('T',' ').slice(0,19);
-  document.getElementById('pollVal').textContent     = String(Math.round(POLL / 1000));
+  setTextWithFlash('cycleStart', tsISO(s.last_cycle_started));
+  setTextWithFlash('cycleDone', tsISO(s.last_cycle_completed));
+  setTextWithFlash('pollVal', String(Math.round(POLL / 1000)));
 
   // Status cards
-  document.getElementById('sCtrl').textContent  = s.sigenergy_mode === 'Automated' ? 'automated' : (s.sigenergy_mode||'—');
-  document.getElementById('sErr').textContent   = 'none';
-  document.getElementById('sMode').textContent  = s.ems_mode || '—';
-  document.getElementById('sBat').textContent   = fc(s.battery_soc,1);
-  document.getElementById('sSunrise').textContent = fc(s.sunrise_soc_target,2);
-  document.getElementById('sImpPrice').textContent  = fcc(s.current_price);
-  document.getElementById('sExpLimVal').textContent = fc(s.export_limit,2)+' kW';
-  document.getElementById('sFIT').textContent       = fcc(s.feedin_price);
-  document.getElementById('sImpLimVal').textContent = fc(s.import_limit,2)+' kW';
-  document.getElementById('sPVMax').textContent     = fc(s.pv_max_power_limit,2)+' kW';
-  document.getElementById('sESSThresh').textContent = '1.0 kW';
+  setTextWithFlash('sCtrl', s.sigenergy_mode === 'Automated' ? 'automated' : (s.sigenergy_mode||'—'));
+  setTextWithFlash('sErr', s.last_cycle_error || 'none');
+  setTextWithFlash('sMode', s.ems_mode || '—');
+  setTextWithFlash('sBat', fc(s.battery_soc,1));
+  setTextWithFlash('sSunrise', fc(s.sunrise_soc_target,2));
+  setTextWithFlash('sImpPrice', fcc(s.current_price));
+  setTextWithFlash('sExpLimVal', fc(s.export_limit,2)+' kW');
+  setTextWithFlash('sFIT', fcc(s.feedin_price));
+  setTextWithFlash('sImpLimVal', fc(s.import_limit,2)+' kW');
+  setTextWithFlash('sPVMax', fc(s.pv_max_power_limit,2)+' kW');
+  setTextWithFlash('sESSThresh', '1.0 kW');
 
   // Reason
   document.getElementById('reasonBar').textContent = s.outcome_reason || '—';
@@ -759,6 +1088,37 @@ function normalizeProfileKey(profile) {
   return PROFILE_META[profile] ? profile : 'maxConsumption';
 }
 
+function simulationConfidence() {
+  if (!S) return { label: 'Low', detail: 'No live status yet' };
+  const reasons = [];
+  let score = 100;
+  const age = Number(S.data_age_seconds);
+  if (!Number.isFinite(age)) {
+    score -= 45;
+    reasons.push('unknown data age');
+  } else if (age > Math.max(45, Math.round(POLL / 1000) * 2)) {
+    score -= 45;
+    reasons.push(`stale data (${Math.round(age)}s)`);
+  }
+  const importPts = Array.isArray(S.price_forecast_curve) ? S.price_forecast_curve.length : 0;
+  const fitPts = Array.isArray(S.feedin_forecast_curve) ? S.feedin_forecast_curve.length : 0;
+  if (importPts < 3 || fitPts < 3) {
+    score -= 25;
+    reasons.push('limited forecast points');
+  }
+  if (!Number.isFinite(Number(S.current_price)) || !Number.isFinite(Number(S.feedin_price))) {
+    score -= 40;
+    reasons.push('missing live prices');
+  }
+  if (S.price_is_estimated) {
+    score -= 10;
+    reasons.push('estimated prices');
+  }
+  if (score >= 80) return { label: 'High', detail: reasons.join(', ') || 'fresh live + forecast data' };
+  if (score >= 55) return { label: 'Medium', detail: reasons.join(', ') || 'partially complete data' };
+  return { label: 'Low', detail: reasons.join(', ') || 'insufficient confidence inputs' };
+}
+
 function syncThresholdInputsFromConfig(cfg) {
   if (!cfg) return;
   setV('tExpLowPrice',  (cfg.export_threshold_low  *100).toFixed(2));
@@ -810,7 +1170,7 @@ function getBaseThresholdConfig() {
 function applyProfileToConfig(baseCfg, profile) {
   const cfg = { ...baseCfg };
   const p = normalizeProfileKey(profile);
-  if (p === 'balancedCurrent') {
+  if (p === 'balanced') {
     cfg.expLowLimit *= 0.85;
     cfg.expMedLimit *= 0.85;
     cfg.expHighLimit *= 0.9;
@@ -844,6 +1204,80 @@ function profileNetEstimate(s, exp, imp) {
   return { exportRev, importCost, net: exportRev - importCost };
 }
 
+function buildSimulationComparisons() {
+  if (!S || (!Number.isFinite(Number(S.current_price)) && !Number.isFinite(Number(S.feedin_price)))) {
+    return [];
+  }
+  const base = getBaseThresholdConfig();
+  return ['maxConsumption', 'balanced', 'maxProfits']
+    .map((p) => {
+      const cfg = applyProfileToConfig(base, p);
+      const exp = computePreviewExport(S, cfg);
+      const imp = computePreviewImport(S, cfg);
+      const est = profileNetEstimate(S, exp, imp);
+      return { profile: p, cfg, exp, imp, est };
+    })
+    .sort((a, b) => Number(b.est?.net || 0) - Number(a.est?.net || 0));
+}
+
+function applySimulationOverlay(profile, options = {}) {
+  if (!simComparisons.length) return;
+  const selected = simComparisons.find((x) => x.profile === profile) || simComparisons[0];
+  if (!selected) return;
+
+  const now = Date.now();
+  const exportLimit = selected.exp.limit ?? 0;
+  const importLimit = selected.imp.limit ?? 0;
+  const projectedBattery = Math.min(100,(S.battery_soc||50)+2);
+
+  const simBatterySeries = [...histPow.map(x=>[x.t,x.battery]), [now+1200000, projectedBattery]];
+  const simPvSeries = [...histPow.map(x=>[x.t,x.pv]), [now+1200000, S.solar_power_now_kw||0]];
+  const simImportSeries = [...histPow.map(x=>[x.t,x.imp]), [now+1200000, importLimit]];
+  const simExportSeries = [...histPow.map(x=>[x.t,x.exp]), [now+1200000, exportLimit]];
+  const simConsumptionSeries = [...histPow.map(x=>[x.t,x.load]), [now+1200000, S.load_kw||0]];
+
+  applyPowerChartMode([
+    {name:'Sim Battery %',     data: simBatterySeries},
+    {name:'Min SoC %',         data: histPow.map(x=>[x.t,x.minSoc])},
+    {name:'Sim PV Output kW',  data: simPvSeries},
+    {name:'PV Forecast kW',    data: histPow.map(x=>[x.t,x.pvForecast])},
+    {name:'Sim Import kW',     data: simImportSeries},
+    {name:'Sim Export kW',     data: simExportSeries},
+    {name:'Sim Consumption kW',data: simConsumptionSeries},
+  ], {
+    batterySeries: simBatterySeries,
+    minSocSeries: histPow.map(x=>[x.t,x.minSoc]),
+    pvSeries: simPvSeries,
+    pvForecastSeries: histPow.map(x=>[x.t,x.pvForecast]),
+    importSeries: simImportSeries,
+    exportSeries: simExportSeries,
+    loadSeries: simConsumptionSeries,
+  }, true);
+
+  simPreview = {
+    profile: selected.profile,
+    exportLimit,
+    importLimit,
+    net: Number(selected.est?.net || 0),
+    projectedBattery,
+  };
+  simActive = true;
+  setPowerChartNarrative(true, simPreview);
+  if (!options.silent) {
+    updateOverview();
+    updateScenarioComparison();
+    const resEl = document.getElementById('simResult');
+    if (resEl) {
+      const netSign = simPreview.net >= 0 ? 'pos' : 'neg';
+      resEl.innerHTML =
+        `Simulation overlay: <strong>${PROFILE_META[selected.profile].label}</strong> &middot; ` +
+        `Export <strong>${fc(exportLimit,2)} kW</strong> &middot; ` +
+        `Import <strong>${fc(importLimit,2)} kW</strong> &middot; ` +
+        `Est. net/h <span class="${netSign}">${simPreview.net >= 0 ? '+' : '-'}$${Math.abs(simPreview.net).toFixed(2)}</span>`;
+    }
+  }
+}
+
 function selectProfile(profile) {
   activeProfile = normalizeProfileKey(profile);
   document.querySelectorAll('.tune-btn').forEach(btn => btn.classList.remove('active'));
@@ -863,23 +1297,34 @@ function updateScenarioComparison() {
     return;
   }
 
-  const base = getBaseThresholdConfig();
-  const profiles = ['maxConsumption', 'balancedCurrent', 'maxProfits'];
-  const cards = profiles.map(p => {
-    const cfg = applyProfileToConfig(base, p);
-    const exp = computePreviewExport(S, cfg);
-    const imp = computePreviewImport(S, cfg);
-    const est = profileNetEstimate(S, exp, imp);
-    const cls = p === activeProfile ? 'scenario-card active' : 'scenario-card';
+  const confidence = simulationConfidence();
+  const scenarioNoteEl = document.getElementById('scenarioNote');
+  if (scenarioNoteEl) {
+    scenarioNoteEl.textContent = `Confidence: ${confidence.label}. ${confidence.detail}. Click a scenario to update computed import/export view.`;
+  }
+
+  simComparisons = buildSimulationComparisons();
+  const cards = simComparisons.map((item, idx) => {
+    const p = item.profile;
+    const exp = item.exp;
+    const imp = item.imp;
+    const est = item.est;
+    const isPreview = p === activeProfile;
+    const isOverlay = simActive && simPreview && simPreview.profile === p;
+    const cls = (isPreview || isOverlay) ? 'scenario-card active' : 'scenario-card';
     const signCls = est.net >= 0 ? 'pos' : 'neg';
     const signedNet = `${est.net >= 0 ? '+' : '-'}$${Math.abs(est.net).toFixed(2)}`;
     return `
       <div class="${cls}">
         <div class="scenario-name">${PROFILE_META[p].label}</div>
+        <div class="scenario-metric">Rank: <strong>#${idx + 1}</strong>${idx === 0 ? ' (best)' : ''}</div>
         <div class="scenario-metric">Computed export: <strong>${exp.limit == null ? '—' : fc(exp.limit,2) + ' kW'}</strong></div>
         <div class="scenario-metric">Computed import: <strong>${imp.limit == null ? '—' : fc(imp.limit,2) + ' kW'}</strong></div>
         <div class="scenario-metric">Est. net/h: <strong class="${signCls}">${signedNet}</strong></div>
-        <button class="scenario-btn" onclick="selectProfile('${p}')">Preview This</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+          <button class="scenario-btn" onclick="selectProfile('${p}')">Preview</button>
+          <button class="scenario-btn" onclick="applySimulationOverlay('${p}')">${isOverlay ? 'Overlay Active' : 'Overlay This'}</button>
+        </div>
       </div>`;
   });
   grid.innerHTML = cards.join('');
@@ -1006,7 +1451,12 @@ async function getJson(url) {
   const r = await fetch(addonApiUrl(url), { headers: buildAuthHeaders() });
   if (!r.ok) {
     const err = await r.json().catch(() => ({ detail: r.statusText }));
-    throw new Error(err.detail || r.statusText);
+    const detail = typeof err?.detail === 'string'
+      ? err.detail
+      : (err?.detail?.message || err?.message || r.statusText);
+    const ex = new Error(detail || r.statusText);
+    ex.fieldErrors = err?.field_errors || err?.detail?.field_errors || [];
+    throw ex;
   }
   return r.json();
 }
@@ -1016,37 +1466,256 @@ async function post(url, body) {
   const r = await fetch(addonApiUrl(url), {method:'POST', headers, body: JSON.stringify(body)});
   if (!r.ok) {
     const err = await r.json().catch(() => ({ detail: r.statusText }));
-    throw new Error(err.detail || r.statusText);
+    const detail = typeof err?.detail === 'string'
+      ? err.detail
+      : (err?.detail?.message || err?.message || r.statusText);
+    const ex = new Error(detail || r.statusText);
+    ex.fieldErrors = err?.field_errors || err?.detail?.field_errors || [];
+    throw ex;
   }
   return r.json();
 }
 
+async function del(url) {
+  const headers = buildAuthHeaders({ 'Content-Type': 'application/json' });
+  const r = await fetch(addonApiUrl(url), { method:'DELETE', headers });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    const ex = new Error(err?.detail || r.statusText);
+    ex.fieldErrors = err?.field_errors || err?.detail?.field_errors || [];
+    throw ex;
+  }
+  return r.json();
+}
+
+async function loadPresets() {
+  const select = document.getElementById('presetSelect');
+  if (!select) return;
+  try {
+    const data = await getJson('api/presets');
+    const presets = Array.isArray(data?.presets) ? data.presets : [];
+    const current = select.value;
+    select.innerHTML = '<option value="">Select saved preset...</option>' + presets
+      .map((p) => `<option value="${escH(String(p.name))}">${escH(String(p.name))}</option>`)
+      .join('');
+    if (current && presets.some((p) => p.name === current)) select.value = current;
+  } catch (_) {}
+}
+
+async function savePreset() {
+  const nameEl = document.getElementById('presetName');
+  const name = (nameEl?.value || '').trim();
+  if (!name) {
+    setActionMessage('msgPreset', 'warn', 'Preset name is required.');
+    return;
+  }
+  const payload = {
+    export_threshold_low: numInput('tExpLowPrice') / 100,
+    export_threshold_medium: numInput('tExpMedPrice') / 100,
+    export_threshold_high: numInput('tExpHighPrice') / 100,
+    export_limit_low: numInput('tExpLowLimit'),
+    export_limit_medium: numInput('tExpMedLimit'),
+    export_limit_high: numInput('tExpHighLimit'),
+    import_threshold_low: numInput('tImpLowPrice') / 100,
+    import_threshold_medium: numInput('tImpMedPrice') / 100,
+    import_threshold_high: numInput('tImpHighPrice') / 100,
+    import_limit_low: numInput('tImpLowLimit'),
+    import_limit_medium: numInput('tImpMedLimit'),
+    import_limit_high: numInput('tImpHighLimit'),
+  };
+  try {
+    await post('api/presets', { name, payload });
+    setActionMessage('msgPreset', 'ok', `Saved preset "${name}".`);
+    await loadPresets();
+    const select = document.getElementById('presetSelect');
+    if (select) select.value = name;
+    clearActionMessage('msgPreset');
+  } catch (e) {
+    setActionMessage('msgPreset', 'err', `Save failed: ${e.message || String(e)}`);
+  }
+}
+
+async function loadPreset() {
+  const select = document.getElementById('presetSelect');
+  const name = (select?.value || '').trim();
+  if (!name) {
+    setActionMessage('msgPreset', 'warn', 'Choose a preset to load.');
+    return;
+  }
+  try {
+    const data = await getJson(`api/presets/${encodeURIComponent(name)}`);
+    const p = data?.preset?.payload || {};
+    const oldValues = {
+      tExpLowPrice: document.getElementById('tExpLowPrice').value,
+      tExpMedPrice: document.getElementById('tExpMedPrice').value,
+      tExpHighPrice: document.getElementById('tExpHighPrice').value,
+      tExpLowLimit: document.getElementById('tExpLowLimit').value,
+      tExpMedLimit: document.getElementById('tExpMedLimit').value,
+      tExpHighLimit: document.getElementById('tExpHighLimit').value,
+      tImpLowPrice: document.getElementById('tImpLowPrice').value,
+      tImpMedPrice: document.getElementById('tImpMedPrice').value,
+      tImpHighPrice: document.getElementById('tImpHighPrice').value,
+      tImpLowLimit: document.getElementById('tImpLowLimit').value,
+      tImpMedLimit: document.getElementById('tImpMedLimit').value,
+      tImpHighLimit: document.getElementById('tImpHighLimit').value,
+    };
+    if (Number.isFinite(Number(p.export_threshold_low))) document.getElementById('tExpLowPrice').value = (Number(p.export_threshold_low) * 100).toFixed(2);
+    if (Number.isFinite(Number(p.export_threshold_medium))) document.getElementById('tExpMedPrice').value = (Number(p.export_threshold_medium) * 100).toFixed(2);
+    if (Number.isFinite(Number(p.export_threshold_high))) document.getElementById('tExpHighPrice').value = (Number(p.export_threshold_high) * 100).toFixed(2);
+    if (Number.isFinite(Number(p.export_limit_low))) document.getElementById('tExpLowLimit').value = String(p.export_limit_low);
+    if (Number.isFinite(Number(p.export_limit_medium))) document.getElementById('tExpMedLimit').value = String(p.export_limit_medium);
+    if (Number.isFinite(Number(p.export_limit_high))) document.getElementById('tExpHighLimit').value = String(p.export_limit_high);
+    if (Number.isFinite(Number(p.import_threshold_low))) document.getElementById('tImpLowPrice').value = (Number(p.import_threshold_low) * 100).toFixed(2);
+    if (Number.isFinite(Number(p.import_threshold_medium))) document.getElementById('tImpMedPrice').value = (Number(p.import_threshold_medium) * 100).toFixed(2);
+    if (Number.isFinite(Number(p.import_threshold_high))) document.getElementById('tImpHighPrice').value = (Number(p.import_threshold_high) * 100).toFixed(2);
+    if (Number.isFinite(Number(p.import_limit_low))) document.getElementById('tImpLowLimit').value = String(p.import_limit_low);
+    if (Number.isFinite(Number(p.import_limit_medium))) document.getElementById('tImpMedLimit').value = String(p.import_limit_medium);
+    if (Number.isFinite(Number(p.import_limit_high))) document.getElementById('tImpHighLimit').value = String(p.import_limit_high);
+    updateThresholdPreview();
+    updateScenarioComparison();
+    setActionMessage('msgPreset', 'ok', `Loaded preset "${name}" into threshold inputs.`);
+    clearActionMessage('msgPreset');
+    window.__lastPresetValues = oldValues;
+  } catch (e) {
+    setActionMessage('msgPreset', 'err', `Load failed: ${e.message || String(e)}`);
+  }
+}
+
+async function deletePreset() {
+  const select = document.getElementById('presetSelect');
+  const name = (select?.value || '').trim();
+  if (!name) {
+    setActionMessage('msgPreset', 'warn', 'Choose a preset to delete.');
+    return;
+  }
+  try {
+    const res = await del(`api/presets/${encodeURIComponent(name)}`);
+    if (res?.deleted) {
+      setActionMessage('msgPreset', 'ok', `Deleted preset "${name}".`);
+      await loadPresets();
+      clearActionMessage('msgPreset');
+    } else {
+      setActionMessage('msgPreset', 'warn', `Preset "${name}" was not found.`);
+    }
+  } catch (e) {
+    setActionMessage('msgPreset', 'err', `Delete failed: ${e.message || String(e)}`);
+  }
+}
+
+async function waitForStatusMatch(predicate, timeoutMs = 8000, intervalMs = 600) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const status = await getJson('api/status');
+      if (predicate(status)) return true;
+    } catch (_) {}
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return false;
+}
+
 async function applyMode(btn) {
   if (!btn) return;
+  const prevMode = S?.sigenergy_mode;
+  setActionMessage('msgMode', 'warn', `Sending mode change at ${ts()}...`);
+  setPendingBadge('pending-mode', true, 'saving', 'Saving...');
   btn.disabled=true; btn.textContent='Applying…';
-  try { await post('api/set_mode', {mode: document.getElementById('modeSelect').value}); btn.textContent='Applied ✓'; poll(); }
-  catch(e){ btn.textContent='Error'; btn.title=e.message||String(e); console.error('applyMode:', e.message); }
-  setTimeout(()=>{ btn.textContent='Apply Mode'; btn.title=''; btn.disabled=false; }, 2000);
+  try {
+    const targetMode = document.getElementById('modeSelect').value;
+    await post('api/set_mode', {mode: targetMode});
+    const ok = await waitForStatusMatch((s) => String(s.sigenergy_mode || '') === String(targetMode));
+    btn.textContent = ok ? 'Applied ✓' : 'Applied (pending)';
+    setPendingBadge('pending-mode', true, ok ? 'saved' : 'saving', ok ? 'Saved' : 'Pending...');
+    setActionMessage('msgMode', ok ? 'ok' : 'warn', ok
+      ? `Mode updated to ${targetMode} at ${ts()}.`
+      : `Mode request accepted at ${ts()} and is still settling.`);
+    poll();
+  }
+  catch(e){
+    btn.textContent='Error';
+    btn.title=e.message||String(e);
+    setPendingBadge('pending-mode', true, 'failed', 'Failed');
+    if (prevMode) syncSel('modeSelect', prevMode);
+    const fieldTxt = formatFieldErrors(e.fieldErrors);
+    setActionMessage('msgMode', 'err', `Mode change failed at ${ts()}: ${e.message || String(e)}${fieldTxt ? ' | ' + fieldTxt : ''}`);
+    console.error('applyMode:', e.message);
+  }
+  setTimeout(()=>{ btn.textContent='Apply Mode'; btn.title=''; btn.disabled=false; setPendingBadge('pending-mode', false, 'pending', 'Pending...'); clearActionMessage('msgMode', 0); }, 2000);
 }
 
 async function applyESS(btn) {
   if (!btn) return;
+  const prev = {
+    emsMode: document.getElementById('emsMode').value,
+    expLim: document.getElementById('expLim').value,
+    impLim: document.getElementById('impLim').value,
+    pvMax: document.getElementById('pvMax').value,
+    haCtrl: document.getElementById('haCtrl').value,
+  };
+  setActionMessage('msgEss', 'warn', `Sending ESS update at ${ts()}...`);
+  setPendingBadge('pending-ess', true, 'saving', 'Saving...');
   btn.disabled=true; btn.textContent='Applying…';
   try {
-    await post('api/set_ess', {
+    const target = {
       ems_mode: document.getElementById('emsMode').value,
       grid_export_limit: +document.getElementById('expLim').value||0,
       grid_import_limit: +document.getElementById('impLim').value||0,
       pv_max_power_limit: +document.getElementById('pvMax').value||25,
+    };
+    await post('api/set_ess', {
+      ems_mode: target.ems_mode,
+      grid_export_limit: target.grid_export_limit,
+      grid_import_limit: target.grid_import_limit,
+      pv_max_power_limit: target.pv_max_power_limit,
       ha_control: document.getElementById('haCtrl').value === 'on',
     });
-    btn.textContent='Applied ✓'; poll();
-  } catch(e){ btn.textContent='Error'; btn.title=e.message||String(e); console.error('applyESS:', e.message); }
-  setTimeout(()=>{ btn.textContent='Apply ESS Controls'; btn.title=''; btn.disabled=false; }, 2000);
+    const ok = await waitForStatusMatch((s) => {
+      const sameMode = String(s.ems_mode || '') === String(target.ems_mode);
+      const sameExp = Math.abs(Number(s.export_limit || 0) - target.grid_export_limit) < 0.11;
+      const sameImp = Math.abs(Number(s.import_limit || 0) - target.grid_import_limit) < 0.11;
+      const samePv = Math.abs(Number(s.pv_max_power_limit || 0) - target.pv_max_power_limit) < 0.11;
+      return sameMode && sameExp && sameImp && samePv;
+    });
+    btn.textContent = ok ? 'Applied ✓' : 'Applied (pending)';
+    setPendingBadge('pending-ess', true, ok ? 'saved' : 'saving', ok ? 'Saved' : 'Pending...');
+    setActionMessage('msgEss', ok ? 'ok' : 'warn', ok
+      ? `ESS controls applied at ${ts()}.`
+      : `ESS request accepted at ${ts()} and is still settling.`);
+    poll();
+  } catch(e){
+    btn.textContent='Error';
+    btn.title=e.message||String(e);
+    setPendingBadge('pending-ess', true, 'failed', 'Failed');
+    document.getElementById('emsMode').value = prev.emsMode;
+    document.getElementById('expLim').value = prev.expLim;
+    document.getElementById('impLim').value = prev.impLim;
+    document.getElementById('pvMax').value = prev.pvMax;
+    document.getElementById('haCtrl').value = prev.haCtrl;
+    const fieldTxt = formatFieldErrors(e.fieldErrors);
+    setActionMessage('msgEss', 'err', `ESS update failed at ${ts()}: ${e.message || String(e)}${fieldTxt ? ' | ' + fieldTxt : ''}`);
+    console.error('applyESS:', e.message);
+  }
+  setTimeout(()=>{ btn.textContent='Apply ESS Controls'; btn.title=''; btn.disabled=false; setPendingBadge('pending-ess', false, 'pending', 'Pending...'); clearActionMessage('msgEss', 0); }, 2000);
 }
 
 async function applyThresholds(btn) {
   if (!btn) return;
+  const prev = {
+    tExpLowPrice: document.getElementById('tExpLowPrice').value,
+    tExpMedPrice: document.getElementById('tExpMedPrice').value,
+    tExpHighPrice: document.getElementById('tExpHighPrice').value,
+    tExpLowLimit: document.getElementById('tExpLowLimit').value,
+    tExpMedLimit: document.getElementById('tExpMedLimit').value,
+    tExpHighLimit: document.getElementById('tExpHighLimit').value,
+    tImpLowPrice: document.getElementById('tImpLowPrice').value,
+    tImpMedPrice: document.getElementById('tImpMedPrice').value,
+    tImpHighPrice: document.getElementById('tImpHighPrice').value,
+    tImpLowLimit: document.getElementById('tImpLowLimit').value,
+    tImpMedLimit: document.getElementById('tImpMedLimit').value,
+    tImpHighLimit: document.getElementById('tImpHighLimit').value,
+  };
+  setActionMessage('msgThresholds', 'warn', `Saving thresholds at ${ts()}...`);
+  setPendingBadge('pending-thresholds', true, 'saving', 'Saving...');
   btn.disabled=true; btn.textContent='Applying…';
   const pairs = [
     ['export_threshold_low',   +document.getElementById('tExpLowPrice').value/100],
@@ -1066,9 +1735,21 @@ async function applyThresholds(btn) {
     const updates = pairs.map(([key, value]) => ({ key, value }));
     await post('api/config/batch', { updates, persist: true });
     btn.textContent='Applied + Saved ✓';
+    setPendingBadge('pending-thresholds', true, 'saved', 'Saved');
+    setActionMessage('msgThresholds', 'ok', `Thresholds saved at ${ts()}.`);
     await loadConfig();
-  } catch(e){ btn.textContent='Error'; btn.title=e.message||String(e); console.error('applyThresholds:', e.message); }
-  setTimeout(()=>{ btn.textContent='Apply & Save Thresholds'; btn.title=''; btn.disabled=false; }, 2000);
+  } catch(e){
+    btn.textContent='Error';
+    btn.title=e.message||String(e);
+    setPendingBadge('pending-thresholds', true, 'failed', 'Failed');
+    Object.entries(prev).forEach(([k,v]) => { const el=document.getElementById(k); if (el) el.value=v; });
+    updateThresholdPreview();
+    updateScenarioComparison();
+    const fieldTxt = formatFieldErrors(e.fieldErrors);
+    setActionMessage('msgThresholds', 'err', `Threshold save failed at ${ts()}: ${e.message || String(e)}${fieldTxt ? ' | ' + fieldTxt : ''}`);
+    console.error('applyThresholds:', e.message);
+  }
+  setTimeout(()=>{ btn.textContent='Apply & Save Thresholds'; btn.title=''; btn.disabled=false; setPendingBadge('pending-thresholds', false, 'pending', 'Pending...'); clearActionMessage('msgThresholds', 0); }, 2000);
 }
 
 async function runCycle() {
@@ -1090,52 +1771,31 @@ async function runSimulation() {
     return;
   }
   try {
-    // Compare all 3 profiles against live prices and pick the best net outcome
-    const base = getBaseThresholdConfig();
-    let bestNet = -Infinity, bestProfile = 'maxConsumption', bestExpLimit = 0, bestImpLimit = 0;
-    for (const p of ['maxConsumption', 'balancedCurrent', 'maxProfits']) {
-      const cfg = applyProfileToConfig(base, p);
-      const exp = computePreviewExport(S, cfg);
-      const imp = computePreviewImport(S, cfg);
-      const est = profileNetEstimate(S, exp, imp);
-      if (est.net > bestNet) {
-        bestNet = est.net;
-        bestProfile = p;
-        bestExpLimit = exp.limit ?? 0;
-        bestImpLimit = imp.limit ?? 0;
-      }
+    simComparisons = buildSimulationComparisons();
+    if (!simComparisons.length) {
+      resEl.textContent = 'Simulation unavailable: no pricing data.';
+      btn.textContent='Simulate Automated'; btn.disabled=false;
+      return;
     }
-    const netSign = bestNet >= 0 ? 'pos' : 'neg';
-    resEl.innerHTML =
-      `Best profile: <strong>${PROFILE_META[bestProfile].label}</strong> &middot; ` +
-      `Export <strong>${fc(bestExpLimit,2)} kW</strong> &middot; ` +
-      `Import <strong>${fc(bestImpLimit,2)} kW</strong> &middot; ` +
-      `Est. net/h <span class="${netSign}">${bestNet >= 0 ? '+' : '-'}$${Math.abs(bestNet).toFixed(2)}</span>`;
-    simActive = true;
+    const best = simComparisons[0];
+    activeProfile = best.profile;
     btn.textContent='Clear Simulation';
     btn.onclick = clearSim;
     btn.disabled=false;
-
-    // Overlay best-profile limits on chart
-    const now = Date.now();
-    powerChart.updateSeries([
-      {name:'Sim Battery %',     data:[...histPow.map(x=>[x.t,x.battery]),   [now+1200000, Math.min(100,(S.battery_soc||50)+2)]]},
-      {name:'Min SoC %',         data: histPow.map(x=>[x.t,x.minSoc])},
-      {name:'Sim PV Output kW',  data:[...histPow.map(x=>[x.t,x.pv]),        [now+1200000, S.solar_power_now_kw||0]]},
-      {name:'PV Forecast kW',    data: histPow.map(x=>[x.t,x.pvForecast])},
-      {name:'Sim Import kW',     data:[...histPow.map(x=>[x.t,x.imp]),       [now+1200000, bestImpLimit]]},
-      {name:'Sim Export kW',     data:[...histPow.map(x=>[x.t,x.exp]),       [now+1200000, bestExpLimit]]},
-      {name:'Sim Consumption kW',data:[...histPow.map(x=>[x.t,x.load]),      [now+1200000, S.load_kw||0]]},
-    ]);
+    applySimulationOverlay(best.profile);
   } catch(e){ console.error(e); btn.textContent='Simulate Automated'; btn.disabled=false; }
 }
 
 function clearSim() {
   simActive = false;
+  simPreview = null;
+  simComparisons = [];
   document.getElementById('simResult').innerHTML = '';
   const btn = document.getElementById('btnSim');
   btn.textContent='Simulate Automated'; btn.onclick=runSimulation;
   refreshCharts();
+  updateScenarioComparison();
+  updateOverview();
 }
 
 // ── Entities tab ──────────────────────────────────────────────────────────────
@@ -1170,6 +1830,40 @@ async function loadEntities() {
         </table>
       </div>`;
   } catch(e){ el.innerHTML='<div style="color:#e53e3e">Failed to load.</div>'; }
+}
+
+async function loadEarnings() {
+  const el = document.getElementById('earningsContent');
+  try {
+    const [today, hist] = await Promise.all([
+      getJson('api/daily_earnings'),
+      getJson('api/earnings_history?days=7'),
+    ]);
+    const rows = (hist.days || []).map((d) => `
+      <tr>
+        <td>${d.date || '—'}</td>
+        <td style="text-align:right">${fc(d.import_kwh,3)}</td>
+        <td style="text-align:right">${fc(d.export_kwh,3)}</td>
+        <td style="text-align:right">$${fc(d.import_costs,2)}</td>
+        <td style="text-align:right">$${fc(d.export_earnings,2)}</td>
+        <td style="text-align:right" class="${Number(d.net||0) >= 0 ? 'pos' : 'neg'}">$${fc(d.net,2)}</td>
+      </tr>
+    `).join('');
+    el.innerHTML = `
+      <div class="card-title">Earnings (Today)</div>
+      <div class="status-grid" style="margin-bottom:10px">
+        <div class="scell"><div class="slbl">Import kWh</div><div class="sval">${fc(today.total_import_kwh,3)}</div></div>
+        <div class="scell"><div class="slbl">Export kWh</div><div class="sval">${fc(today.total_export_kwh,3)}</div></div>
+        <div class="scell"><div class="slbl">Net</div><div class="sval ${Number(today.net||0) >= 0 ? 'pos' : 'neg'}">$${fc(today.net,2)}</div></div>
+      </div>
+      <table class="etable">
+        <thead><tr><th>Date</th><th style="text-align:right">Import</th><th style="text-align:right">Export</th><th style="text-align:right">Import $</th><th style="text-align:right">Export $</th><th style="text-align:right">Net</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6">No data</td></tr>'}</tbody>
+      </table>
+    `;
+  } catch (e) {
+    el.innerHTML = '<div style="color:#e53e3e">Failed to load earnings.</div>';
+  }
 }
 
 // ── Config tab ────────────────────────────────────────────────────────────────
@@ -1430,7 +2124,7 @@ function renderConfigField(sectionKey, cfg, field) {
 function renderConfigSection(cfg, section, initiallyOpen=false) {
   const fields = section.fields.map(field => renderConfigField(section.key, cfg, field)).join('');
   return `<details class="cfg-section" ${initiallyOpen ? 'open' : ''}>
-    <summary><span>${section.title}</span><span class="cfg-summary-note">${section.fields.length} settings</span></summary>
+    <summary><span>${section.title}</span><span class="cfg-summary-note">${section.fields.length} settings <span id="pending-cfg-${section.key}" class="pending-badge">Pending...</span></span></summary>
     <div class="cfg-body">
       <div class="cfg-grid">${fields}</div>
       <div class="cfg-actions">
@@ -1458,6 +2152,7 @@ async function loadConfig() {
     syncThresholdInputsFromConfig(cfg);
     const sectionsHtml = _CONFIG_SECTIONS.map((section, index) => renderConfigSection(cfg, section, index === 0)).join('');
     el.innerHTML = `<div class="cfg-stack">${sectionsHtml}</div>`;
+    await loadPresets();
     updateScenarioComparison();
     updateThresholdPreview();
   } catch(e){ el.innerHTML='<div style="color:#e53e3e">Failed.</div>'; }
@@ -1466,38 +2161,191 @@ async function loadConfig() {
 async function applyConfigSection(btn, sectionKey) {
   btn.disabled = true;
   const originalText = btn.textContent;
+  setPendingBadge(`pending-cfg-${sectionKey}`, true, 'saving', 'Saving...');
   btn.textContent = 'Saving…';
   const section = _CONFIG_SECTIONS.find(s => s.key === sectionKey);
   const msg = document.getElementById(`msg_${sectionKey}`);
+  const prevValues = {};
+  for (const field of section.fields) {
+    const [key] = field;
+    const input = document.getElementById(cfgFieldId(sectionKey, key));
+    prevValues[key] = input ? input.value : '';
+  }
   try {
     const updates = section.fields.map(field => readConfigFieldValue(sectionKey, field));
     await post('api/config/batch', { updates, persist: true });
     btn.textContent = 'Saved ✓';
-    if (msg) { msg.textContent = 'Saved.'; msg.style.color = '#276749'; }
+    setPendingBadge(`pending-cfg-${sectionKey}`, true, 'saved', 'Saved');
+    if (msg) { msg.textContent = `Saved at ${ts()}.`; msg.style.color = '#276749'; }
   } catch(e) {
     btn.textContent = 'Error';
     btn.title = e.message || String(e);
+    setPendingBadge(`pending-cfg-${sectionKey}`, true, 'failed', 'Failed');
     console.error('applyConfigSection:', e.message);
-    if (msg) { msg.textContent = 'Save failed: ' + (e.message || String(e)); msg.style.color = '#e53e3e'; }
+    for (const field of section.fields) {
+      const [key] = field;
+      const input = document.getElementById(cfgFieldId(sectionKey, key));
+      if (input && Object.prototype.hasOwnProperty.call(prevValues, key)) {
+        input.value = prevValues[key];
+      }
+    }
+    const fieldTxt = formatFieldErrors(e.fieldErrors);
+    if (msg) { msg.textContent = `Save failed: ${e.message || String(e)}${fieldTxt ? ' | ' + fieldTxt : ''}`; msg.style.color = '#e53e3e'; }
   }
-  setTimeout(() => { btn.textContent = originalText; btn.title = ''; btn.disabled = false; if (msg) msg.textContent = ''; }, 3000);
+  setTimeout(() => {
+    btn.textContent = originalText;
+    btn.title = '';
+    btn.disabled = false;
+    setPendingBadge(`pending-cfg-${sectionKey}`, false, 'pending', 'Pending...');
+    if (msg) msg.textContent = '';
+  }, 3000);
 }
 
 // ── Logs tab ──────────────────────────────────────────────────────────────────
 async function loadLogs() {
   const el = document.getElementById('logContent');
+  const metaEl = document.getElementById('logMeta');
+  const lineLimit = Number(document.getElementById('logLineLimit')?.value || '500');
+  const selected = (document.getElementById('logLevelFilter')?.value || 'info').toLowerCase();
+  const levelRank = { trace: 10, debug: 20, info: 30, warning: 40, error: 50, critical: 60, fatal: 60 };
+  const minRank = levelRank[selected] || levelRank.info;
+  if (metaEl) metaEl.textContent = 'Loading...';
+
+  function parseLevel(line) {
+    const m = String(line || '').toUpperCase().match(/\b(CRITICAL|FATAL|ERROR|WARNING|WARN|INFO|DEBUG|TRACE)\b/);
+    if (!m) return 'info';
+    const raw = m[1];
+    if (raw === 'WARN') return 'warning';
+    if (raw === 'FATAL') return 'critical';
+    return raw.toLowerCase();
+  }
+
+  function cssClassFor(level) {
+    if (level === 'critical' || level === 'error') return 'err';
+    if (level === 'warning') return 'warn';
+    if (level === 'debug') return 'dbg';
+    if (level === 'trace') return 'trace';
+    return 'info';
+  }
+
   try {
-    const r = await fetch(addonApiUrl('api/logs?n=200'), { headers: buildAuthHeaders() }); const text = await r.text();
-    const coloured = text.split('\n').map(line => {
-      if (!line.trim()) return '';
-      const cls = line.includes(' ERROR ') ? 'err' : line.includes(' WARNING ') ? 'warn' : 'info';
+    const r = await fetch(addonApiUrl(`api/logs?n=${encodeURIComponent(lineLimit)}`), { headers: buildAuthHeaders() }); const text = await r.text();
+    const rawLines = text.split('\n').filter(line => line.trim());
+    const kept = rawLines.filter((line) => (levelRank[parseLevel(line)] || levelRank.info) >= minRank);
+    const coloured = kept.map(line => {
+      const lvl = parseLevel(line);
+      const cls = cssClassFor(lvl);
       return `<span class="${cls}">${escH(line)}</span>`;
     }).join('\n');
     el.innerHTML = `<div class="log-block">${coloured}</div>`;
-  } catch(e){ el.innerHTML=`<div class="log-block" style="color:#718096">No logs yet.</div>`; }
+    if (metaEl) metaEl.textContent = `${kept.length} of ${rawLines.length} lines shown (${selected}+) | refreshed ${ts()}`;
+  } catch(e){
+    el.innerHTML=`<div class="log-block" style="color:#718096">No logs yet.</div>`;
+    if (metaEl) metaEl.textContent = 'No logs available';
+  }
+}
+
+function downloadLogs() {
+  const lineLimit = Number(document.getElementById('logLineLimit')?.value || '500');
+  const url = addonApiUrl(`api/logs/download?n=${encodeURIComponent(lineLimit)}`);
+  window.location = url;
 }
 
 function escH(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function auditJson(v) {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  try { return JSON.stringify(v); }
+  catch (_) { return String(v); }
+}
+
+function renderAuditTable() {
+  const contentEl = document.getElementById('auditContent');
+  const metaEl = document.getElementById('auditMeta');
+  const filter = (document.getElementById('auditFilter')?.value || '').trim().toLowerCase();
+  if (!Array.isArray(auditRows) || !auditRows.length) {
+    contentEl.className = 'audit-empty';
+    contentEl.innerHTML = 'No audit events yet.';
+    if (metaEl) metaEl.textContent = '0 events';
+    return;
+  }
+
+  const rows = auditRows.filter((row) => {
+    if (!filter) return true;
+    const hay = [
+      row.timestamp,
+      row.actor,
+      row.action,
+      row.source,
+      row.field,
+      auditJson(row.old_value),
+      auditJson(row.new_value),
+    ].join(' ').toLowerCase();
+    return hay.includes(filter);
+  });
+
+  if (!rows.length) {
+    contentEl.className = 'audit-empty';
+    contentEl.innerHTML = 'No audit rows match the current filter.';
+    if (metaEl) metaEl.textContent = `0 of ${auditRows.length} events`;
+    return;
+  }
+
+  const body = rows.map((row) => {
+    const oldValue = escH(auditJson(row.old_value));
+    const newValue = escH(auditJson(row.new_value));
+    return `<tr>
+      <td>${escH(String(row.timestamp || '-'))}</td>
+      <td>${escH(String(row.actor || '-'))}</td>
+      <td>${escH(String(row.action || '-'))}</td>
+      <td>${escH(String(row.source || '-'))}</td>
+      <td>${escH(String(row.field || '-'))}</td>
+      <td><div class="audit-code">${oldValue || '-'}</div></td>
+      <td><div class="audit-code">${newValue || '-'}</div></td>
+    </tr>`;
+  }).join('');
+
+  contentEl.className = 'audit-table-wrap';
+  contentEl.innerHTML = `<table class="audit-table">
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Actor</th>
+        <th>Action</th>
+        <th>Source</th>
+        <th>Field</th>
+        <th>Old Value</th>
+        <th>New Value</th>
+      </tr>
+    </thead>
+    <tbody>${body}</tbody>
+  </table>`;
+  if (metaEl) metaEl.textContent = `${rows.length} of ${auditRows.length} events`;
+}
+
+async function loadAudit() {
+  const contentEl = document.getElementById('auditContent');
+  const metaEl = document.getElementById('auditMeta');
+  const limit = Number(document.getElementById('auditLimit')?.value || '100');
+  if (contentEl) {
+    contentEl.className = 'audit-empty';
+    contentEl.innerHTML = 'Loading audit history...';
+  }
+  if (metaEl) metaEl.textContent = 'Loading...';
+  try {
+    const response = await getJson(`api/audit?limit=${encodeURIComponent(limit)}`);
+    auditRows = Array.isArray(response?.rows) ? response.rows : [];
+    renderAuditTable();
+  } catch (e) {
+    auditRows = [];
+    if (contentEl) {
+      contentEl.className = 'audit-empty';
+      contentEl.innerHTML = `Failed to load audit history: ${escH(e.message || String(e))}`;
+    }
+    if (metaEl) metaEl.textContent = 'Load failed';
+  }
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 const uiApiKeyInput = document.getElementById('uiApiKey');
@@ -1511,8 +2359,10 @@ document.querySelectorAll('.thresh-input').forEach(el => el.addEventListener('in
 document.querySelectorAll('.thresh-input').forEach(el => el.addEventListener('input', updateScenarioComparison));
 initCharts();
 loadConfig();
+loadPresets();
 selectProfile('maxConsumption');
 backfillHistory().then(() => poll());
+connectLiveWs();
 setInterval(poll, POLL);
 </script>
 </body>

@@ -15,12 +15,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings
 from .ha_client import HAClient
 from .models import Decision, SolarState
+from .state_store import StateStore
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,22 @@ class SigEnergyOptimizer:
         self._holdoff_entry_floor: Optional[float] = None  # Stable SoC floor for holdoff window
         self._last_hw_charge_cap_kw: Optional[float] = None
         self._last_hw_discharge_cap_kw: Optional[float] = None
+        self._last_cycle_started: Optional[datetime] = None
+        self._last_cycle_completed: Optional[datetime] = None
+        self._last_cycle_error: str = ""
+        tz_name = os.environ.get("TZ", "Australia/Adelaide")
+        try:
+            self._tz = ZoneInfo(tz_name)
+        except ZoneInfoNotFoundError:
+            logger.warning("Timezone '%s' not found; falling back to UTC", tz_name)
+            self._tz = timezone.utc
+        self._last_tracked_block: Optional[int] = None
+        self._last_tracked_import_kw: float = -999.0
+        self._last_tracked_export_kw: float = -999.0
+        self._last_tracked_import_price: Optional[float] = None
+        self._last_tracked_feedin_price: Optional[float] = None
+        db_path = os.environ.get("STATE_DB_PATH", "/data/optimizer_state.db")
+        self._state_store = StateStore(db_path)
 
         # Shared queue — HAWebSocketClient puts entity_ids here; we consume them
         self.trigger_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
@@ -94,6 +113,18 @@ class SigEnergyOptimizer:
     @property
     def ws_connected(self) -> bool:
         return self._ws_connected
+
+    @property
+    def last_cycle_started(self) -> Optional[datetime]:
+        return self._last_cycle_started
+
+    @property
+    def last_cycle_completed(self) -> Optional[datetime]:
+        return self._last_cycle_completed
+
+    @property
+    def last_cycle_error(self) -> str:
+        return self._last_cycle_error
 
     @property
     def config_time_warnings(self) -> list[str]:
@@ -294,11 +325,16 @@ class SigEnergyOptimizer:
                 break
 
     async def _safe_tick(self) -> None:
+        self._last_cycle_started = datetime.now(timezone.utc)
         try:
             await self._tick()
+            self._last_cycle_error = ""
+            self._last_cycle_completed = datetime.now(timezone.utc)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            self._last_cycle_error = str(exc)
+            self._last_cycle_completed = datetime.now(timezone.utc)
             logger.exception("Optimizer tick failed: %s", exc)
 
     async def run_once(self) -> Decision:
@@ -317,6 +353,109 @@ class SigEnergyOptimizer:
         await self._handle_notifications(state, decision, prev_decision, prev_state)
         await self._handle_daily_summaries(state, decision)
         self._accumulate_history(state, decision)
+        self._record_price_tracking(state)
+
+    def _record_price_tracking(self, s: SolarState) -> None:
+        now = datetime.now(self._tz)
+        now_block = int(now.timestamp()) // 300
+        import_kw = max(0.0, float(s.grid_import_power_kw or 0.0))
+        export_kw = max(0.0, float(s.grid_export_power_kw or 0.0))
+        import_price = s.current_price if s.current_price is not None else None
+        feedin_price = s.feedin_price if s.feedin_price is not None else None
+        should_record = False
+        if self._last_tracked_block is None or now_block != self._last_tracked_block:
+            should_record = True
+        if abs(import_kw - self._last_tracked_import_kw) >= 0.25:
+            should_record = True
+        if abs(export_kw - self._last_tracked_export_kw) >= 0.25:
+            should_record = True
+        if import_price is not None and import_price != self._last_tracked_import_price:
+            should_record = True
+        if feedin_price is not None and feedin_price != self._last_tracked_feedin_price:
+            should_record = True
+        if not should_record:
+            return
+        block_start = datetime.fromtimestamp(now_block * 300, tz=self._tz).replace(second=0, microsecond=0)
+        self._state_store.record_price_event(
+            ts=now.isoformat(timespec="seconds"),
+            block_ts=block_start.isoformat(timespec="seconds"),
+            grid_import_kw=import_kw,
+            grid_export_kw=export_kw,
+            import_price=import_price,
+            feedin_price=feedin_price,
+            battery_soc=float(s.battery_soc),
+        )
+        self._last_tracked_block = now_block
+        self._last_tracked_import_kw = import_kw
+        self._last_tracked_export_kw = export_kw
+        self._last_tracked_import_price = import_price
+        self._last_tracked_feedin_price = feedin_price
+        if now.hour == 0 and now.minute < 10:
+            self._state_store.purge_old_price_tracking(retain_days=14)
+
+    def price_tracking_events(self, date: str | None = None, limit: int = 2000) -> list[dict[str, Any]]:
+        return self._state_store.get_price_events(date=date, limit=limit)
+
+    def daily_earnings_summary(self, date: str | None = None) -> dict[str, Any]:
+        target_date = date or datetime.now(self._tz).date().isoformat()
+        return self._state_store.daily_earnings_summary(target_date)
+
+    def earnings_history(self, days: int = 7) -> dict[str, Any]:
+        days = max(1, min(days, 30))
+        today = datetime.now(self._tz).date()
+        out = []
+        for i in range(days):
+            d = (today - timedelta(days=i)).isoformat()
+            s = self._state_store.daily_earnings_summary(d)
+            out.append(
+                {
+                    "date": d,
+                    "import_kwh": s.get("total_import_kwh", 0.0),
+                    "export_kwh": s.get("total_export_kwh", 0.0),
+                    "import_costs": s.get("import_costs", 0.0),
+                    "export_earnings": s.get("export_earnings", 0.0),
+                    "net": s.get("net", 0.0),
+                }
+            )
+        return {"days": out}
+
+    def audit_events(self, limit: int = 200) -> list[dict[str, Any]]:
+        return self._state_store.get_audit_events(limit=limit)
+
+    def record_audit_event(
+        self,
+        *,
+        action: str,
+        source: str,
+        actor: str,
+        result: str,
+        target_key: str | None = None,
+        old_value: Any = None,
+        new_value: Any = None,
+        details: Any = None,
+    ) -> None:
+        self._state_store.record_audit_event(
+            action=action,
+            source=source,
+            actor=actor,
+            result=result,
+            target_key=target_key,
+            old_value=old_value,
+            new_value=new_value,
+            details=details,
+        )
+
+    def list_threshold_presets(self) -> list[dict[str, Any]]:
+        return self._state_store.list_threshold_presets()
+
+    def get_threshold_preset(self, name: str) -> dict[str, Any] | None:
+        return self._state_store.get_threshold_preset(name)
+
+    def save_threshold_preset(self, name: str, payload: dict[str, Any]) -> None:
+        self._state_store.save_threshold_preset(name, payload)
+
+    def delete_threshold_preset(self, name: str) -> bool:
+        return self._state_store.delete_threshold_preset(name)
 
     def _accumulate_history(self, s, d) -> None:
         import time as _time

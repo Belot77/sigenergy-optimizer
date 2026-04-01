@@ -1,11 +1,14 @@
 from __future__ import annotations
+import asyncio
 import logging
+import math
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ..config import settings
@@ -16,6 +19,26 @@ router = APIRouter()
 _POWER_LIMIT_MAX_KW: float = 100.0  # absolute hard cap for ESS/PV limits
 _MASKED_KEYS: set[str] = {"ha_token", "ui_api_key"}
 _CHART_RESAMPLE_MS = 300000
+_THRESHOLD_PRESET_KEYS: tuple[str, ...] = (
+    "export_threshold_low",
+    "export_threshold_medium",
+    "export_threshold_high",
+    "export_limit_low",
+    "export_limit_medium",
+    "export_limit_high",
+    "import_threshold_low",
+    "import_threshold_medium",
+    "import_threshold_high",
+    "import_limit_low",
+    "import_limit_medium",
+    "import_limit_high",
+)
+_TIME_KEYS: set[str] = {
+    "daily_summary_time",
+    "morning_summary_time",
+    "standby_holdoff_end_time",
+    "morning_slow_charge_until",
+}
 
 
 def _opt(request: Request):
@@ -24,6 +47,89 @@ def _opt(request: Request):
 
 def _ha(request: Request):
     return request.app.state.ha
+
+
+def _actor_from_request(request: Request) -> str:
+    host = request.client.host if request.client else "unknown"
+    return f"{host}:{request.client.port}" if request.client else host
+
+
+def _record_audit(
+    request: Request,
+    *,
+    action: str,
+    result: str,
+    target_key: str | None = None,
+    old_value: Any = None,
+    new_value: Any = None,
+    details: Any = None,
+) -> None:
+    try:
+        _opt(request).record_audit_event(
+            action=action,
+            source="api",
+            actor=_actor_from_request(request),
+            result=result,
+            target_key=target_key,
+            old_value=old_value,
+            new_value=new_value,
+            details=details,
+        )
+    except Exception:
+        logger.exception("Failed to record audit event for action %s", action)
+
+
+def _validation_exception(field_errors: list[dict[str, str]]) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={
+            "message": "Validation failed",
+            "field_errors": field_errors,
+        },
+    )
+
+
+def _is_valid_time(value: str) -> bool:
+    try:
+        parts = str(value).split(":")
+        if len(parts) not in (2, 3):
+            return False
+        h, m = int(parts[0]), int(parts[1])
+        s = int(parts[2]) if len(parts) == 3 else 0
+        return 0 <= h <= 23 and 0 <= m <= 59 and 0 <= s <= 59
+    except (ValueError, TypeError):
+        return False
+
+
+def _validate_config_value(cfg: Any, key: str, value: Any) -> str | None:
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return "must be a finite number"
+    if key in _TIME_KEYS and not _is_valid_time(str(value)):
+        return "must be HH:MM or HH:MM:SS"
+    if key.endswith("_limit") or key.endswith("_limit_low") or key.endswith("_limit_medium") or key.endswith("_limit_high"):
+        if isinstance(value, (int, float)) and not (0 <= float(value) <= _POWER_LIMIT_MAX_KW):
+            return f"must be between 0 and {_POWER_LIMIT_MAX_KW}"
+    if key.endswith("_threshold") or "threshold" in key:
+        if isinstance(value, (int, float)) and not (-10 <= float(value) <= 10):
+            return "threshold appears out of expected range"
+    return None
+
+
+def _sanitize_preset_payload(payload: dict[str, Any]) -> dict[str, float]:
+    clean: dict[str, float] = {}
+    for key in _THRESHOLD_PRESET_KEYS:
+        if key not in payload:
+            continue
+        value = payload.get(key)
+        if value is None:
+            continue
+        num = float(value)
+        if math.isnan(num) or math.isinf(num):
+            raise ValueError(f"Invalid numeric value for {key}")
+        clean[key] = num
+    if not clean:
+        raise ValueError("Preset payload must include at least one threshold field")
+    return clean
 
 
 def _is_loopback_client(request: Request) -> bool:
@@ -419,9 +525,16 @@ async def get_status(request: Request) -> dict[str, Any]:
     connected = await ha.ping()
     s = opt.last_state
     d = opt.last_decision
+    data_age_seconds: float | None = None
+    stale_data = True
+    if s:
+        data_age_seconds = (datetime.now(timezone.utc) - s.timestamp.astimezone(timezone.utc)).total_seconds()
+        stale_data = data_age_seconds > max(45, int(settings.poll_interval_seconds) * 2)
     return {
         "connected": connected,
         "ws_connected": opt.ws_connected,
+        "stale_data": stale_data,
+        "data_age_seconds": data_age_seconds,
         "config_time_warnings": getattr(opt, "config_time_warnings", []),
         "last_update": s.timestamp.isoformat() if s else None,
         "battery_soc": s.battery_soc if s else None,
@@ -478,6 +591,8 @@ async def get_status(request: Request) -> dict[str, Any]:
         "daily_battery_charge_kwh": s.daily_battery_charge_kwh if s else None,
         "daily_battery_discharge_kwh": s.daily_battery_discharge_kwh if s else None,
         "sigenergy_mode": s.sigenergy_mode if s else None,
+        "next_sunrise_ts": datetime.fromtimestamp(s.next_sunrise_ts, tz=timezone.utc).isoformat() if s and s.next_sunrise_ts else None,
+        "next_sunset_ts": datetime.fromtimestamp(s.next_sunset_ts, tz=timezone.utc).isoformat() if s and s.next_sunset_ts else None,
         "export_reason": d.export_reason if d else None,
         "import_reason": d.import_reason if d else None,
         "battery_capacity_kwh": s.battery_capacity_kwh if s else None,
@@ -486,7 +601,52 @@ async def get_status(request: Request) -> dict[str, Any]:
         "sun_elevation": s.sun_elevation if s else None,
         "hours_to_sunrise": d.hours_to_sunrise if d else None,
         "hours_to_sunset": s.hours_to_sunset if s else None,
+        "last_cycle_started": opt.last_cycle_started.isoformat() if getattr(opt, "last_cycle_started", None) else None,
+        "last_cycle_completed": opt.last_cycle_completed.isoformat() if getattr(opt, "last_cycle_completed", None) else None,
+        "last_cycle_error": getattr(opt, "last_cycle_error", ""),
     }
+
+
+@router.get("/health")
+async def health(request: Request) -> JSONResponse:
+    opt = _opt(request)
+    completed = getattr(opt, "last_cycle_completed", None)
+    err = getattr(opt, "last_cycle_error", "")
+    stale = True
+    if completed:
+        age = (datetime.now(timezone.utc) - completed).total_seconds()
+        stale = age > max(60, int(settings.poll_interval_seconds) * 4)
+    status = "healthy"
+    if err or stale:
+        status = "degraded"
+    payload = {
+        "status": status,
+        "ws_connected": opt.ws_connected,
+        "stale": stale,
+        "last_cycle_completed": completed.isoformat() if completed else None,
+        "last_error": err,
+    }
+    return JSONResponse(payload, status_code=200 if status == "healthy" else 503)
+
+
+@router.get("/price_tracking")
+async def price_tracking(request: Request, date: Optional[str] = None, limit: int = 2000) -> dict[str, Any]:
+    _require_config_read_auth(request)
+    limit = max(1, min(limit, 20000))
+    rows = _opt(request).price_tracking_events(date=date, limit=limit)
+    return {"rows": rows}
+
+
+@router.get("/daily_earnings")
+async def daily_earnings(request: Request, date: Optional[str] = None) -> dict[str, Any]:
+    _require_config_read_auth(request)
+    return _opt(request).daily_earnings_summary(date=date)
+
+
+@router.get("/earnings_history")
+async def earnings_history(request: Request, days: int = 7) -> dict[str, Any]:
+    _require_config_read_auth(request)
+    return _opt(request).earnings_history(days=days)
 
 
 @router.post("/run_cycle")
@@ -494,6 +654,16 @@ async def run_cycle(request: Request) -> dict[str, Any]:
     _require_mutation_auth(request)
     opt = _opt(request)
     d = await opt.run_once()
+    _record_audit(
+        request,
+        action="run_cycle",
+        result="ok",
+        new_value={
+            "ems_mode": d.ems_mode,
+            "export_limit": d.export_limit,
+            "import_limit": d.import_limit,
+        },
+    )
     return {
         "ok": True,
         "ems_mode": d.ems_mode,
@@ -514,10 +684,28 @@ async def set_mode(request: Request, body: ModeRequest) -> dict[str, Any]:
     cfg = opt.cfg
     if body.mode not in _allowed_manual_modes(cfg):
         raise HTTPException(status_code=400, detail=f"Unsupported mode: {body.mode}")
+    old_mode = opt.last_state.sigenergy_mode if opt.last_state else None
     try:
         await opt.apply_manual_mode(body.mode)
+        _record_audit(
+            request,
+            action="set_mode",
+            result="ok",
+            target_key="sigenergy_mode",
+            old_value=old_mode,
+            new_value=body.mode,
+        )
         return {"ok": True, "mode": body.mode}
     except Exception as exc:
+        _record_audit(
+            request,
+            action="set_mode",
+            result="error",
+            target_key="sigenergy_mode",
+            old_value=old_mode,
+            new_value=body.mode,
+            details={"error": str(exc)},
+        )
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -537,16 +725,34 @@ async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
     cfg = opt.cfg
     charge_cap_kw, discharge_cap_kw = _state_power_caps_kw(opt)
     pv_cap_kw = max(charge_cap_kw, discharge_cap_kw)
+    field_errors: list[dict[str, str]] = []
     for name, number, cap in [
         ("grid_export_limit", body.grid_export_limit, discharge_cap_kw),
         ("grid_import_limit", body.grid_import_limit, charge_cap_kw),
         ("pv_max_power_limit", body.pv_max_power_limit, pv_cap_kw),
     ]:
         if not (0.0 <= number <= cap):
-            raise HTTPException(
-                status_code=400,
-                detail=f"{name} value {number} kW is outside allowed range 0–{cap:.2f} kW",
+            field_errors.append(
+                {
+                    "key": name,
+                    "error": f"value {number} kW is outside allowed range 0-{cap:.2f} kW",
+                }
             )
+    if field_errors:
+        _record_audit(
+            request,
+            action="set_ess",
+            result="validation_error",
+            details={"field_errors": field_errors},
+        )
+        raise _validation_exception(field_errors)
+
+    old_values = {
+        "ems_mode": opt.last_decision.ems_mode if opt.last_decision else None,
+        "grid_export_limit": opt.last_decision.export_limit if opt.last_decision else None,
+        "grid_import_limit": opt.last_decision.import_limit if opt.last_decision else None,
+        "pv_max_power_limit": opt.last_decision.pv_max_power_limit if opt.last_decision else None,
+    }
     try:
         await ha.select_option(cfg.ems_mode_select, body.ems_mode)
         await ha.set_number(cfg.grid_export_limit, body.grid_export_limit)
@@ -557,19 +763,76 @@ async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
                 await ha.turn_on(cfg.ha_control_switch)
             else:
                 await ha.turn_off(cfg.ha_control_switch)
+        _record_audit(
+            request,
+            action="set_ess",
+            result="ok",
+            old_value=old_values,
+            new_value=body.model_dump(),
+        )
         return {"ok": True}
     except Exception as exc:
+        _record_audit(
+            request,
+            action="set_ess",
+            result="error",
+            old_value=old_values,
+            new_value=body.model_dump(),
+            details={"error": str(exc)},
+        )
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/config")
 async def get_config(request: Request) -> dict[str, Any]:
+    _require_config_read_auth(request)
     cfg = _opt(request).cfg
     data = cfg.dict()
     for key in _MASKED_KEYS:
         if key in data:
             data[key] = "****"
     return data
+
+
+@router.websocket("/ws")
+async def ws_status(websocket: WebSocket) -> None:
+    await websocket.accept()
+    try:
+        while True:
+            opt = websocket.app.state.optimizer
+            s = opt.last_state
+            d = opt.last_decision
+            await websocket.send_json(
+                {
+                    "ws_connected": opt.ws_connected,
+                    "last_update": s.timestamp.isoformat() if s else None,
+                    "battery_soc": s.battery_soc if s else None,
+                    "pv_kw": s.pv_kw if s else None,
+                    "load_kw": s.load_kw if s else None,
+                    "grid_import_power_kw": s.grid_import_power_kw if s else None,
+                    "grid_export_power_kw": s.grid_export_power_kw if s else None,
+                    "solar_power_now_kw": s.solar_power_now_kw if s else None,
+                    "current_price": s.current_price if s else None,
+                    "feedin_price": s.feedin_price if s else None,
+                    "forecast_today": s.forecast_today_kwh if s else None,
+                    "next_sunrise_ts": datetime.fromtimestamp(s.next_sunrise_ts, tz=timezone.utc).isoformat() if s and s.next_sunrise_ts else None,
+                    "next_sunset_ts": datetime.fromtimestamp(s.next_sunset_ts, tz=timezone.utc).isoformat() if s and s.next_sunset_ts else None,
+                    "sigenergy_mode": s.sigenergy_mode if s else None,
+                    "ha_control_enabled": s.ha_control_enabled if s else None,
+                    "ems_mode": d.ems_mode if d else None,
+                    "export_limit": d.export_limit if d else None,
+                    "import_limit": d.import_limit if d else None,
+                    "pv_max_power_limit": d.pv_max_power_limit if d else None,
+                    "sunrise_soc_target": d.sunrise_soc_target if d else None,
+                    "outcome_reason": d.outcome_reason if d else None,
+                    "last_cycle_started": opt.last_cycle_started.isoformat() if getattr(opt, "last_cycle_started", None) else None,
+                    "last_cycle_completed": opt.last_cycle_completed.isoformat() if getattr(opt, "last_cycle_completed", None) else None,
+                    "last_cycle_error": getattr(opt, "last_cycle_error", ""),
+                }
+            )
+            await asyncio.sleep(2)
+    except WebSocketDisconnect:
+        return
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -589,8 +852,21 @@ async def update_config(request: Request, body: ConfigUpdateRequest) -> dict[str
     cfg = _opt(request).cfg
     if not hasattr(cfg, body.key):
         raise HTTPException(status_code=400, detail=f"Unknown config key: {body.key}")
+    old_value = getattr(cfg, body.key)
     try:
         coerced = _coerce_config_value(cfg, body.key, body.value)
+        err = _validate_config_value(cfg, body.key, coerced)
+        if err:
+            _record_audit(
+                request,
+                action="config_update",
+                result="validation_error",
+                target_key=body.key,
+                old_value=old_value,
+                new_value=body.value,
+                details={"field_errors": [{"key": body.key, "error": err}]},
+            )
+            raise _validation_exception([{"key": body.key, "error": err}])
         setattr(cfg, body.key, coerced)
         opt = _opt(request)
         if hasattr(opt, "refresh_config_time_warnings"):
@@ -599,6 +875,15 @@ async def update_config(request: Request, body: ConfigUpdateRequest) -> dict[str
         if body.persist:
             persisted_keys = _persist_config_keys_to_env(cfg, [body.key])
         safe_value = "****" if body.key in _MASKED_KEYS else getattr(cfg, body.key)
+        _record_audit(
+            request,
+            action="config_update",
+            result="ok",
+            target_key=body.key,
+            old_value="****" if body.key in _MASKED_KEYS else old_value,
+            new_value=safe_value,
+            details={"persisted": body.persist, "persisted_keys": persisted_keys},
+        )
         return {
             "ok": True,
             "key": body.key,
@@ -606,10 +891,89 @@ async def update_config(request: Request, body: ConfigUpdateRequest) -> dict[str
             "persisted": body.persist,
             "persisted_keys": persisted_keys,
         }
+
     except (ValueError, TypeError) as exc:
+        _record_audit(
+            request,
+            action="config_update",
+            result="validation_error",
+            target_key=body.key,
+            old_value="****" if body.key in _MASKED_KEYS else old_value,
+            new_value="****" if body.key in _MASKED_KEYS else body.value,
+            details={"error": str(exc)},
+        )
         raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
     except Exception as exc:
+        _record_audit(
+            request,
+            action="config_update",
+            result="error",
+            target_key=body.key,
+            old_value="****" if body.key in _MASKED_KEYS else old_value,
+            new_value="****" if body.key in _MASKED_KEYS else body.value,
+            details={"error": str(exc)},
+        )
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+class ThresholdPresetRequest(BaseModel):
+    name: str
+    payload: dict[str, Any]
+
+
+@router.get("/audit")
+async def audit_events(request: Request, limit: int = 200) -> dict[str, Any]:
+    _require_config_read_auth(request)
+    rows = _opt(request).audit_events(limit=limit)
+    return {"rows": rows}
+
+
+@router.get("/presets")
+async def list_presets(request: Request) -> dict[str, Any]:
+    _require_config_read_auth(request)
+    return {"presets": _opt(request).list_threshold_presets()}
+
+
+@router.post("/presets")
+async def save_preset(request: Request, body: ThresholdPresetRequest) -> dict[str, Any]:
+    _require_mutation_auth(request)
+    try:
+        payload = _sanitize_preset_payload(body.payload)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _opt(request).save_threshold_preset(body.name, payload)
+    _record_audit(
+        request,
+        action="save_preset",
+        result="ok",
+        target_key=body.name,
+        new_value=payload,
+    )
+    return {"ok": True, "name": body.name.strip(), "payload": payload}
+
+
+@router.get("/presets/{name}")
+async def get_preset(request: Request, name: str) -> dict[str, Any]:
+    _require_config_read_auth(request)
+    preset = _opt(request).get_threshold_preset(name)
+    if not preset:
+        raise HTTPException(status_code=404, detail="Preset not found")
+    return {"preset": preset}
+
+
+@router.delete("/presets/{name}")
+async def delete_preset(request: Request, name: str) -> dict[str, Any]:
+    _require_mutation_auth(request)
+    deleted = _opt(request).delete_threshold_preset(name)
+    _record_audit(
+        request,
+        action="delete_preset",
+        result="ok" if deleted else "not_found",
+        target_key=name,
+    )
+    return {"ok": True, "deleted": deleted}
 
 
 @router.post("/config/batch")
@@ -621,13 +985,34 @@ async def update_config_batch(request: Request, body: ConfigBatchUpdateRequest) 
         return {"ok": True, "updated": {}}
 
     coerced_updates: dict[str, Any] = {}
+    field_errors: list[dict[str, str]] = []
     for item in body.updates:
         if not hasattr(cfg, item.key):
-            raise HTTPException(status_code=400, detail=f"Unknown config key: {item.key}")
+            field_errors.append({"key": item.key, "error": "Unknown config key"})
+            continue
         try:
-            coerced_updates[item.key] = _coerce_config_value(cfg, item.key, item.value)
+            coerced = _coerce_config_value(cfg, item.key, item.value)
+            err = _validate_config_value(cfg, item.key, coerced)
+            if err:
+                field_errors.append({"key": item.key, "error": err})
+            else:
+                coerced_updates[item.key] = coerced
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            field_errors.append({"key": item.key, "error": str(exc)})
+
+    if field_errors:
+        _record_audit(
+            request,
+            action="config_batch_update",
+            result="validation_error",
+            details={"field_errors": field_errors},
+        )
+        raise _validation_exception(field_errors)
+
+    old_values = {
+        k: ("****" if k in _MASKED_KEYS else getattr(cfg, k))
+        for k in coerced_updates.keys()
+    }
 
     for key, value in coerced_updates.items():
         setattr(cfg, key, value)
@@ -641,6 +1026,14 @@ async def update_config_batch(request: Request, body: ConfigBatchUpdateRequest) 
         persisted_keys = _persist_config_keys_to_env(cfg, list(coerced_updates.keys()))
 
     safe_updated = {k: ("****" if k in _MASKED_KEYS else v) for k, v in coerced_updates.items()}
+    _record_audit(
+        request,
+        action="config_batch_update",
+        result="ok",
+        old_value=old_values,
+        new_value=safe_updated,
+        details={"persisted": body.persist, "persisted_keys": persisted_keys},
+    )
     return {
         "ok": True,
         "updated": safe_updated,
@@ -679,6 +1072,16 @@ if _root_logger.level == _logging.NOTSET or _root_logger.level > _logging.INFO:
 async def get_logs(request: Request, n: int = 200) -> PlainTextResponse:
     lines = list(_LOG_BUFFER)[:n]
     return PlainTextResponse("\n".join(lines))
+
+
+@router.get("/logs/download")
+async def download_logs(request: Request, n: int = 500) -> PlainTextResponse:
+    lines = list(_LOG_BUFFER)[: max(1, min(int(n), 5000))]
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return PlainTextResponse(
+        "\n".join(lines),
+        headers={"Content-Disposition": f"attachment; filename=sigenergy_logs_{ts}.log"},
+    )
 
 
 @router.get("/history")

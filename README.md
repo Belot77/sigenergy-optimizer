@@ -127,6 +127,44 @@ Notes:
 
 You should see current state, active decision, and manual override controls.
 
+## What The Main Buttons Mean (Plain English)
+
+These buttons are easy to confuse at first. Here is what each one does in everyday terms.
+
+### Simulate Automated
+
+- Think of this as a practice run.
+- It tries different strategy styles and shows which one looks best right now.
+- It only changes what you see on the screen.
+- It does not change your real inverter settings.
+
+### Run Cycle Now
+
+- Think of this as "do the real check now".
+- It makes the optimizer run immediately instead of waiting for the next normal cycle.
+- This can apply real control changes (mode/limits) if the optimizer decides they are needed.
+- Use this when you want an immediate live refresh/action.
+
+### Preview (inside Simulation cards)
+
+- Preview means "select this option and inspect it".
+- It updates the comparison view and details so you can review that strategy.
+- It does not draw the full simulation overlay on the chart.
+- It does not change live settings.
+
+### Overlay This (inside Simulation cards)
+
+- Overlay means "draw this scenario over the live chart".
+- It visually places the simulated path on top of your normal chart so you can compare easier.
+- It is still a visual what-if tool only.
+- It does not change live settings.
+
+Quick rule of thumb:
+- Preview = pick and inspect.
+- Overlay = show it on the chart.
+- Simulate Automated = run a what-if comparison.
+- Run Cycle Now = run the real optimizer immediately.
+
 ## Step 5 - Verify Correct Operation
 
 - Add-on logs: Settings -> Add-ons -> SigEnergy Optimizer -> Logs
@@ -192,3 +230,19 @@ Uninstall:
 ## Version
 
 2.1.3 (March 2026)
+
+## Maintainer Release Flow
+
+Use the helper script at repository root to bump version, tag, push, and wait for the publish workflow:
+
+```bash
+./release.sh patch
+./release.sh minor "Release vX.Y.Z"
+./release.sh major "Release vX.0.0"
+./release.sh --dry-run patch
+```
+
+Notes:
+- The script updates `sigenergy_optimizer_addon/config.yaml` `version`.
+- It creates and pushes `vX.Y.Z` tag to trigger `.github/workflows/build.yml`.
+- If `GITHUB_TOKEN` is set, it polls GitHub Actions and reports success/failure.

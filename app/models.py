@@ -111,16 +111,4 @@ class Decision:
     hours_to_sunrise: float = 6.0
     battery_soc_required_to_sunrise: float = 0.0
     needs_ha_control_switch: bool = False
-    battery_full_safeguard: bool = False
-    export_spike_active: bool = False
-
-    sunrise_soc_target: float = 0.0
-    battery_soc_required_to_sunrise: float = 0.0
-    min_soc_to_sunrise: float = 0.0
-    hours_to_sunrise: float = 6.0
-
-    battery_power_kw: float = 0.0
-    battery_eta_formatted: str = "idle"
-
-    needs_ha_control_switch: bool = False
     timestamp: datetime = field(default_factory=datetime.now)
