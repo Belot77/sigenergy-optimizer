@@ -105,6 +105,14 @@ body{background:#e8f5e9;font-family:"Segoe UI",Tahoma,Geneva,Verdana,sans-serif;
 /* Sidebar */
 .sidebar{width:296px;flex-shrink:0;display:flex;flex-direction:column;gap:12px}
 .main-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
+.overview-work{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:12px;align-items:start}
+.charts-col{display:flex;flex-direction:column;gap:12px;min-width:0}
+.glance-rail{display:flex;flex-direction:column;gap:8px}
+.glance-card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px}
+.glance-lbl{font-size:10px;font-weight:700;color:#718096;text-transform:uppercase;letter-spacing:.05em}
+.glance-val{font-size:22px;font-weight:800;color:#1a202c;line-height:1.15}
+.glance-sub{font-size:12px;color:#4a5568;font-weight:600;line-height:1.25}
+.glance-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 
 /* Cards */
 .card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px}
@@ -142,6 +150,7 @@ select:focus,input:focus{border-color:#276749}
 .tune-btn.active{background:#276749;color:#fff;border-color:#276749}
 .tune-help{font-size:11px;color:#4a5568;line-height:1.35;margin-top:8px}
 .scenario-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px}
+.scenario-wrap.is-hidden{display:none}
 .scenario-hdr{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
 .scenario-title{font-size:13px;font-weight:700;color:#2d3748}
 .scenario-note{font-size:11px;color:#718096}
@@ -253,6 +262,7 @@ select:focus,input:focus{border-color:#276749}
 .cfg-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px}
 .cfg-msg{font-size:12px;color:#276749;min-height:16px}
 @media (max-width: 900px){.cfg-grid{grid-template-columns:1fr}}
+@media (max-width: 1180px){.overview-work{grid-template-columns:1fr}}
 @media (max-width: 900px){.chart-hdr{flex-direction:column}.chart-now{max-width:none;text-align:left}.chart-frame{padding:6px}.scenario-grid{grid-template-columns:1fr 1fr}}
 @media (max-width: 640px){.scenario-grid{grid-template-columns:1fr}.apx-tooltip{max-width:220px;min-width:150px}.apx-tooltip-label{max-width:120px}}
 
@@ -264,12 +274,23 @@ html.theme-dark .app-subtitle,html.theme-dark .header-sim,html.theme-dark .ntab{
 html.theme-dark .ntab.active{color:#7dd3fc;border-bottom-color:#38bdf8}
 html.theme-dark .ntab:hover:not(.active){color:#e5edf8}
 html.theme-dark .card,html.theme-dark .scell,html.theme-dark .reason-bar,html.theme-dark .cfg-section,html.theme-dark .audit-table-wrap{background:#121b2d;border-color:#2a3850}
+html.theme-dark .glance-card{background:#121b2d;border-color:#2a3850}
 html.theme-dark .scenario-wrap{background:#121b2d;border-color:#2a3850}
 html.theme-dark .chart-card,html.theme-dark .chart-frame{background:#121b2d;border-color:#2a3850;box-shadow:none}
+html.theme-dark #chartPower,html.theme-dark #chartPrice{background:#0f172a;border-radius:10px}
+html.theme-dark #chartPower .apx-root,html.theme-dark #chartPrice .apx-root,
+html.theme-dark #chartPower .apx-surface,html.theme-dark #chartPrice .apx-surface{background:#0f172a !important}
+html.theme-dark #chartPower svg,html.theme-dark #chartPrice svg{background:#0f172a !important}
+html.theme-dark #chartPower text,html.theme-dark #chartPrice text{fill:#cfe0f6 !important}
+html.theme-dark #chartPower line,html.theme-dark #chartPrice line,
+html.theme-dark #chartPower path,html.theme-dark #chartPrice path{stroke-opacity:.9}
 html.theme-dark .scenario-card{background:#121b2d;border-color:#354966}
 html.theme-dark .scenario-card.active{border-color:#7dd3fc;box-shadow:0 0 0 2px rgba(125,211,252,.22)}
 html.theme-dark .card-title,html.theme-dark .sval,html.theme-dark .reason-bar,html.theme-dark .cfg-section summary,html.theme-dark .audit-table td,html.theme-dark .chart-title,html.theme-dark .scenario-title,html.theme-dark .scenario-name,html.theme-dark .chart-now{color:#eaf2ff}
 html.theme-dark .flabel,html.theme-dark .slbl,html.theme-dark .cfg-field label,html.theme-dark .cfg-summary-note,html.theme-dark .audit-table th,html.theme-dark .chart-sub,html.theme-dark .chart-note,html.theme-dark .preview-note,html.theme-dark .scenario-note,html.theme-dark .preview-sub{color:#b8c6db}
+html.theme-dark .glance-lbl{color:#9fb3cf}
+html.theme-dark .glance-val{color:#f1f7ff}
+html.theme-dark .glance-sub{color:#c8d8ef}
 html.theme-dark .scenario-metric{color:#c6d4ea}
 html.theme-dark .scenario-metric strong{color:#f2f7ff}
 html.theme-dark .cfg-section[open] summary{background:#1a2740;border-bottom-color:#2a3850}
@@ -457,7 +478,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
   <!-- MAIN COLUMN -->
   <div class="main-col">
 
-    <div class="scenario-wrap">
+    <div class="scenario-wrap is-hidden" id="scenarioPanel">
       <div class="scenario-hdr">
         <div class="scenario-title">Simulation Tuning Comparison</div>
         <div class="scenario-note" id="scenarioNote">Click a scenario to update computed import/export view.</div>
@@ -465,81 +486,96 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
       <div class="scenario-grid" id="scenarioGrid"></div>
     </div>
 
-    <!-- Power & SoC chart -->
-    <div class="chart-card">
-      <div class="chart-hdr">
-        <div class="chart-title-wrap">
-          <div class="chart-title">Today Power &amp; SoC</div>
-          <div class="chart-sub">Battery, reserve floor, PV output and grid flow in one view. Solid lines show live history, dashed lines show forecast or simulated projection.</div>
+    <div class="overview-work">
+      <div class="charts-col">
+        <!-- Power & SoC chart -->
+        <div class="chart-card">
+          <div class="chart-hdr">
+            <div class="chart-title-wrap">
+              <div class="chart-title">Today Power &amp; SoC</div>
+              <div class="chart-sub">Battery, reserve floor, PV output and grid flow in one view. Solid lines show live history, dashed lines show forecast or simulated projection.</div>
+            </div>
+            <div class="chart-now" id="nowPower">—</div>
+          </div>
+          <div class="chart-frame">
+            <div id="chartPower" style="height:260px"></div>
+          </div>
+          <div class="chart-foot">
+            <div class="chart-note" id="powerChartNote">Hover to inspect exact values. The daylight band is aligned to Home Assistant sunrise and sunset.</div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <span class="chart-key">Live</span>
+              <span class="chart-key dashed">Forecast / Simulated</span>
+            </div>
+          </div>
         </div>
-        <div class="chart-now" id="nowPower">—</div>
-      </div>
-      <div class="chart-frame">
-        <div id="chartPower" style="height:280px"></div>
-      </div>
-      <div class="chart-foot">
-        <div class="chart-note" id="powerChartNote">Hover to inspect exact values. The daylight band is aligned to Home Assistant sunrise and sunset.</div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap">
-          <span class="chart-key">Live</span>
-          <span class="chart-key dashed">Forecast / Simulated</span>
+
+        <!-- Grid Flow chart -->
+        <div class="chart-card">
+          <div class="chart-hdr">
+            <div class="chart-title-wrap">
+              <div class="chart-title">Today Grid Flow &amp; Solar Window</div>
+              <div class="chart-sub">Grid import/export with forecast overlay to quickly spot import spikes and export opportunities.</div>
+            </div>
+            <div class="chart-now" id="nowFlow">—</div>
+          </div>
+          <div class="chart-frame">
+            <div id="chartFlow" style="height:220px"></div>
+          </div>
+          <div class="chart-foot">
+            <div class="chart-note">Solid lines show measured flow. Dashed line shows forecast context.</div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <span class="chart-key">Measured</span>
+              <span class="chart-key dashed">Forecast</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Price Curves chart -->
+        <div class="chart-card">
+          <div class="chart-hdr">
+            <div class="chart-title-wrap">
+              <div class="chart-title">Today Price Curves (Import vs Feed-In)</div>
+              <div class="chart-sub">Import and export price traces share the same day window with a daylight context band so you can see arbitrage windows at a glance.</div>
+            </div>
+            <div class="chart-now" id="nowPrice">—</div>
+          </div>
+          <div class="chart-frame">
+            <div id="chartPrice" style="height:230px"></div>
+          </div>
+          <div class="chart-foot">
+            <div class="chart-note">The zero line is emphasised so negative import periods and export spikes stand out immediately.</div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <span class="chart-key">Measured</span>
+              <span class="chart-key dashed">Forecast</span>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Price Curves chart -->
-    <div class="chart-card">
-      <div class="chart-hdr">
-        <div class="chart-title-wrap">
-          <div class="chart-title">Today Price Curves (Import vs Feed-In)</div>
-          <div class="chart-sub">Import and export price traces share the same day window with a daylight context band so you can see arbitrage windows at a glance.</div>
+      <aside class="glance-rail">
+        <div class="glance-card"><div class="glance-lbl">Battery SoC</div><div class="glance-val" id="sBat">—</div></div>
+        <div class="glance-card"><div class="glance-lbl">PV Power</div><div class="glance-val" id="gPV">—</div></div>
+        <div class="glance-card"><div class="glance-lbl">Load</div><div class="glance-val" id="gLoad">—</div></div>
+        <div class="glance-card"><div class="glance-lbl">Grid Export</div><div class="glance-val" id="gGridExp">—</div></div>
+        <div class="glance-card"><div class="glance-lbl">Grid Import</div><div class="glance-val" id="gGridImp">—</div></div>
+
+        <div class="glance-grid">
+          <div class="glance-card"><div class="glance-lbl">Sunrise SoC Req</div><div class="glance-sub" id="sSunrise">—</div></div>
+          <div class="glance-card"><div class="glance-lbl">Export Floor SoC</div><div class="glance-sub" id="gExpFloor">—</div></div>
+          <div class="glance-card"><div class="glance-lbl">Import Price</div><div class="glance-sub" id="sImpPrice">—</div></div>
+          <div class="glance-card"><div class="glance-lbl">Export Limit</div><div class="glance-sub" id="sExpLimVal">—</div></div>
+          <div class="glance-card"><div class="glance-lbl">Feed-in Price</div><div class="glance-sub" id="sFIT">—</div></div>
+          <div class="glance-card"><div class="glance-lbl">Import Limit</div><div class="glance-sub" id="sImpLimVal">—</div></div>
+          <div class="glance-card"><div class="glance-lbl">PV Max</div><div class="glance-sub" id="sPVMax">—</div></div>
+          <div class="glance-card"><div class="glance-lbl">ESS-First PV Thresh</div><div class="glance-sub" id="sESSThresh">1.0 kW</div></div>
         </div>
-        <div class="chart-now" id="nowPrice">—</div>
-      </div>
-      <div class="chart-frame">
-        <div id="chartPrice" style="height:230px"></div>
-      </div>
-      <div class="chart-foot">
-        <div class="chart-note">The zero line is emphasised so negative import periods and export spikes stand out immediately.</div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap">
-          <span class="chart-key">Measured</span>
-          <span class="chart-key dashed">Forecast</span>
-        </div>
-      </div>
-    </div>
 
-    <!-- Cycle status bar -->
-    <div class="status-grid" style="grid-template-columns:1fr 1fr 1fr">
-      <div class="scell"><div class="slbl">Cycle Started</div><div class="sval small" id="cycleStart">—</div></div>
-      <div class="scell"><div class="slbl">Cycle Completed</div><div class="sval small" id="cycleDone">—</div></div>
-      <div class="scell"><div class="slbl">Poll (s)</div><div class="sval" id="pollVal">30</div></div>
-    </div>
-
-    <!-- Second status row -->
-    <div class="status-grid">
-      <div class="scell"><div class="slbl">Control Mode</div><div class="sval small" id="sCtrl">—</div></div>
-      <div class="scell"><div class="slbl">Last Error</div><div class="sval small" id="sErr">none</div></div>
-      <div class="scell"><div class="slbl">Mode</div><div class="sval small" id="sMode">—</div></div>
-    </div>
-
-    <div class="status-grid">
-      <div class="scell"><div class="slbl">Battery SoC %</div><div class="sval" id="sBat">—</div></div>
-      <div class="scell"><div class="slbl">Sunrise SoC Req %</div><div class="sval" id="sSunrise">—</div></div>
-      <div class="scell"></div>
-    </div>
-
-    <div class="status-grid">
-      <div class="scell"><div class="slbl">Import Price</div><div class="sval" id="sImpPrice">—</div></div>
-      <div class="scell"><div class="slbl">Export Limit kW</div><div class="sval" id="sExpLimVal">—</div></div>
-    </div>
-
-    <div class="status-grid">
-      <div class="scell"><div class="slbl">FIT / Export Price</div><div class="sval" id="sFIT">—</div></div>
-      <div class="scell"><div class="slbl">Import Limit kW</div><div class="sval" id="sImpLimVal">—</div></div>
-    </div>
-
-    <div class="status-grid">
-      <div class="scell"><div class="slbl">PV Max kW</div><div class="sval" id="sPVMax">—</div></div>
-      <div class="scell"><div class="slbl">ESS-First PV Thresh</div><div class="sval" id="sESSThresh">1.0 kW</div></div>
+        <div class="glance-card"><div class="glance-lbl">Cycle Started</div><div class="glance-sub" id="cycleStart">—</div></div>
+        <div class="glance-card"><div class="glance-lbl">Cycle Completed</div><div class="glance-sub" id="cycleDone">—</div></div>
+        <div class="glance-card"><div class="glance-lbl">Control / Mode</div><div class="glance-sub"><span id="sCtrl">—</span> · <span id="sMode">—</span></div></div>
+        <div class="glance-card"><div class="glance-lbl">Poll</div><div class="glance-sub"><span id="pollVal">30</span>s</div></div>
+        <div class="glance-card"><div class="glance-lbl">Last Error</div><div class="glance-sub" id="sErr">none</div></div>
+      </aside>
     </div>
 
     <!-- Reason bar -->
@@ -603,7 +639,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 let S = {};
-let powerChart = null, priceChart = null;
+let powerChart = null, flowChart = null, priceChart = null;
 let histPow = [], histPri = [];
 let simActive = false;
 let simPreview = null;
@@ -617,8 +653,8 @@ let entitySearchTimers = {};
 let entityPickerState = {};
 let configPickerGlobalBound = false;
 const POLL = 15000;
-const LIVE_POWER_COLORS = ['#1d4ed8','#14b8a6','#f59e0b','#d97706','#dc2626','#16a34a','#7c3aed'];
-const SIM_POWER_COLORS = ['#1e88e5','#4fd1c5','#f59e0b','#d97706','#0891b2','#ea580c','#a855f7'];
+const LIVE_POWER_COLORS = ['#1d4ed8','#14b8a6','#f59e0b','#d97706','#7c3aed'];
+const SIM_POWER_COLORS = ['#1e88e5','#4fd1c5','#f59e0b','#d97706','#a855f7'];
 
 const PROFILE_META = {
   maxConsumption: { label: 'Max Consumption', help: 'Max Consumption prioritizes lower import and conservative export behavior.' },
@@ -639,19 +675,61 @@ function showTab(name, btn) {
   if (name === 'audit')    loadAudit();
 }
 
+function isDarkTheme() {
+  return document.documentElement.classList.contains('theme-dark');
+}
+
+function chartTheme() {
+  if (isDarkTheme()) {
+    return {
+      chartBg: '#0f172a',
+      grid: '#334155',
+      axis: '#c7d6ec',
+      legend: '#dbe7f7',
+      daylightFill: '#c99732',
+      daylightOpacity: 0.16,
+      daylightLabelColor: '#fde68a',
+      daylightLabelBg: 'rgba(69,39,12,0.92)',
+      nowBorder: '#38bdf8',
+      nowLabelColor: '#dbeafe',
+      nowLabelBg: 'rgba(15,23,42,0.96)',
+      zeroLine: '#94a3b8',
+      zeroLabelBg: 'rgba(15,23,42,0.96)',
+      zeroLabelColor: '#dbe7f7',
+    };
+  }
+  return {
+    chartBg: '#ffffff',
+    grid: '#f0f4f8',
+    axis: '#718096',
+    legend: '#4a5568',
+    daylightFill: '#c36a1f',
+    daylightOpacity: 0.10,
+    daylightLabelColor: '#9a5b13',
+    daylightLabelBg: 'rgba(255,247,237,0.92)',
+    nowBorder: '#0891b2',
+    nowLabelColor: '#0f4c5c',
+    nowLabelBg: 'rgba(224,242,254,0.96)',
+    zeroLine: '#000000',
+    zeroLabelBg: '#ffffff',
+    zeroLabelColor: '#111827',
+  };
+}
+
 // ── Chart initialisation ──────────────────────────────────────────────────────
 function mkChart(el, series, colors, yaxis, extra) {
+  const t = chartTheme();
   return new ApexCharts(document.getElementById(el), {
-    chart: { type:'line', height:'100%', background:'#fff', animations:{enabled:false},
+    chart: { type:'line', height:'100%', background:t.chartBg, animations:{enabled:false},
       toolbar:{ show:true, tools:{zoom:true,pan:true,reset:true,download:true} },
       zoom:{type:'x',enabled:true,autoScaleYaxis:true} },
     series, colors,
     stroke:{ curve:'smooth', width:2 },
     fill:{ type:'gradient', gradient:{opacityFrom:.35,opacityTo:.05} },
-    xaxis:{ type:'datetime', labels:{datetimeUTC:false, style:{fontSize:'10px',colors:'#718096'}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
+    xaxis:{ type:'datetime', labels:{datetimeUTC:false, style:{fontSize:'10px',colors:t.axis}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
     tooltip:{ x:{format:'HH:mm'}, shared:true },
-    legend:{ show:true, labels:{colors:'#4a5568'}, fontSize:'11px', itemMargin:{horizontal:8} },
-    grid:{ borderColor:'#f0f4f8' },
+    legend:{ show:true, labels:{colors:t.legend}, fontSize:'11px', itemMargin:{horizontal:8} },
+    grid:{ borderColor:t.grid },
     dataLabels:{ enabled:false },
     yaxis,
     ...extra
@@ -680,6 +758,10 @@ function powerSeriesValue(name, value) {
 
 function priceSeriesValue(name, value) {
   return fmtPriceLabel(value, 1);
+}
+
+function flowSeriesValue(name, value) {
+  return fmtKwLabel(value, 1);
 }
 
 function legendFormatterFor(valueFormatter) {
@@ -774,6 +856,7 @@ function normalizeDayMarker(ts) {
 }
 
 function buildDaylightAnnotations() {
+  const t = chartTheme();
   const items = [];
   const sunrise = normalizeDayMarker(S?.next_sunrise_ts);
   const sunset = normalizeDayMarker(S?.next_sunset_ts);
@@ -781,28 +864,27 @@ function buildDaylightAnnotations() {
     items.push({
       x: sunrise,
       x2: sunset,
-      fillColor: '#c36a1f',
-      opacity: 0.10,
-      label: { text: 'Daylight', color: '#9a5b13', background: 'rgba(255,247,237,0.92)' },
+      fillColor: t.daylightFill,
+      opacity: t.daylightOpacity,
+      label: { text: 'Daylight', color: t.daylightLabelColor, background: t.daylightLabelBg },
     });
   }
   items.push({
     x: Date.now(),
-    borderColor: '#0891b2',
+    borderColor: t.nowBorder,
     strokeDashArray: 4,
-    label: { text: 'Now', color: '#0f4c5c', background: 'rgba(224,242,254,0.96)' },
+    label: { text: 'Now', color: t.nowLabelColor, background: t.nowLabelBg },
   });
   return items;
 }
 
 function buildPowerYAxisConfig(simulation = false) {
+  const t = chartTheme();
   return [
-    { seriesName: simulation ? 'Sim Battery %' : 'Battery %', min:0, max:100, opposite:true, labels:{formatter: v => v!=null ? Math.round(v)+'%' : '', style:{fontSize:'10px',colors:'#718096'}}, title:{text:'SoC %',style:{color:'#718096',fontSize:'10px'}} },
+    { seriesName: simulation ? 'Sim Battery %' : 'Battery %', min:0, max:100, opposite:true, labels:{formatter: v => v!=null ? Math.round(v)+'%' : '', style:{fontSize:'10px',colors:t.axis}}, title:{text:'SoC %',style:{color:t.axis,fontSize:'10px'}} },
     { seriesName:'Min SoC %', show:false, min:0, max:100 },
-    { seriesName: simulation ? 'Sim PV Output kW' : 'PV Output kW', opposite:false, labels:{formatter: v => v!=null ? Number(v).toFixed(1)+'kW' : '', style:{fontSize:'10px',colors:'#718096'}}, title:{text:'kW',style:{color:'#718096',fontSize:'10px'}} },
+    { seriesName: simulation ? 'Sim PV Output kW' : 'PV Output kW', opposite:false, labels:{formatter: v => v!=null ? Number(v).toFixed(1)+'kW' : '', style:{fontSize:'10px',colors:t.axis}}, title:{text:'kW',style:{color:t.axis,fontSize:'10px'}} },
     { seriesName:'PV Forecast kW', show:false },
-    { seriesName: simulation ? 'Sim Import kW' : 'Grid Import kW', show:false },
-    { seriesName: simulation ? 'Sim Export kW' : 'Grid Export kW', show:false },
     { seriesName: simulation ? 'Sim Consumption kW' : 'Consumption kW', show:false },
   ];
 }
@@ -822,13 +904,13 @@ function buildPowerAnnotations(seriesMap, simulation = false) {
     ? [
         buildSeriesAnnotation(seriesMap.batterySeries, 'Sim Battery %', '#1e88e5', v => compactPctLabel(v), -14),
         buildSeriesAnnotation(seriesMap.minSocSeries, 'Min SoC %', '#4fd1c5', v => compactPctLabel(v), 14),
-        buildSeriesAnnotation(seriesMap.importSeries, 'Sim Import kW', '#0891b2', v => compactKwLabel(v), -14),
-        buildSeriesAnnotation(seriesMap.exportSeries, 'Sim Export kW', '#ea580c', v => compactKwLabel(v), 14),
+        buildSeriesAnnotation(seriesMap.pvSeries, 'Sim PV Output kW', '#f59e0b', v => compactKwLabel(v), -14),
+        buildSeriesAnnotation(seriesMap.loadSeries, 'Sim Consumption kW', '#a855f7', v => compactKwLabel(v), 14),
       ]
     : [
         buildSeriesAnnotation(seriesMap.batterySeries, 'Battery %', '#1d4ed8', v => compactPctLabel(v), -14),
         buildSeriesAnnotation(seriesMap.minSocSeries, 'Min SoC %', '#14b8a6', v => compactPctLabel(v), 14),
-        buildSeriesAnnotation(seriesMap.exportSeries, 'Grid Export kW', '#16a34a', v => compactKwLabel(v), -14),
+        buildSeriesAnnotation(seriesMap.pvSeries, 'PV Output kW', '#f59e0b', v => compactKwLabel(v), -14),
         buildSeriesAnnotation(seriesMap.loadSeries, 'Consumption kW', '#7c3aed', v => compactKwLabel(v), 14),
       ];
   return {
@@ -838,65 +920,91 @@ function buildPowerAnnotations(seriesMap, simulation = false) {
 }
 
 function applyPowerChartMode(series, seriesMap, simulation = false) {
+  const t = chartTheme();
   powerChart.updateSeries(series);
   powerChart.updateOptions({
+    chart:{ background:t.chartBg },
     colors: simulation ? SIM_POWER_COLORS : LIVE_POWER_COLORS,
     yaxis: buildPowerYAxisConfig(simulation),
     stroke: simulation
-      ? { curve:'straight', width:[2.2,2.0,2.0,1.9,2.2,2.2,1.9], dashArray:[6,0,6,6,6,6,6] }
-      : { curve:'straight', width:[2.4,2.0,2.2,1.9,1.9,1.9,1.9], dashArray:[0,0,0,6,0,0,0] },
+      ? { curve:'straight', width:[2.2,2.0,2.0,1.9,1.9], dashArray:[6,0,6,6,6] }
+      : { curve:'straight', width:[2.4,2.0,2.2,1.9,1.9], dashArray:[0,0,0,6,0] },
     fill: simulation
-      ? { type:['solid','solid','solid','gradient','solid','solid','solid'], opacity:[0,0,0,0.12,0,0,0] }
-      : { type:['solid','solid','solid','gradient','solid','solid','solid'], opacity:[0,0,0,0.18,0,0,0] },
-    xaxis:{ min:startOfTodayMs(), max:endOfTodayMs(), tickAmount:8 },
+      ? { type:['solid','solid','solid','gradient','solid'], opacity:[0,0,0,0.12,0] }
+      : { type:['solid','solid','solid','gradient','solid'], opacity:[0,0,0,0.18,0] },
+    xaxis:{ min:startOfTodayMs(), max:endOfTodayMs(), tickAmount:8, labels:{datetimeUTC:false, style:{fontSize:'10px',colors:t.axis}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
+    legend:{ show:true, labels:{colors:t.legend}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(powerSeriesValue) },
+    grid:{ borderColor:t.grid },
     annotations: buildPowerAnnotations(seriesMap, simulation),
   }, false, false);
 }
 
 function initCharts() {
+  const t = chartTheme();
   powerChart = mkChart('chartPower', [
     {name:'Battery %',     data:[]},
     {name:'Min SoC %',     data:[]},
     {name:'PV Output kW',  data:[]},
     {name:'PV Forecast kW',data:[]},
-    {name:'Grid Import kW',data:[]},
-    {name:'Grid Export kW',data:[]},
     {name:'Consumption kW',data:[]},
   ], LIVE_POWER_COLORS, buildPowerYAxisConfig(false), {
-    stroke:{ curve:'straight', width:[2.4,2.0,2.2,1.9,1.9,1.9,1.9], dashArray:[0,0,0,6,0,0,0] },
-    fill:{ type:['solid','solid','solid','gradient','solid','solid','solid'],
-           opacity:[0,0,0,0.18,0,0,0] },
+    stroke:{ curve:'straight', width:[2.4,2.0,2.2,1.9,1.9], dashArray:[0,0,0,6,0] },
+    fill:{ type:['solid','solid','solid','gradient','solid'],
+           opacity:[0,0,0,0.18,0] },
     tooltip:{
       x:{format:'HH:mm'},
       shared:true,
       y:{ formatter:(value, { seriesIndex, w }) => powerSeriesValue(w.config.series[seriesIndex].name, value) },
     },
-    legend:{ show:true, labels:{colors:'#4a5568'}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(powerSeriesValue) },
-    xaxis:{ type:'datetime', min:startOfTodayMs(), max:endOfTodayMs(), tickAmount:8, labels:{datetimeUTC:false, style:{fontSize:'10px',colors:'#718096'}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
+    legend:{ show:true, labels:{colors:t.legend}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(powerSeriesValue) },
+    xaxis:{ type:'datetime', min:startOfTodayMs(), max:endOfTodayMs(), tickAmount:8, labels:{datetimeUTC:false, style:{fontSize:'10px',colors:t.axis}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
   });
   powerChart.render();
+
+  flowChart = mkChart('chartFlow', [
+    {name:'Grid import',   data:[]},
+    {name:'Grid export',   data:[]},
+    {name:'PV Forecast kW', data:[]},
+  ], ['#dc2626','#16a34a','#f59e0b'], [
+    { seriesName:'Grid import', labels:{ formatter: v => v!=null ? Number(v).toFixed(1)+'kW' : '', style:{fontSize:'10px',colors:t.axis} }, title:{text:'Grid kW',style:{color:t.axis,fontSize:'10px'}} },
+    { seriesName:'Grid export', show:false },
+    { seriesName:'PV Forecast kW', show:false },
+  ], {
+    stroke:{ curve:'straight', width:[2.3,2.3,2.0], dashArray:[0,0,6] },
+    fill:{ type:['solid','solid','gradient'], opacity:[0,0,0.12] },
+    tooltip:{
+      x:{format:'HH:mm'},
+      shared:true,
+      y:{ formatter:(value, { seriesIndex, w }) => flowSeriesValue(w.config.series[seriesIndex].name, value) },
+    },
+    legend:{ show:true, labels:{colors:t.legend}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(flowSeriesValue) },
+    xaxis:{ type:'datetime', min:startOfTodayMs(), max:endOfTodayMs(), tickAmount:8, labels:{datetimeUTC:false, style:{fontSize:'10px',colors:t.axis}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
+  });
+  flowChart.render();
 
   priceChart = mkChart('chartPrice', [
     {name:'Import price',            data:[]},
     {name:'Feed-in price',           data:[]},
+    {name:'PV forecast (kWh interval)', data:[]},
     {name:'Import forecast',         data:[]},
     {name:'Feed-in forecast',        data:[]},
-  ], ['#b91c1c','#047857','#f59e0b','#22c55e'], [
-    { seriesName:'Import price', labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} }, title:{text:'Import price',style:{color:'#718096',fontSize:'10px'}} },
+  ], ['#b91c1c','#047857','#d97706','#f59e0b','#22c55e'], [
+    { seriesName:'Import price', labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:t.axis} }, title:{text:'Import price',style:{color:t.axis,fontSize:'10px'}} },
+    { seriesName:'PV forecast (kWh interval)', show:false },
     { seriesName:'Import forecast', show:false },
-    { seriesName:'Feed-in price', opposite:true, labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} }, title:{text:'Export price',style:{color:'#718096',fontSize:'10px'}} },
+    { seriesName:'Feed-in price', opposite:true, labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:t.axis} }, title:{text:'Export price',style:{color:t.axis,fontSize:'10px'}} },
     { seriesName:'Feed-in forecast', show:false },
   ], {
-    stroke:{ curve:'straight', width:[2.2,2.2,2.0,2.0], dashArray:[0,0,6,6] },
-    fill:{ type:['solid','solid','gradient','gradient'], opacity:[0,0,0.14,0.10] },
+    stroke:{ curve:'straight', width:[2.2,2.2,1.8,2.0,2.0], dashArray:[0,0,0,6,6] },
+    fill:{ type:['solid','solid','gradient','gradient','gradient'], opacity:[0,0,0.12,0.14,0.10] },
     tooltip:{
       x:{format:'HH:mm'},
       shared:true,
       y:{ formatter:(value, { seriesIndex, w }) => priceSeriesValue(w.config.series[seriesIndex].name, value) },
     },
-    legend:{ show:true, labels:{colors:'#4a5568'}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(priceSeriesValue) },
-    xaxis:{ type:'datetime', min:startOfTodayMs(), max:endOfTodayMs(), tickAmount:8, labels:{datetimeUTC:false, style:{fontSize:'10px',colors:'#718096'}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
-    annotations:{ yaxis:[{y:0, borderColor:'#000', strokeDashArray:3, label:{text:'0',style:{fontSize:'10px'}}}] },
+    legend:{ show:true, labels:{colors:t.legend}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(priceSeriesValue) },
+    xaxis:{ type:'datetime', min:startOfTodayMs(), max:endOfTodayMs(), tickAmount:8, labels:{datetimeUTC:false, style:{fontSize:'10px',colors:t.axis}, datetimeFormatter:{hour:'HH:mm',minute:'HH:mm'}} },
+    annotations:{ yaxis:[{y:0, borderColor:t.zeroLine, strokeDashArray:3, label:{text:'0',style:{fontSize:'10px',color:t.zeroLabelColor,background:t.zeroLabelBg}}}] },
   });
   priceChart.render();
 }
@@ -983,7 +1091,8 @@ function connectLiveWs() {
 }
 
 function refreshCharts() {
-  if (!powerChart || !priceChart) return;
+  if (!powerChart || !flowChart || !priceChart) return;
+  const t = chartTheme();
   const batterySeries = histPow.map(x=>[x.t,x.battery]);
   const minSocSeries = histPow.map(x=>[x.t,x.minSoc]);
   const pvSeries = histPow.map(x=>[x.t,x.pv]);
@@ -996,37 +1105,70 @@ function refreshCharts() {
     {name:'Min SoC %',     data: minSocSeries},
     {name:'PV Output kW',  data: pvSeries},
     {name:'PV Forecast kW',data: pvForecastSeries},
-    {name:'Grid Import kW',data: gridImportSeries},
-    {name:'Grid Export kW',data: gridExportSeries},
     {name:'Consumption kW',data: loadSeries},
   ];
-  applyPowerChartMode(powerSeries, { batterySeries, minSocSeries, pvSeries, pvForecastSeries, importSeries: gridImportSeries, exportSeries: gridExportSeries, loadSeries }, false);
+  applyPowerChartMode(powerSeries, { batterySeries, minSocSeries, pvSeries, pvForecastSeries, loadSeries }, false);
   setPowerChartNarrative(false);
+
+  const flowPvForecastSeries = histPow.map(x=>[x.t,x.pvForecast]);
+  flowChart.updateSeries([
+    {name:'Grid import', data: gridImportSeries},
+    {name:'Grid export', data: gridExportSeries},
+    {name:'PV Forecast kW', data: flowPvForecastSeries},
+  ]);
+  flowChart.updateOptions({
+    chart:{ background:t.chartBg },
+    xaxis:{ min:startOfTodayMs(), max:endOfTodayMs() },
+    grid:{ borderColor:t.grid },
+    legend:{ show:true, labels:{colors:t.legend}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(flowSeriesValue) },
+    yaxis:[
+      { seriesName:'Grid import', labels:{ formatter: v => v!=null ? Number(v).toFixed(1)+'kW' : '', style:{fontSize:'10px',colors:t.axis} }, title:{text:'Grid kW',style:{color:t.axis,fontSize:'10px'}} },
+      { seriesName:'Grid export', show:false },
+      { seriesName:'PV Forecast kW', show:false },
+    ],
+    annotations:{
+      xaxis: buildDaylightAnnotations(),
+      yaxis:[{y:0, borderColor:t.zeroLine, strokeDashArray:3, label:{text:'0',style:{fontSize:'10px',color:t.zeroLabelColor,background:t.zeroLabelBg}}}],
+      points:[
+        buildSeriesAnnotation(gridImportSeries, 'Grid import', '#dc2626', v => compactKwLabel(v), -14),
+        buildSeriesAnnotation(gridExportSeries, 'Grid export', '#16a34a', v => compactKwLabel(v), 14),
+        buildSeriesAnnotation(flowPvForecastSeries, 'PV Forecast kW', '#d97706', v => compactKwLabel(v), 14),
+      ].filter(Boolean),
+    },
+  }, false, false);
+
   const importForecastSeries = parseCurvePoints(S?.price_forecast_curve);
   const feedinForecastSeries = parseCurvePoints(S?.feedin_forecast_curve);
   const importPriceSeries = histPri.map(x=>[x.t,x.imp]);
   const feedinPriceSeries = histPri.map(x=>[x.t,x.fit]);
+  const pvForecastPriceSeries = histPow.map((x) => [x.t, x.pvForecast]);
   const bounds = priceAxisBounds([importPriceSeries, feedinPriceSeries, importForecastSeries, feedinForecastSeries]);
   priceChart.updateSeries([
     {name:'Import price',              data: importPriceSeries},
     {name:'Feed-in price',             data: feedinPriceSeries},
+    {name:'PV forecast (kWh interval)',data: pvForecastPriceSeries},
     {name:'Import forecast',           data: importForecastSeries},
     {name:'Feed-in forecast',          data: feedinForecastSeries},
   ]);
   priceChart.updateOptions({
+    chart:{ background:t.chartBg },
     xaxis:{ min:startOfTodayMs(), max:endOfTodayMs() },
+    grid:{ borderColor:t.grid },
+    legend:{ show:true, labels:{colors:t.legend}, fontSize:'11px', itemMargin:{horizontal:8}, formatter: legendFormatterFor(priceSeriesValue) },
     yaxis:[
-      { min:bounds.min, max:bounds.max, seriesName:'Import price', labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} }, title:{text:'Import price',style:{color:'#718096',fontSize:'10px'}} },
+      { min:bounds.min, max:bounds.max, seriesName:'Import price', labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:t.axis} }, title:{text:'Import price',style:{color:t.axis,fontSize:'10px'}} },
+      { seriesName:'PV forecast (kWh interval)', show:false },
       { seriesName:'Import forecast', show:false, min:bounds.min, max:bounds.max },
-      { min:bounds.min, max:bounds.max, seriesName:'Feed-in price', opposite:true, labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:'#718096'} }, title:{text:'Export price',style:{color:'#718096',fontSize:'10px'}} },
+      { min:bounds.min, max:bounds.max, seriesName:'Feed-in price', opposite:true, labels:{ formatter: v => v!=null ? (v*100).toFixed(1)+'c' : '', style:{fontSize:'10px',colors:t.axis} }, title:{text:'Export price',style:{color:t.axis,fontSize:'10px'}} },
       { seriesName:'Feed-in forecast', show:false, min:bounds.min, max:bounds.max },
     ],
     annotations:{
       xaxis: buildDaylightAnnotations(),
-      yaxis:[{y:0, borderColor:'#000', strokeDashArray:3, label:{text:'0',style:{fontSize:'10px'}}}],
+      yaxis:[{y:0, borderColor:t.zeroLine, strokeDashArray:3, label:{text:'0',style:{fontSize:'10px',color:t.zeroLabelColor,background:t.zeroLabelBg}}}],
       points:[
         buildSeriesAnnotation(importPriceSeries, 'Import price', '#b91c1c', v => compactPriceLabel(v), -14),
         buildSeriesAnnotation(feedinPriceSeries, 'Feed-in price', '#047857', v => compactPriceLabel(v), 14),
+        buildSeriesAnnotation(pvForecastPriceSeries, 'PV forecast (kWh interval)', '#d97706', v => compactKwLabel(v), -14),
         buildSeriesAnnotation(importForecastSeries, 'Import forecast', '#f59e0b', v => compactPriceLabel(v), -14),
         buildSeriesAnnotation(feedinForecastSeries, 'Feed-in forecast', '#22c55e', v => compactPriceLabel(v), 14),
       ].filter(Boolean),
@@ -1097,6 +1239,8 @@ function updateOverview() {
     : `Now: Battery ${fc(s.battery_soc,1)}%, Min SoC ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Forecast ${fc(s.solar_power_now_kw,1)}kW`;
   document.getElementById('nowPrice').textContent =
     `Now: import ${fcc(s.current_price)}/kWh, feed-in ${fcc(s.feedin_price)}/kWh, PV today ${fc(s.forecast_today,1)}kWh`;
+  document.getElementById('nowFlow').textContent =
+    `Now: import ${fc(s.grid_import_power_kw,1)}kW, export ${fc(s.grid_export_power_kw,1)}kW, load ${fc(s.load_kw,1)}kW`;
 
   // Cycle timing
   setTextWithFlash('cycleStart', tsISO(s.last_cycle_started));
@@ -1115,6 +1259,11 @@ function updateOverview() {
   setTextWithFlash('sImpLimVal', fc(s.import_limit,2)+' kW');
   setTextWithFlash('sPVMax', fc(s.pv_max_power_limit,2)+' kW');
   setTextWithFlash('sESSThresh', '1.0 kW');
+  setTextWithFlash('gPV', fc(s.pv_kw,1) + ' kW');
+  setTextWithFlash('gLoad', fc(s.load_kw,1) + ' kW');
+  setTextWithFlash('gGridExp', fc(s.grid_export_power_kw,1) + ' kW');
+  setTextWithFlash('gGridImp', fc(s.grid_import_power_kw,1) + ' kW');
+  setTextWithFlash('gExpFloor', Number.isFinite(Number(uiCfg?.min_export_target_soc)) ? fc(uiCfg.min_export_target_soc,1) + '%' : fc(s.min_soc_to_sunrise,1) + '%');
 
   // Reason
   document.getElementById('reasonBar').textContent = s.outcome_reason || '—';
@@ -1317,8 +1466,6 @@ function applySimulationOverlay(profile, options = {}) {
 
   const simBatterySeries = [...histPow.map(x=>[x.t,x.battery]), [now+1200000, projectedBattery]];
   const simPvSeries = [...histPow.map(x=>[x.t,x.pv]), [now+1200000, S.solar_power_now_kw||0]];
-  const simImportSeries = [...histPow.map(x=>[x.t,x.imp]), [now+1200000, importLimit]];
-  const simExportSeries = [...histPow.map(x=>[x.t,x.exp]), [now+1200000, exportLimit]];
   const simConsumptionSeries = [...histPow.map(x=>[x.t,x.load]), [now+1200000, S.load_kw||0]];
 
   applyPowerChartMode([
@@ -1326,16 +1473,12 @@ function applySimulationOverlay(profile, options = {}) {
     {name:'Min SoC %',         data: histPow.map(x=>[x.t,x.minSoc])},
     {name:'Sim PV Output kW',  data: simPvSeries},
     {name:'PV Forecast kW',    data: histPow.map(x=>[x.t,x.pvForecast])},
-    {name:'Sim Import kW',     data: simImportSeries},
-    {name:'Sim Export kW',     data: simExportSeries},
     {name:'Sim Consumption kW',data: simConsumptionSeries},
   ], {
     batterySeries: simBatterySeries,
     minSocSeries: histPow.map(x=>[x.t,x.minSoc]),
     pvSeries: simPvSeries,
     pvForecastSeries: histPow.map(x=>[x.t,x.pvForecast]),
-    importSeries: simImportSeries,
-    exportSeries: simExportSeries,
     loadSeries: simConsumptionSeries,
   }, true);
 
@@ -1846,8 +1989,15 @@ async function runCycle() {
 
 function exportCSV() { window.location = addonApiUrl('api/export_csv'); }
 
+function setSimulationPanelVisible(show) {
+  const panel = document.getElementById('scenarioPanel');
+  if (!panel) return;
+  panel.classList.toggle('is-hidden', !show);
+}
+
 // ── Simulation ────────────────────────────────────────────────────────────────
 async function runSimulation() {
+  setSimulationPanelVisible(true);
   const btn = document.getElementById('btnSim'); btn.disabled=true; btn.textContent='Simulating…';
   const resEl = document.getElementById('simResult');
   if (!S || (!Number.isFinite(Number(S.current_price)) && !Number.isFinite(Number(S.feedin_price)))) {
@@ -1875,6 +2025,7 @@ function clearSim() {
   simActive = false;
   simPreview = null;
   simComparisons = [];
+  setSimulationPanelVisible(false);
   document.getElementById('simResult').innerHTML = '';
   const btn = document.getElementById('btnSim');
   btn.textContent='Simulate Automated'; btn.onclick=runSimulation;
@@ -2624,6 +2775,10 @@ function applyTheme(mode) {
   try { localStorage.setItem('sigenergy_theme', dark ? 'dark' : 'light'); } catch (_) {}
   const btn = document.getElementById('btnTheme');
   if (btn) btn.textContent = dark ? 'Light Mode' : 'Dark Mode';
+  if (powerChart && flowChart && priceChart) {
+    if (simActive && simPreview) applySimulationOverlay(simPreview.profile, { silent: true });
+    else refreshCharts();
+  }
 }
 
 function toggleTheme() {

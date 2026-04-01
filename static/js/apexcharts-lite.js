@@ -76,6 +76,19 @@
     };
   }
 
+  function colorIsDark(value) {
+    if (!value || typeof value !== 'string') return false;
+    var c = value.trim();
+    var m = c.match(/^#([0-9a-fA-F]{6})$/);
+    if (!m) return false;
+    var hex = m[1];
+    var r = parseInt(hex.slice(0, 2), 16);
+    var g = parseInt(hex.slice(2, 4), 16);
+    var b = parseInt(hex.slice(4, 6), 16);
+    var luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    return luminance < 0.5;
+  }
+
   function domainForAxis(axis, series, fallback) {
     var matching = (series || []).filter(function (entry) {
       if (axis && axis.seriesName) return entry.name === axis.seriesName;
@@ -238,6 +251,8 @@
     var series = normalizeSeries(this.config.series || []);
     var colors = this.config.colors || [];
     var xaxis = this.config.xaxis || {};
+    var chartCfg = this.config.chart || {};
+    var gridCfg = this.config.grid || {};
     var yAxes = Array.isArray(this.config.yaxis) ? this.config.yaxis : [this.config.yaxis || {}];
     var allPoints = flattenSeriesData(series);
     var fallbackXMin = allPoints.length ? Math.min.apply(null, allPoints.map(function (point) { return point.x; })) : Date.now() - 3600000;
@@ -271,11 +286,22 @@
     var leftFormatter = makeLabelFormatter(leftAxisCfg);
     var rightFormatter = makeLabelFormatter(rightAxisCfg || leftAxisCfg);
     var tooltipFormatter = makeTooltipFormatter(this.config);
+    var chartBg = chartCfg.background || '#ffffff';
+    var isDark = colorIsDark(chartBg);
+    var bgTop = isDark ? '#0f172a' : '#fbfefd';
+    var bgBottom = isDark ? '#111f31' : '#eef7f3';
+    var gridPrimary = gridCfg.borderColor || (isDark ? '#334155' : '#d7e6dd');
+    var gridSecondary = isDark ? '#223247' : '#edf4f0';
+    var axisColor = (xaxis.labels && xaxis.labels.style && xaxis.labels.style.colors) || (isDark ? '#cfe0f6' : '#688078');
+    if (Array.isArray(axisColor)) axisColor = axisColor[0] || (isDark ? '#cfe0f6' : '#688078');
+    var zeroLineColor = isDark ? '#94a3b8' : '#0f172a';
+    var hoverLineColor = isDark ? '#cbd5e1' : '#0f172a';
+    var hoverDotStroke = isDark ? '#0f172a' : '#fff';
     var tickAmount = Number.isFinite(Number(xaxis.tickAmount)) ? Number(xaxis.tickAmount) : 6;
     var svg = '';
     var defs = [
       '<defs>',
-      '<linearGradient id="apx-bg" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#fbfefd"></stop><stop offset="100%" stop-color="#eef7f3"></stop></linearGradient>',
+      '<linearGradient id="apx-bg" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="' + esc(bgTop) + '"></stop><stop offset="100%" stop-color="' + esc(bgBottom) + '"></stop></linearGradient>',
       '<clipPath id="apx-clip"><rect x="' + margin.left.toFixed(2) + '" y="' + margin.top.toFixed(2) + '" width="' + plotWidth.toFixed(2) + '" height="' + plotHeight.toFixed(2) + '" rx="10"></rect></clipPath>'
     ];
     series.forEach(function (entry, index) {
@@ -290,22 +316,22 @@
       var y = margin.top + fracY * plotHeight;
       var leftValue = leftDomain.max - fracY * (leftDomain.max - leftDomain.min);
       var rightValue = rightDomain.max - fracY * (rightDomain.max - rightDomain.min);
-      gridMarkup += '<line x1="' + margin.left.toFixed(2) + '" y1="' + y.toFixed(2) + '" x2="' + (width - margin.right).toFixed(2) + '" y2="' + y.toFixed(2) + '" stroke="#d7e6dd" stroke-width="1"></line>';
-      gridMarkup += '<text x="' + (margin.left - 10).toFixed(2) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="10" fill="#688078">' + esc(leftFormatter(leftValue)) + '</text>';
+      gridMarkup += '<line x1="' + margin.left.toFixed(2) + '" y1="' + y.toFixed(2) + '" x2="' + (width - margin.right).toFixed(2) + '" y2="' + y.toFixed(2) + '" stroke="' + esc(gridPrimary) + '" stroke-width="1"></line>';
+      gridMarkup += '<text x="' + (margin.left - 10).toFixed(2) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="end" font-size="10" fill="' + esc(axisColor) + '">' + esc(leftFormatter(leftValue)) + '</text>';
       if (rightAxisCfg) {
-        gridMarkup += '<text x="' + (width - margin.right + 10).toFixed(2) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="start" font-size="10" fill="#688078">' + esc(rightFormatter(rightValue)) + '</text>';
+        gridMarkup += '<text x="' + (width - margin.right + 10).toFixed(2) + '" y="' + (y + 4).toFixed(2) + '" text-anchor="start" font-size="10" fill="' + esc(axisColor) + '">' + esc(rightFormatter(rightValue)) + '</text>';
       }
     }
     for (var j = 0; j <= tickAmount; j += 1) {
       var fracX = j / Math.max(1, tickAmount);
       var x = margin.left + fracX * plotWidth;
       var t = xMin + fracX * (xMax - xMin);
-      gridMarkup += '<line x1="' + x.toFixed(2) + '" y1="' + margin.top.toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + (margin.top + plotHeight).toFixed(2) + '" stroke="#edf4f0" stroke-width="1"></line>';
-      gridMarkup += '<text x="' + x.toFixed(2) + '" y="' + (height - 10).toFixed(2) + '" text-anchor="middle" font-size="10" fill="#688078">' + esc(formatTimeLabel(t)) + '</text>';
+      gridMarkup += '<line x1="' + x.toFixed(2) + '" y1="' + margin.top.toFixed(2) + '" x2="' + x.toFixed(2) + '" y2="' + (margin.top + plotHeight).toFixed(2) + '" stroke="' + esc(gridSecondary) + '" stroke-width="1"></line>';
+      gridMarkup += '<text x="' + x.toFixed(2) + '" y="' + (height - 10).toFixed(2) + '" text-anchor="middle" font-size="10" fill="' + esc(axisColor) + '">' + esc(formatTimeLabel(t)) + '</text>';
     }
     if (leftDomain.min <= 0 && leftDomain.max >= 0) {
       var zeroY = yScaleLeft(0);
-      gridMarkup += '<line x1="' + margin.left.toFixed(2) + '" y1="' + zeroY.toFixed(2) + '" x2="' + (width - margin.right).toFixed(2) + '" y2="' + zeroY.toFixed(2) + '" stroke="#0f172a" stroke-width="1.4" stroke-opacity="0.75"></line>';
+      gridMarkup += '<line x1="' + margin.left.toFixed(2) + '" y1="' + zeroY.toFixed(2) + '" x2="' + (width - margin.right).toFixed(2) + '" y2="' + zeroY.toFixed(2) + '" stroke="' + esc(zeroLineColor) + '" stroke-width="1.4" stroke-opacity="0.75"></line>';
     }
 
     var annotations = this.config.annotations || {};
@@ -333,7 +359,7 @@
         }
       }
       seriesMarkup += '<path d="' + esc(path) + '" fill="none" stroke="' + esc(color) + '" stroke-width="' + widthValue + '" ' + (dashArray ? 'stroke-dasharray="' + esc(dashArray) + '" ' : '') + 'stroke-linecap="round" stroke-linejoin="round" clip-path="url(#apx-clip)"></path>';
-      hoverDots += '<circle id="apx-hover-dot-' + index + '" cx="0" cy="0" r="4.8" fill="' + esc(color) + '" stroke="#fff" stroke-width="1.4" style="display:none"></circle>';
+      hoverDots += '<circle id="apx-hover-dot-' + index + '" cx="0" cy="0" r="4.8" fill="' + esc(color) + '" stroke="' + esc(hoverDotStroke) + '" stroke-width="1.4" style="display:none"></circle>';
       preparedSeries.push({ name: entry.name, color: color, data: entry.data, yScale: yScale, seriesIndex: index });
     }, this);
 
@@ -346,7 +372,7 @@
       return axisCfg && axisCfg.opposite ? yScaleRight : yScaleLeft;
     });
 
-    surface.innerHTML = '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="100%" preserveAspectRatio="none">' + defs.join('') + xAnnotations + gridMarkup + yAnnotations + seriesMarkup + '<line id="apx-hover-line" x1="0" y1="' + margin.top.toFixed(2) + '" x2="0" y2="' + (margin.top + plotHeight).toFixed(2) + '" stroke="#0f172a" stroke-width="1" stroke-opacity="0.45" stroke-dasharray="3 4" style="display:none"></line>' + hoverDots + pointAnnotations + '</svg>';
+    surface.innerHTML = '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="100%" preserveAspectRatio="none">' + defs.join('') + xAnnotations + gridMarkup + yAnnotations + seriesMarkup + '<line id="apx-hover-line" x1="0" y1="' + margin.top.toFixed(2) + '" x2="0" y2="' + (margin.top + plotHeight).toFixed(2) + '" stroke="' + esc(hoverLineColor) + '" stroke-width="1" stroke-opacity="0.45" stroke-dasharray="3 4" style="display:none"></line>' + hoverDots + pointAnnotations + '</svg>';
 
     var legendFormatter = this.config.legend && typeof this.config.legend.formatter === 'function' ? this.config.legend.formatter : null;
     legendEl.innerHTML = preparedSeries.map(function (entry) {
