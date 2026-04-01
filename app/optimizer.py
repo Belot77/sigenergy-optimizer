@@ -1877,7 +1877,12 @@ class SigEnergyOptimizer:
         est = "*" if s.price_is_estimated else ""
         ex_low = cfg.export_threshold_low * cfg.price_multiplier
         ex_low_d = f"{ex_low:.0f}" if abs(ex_low) >= 1 else f"{ex_low:.1f}"
-        actual_export = max(s.pv_kw - s.load_kw, 0.0)  # approximate
+        measured_export = s.grid_export_power_kw if isinstance(s.grid_export_power_kw, (int, float)) else None
+        actual_export = max(float(measured_export), 0.0) if measured_export is not None else max(s.pv_kw - s.load_kw, 0.0)
+        target_export = max(float(desired_export or 0.0), 0.0)
+        export_kw_label = f"{actual_export:.1f}kW"
+        if target_export > 0.01 and abs(actual_export - target_export) >= 0.2:
+            export_kw_label = f"{actual_export:.1f}kW (set {target_export:.1f})"
 
         if s.price_is_negative:
             return f"Export blocked, price is negative ({c_d}¢{est})"
@@ -1886,19 +1891,19 @@ class SigEnergyOptimizer:
         if safeguard and not (s.feedin_price >= cfg.export_threshold_high or spike):
             return f"Export blocked, saving for sunset ({s.battery_soc:.0f}% < 100%)"
         if morning_dump:
-            return f"Exporting {actual_export:.1f}kW, Morning dump @ {fit_d}¢{est}, {s.battery_soc:.0f}%"
+            return f"Exporting {export_kw_label}, Morning dump @ {fit_d}¢{est}, {s.battery_soc:.0f}%"
         if s.feedin_price >= cfg.export_threshold_high:
-            return f"Exporting {actual_export:.1f}kW, High tier @ {fit_d}¢{est}"
+            return f"Exporting {export_kw_label}, High tier @ {fit_d}¢{est}"
         if spike:
-            return f"Exporting {actual_export:.1f}kW, Spike @ {fit_d}¢{est}"
+            return f"Exporting {export_kw_label}, Spike @ {fit_d}¢{est}"
         if solar_override:
-            return f"Exporting {actual_export:.1f}kW, Solar override{est}"
+            return f"Exporting {export_kw_label}, Solar override{est}"
         if morning_slow_charge:
-            return f"Exporting {actual_export:.1f}kW, Slow charge"
+            return f"Exporting {export_kw_label}, Slow charge"
         if surplus_bypass:
             if actual_export <= 0.05:
                 return f"Solar bypass active, waiting for surplus ({s.forecast_remaining_kwh:.1f}kWh left){est}"
-            return f"Exporting {actual_export:.1f}kW, Solar bypass ({s.forecast_remaining_kwh:.1f}kWh left){est}"
+            return f"Exporting {export_kw_label}, Solar bypass ({s.forecast_remaining_kwh:.1f}kWh left){est}"
         if (export_blocked or forecast_guard) and not surplus_bypass:
             return "Export blocked, low forecast"
         if s.battery_soc <= export_min_soc:
@@ -1907,16 +1912,16 @@ class SigEnergyOptimizer:
         if s.battery_soc < effective_floor:
             return f"Export blocked, below {effective_floor:.0f}% target"
         if s.battery_soc >= 99 and s.feedin_price >= 0.01:
-            return f"Exporting {actual_export:.1f}kW, Full battery @ {fit_d}¢{est}"
+            return f"Exporting {export_kw_label}, Full battery @ {fit_d}¢{est}"
         if tier_limit <= 0:
             if pv_safeguard:
                 return "Export blocked, forecast protection"
             return f"Export blocked, FIT {fit_d}¢{est} < {ex_low_d}¢"
         if s.feedin_price >= cfg.export_threshold_medium:
-            return f"Exporting {actual_export:.1f}kW, Med tier @ {fit_d}¢{est}"
+            return f"Exporting {export_kw_label}, Med tier @ {fit_d}¢{est}"
         if evening_boost:
-            return f"Exporting {actual_export:.1f}kW, Low tier (boost) @ {fit_d}¢{est}"
-        return f"Exporting {actual_export:.1f}kW, Low tier @ {fit_d}¢{est}"
+            return f"Exporting {export_kw_label}, Low tier (boost) @ {fit_d}¢{est}"
+        return f"Exporting {export_kw_label}, Low tier @ {fit_d}¢{est}"
 
     def _import_reason(self, s: SolarState, morning_dump: bool, standby_holdoff: bool,
                         sunrise_soc_target: float, desired_import: float,
