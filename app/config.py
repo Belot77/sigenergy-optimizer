@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     ui_api_key: str = Field("", env="UI_API_KEY")
     allow_loopback_without_api_key: bool = Field(True, env="ALLOW_LOOPBACK_WITHOUT_API_KEY")
     require_api_key_for_all_mutations: bool = Field(False, env="REQUIRE_API_KEY_FOR_ALL_MUTATIONS")
-    require_api_key_for_config_read: bool = Field(True, env="REQUIRE_API_KEY_FOR_CONFIG_READ")
+    require_api_key_for_config_read: bool = Field(False, env="REQUIRE_API_KEY_FOR_CONFIG_READ")
     ess_limit_fallback_kw: float = Field(30.0, env="ESS_LIMIT_FALLBACK_KW")
     cors_allowed_origins: str = Field(
         "http://localhost,http://127.0.0.1,http://[::1]",
