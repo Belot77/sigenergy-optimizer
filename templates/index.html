@@ -604,6 +604,8 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
   <div class="log-toolbar">
     <button class="hbtn" type="button" onclick="loadLogs()">Refresh Logs</button>
     <button class="hbtn" type="button" onclick="downloadLogs()">Download Logs</button>
+    <button class="hbtn" type="button" onclick="loadDecisionTrace()">Decision Trace</button>
+    <button class="hbtn" type="button" onclick="copyDecisionTrace()">Copy Trace JSON</button>
     <select id="logLineLimit" onchange="loadLogs()" title="Number of recent lines to fetch">
       <option value="200">200 lines</option>
       <option value="500" selected>500 lines</option>
@@ -652,6 +654,7 @@ let auditRows = [];
 let entitySearchTimers = {};
 let entityPickerState = {};
 let configPickerGlobalBound = false;
+let decisionTraceRows = [];
 const POLL = 15000;
 const LIVE_POWER_COLORS = ['#1d4ed8','#14b8a6','#f59e0b','#d97706','#7c3aed'];
 const SIM_POWER_COLORS = ['#1e88e5','#4fd1c5','#f59e0b','#d97706','#a855f7'];
@@ -2781,6 +2784,45 @@ async function loadLogs() {
     el.innerHTML=`<div class="log-block" style="color:#718096">No logs yet.</div>`;
     if (metaEl) metaEl.textContent = 'No logs available';
   }
+}
+
+async function loadDecisionTrace() {
+  const el = document.getElementById('logContent');
+  const metaEl = document.getElementById('logMeta');
+  const limit = Number(document.getElementById('logLineLimit')?.value || '500');
+  if (metaEl) metaEl.textContent = 'Loading decision trace...';
+  try {
+    const data = await getJson(`api/decision_trace?limit=${encodeURIComponent(limit)}`);
+    decisionTraceRows = Array.isArray(data?.rows) ? data.rows : [];
+    el.innerHTML = `<div class="log-block">${escH(JSON.stringify(decisionTraceRows, null, 2))}</div>`;
+    if (metaEl) metaEl.textContent = `${decisionTraceRows.length} decision cycles | refreshed ${ts()}`;
+  } catch (e) {
+    el.innerHTML = `<div class="log-block" style="color:#fc8181">Failed to load decision trace: ${escH(e.message || String(e))}</div>`;
+    if (metaEl) metaEl.textContent = 'Decision trace unavailable';
+  }
+}
+
+async function copyDecisionTrace() {
+  const metaEl = document.getElementById('logMeta');
+  if (!Array.isArray(decisionTraceRows) || !decisionTraceRows.length) {
+    if (metaEl) metaEl.textContent = 'No decision trace loaded yet';
+    return;
+  }
+  const text = JSON.stringify(decisionTraceRows, null, 2);
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      if (metaEl) metaEl.textContent = `Decision trace copied to clipboard at ${ts()}`;
+      return;
+    }
+  } catch (_) {}
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  if (metaEl) metaEl.textContent = `Decision trace copied to clipboard at ${ts()}`;
 }
 
 function downloadLogs() {

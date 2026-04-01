@@ -14,6 +14,7 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import logging
 import os
 from datetime import datetime, time, timedelta, timezone
@@ -93,6 +94,7 @@ class SigEnergyOptimizer:
         self._last_tracked_feedin_price: Optional[float] = None
         db_path = os.environ.get("STATE_DB_PATH", "/data/optimizer_state.db")
         self._state_store = StateStore(db_path)
+        self._decision_trace: deque[dict[str, Any]] = deque(maxlen=1000)
 
         # Shared queue — HAWebSocketClient puts entity_ids here; we consume them
         self.trigger_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
@@ -350,6 +352,7 @@ class SigEnergyOptimizer:
         decision = self._decide(state)
         self._last_decision = decision
         await self._apply(state, decision)
+        self._record_decision_trace(state, decision)
         await self._handle_notifications(state, decision, prev_decision, prev_state)
         await self._handle_daily_summaries(state, decision)
         self._accumulate_history(state, decision)
@@ -456,6 +459,42 @@ class SigEnergyOptimizer:
 
     def delete_threshold_preset(self, name: str) -> bool:
         return self._state_store.delete_threshold_preset(name)
+
+    def decision_trace(self, limit: int = 200) -> list[dict[str, Any]]:
+        n = max(1, min(int(limit), 2000))
+        return list(self._decision_trace)[:n]
+
+    def _record_decision_trace(self, s: SolarState, d: Decision) -> None:
+        gates = d.trace_gates if isinstance(d.trace_gates, dict) else {}
+        values = d.trace_values if isinstance(d.trace_values, dict) else {}
+        self._decision_trace.appendleft(
+            {
+                "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "summary": {
+                    "ems_mode": d.ems_mode,
+                    "export_limit_kw": d.export_limit,
+                    "import_limit_kw": d.import_limit,
+                    "pv_max_power_limit_kw": d.pv_max_power_limit,
+                    "ess_charge_limit_kw": d.ess_charge_limit,
+                    "ess_discharge_limit_kw": d.ess_discharge_limit,
+                    "outcome_reason": d.outcome_reason,
+                },
+                "state": {
+                    "battery_soc": s.battery_soc,
+                    "pv_kw": s.pv_kw,
+                    "load_kw": s.load_kw,
+                    "grid_import_power_kw": s.grid_import_power_kw,
+                    "grid_export_power_kw": s.grid_export_power_kw,
+                    "current_price": s.current_price,
+                    "feedin_price": s.feedin_price,
+                    "forecast_remaining_kwh": s.forecast_remaining_kwh,
+                    "forecast_today_kwh": s.forecast_today_kwh,
+                    "forecast_tomorrow_kwh": s.forecast_tomorrow_kwh,
+                },
+                "gates": gates,
+                "values": values,
+            }
+        )
 
     def _accumulate_history(self, s, d) -> None:
         import time as _time
@@ -967,6 +1006,66 @@ class SigEnergyOptimizer:
         if s.price_is_estimated:
             parts.append("*est")
         d.outcome_reason = "; ".join(p for p in parts if p and p != "n/a")
+
+        d.trace_gates = {
+            "is_evening_or_night": is_evening_or_night,
+            "close_to_sunset": close_to_sunset,
+            "within_morning_grace": within_morning_grace,
+            "morning_dump_active": morning_dump_active,
+            "morning_slow_charge_active": morning_slow_charge_active,
+            "standby_holdoff_active": standby_holdoff_active,
+            "negative_price_before_cutoff": negative_price_before_cutoff,
+            "battery_can_reach_from_pv": battery_can_reach_from_pv,
+            "evening_export_boost_active": evening_export_boost_active,
+            "export_spike_active": export_spike_active,
+            "positive_fit_override": positive_fit_override,
+            "export_solar_override": export_solar_override,
+            "pv_safeguard_active": pv_safeguard_active,
+            "solar_surplus_bypass": solar_surplus_bypass,
+            "battery_full_safeguard_block": battery_full_safeguard_block,
+            "export_blocked_for_forecast": export_blocked_for_forecast,
+            "export_forecast_guard": export_forecast_guard,
+            "export_blocked_effective": export_blocked_effective,
+            "battery_only_mode": battery_only_mode,
+            "needs_ha_control_switch": d.needs_ha_control_switch,
+            "demand_window_active": s.demand_window_active,
+            "price_is_negative": s.price_is_negative,
+            "feedin_is_negative": s.feedin_is_negative,
+        }
+        d.trace_values = {
+            "battery_soc": s.battery_soc,
+            "current_price": s.current_price,
+            "feedin_price": s.feedin_price,
+            "pv_kw": s.pv_kw,
+            "load_kw": s.load_kw,
+            "grid_import_power_kw": s.grid_import_power_kw,
+            "grid_export_power_kw": s.grid_export_power_kw,
+            "pv_surplus_actual": pv_surplus_actual,
+            "pv_surplus_estimated": pv_surplus,
+            "cap_kwh": cap,
+            "bat_fill_need_kwh": bat_fill_need_kwh,
+            "soc_required": soc_required,
+            "sunrise_soc_target": sunrise_soc_target,
+            "sunrise_fill_need_kwh": sunrise_fill_need_kwh,
+            "hours_to_sunrise": hours_to_sunrise,
+            "hours_to_sunset": hours_to_sunset,
+            "export_min_soc": export_min_soc,
+            "export_tier_limit": export_tier_limit,
+            "morning_dump_limit": morning_dump_limit,
+            "desired_export_limit": desired_export_limit,
+            "desired_import_limit": desired_import_limit,
+            "desired_ems_mode": desired_ems_mode,
+            "desired_pv_max": desired_pv_max,
+            "effective_import_for_math": effective_import_for_math,
+            "battery_power_kw": battery_power_kw,
+            "ess_charge_limit": d.ess_charge_limit,
+            "ess_discharge_limit": d.ess_discharge_limit,
+            "holdoff_entry_floor": self._holdoff_entry_floor,
+            "current_export_limit": s.current_export_limit,
+            "current_import_limit": s.current_import_limit,
+            "current_pv_max_power_limit": s.current_pv_max_power_limit,
+            "current_ems_mode": s.current_ems_mode,
+        }
 
         return d
 

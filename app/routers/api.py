@@ -144,6 +144,16 @@ def _has_forwarded_client_headers(request: Request) -> bool:
     )
 
 
+def _is_ha_ingress_request(request: Request) -> bool:
+    # Home Assistant ingress proxied requests include ingress-specific headers.
+    # Treat these as trusted local UI traffic unless strict API-key mode is enabled.
+    return bool(
+        request.headers.get("x-ingress-path")
+        or request.headers.get("x-hassio")
+        or request.headers.get("x-home-assistant")
+    )
+
+
 def _require_mutation_auth(request: Request) -> None:
     # Preserve zero-config local UX while requiring a key for remote clients.
     allow_loopback = (
@@ -152,8 +162,10 @@ def _require_mutation_auth(request: Request) -> None:
     )
     if (
         allow_loopback
-        and _is_loopback_client(request)
-        and not _has_forwarded_client_headers(request)
+        and (
+            (_is_loopback_client(request) and not _has_forwarded_client_headers(request))
+            or _is_ha_ingress_request(request)
+        )
     ):
         return
 
@@ -1090,6 +1102,13 @@ async def download_logs(request: Request, n: int = 500) -> PlainTextResponse:
         "\n".join(lines),
         headers={"Content-Disposition": f"attachment; filename=sigenergy_logs_{ts}.log"},
     )
+
+
+@router.get("/decision_trace")
+async def get_decision_trace(request: Request, limit: int = 200) -> dict[str, Any]:
+    _require_config_read_auth(request)
+    rows = _opt(request).decision_trace(limit=max(1, min(int(limit), 2000)))
+    return {"rows": rows}
 
 
 @router.get("/history")

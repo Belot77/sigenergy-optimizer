@@ -111,4 +111,6 @@ class Decision:
     hours_to_sunrise: float = 6.0
     battery_soc_required_to_sunrise: float = 0.0
     needs_ha_control_switch: bool = False
+    trace_gates: dict[str, bool] = field(default_factory=dict)
+    trace_values: dict[str, float | str | bool | None] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)
