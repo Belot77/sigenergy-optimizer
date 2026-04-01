@@ -86,6 +86,45 @@ class HAClient:
             logger.warning("bulk_states failed: %s", exc)
             return {}
 
+    async def search_entities(
+        self,
+        query: str = "",
+        limit: int = 200,
+        domains: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return HA entities for UI type-ahead selection."""
+        try:
+            q = str(query or "").strip().lower()
+            limit = max(1, min(int(limit), 1000))
+            domain_set = {str(d).strip().lower() for d in (domains or []) if str(d).strip()}
+            r = await self._client.get("/api/states")
+            r.raise_for_status()
+            all_states: list[dict[str, Any]] = r.json()
+
+            rows: list[dict[str, Any]] = []
+            for item in all_states:
+                entity_id = str(item.get("entity_id", ""))
+                domain = entity_id.split(".", 1)[0].lower() if "." in entity_id else ""
+                if domain_set and domain not in domain_set:
+                    continue
+                attrs = item.get("attributes", {}) or {}
+                friendly_name = str(attrs.get("friendly_name", ""))
+                if q and (q not in entity_id.lower() and q not in friendly_name.lower()):
+                    continue
+                rows.append(
+                    {
+                        "entity_id": entity_id,
+                        "friendly_name": friendly_name,
+                        "domain": domain,
+                    }
+                )
+                if len(rows) >= limit:
+                    break
+            return rows
+        except Exception as exc:
+            logger.warning("search_entities failed: %s", exc)
+            return []
+
     async def get_history_period(
         self,
         start_time: datetime,

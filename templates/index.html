@@ -12,6 +12,13 @@ window.addonApiUrl = function(path) {
 };
 window.apiUrl = window.addonApiUrl;
 (function() {
+  try {
+    const savedTheme = localStorage.getItem('sigenergy_theme');
+    if (savedTheme === 'dark') {
+      document.documentElement.classList.add('theme-dark');
+    }
+  } catch (_) {}
+
   const nativeFetch = window.fetch.bind(window);
   const rewrite = (u) => {
     if (typeof u !== 'string') return u;
@@ -212,7 +219,7 @@ select:focus,input:focus{border-color:#276749}
 .audit-code{font-family:Consolas,Monaco,monospace;font-size:11px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:5px 7px;max-width:380px;overflow:auto;white-space:pre-wrap}
 .audit-empty{padding:18px;border:1px dashed #cbd5e1;border-radius:10px;background:#f8fafc;color:#64748b}
 .cfg-stack{display:grid;gap:12px}
-.cfg-section{background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
+.cfg-section{background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:visible}
 .cfg-section summary{display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none;cursor:pointer;padding:14px 16px;font-size:13px;font-weight:700;color:#2d3748}
 .cfg-section summary::-webkit-details-marker{display:none}
 .cfg-section[open] summary{border-bottom:1px solid #e2e8f0;background:#f7fafc}
@@ -221,11 +228,85 @@ select:focus,input:focus{border-color:#276749}
 .cfg-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px}
 .cfg-field{display:flex;flex-direction:column;gap:4px}
 .cfg-field label{font-size:11px;font-weight:600;color:#718096;text-transform:uppercase;letter-spacing:.05em}
+.cfg-entity-badge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:10px;font-weight:700;letter-spacing:0;text-transform:none}
+.cfg-hint{font-size:11px;color:#475569;margin:0 0 10px 0;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;padding:8px 10px}
+.entity-picker{position:relative}
+.entity-picker-main{display:flex;align-items:center;gap:6px}
+.entity-picker-value{flex:1}
+.entity-picker-toggle{width:32px;height:32px;border:1.5px solid #e2e8f0;background:#fff;border-radius:6px;color:#475569;font-weight:700;cursor:pointer}
+.entity-picker-toggle:hover{border-color:#94a3b8;background:#f8fafc}
+.entity-picker-panel{display:none;position:absolute;z-index:40;left:0;right:0;top:calc(100% + 6px);background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 14px 26px rgba(15,23,42,.16);padding:8px}
+.entity-picker.open .entity-picker-panel{display:block}
+.entity-picker-search{width:100%;border:1.5px solid #cbd5e1;border-radius:7px;padding:7px 10px;font-size:13px}
+.entity-picker-results{max-height:260px;overflow:auto;margin-top:8px;border:1px solid #e2e8f0;border-radius:8px;background:#fff}
+.entity-picker-option{width:100%;text-align:left;background:#fff;border:none;border-bottom:1px solid #edf2f7;padding:8px 10px;cursor:pointer}
+.entity-picker-option:hover{background:#f1f5f9}
+.entity-picker-option.active{background:#e0f2fe;outline:1px solid #7dd3fc}
+.entity-picker-option:last-child{border-bottom:none}
+.entity-picker-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.entity-picker-left{display:flex;align-items:center;gap:8px;min-width:0}
+.entity-picker-glyph{width:20px;height:20px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.entity-picker-id{font-family:Consolas,Monaco,monospace;font-size:11px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.entity-picker-name{font-size:12px;color:#475569;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.entity-picker-domain{font-size:10px;color:#334155;background:#e2e8f0;border-radius:999px;padding:2px 7px;text-transform:lowercase;flex-shrink:0}
+.entity-picker-empty{padding:10px;color:#64748b;font-size:12px}
 .cfg-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px}
 .cfg-msg{font-size:12px;color:#276749;min-height:16px}
 @media (max-width: 900px){.cfg-grid{grid-template-columns:1fr}}
 @media (max-width: 900px){.chart-hdr{flex-direction:column}.chart-now{max-width:none;text-align:left}.chart-frame{padding:6px}.scenario-grid{grid-template-columns:1fr 1fr}}
 @media (max-width: 640px){.scenario-grid{grid-template-columns:1fr}.apx-tooltip{max-width:220px;min-width:150px}.apx-tooltip-label{max-width:120px}}
+
+/* Dark Theme */
+html.theme-dark body{background:#0b1220;color:#e5edf8}
+html.theme-dark .app-header,html.theme-dark .nav{background:#0f172a;border-color:#263248}
+html.theme-dark .app-title{color:#f8fbff}
+html.theme-dark .app-subtitle,html.theme-dark .header-sim,html.theme-dark .ntab{color:#b8c6db}
+html.theme-dark .ntab.active{color:#7dd3fc;border-bottom-color:#38bdf8}
+html.theme-dark .ntab:hover:not(.active){color:#e5edf8}
+html.theme-dark .card,html.theme-dark .scell,html.theme-dark .reason-bar,html.theme-dark .cfg-section,html.theme-dark .audit-table-wrap{background:#121b2d;border-color:#2a3850}
+html.theme-dark .scenario-wrap{background:#121b2d;border-color:#2a3850}
+html.theme-dark .chart-card,html.theme-dark .chart-frame{background:#121b2d;border-color:#2a3850;box-shadow:none}
+html.theme-dark .scenario-card{background:#121b2d;border-color:#354966}
+html.theme-dark .scenario-card.active{border-color:#7dd3fc;box-shadow:0 0 0 2px rgba(125,211,252,.22)}
+html.theme-dark .card-title,html.theme-dark .sval,html.theme-dark .reason-bar,html.theme-dark .cfg-section summary,html.theme-dark .audit-table td,html.theme-dark .chart-title,html.theme-dark .scenario-title,html.theme-dark .scenario-name,html.theme-dark .chart-now{color:#eaf2ff}
+html.theme-dark .flabel,html.theme-dark .slbl,html.theme-dark .cfg-field label,html.theme-dark .cfg-summary-note,html.theme-dark .audit-table th,html.theme-dark .chart-sub,html.theme-dark .chart-note,html.theme-dark .preview-note,html.theme-dark .scenario-note,html.theme-dark .preview-sub{color:#b8c6db}
+html.theme-dark .scenario-metric{color:#c6d4ea}
+html.theme-dark .scenario-metric strong{color:#f2f7ff}
+html.theme-dark .cfg-section[open] summary{background:#1a2740;border-bottom-color:#2a3850}
+html.theme-dark .reason-bar{border-left-color:#38bdf8}
+html.theme-dark .chart-key,html.theme-dark .chart-key::before{color:#c7d6ec}
+html.theme-dark .apx-empty{background:#0f172a;color:#b8c6db}
+html.theme-dark select,html.theme-dark input[type=number],html.theme-dark input[type=text],html.theme-dark .entity-picker-search,html.theme-dark .entity-picker-toggle{background:#0f172a;color:#e5edf8;border-color:#3a4c6a}
+html.theme-dark select:focus,html.theme-dark input[type=number]:focus,html.theme-dark input[type=text]:focus,html.theme-dark .entity-picker-search:focus{border-color:#7dd3fc;box-shadow:0 0 0 2px rgba(56,189,248,.2)}
+html.theme-dark .hbtn{background:#17233a;color:#e5edf8;border-color:#3a4c6a}
+html.theme-dark .hbtn:hover{background:#22314d;border-color:#7c93b8}
+html.theme-dark .hbtn.primary{background:#0ea5e9;border-color:#38bdf8;color:#ffffff}
+html.theme-dark .hbtn.primary:hover{background:#38bdf8;color:#ffffff}
+html.theme-dark .pending-badge{background:#1e293b;color:#dbe7f7;border-color:#3a4c6a}
+html.theme-dark .pending-badge.saving{background:#1f3b2b;color:#c8f3dd;border-color:#2f7c55}
+html.theme-dark .pending-badge.saved{background:#0b3a4d;color:#c9f1ff;border-color:#0ea5e9}
+html.theme-dark .pending-badge.failed{background:#3b1d23;color:#ffd9de;border-color:#ef4444}
+html.theme-dark .action-msg{color:#b8c6db}
+html.theme-dark .action-msg.ok{color:#86efac}
+html.theme-dark .action-msg.warn{color:#fcd34d}
+html.theme-dark .action-msg.err{color:#fca5a5}
+html.theme-dark .cfg-hint,html.theme-dark .preview-card,html.theme-dark .audit-empty{background:#0f172a;border-color:#3a4c6a;color:#cfe0f6}
+html.theme-dark .preview-title{color:#93c5fd}
+html.theme-dark .preview-cell{background:#101b2d;border-color:#30415d}
+html.theme-dark .stale-banner{background:#4a2412;border-color:#9a3412;color:#ffddb5}
+html.theme-dark .etable th{background:#0f172a;border-color:#2a3850;color:#c3d2e8}
+html.theme-dark .etable td{border-color:#2a3850;color:#e5edf8}
+html.theme-dark .etable td:nth-child(2){color:#b8c6db}
+html.theme-dark .etable tbody tr:hover{background:#17233a}
+html.theme-dark .audit-code{background:#0f172a;border-color:#3a4c6a;color:#dbe7f7}
+html.theme-dark .entity-picker-panel,html.theme-dark .entity-picker-results,html.theme-dark .entity-picker-option{background:#0f172a;border-color:#3a4c6a}
+html.theme-dark .entity-picker-option{border-bottom-color:#2a3850}
+html.theme-dark .entity-picker-option:hover{background:#17233a}
+html.theme-dark .entity-picker-option.active{background:#12314a;outline-color:#7dd3fc}
+html.theme-dark .entity-picker-id{color:#e5edf8}
+html.theme-dark .entity-picker-name,html.theme-dark .entity-picker-empty{color:#c3d2e8}
+html.theme-dark .entity-picker-glyph{background:#1e3a5f;color:#93c5fd}
+html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
 </style>
 </head>
 <body>
@@ -241,6 +322,7 @@ select:focus,input:focus{border-color:#276749}
   </div>
   <div class="header-sim" id="simResult"></div>
   <div style="display:flex;gap:8px;margin-left:auto;flex-shrink:0">
+    <button class="hbtn" id="btnTheme" onclick="toggleTheme()">Dark Mode</button>
     <button class="hbtn" id="btnSim" onclick="runSimulation()">Simulate Automated</button>
     <button class="hbtn" onclick="exportCSV()">Export CSV</button>
     <button class="hbtn primary" id="btnRun" onclick="runCycle()">Run Cycle Now</button>
@@ -531,6 +613,9 @@ let wsReconnectTimer = null;
 let activeProfile = 'maxConsumption';
 let uiCfg = null;
 let auditRows = [];
+let entitySearchTimers = {};
+let entityPickerState = {};
+let configPickerGlobalBound = false;
 const POLL = 15000;
 const LIVE_POWER_COLORS = ['#1d4ed8','#14b8a6','#f59e0b','#d97706','#dc2626','#16a34a','#7c3aed'];
 const SIM_POWER_COLORS = ['#1e88e5','#4fd1c5','#f59e0b','#d97706','#0891b2','#ea580c','#a855f7'];
@@ -2106,19 +2191,298 @@ const _CONFIG_SECTIONS = [
 ];
 
 function cfgFieldId(sectionKey, key) { return `cfg_${sectionKey}_${key}`; }
+function cfgPickerPanelId(sectionKey, key) { return `cfg_panel_${sectionKey}_${key}`; }
+function cfgPickerSearchId(sectionKey, key) { return `cfg_search_${sectionKey}_${key}`; }
+function cfgPickerResultsId(sectionKey, key) { return `cfg_results_${sectionKey}_${key}`; }
+function cfgPickerToggleId(sectionKey, key) { return `cfg_toggle_${sectionKey}_${key}`; }
+function cfgPickerKey(sectionKey, key) { return `${sectionKey}::${key}`; }
+
+function isEntityKey(key) {
+  const k = String(key || '').toLowerCase();
+  return (
+    k.endsWith('_sensor') ||
+    k.endsWith('_entity') ||
+    k.includes('_switch') ||
+    k.includes('_select') ||
+    k.includes('_helper') ||
+    k.includes('_energy') ||
+    k.includes('_power') ||
+    k.includes('_limit')
+  );
+}
 
 function renderConfigField(sectionKey, cfg, field) {
   const [key, label, type, step] = field;
   const value = cfg[key];
+  const entityKey = isEntityKey(key);
+  const labelHtml = entityKey ? `${label} <span class="cfg-entity-badge">searchable</span>` : label;
   let input = '';
   if (type === 'bool') {
     input = `<select id="${cfgFieldId(sectionKey, key)}"><option value="true" ${value ? 'selected' : ''}>True</option><option value="false" ${!value ? 'selected' : ''}>False</option></select>`;
   } else if (type === 'number') {
     input = `<input type="number" id="${cfgFieldId(sectionKey, key)}" step="${step || '0.1'}" value="${escH(String(value ?? ''))}">`;
   } else {
-    input = `<input type="text" id="${cfgFieldId(sectionKey, key)}" value="${escH(String(value ?? ''))}">`;
+    if (entityKey) {
+      input = `<div class="entity-picker" id="${cfgPickerPanelId(sectionKey, key)}_wrap">
+        <div class="entity-picker-main">
+          <input type="text" class="entity-picker-value" id="${cfgFieldId(sectionKey, key)}" autocomplete="off" placeholder="Type to search Home Assistant entities..." value="${escH(String(value ?? ''))}">
+          <button type="button" class="entity-picker-toggle" id="${cfgPickerToggleId(sectionKey, key)}" title="Open entity picker">v</button>
+        </div>
+        <div class="entity-picker-panel" id="${cfgPickerPanelId(sectionKey, key)}">
+          <input type="text" class="entity-picker-search" id="${cfgPickerSearchId(sectionKey, key)}" placeholder="Search entities...">
+          <div class="entity-picker-results" id="${cfgPickerResultsId(sectionKey, key)}"><div class="entity-picker-empty">Type to search available entities.</div></div>
+        </div>
+      </div>`;
+    } else {
+      input = `<input type="text" id="${cfgFieldId(sectionKey, key)}" value="${escH(String(value ?? ''))}">`;
+    }
   }
-  return `<div class="cfg-field"><label for="${cfgFieldId(sectionKey, key)}">${label}</label>${input}</div>`;
+  return `<div class="cfg-field"><label for="${cfgFieldId(sectionKey, key)}">${labelHtml}</label>${input}</div>`;
+}
+
+function preferredDomainsForKey(key) {
+  const k = String(key || '').toLowerCase();
+  if (k.includes('_switch')) return ['switch', 'input_boolean'];
+  if (k.includes('_select') || k.includes('_mode') || k.includes('_option')) return ['select', 'input_select'];
+  if (k.includes('_helper')) return ['input_text', 'input_number', 'input_select', 'input_boolean'];
+  if (k.includes('_limit') || k.includes('_number')) return ['number', 'input_number', 'sensor'];
+  if (k.endsWith('_sensor') || k.includes('_power') || k.includes('_energy') || k.includes('_price') || k.includes('_forecast')) return ['sensor', 'number'];
+  if (k.endsWith('_entity') || k.includes('sun')) return ['sensor', 'binary_sensor', 'sun'];
+  return [];
+}
+
+function closeAllEntityPickers() {
+  document.querySelectorAll('.entity-picker').forEach((node) => node.classList.remove('open'));
+}
+
+function openEntityPicker(sectionKey, key) {
+  closeAllEntityPickers();
+  const wrap = document.getElementById(`${cfgPickerPanelId(sectionKey, key)}_wrap`);
+  if (!wrap) return;
+  wrap.classList.add('open');
+}
+
+function pickerStateGet(sectionKey, key) {
+  return entityPickerState[cfgPickerKey(sectionKey, key)] || { rows: [], activeIndex: -1 };
+}
+
+function pickerStateSet(sectionKey, key, rows, activeIndex = -1) {
+  entityPickerState[cfgPickerKey(sectionKey, key)] = { rows: rows || [], activeIndex };
+}
+
+function domainGlyph(domain) {
+  const d = String(domain || '').toLowerCase();
+  const map = {
+    sensor: 'SE',
+    switch: 'SW',
+    number: 'NU',
+    select: 'SL',
+    input_boolean: 'IB',
+    input_number: 'IN',
+    input_text: 'IT',
+    input_select: 'IS',
+    binary_sensor: 'BS',
+    sun: 'SU',
+  };
+  return map[d] || (d ? d.slice(0, 2).toUpperCase() : '--');
+}
+
+function pickEntityValue(sectionKey, key, entityId) {
+  const valueEl = document.getElementById(cfgFieldId(sectionKey, key));
+  if (!valueEl) return;
+  valueEl.value = entityId || '';
+  closeAllEntityPickers();
+}
+
+function moveEntitySelection(sectionKey, key, delta) {
+  const state = pickerStateGet(sectionKey, key);
+  const rows = state.rows || [];
+  if (!rows.length) return;
+  let idx = Number(state.activeIndex);
+  if (!Number.isFinite(idx) || idx < 0) idx = 0;
+  else idx = (idx + delta + rows.length) % rows.length;
+  pickerStateSet(sectionKey, key, rows, idx);
+  renderEntityPickerResults(sectionKey, key, rows);
+  const resultsEl = document.getElementById(cfgPickerResultsId(sectionKey, key));
+  const activeBtn = resultsEl?.querySelector('.entity-picker-option.active');
+  if (activeBtn && typeof activeBtn.scrollIntoView === 'function') {
+    activeBtn.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function confirmEntitySelection(sectionKey, key) {
+  const state = pickerStateGet(sectionKey, key);
+  const rows = state.rows || [];
+  if (!rows.length) return;
+  const idx = (state.activeIndex >= 0 && state.activeIndex < rows.length) ? state.activeIndex : 0;
+  pickEntityValue(sectionKey, key, rows[idx]?.entity_id || '');
+}
+
+function renderEntityPickerResults(sectionKey, key, rows) {
+  const resultsEl = document.getElementById(cfgPickerResultsId(sectionKey, key));
+  if (!resultsEl) return;
+
+  const state = pickerStateGet(sectionKey, key);
+  let activeIndex = Number(state.activeIndex);
+  if (!Array.isArray(rows)) rows = [];
+  if (!rows.length) activeIndex = -1;
+  else if (!Number.isFinite(activeIndex) || activeIndex < 0 || activeIndex >= rows.length) activeIndex = 0;
+  pickerStateSet(sectionKey, key, rows, activeIndex);
+
+  if (!Array.isArray(rows) || !rows.length) {
+    resultsEl.innerHTML = '<div class="entity-picker-empty">No matching entities found.</div>';
+    return;
+  }
+
+  resultsEl.innerHTML = rows.map((row, idx) => {
+    const entityId = String(row.entity_id || '');
+    const friendly = String(row.friendly_name || '');
+    const domain = String(row.domain || (entityId.includes('.') ? entityId.split('.', 1)[0] : ''));
+    const glyph = domainGlyph(domain);
+    const activeCls = idx === activeIndex ? ' active' : '';
+    return `<button type="button" class="entity-picker-option${activeCls}" data-entity-id="${escH(entityId)}" data-index="${idx}">
+      <div class="entity-picker-row">
+        <div class="entity-picker-left">
+          <div class="entity-picker-glyph">${escH(glyph)}</div>
+          <div style="min-width:0">
+            <div class="entity-picker-id">${escH(entityId)}</div>
+            <div class="entity-picker-name">${escH(friendly || 'Unnamed entity')}</div>
+          </div>
+        </div>
+        <div class="entity-picker-domain">${escH(domain || 'entity')}</div>
+      </div>
+    </button>`;
+  }).join('');
+
+  resultsEl.querySelectorAll('.entity-picker-option').forEach((btn) => {
+    btn.addEventListener('mouseenter', () => {
+      const idx = Number(btn.getAttribute('data-index') || '-1');
+      const st = pickerStateGet(sectionKey, key);
+      pickerStateSet(sectionKey, key, st.rows, idx);
+      renderEntityPickerResults(sectionKey, key, st.rows);
+    });
+    btn.addEventListener('click', () => {
+      const entityId = btn.getAttribute('data-entity-id') || '';
+      pickEntityValue(sectionKey, key, entityId);
+    });
+  });
+}
+
+async function searchConfigEntities(sectionKey, key, query, fallbackAll = true) {
+  if (!isEntityKey(key)) return [];
+  const domains = preferredDomainsForKey(key);
+  const domainsParam = domains.length ? `&domains=${encodeURIComponent(domains.join(','))}` : '';
+  try {
+    const res = await getJson(`api/entities/search?q=${encodeURIComponent(query || '')}&limit=80${domainsParam}`);
+    let rows = Array.isArray(res?.rows) ? res.rows : [];
+    if (!rows.length && fallbackAll && domains.length) {
+      const allRes = await getJson(`api/entities/search?q=${encodeURIComponent(query || '')}&limit=80`);
+      rows = Array.isArray(allRes?.rows) ? allRes.rows : [];
+    }
+    renderEntityPickerResults(sectionKey, key, rows);
+    return rows;
+  } catch (_) {
+    renderEntityPickerResults(sectionKey, key, []);
+    return [];
+  }
+}
+
+function setupConfigEntityAutocomplete() {
+  if (!configPickerGlobalBound) {
+    document.addEventListener('click', (ev) => {
+      if (!ev.target.closest('.entity-picker')) closeAllEntityPickers();
+    });
+    configPickerGlobalBound = true;
+  }
+
+  for (const section of _CONFIG_SECTIONS) {
+    for (const field of section.fields) {
+      const [key, , type] = field;
+      if (type !== 'text' || !isEntityKey(key)) continue;
+      const input = document.getElementById(cfgFieldId(section.key, key));
+      const toggle = document.getElementById(cfgPickerToggleId(section.key, key));
+      const search = document.getElementById(cfgPickerSearchId(section.key, key));
+      if (!input) continue;
+
+      input.addEventListener('focus', () => {
+        openEntityPicker(section.key, key);
+        if (search) search.value = input.value || '';
+        searchConfigEntities(section.key, key, input.value || '');
+      });
+      input.addEventListener('input', () => {
+        const timerKey = cfgPickerKey(section.key, key);
+        if (entitySearchTimers[timerKey]) clearTimeout(entitySearchTimers[timerKey]);
+        entitySearchTimers[timerKey] = setTimeout(() => {
+          openEntityPicker(section.key, key);
+          if (search) search.value = input.value || '';
+          searchConfigEntities(section.key, key, input.value || '');
+        }, 180);
+      });
+
+      if (toggle) {
+        toggle.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const wrap = document.getElementById(`${cfgPickerPanelId(section.key, key)}_wrap`);
+          const wasOpen = wrap?.classList.contains('open');
+          if (wasOpen) {
+            closeAllEntityPickers();
+            return;
+          }
+          openEntityPicker(section.key, key);
+          if (search) search.value = input.value || '';
+          searchConfigEntities(section.key, key, input.value || '');
+          if (search) search.focus();
+        });
+      }
+
+      if (search) {
+        search.addEventListener('click', (ev) => ev.stopPropagation());
+        search.addEventListener('keydown', (ev) => {
+          if (ev.key === 'ArrowDown') {
+            ev.preventDefault();
+            moveEntitySelection(section.key, key, +1);
+          } else if (ev.key === 'ArrowUp') {
+            ev.preventDefault();
+            moveEntitySelection(section.key, key, -1);
+          } else if (ev.key === 'Enter') {
+            ev.preventDefault();
+            confirmEntitySelection(section.key, key);
+          } else if (ev.key === 'Escape') {
+            ev.preventDefault();
+            closeAllEntityPickers();
+          }
+        });
+        search.addEventListener('input', () => {
+          const timerKey = cfgPickerKey(section.key, key);
+          if (entitySearchTimers[timerKey]) clearTimeout(entitySearchTimers[timerKey]);
+          entitySearchTimers[timerKey] = setTimeout(() => {
+            searchConfigEntities(section.key, key, search.value || '');
+          }, 160);
+        });
+      }
+
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'ArrowDown') {
+          ev.preventDefault();
+          openEntityPicker(section.key, key);
+          moveEntitySelection(section.key, key, +1);
+        } else if (ev.key === 'ArrowUp') {
+          ev.preventDefault();
+          openEntityPicker(section.key, key);
+          moveEntitySelection(section.key, key, -1);
+        } else if (ev.key === 'Enter') {
+          const wrap = document.getElementById(`${cfgPickerPanelId(section.key, key)}_wrap`);
+          if (wrap?.classList.contains('open')) {
+            ev.preventDefault();
+            confirmEntitySelection(section.key, key);
+          }
+        } else if (ev.key === 'Escape') {
+          closeAllEntityPickers();
+        }
+      });
+    }
+  }
 }
 
 function renderConfigSection(cfg, section, initiallyOpen=false) {
@@ -2151,7 +2515,8 @@ async function loadConfig() {
     uiCfg = cfg;
     syncThresholdInputsFromConfig(cfg);
     const sectionsHtml = _CONFIG_SECTIONS.map((section, index) => renderConfigSection(cfg, section, index === 0)).join('');
-    el.innerHTML = `<div class="cfg-stack">${sectionsHtml}</div>`;
+    el.innerHTML = `<div class="cfg-stack"><div class="cfg-hint">Entity fields are now searchable. Click a field marked <strong>searchable</strong>, then type part of the entity id or name.</div>${sectionsHtml}</div>`;
+    setupConfigEntityAutocomplete();
     await loadPresets();
     updateScenarioComparison();
     updateThresholdPreview();
@@ -2252,6 +2617,30 @@ function downloadLogs() {
 }
 
 function escH(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function applyTheme(mode) {
+  const dark = mode === 'dark';
+  document.documentElement.classList.toggle('theme-dark', dark);
+  try { localStorage.setItem('sigenergy_theme', dark ? 'dark' : 'light'); } catch (_) {}
+  const btn = document.getElementById('btnTheme');
+  if (btn) btn.textContent = dark ? 'Light Mode' : 'Dark Mode';
+}
+
+function toggleTheme() {
+  const dark = document.documentElement.classList.contains('theme-dark');
+  applyTheme(dark ? 'light' : 'dark');
+}
+
+function initTheme() {
+  let mode = 'light';
+  try {
+    const saved = localStorage.getItem('sigenergy_theme');
+    if (saved === 'dark' || saved === 'light') mode = saved;
+    else if (document.documentElement.classList.contains('theme-dark')) mode = 'dark';
+    else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) mode = 'dark';
+  } catch (_) {}
+  applyTheme(mode);
+}
 
 function auditJson(v) {
   if (v == null) return '';
@@ -2357,6 +2746,7 @@ if (uiApiKeyInput) {
 }
 document.querySelectorAll('.thresh-input').forEach(el => el.addEventListener('input', updateThresholdPreview));
 document.querySelectorAll('.thresh-input').forEach(el => el.addEventListener('input', updateScenarioComparison));
+initTheme();
 initCharts();
 loadConfig();
 loadPresets();

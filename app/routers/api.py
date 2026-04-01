@@ -794,6 +794,14 @@ async def get_config(request: Request) -> dict[str, Any]:
     return data
 
 
+@router.get("/entities/search")
+async def search_entities(request: Request, q: str = "", limit: int = 200, domains: str = "") -> dict[str, Any]:
+    _require_config_read_auth(request)
+    domain_list = [d.strip().lower() for d in domains.split(",") if d.strip()] if domains else []
+    rows = await _ha(request).search_entities(query=q, limit=limit, domains=domain_list)
+    return {"rows": rows}
+
+
 @router.websocket("/ws")
 async def ws_status(websocket: WebSocket) -> None:
     await websocket.accept()
