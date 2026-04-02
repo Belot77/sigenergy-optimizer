@@ -1318,9 +1318,9 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
     && Math.abs(batteryNowX - pvNowX) < 24
     && Math.abs(batteryNowY - pvNowY) < 24;
   const batteryLabelDx = 8;
-  const batteryLabelDy = -8;
-  const pvLabelDx = markerOverlap ? 56 : 8;
-  const pvLabelDy = markerOverlap ? 18 : 14;
+  const batteryLabelDy = markerOverlap ? -12 : -8;
+  const pvLabelDx = 8;
+  const pvLabelDy = markerOverlap ? 22 : 14;
   svg.innerHTML = `
     ${sunBand}
     ${grid}
