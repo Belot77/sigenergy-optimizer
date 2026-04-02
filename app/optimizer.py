@@ -1244,6 +1244,20 @@ class SigEnergyOptimizer:
         # Export limit
         near_zero = 0.011
         export_val = d.export_limit if d.export_limit > 0 else 0.01
+        if d.morning_slow_charge_active:
+            pv_leftover_cap = max(s.pv_kw - s.load_kw - cfg.morning_slow_charge_rate_kw, 0.0)
+            if export_val > pv_leftover_cap + 0.2:
+                logger.warning(
+                    "Clamping morning slow-charge export %.2fkW -> %.2fkW (pv=%.2f load=%.2f slow=%.2f)",
+                    export_val,
+                    pv_leftover_cap,
+                    s.pv_kw,
+                    s.load_kw,
+                    cfg.morning_slow_charge_rate_kw,
+                )
+                export_val = pv_leftover_cap
+            if export_val <= near_zero:
+                export_val = 0.01
         export_turning_on = s.current_export_limit <= near_zero and export_val > near_zero
         export_turning_off = s.current_export_limit > near_zero and export_val <= near_zero
         if abs(export_val - s.current_export_limit) >= cfg.min_change_threshold or export_turning_on or export_turning_off:
