@@ -502,6 +502,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           <div class="chart-frame">
             <div id="chartPower" style="height:260px"></div>
             <svg id="matePowerChart" class="mate-svg" viewBox="0 0 1000 260" preserveAspectRatio="none" style="height:260px"></svg>
+            <div id="matePowerTip" class="apx-tooltip"></div>
           </div>
           <div class="chart-foot">
             <div class="chart-note" id="powerChartNote">Hover to inspect exact values. The daylight band is aligned to Home Assistant sunrise and sunset.</div>
@@ -524,6 +525,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           <div class="chart-frame">
             <div id="chartFlow" style="height:220px"></div>
             <svg id="mateFlowChart" class="mate-svg" viewBox="0 0 1000 220" preserveAspectRatio="none" style="height:220px"></svg>
+            <div id="mateFlowTip" class="apx-tooltip"></div>
           </div>
           <div class="chart-foot">
             <div class="chart-note">Solid lines show measured flow only. Dashed lines are shown only when explicit forecast data is available.</div>
@@ -546,6 +548,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           <div class="chart-frame">
             <div id="chartPrice" style="height:230px"></div>
             <svg id="matePriceChart" class="mate-svg" viewBox="0 0 1000 230" preserveAspectRatio="none" style="height:230px"></svg>
+            <div id="matePriceTip" class="apx-tooltip"></div>
           </div>
           <div class="chart-foot">
             <div class="chart-note">The zero line is emphasised so negative import periods and export spikes stand out immediately.</div>
@@ -664,6 +667,33 @@ const POLL = 15000;
 const USE_MATE_CHARTS = true;
 const LIVE_POWER_COLORS = ['#1d4ed8','#14b8a6','#f59e0b','#d97706','#7c3aed'];
 const SIM_POWER_COLORS = ['#1e88e5','#4fd1c5','#f59e0b','#d97706','#a855f7'];
+let matePowerState = null;
+let mateFlowState = null;
+let matePriceState = null;
+let mateInteractionBound = false;
+const MATE_STYLE = {
+  nowLine: '#0891b2',
+  daylightFill: '#c36a1f',
+  daylightOpacity: 0.10,
+  power: {
+    battery: '#1e88e5',
+    minSoc: '#4fd1c5',
+    pv: '#f59e0b',
+    pvForecast: '#f59e0b',
+    load: '#a855f7',
+  },
+  flow: {
+    import: '#ef4444',
+    export: '#22c55e',
+    pvForecast: '#f59e0b',
+  },
+  price: {
+    import: '#b91c1c',
+    feedin: '#047857',
+    importForecast: '#f59e0b',
+    feedinForecast: '#22c55e',
+  },
+};
 
 const PROFILE_META = {
   maxConsumption: { label: 'Max Consumption', help: 'Max Consumption prioritizes lower import and conservative export behavior.' },
@@ -1033,6 +1063,192 @@ function mateSplitPositive(points, minValue = 0.01) {
   return segments;
 }
 
+function mateNearest(points, t) {
+  if (!Array.isArray(points) || !points.length) return null;
+  let best = null;
+  let diff = Number.POSITIVE_INFINITY;
+  for (const p of points) {
+    const ts = Number(p?.[0]);
+    const value = Number(p?.[1]);
+    if (!Number.isFinite(ts) || !Number.isFinite(value)) continue;
+    const d = Math.abs(ts - t);
+    if (d < diff) {
+      best = [ts, value];
+      diff = d;
+    }
+  }
+  return best;
+}
+
+function mateLastFinite(points) {
+  if (!Array.isArray(points)) return null;
+  for (let i = points.length - 1; i >= 0; i--) {
+    const ts = Number(points[i]?.[0]);
+    const value = Number(points[i]?.[1]);
+    if (Number.isFinite(ts) && Number.isFinite(value)) return [ts, value];
+  }
+  return null;
+}
+
+function hideMateHover(chartKey) {
+  const line = document.getElementById(`${chartKey}HoverLine`);
+  if (line) line.style.display = 'none';
+  const tip = document.getElementById(`${chartKey}Tip`);
+  if (tip) tip.style.display = 'none';
+  document.querySelectorAll(`[id^="${chartKey}HoverDot"]`).forEach((dot) => {
+    dot.style.display = 'none';
+  });
+}
+
+function moveMateTip(frame, tip, clientX, clientY, tipWidth = 220) {
+  const frameRect = frame.getBoundingClientRect();
+  const left = Math.min(frameRect.width - tipWidth, Math.max(8, (clientX - frameRect.left) + 12));
+  const top = Math.max(8, (clientY - frameRect.top) - 72);
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+  tip.style.display = 'block';
+}
+
+function initMateChartInteractions() {
+  if (!USE_MATE_CHARTS || mateInteractionBound) return;
+  mateInteractionBound = true;
+
+  const bind = (svgId, chartKey, stateGetter, renderTip) => {
+    const svg = document.getElementById(svgId);
+    if (!svg) return;
+
+    svg.addEventListener('mousemove', (ev) => {
+      const st = stateGetter();
+      const tip = document.getElementById(`${chartKey}Tip`);
+      const frame = svg.closest('.chart-frame');
+      const line = document.getElementById(`${chartKey}HoverLine`);
+      if (!st || !tip || !frame || !line) return;
+      const rect = svg.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      const vx = ((ev.clientX - rect.left) / rect.width) * st.width;
+      const clampedX = Math.max(st.m.left, Math.min(st.m.left + st.plotW, vx));
+      const t = st.t0 + ((clampedX - st.m.left) / st.plotW) * (st.t1 - st.t0);
+      renderTip(st, t, ev, frame, tip);
+    });
+
+    svg.addEventListener('mouseleave', () => hideMateHover(chartKey));
+  };
+
+  bind('matePowerChart', 'matePower', () => matePowerState, (st, t, ev, frame, tip) => {
+    const b = mateNearest(st.series.battery, t);
+    const m = mateNearest(st.series.minSoc, t);
+    const pv = mateNearest(st.series.pv, t);
+    const pF = mateNearest(st.series.pvForecast, t);
+    const l = mateNearest(st.series.load, t);
+    const anchor = b || pv || l || pF || m;
+    if (!anchor) return;
+    const x = st.xOf(anchor[0]);
+    const line = document.getElementById('matePowerHoverLine');
+    line.setAttribute('x1', x.toFixed(2));
+    line.setAttribute('x2', x.toFixed(2));
+    line.style.display = '';
+
+    const showDot = (id, pt, yFn) => {
+      const dot = document.getElementById(id);
+      if (!dot) return;
+      if (!pt) {
+        dot.style.display = 'none';
+        return;
+      }
+      dot.setAttribute('cx', st.xOf(pt[0]).toFixed(2));
+      dot.setAttribute('cy', yFn(pt[1]).toFixed(2));
+      dot.style.display = '';
+    };
+    showDot('matePowerHoverDotBattery', b, st.ySoc);
+    showDot('matePowerHoverDotPv', pv, st.yKw);
+    showDot('matePowerHoverDotLoad', l, st.yKw);
+
+    tip.innerHTML = `
+      <div class="apx-tooltip-time">${new Date(anchor[0]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+      <div class="apx-tooltip-row"><span class="apx-tooltip-label">Battery</span><span class="apx-tooltip-value">${b ? `${b[1].toFixed(1)}%` : '---'}</span></div>
+      <div class="apx-tooltip-row"><span class="apx-tooltip-label">Min SoC</span><span class="apx-tooltip-value">${m ? `${m[1].toFixed(1)}%` : '---'}</span></div>
+      <div class="apx-tooltip-row"><span class="apx-tooltip-label">PV Output</span><span class="apx-tooltip-value">${pv ? `${pv[1].toFixed(2)} kW` : '---'}</span></div>
+      <div class="apx-tooltip-row"><span class="apx-tooltip-label">PV Forecast</span><span class="apx-tooltip-value">${pF ? `${pF[1].toFixed(2)} kW` : '---'}</span></div>
+      <div class="apx-tooltip-row"><span class="apx-tooltip-label">Consumption</span><span class="apx-tooltip-value">${l ? `${l[1].toFixed(2)} kW` : '---'}</span></div>
+    `;
+    moveMateTip(frame, tip, ev.clientX, ev.clientY, 240);
+  });
+
+  bind('mateFlowChart', 'mateFlow', () => mateFlowState, (st, t, ev, frame, tip) => {
+    const iPt = mateNearest(st.series.import, t);
+    const ePt = mateNearest(st.series.export, t);
+    const pPt = mateNearest(st.series.pvForecast, t);
+    const anchor = iPt || ePt || pPt;
+    if (!anchor) return;
+    const x = st.xOf(anchor[0]);
+    const line = document.getElementById('mateFlowHoverLine');
+    line.setAttribute('x1', x.toFixed(2));
+    line.setAttribute('x2', x.toFixed(2));
+    line.style.display = '';
+
+    const showDot = (id, pt) => {
+      const dot = document.getElementById(id);
+      if (!dot) return;
+      if (!pt) {
+        dot.style.display = 'none';
+        return;
+      }
+      dot.setAttribute('cx', st.xOf(pt[0]).toFixed(2));
+      dot.setAttribute('cy', st.yOf(pt[1]).toFixed(2));
+      dot.style.display = '';
+    };
+    showDot('mateFlowHoverDotImport', iPt);
+    showDot('mateFlowHoverDotExport', ePt);
+    showDot('mateFlowHoverDotPvForecast', pPt);
+
+    tip.innerHTML = `
+      <div class="apx-tooltip-time">${new Date(anchor[0]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+      <div class="apx-tooltip-row"><span class="apx-tooltip-label">Grid import</span><span class="apx-tooltip-value">${iPt ? `${iPt[1].toFixed(2)} kW` : '---'}</span></div>
+      <div class="apx-tooltip-row"><span class="apx-tooltip-label">Grid export</span><span class="apx-tooltip-value">${ePt ? `${ePt[1].toFixed(2)} kW` : '---'}</span></div>
+      <div class="apx-tooltip-row"><span class="apx-tooltip-label">PV Forecast</span><span class="apx-tooltip-value">${pPt ? `${pPt[1].toFixed(2)} kW` : '---'}</span></div>
+    `;
+    moveMateTip(frame, tip, ev.clientX, ev.clientY, 220);
+  });
+
+  bind('matePriceChart', 'matePrice', () => matePriceState, (st, t, ev, frame, tip) => {
+    const iP = mateNearest(st.series.importPrice, t);
+    const eP = mateNearest(st.series.feedinPrice, t);
+    const iF = mateNearest(st.series.importForecast, t);
+    const eF = mateNearest(st.series.feedinForecast, t);
+    const anchor = iP || eP || iF || eF;
+    if (!anchor) return;
+    const x = st.xOf(anchor[0]);
+    const line = document.getElementById('matePriceHoverLine');
+    line.setAttribute('x1', x.toFixed(2));
+    line.setAttribute('x2', x.toFixed(2));
+    line.style.display = '';
+
+    const showDot = (id, pt) => {
+      const dot = document.getElementById(id);
+      if (!dot) return;
+      if (!pt) {
+        dot.style.display = 'none';
+        return;
+      }
+      dot.setAttribute('cx', st.xOf(pt[0]).toFixed(2));
+      dot.setAttribute('cy', st.yOf(pt[1]).toFixed(2));
+      dot.style.display = '';
+    };
+    showDot('matePriceHoverDotImport', iP);
+    showDot('matePriceHoverDotFeedin', eP);
+
+    tip.innerHTML = `
+      <div class="apx-tooltip-time">${new Date(anchor[0]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+      <div class="apx-tooltip-row"><span class="apx-tooltip-label">Import price</span><span class="apx-tooltip-value">${iP ? `${(iP[1] * 100).toFixed(1)}c` : '---'}</span></div>
+      <div class="apx-tooltip-row"><span class="apx-tooltip-label">Feed-in price</span><span class="apx-tooltip-value">${eP ? `${(eP[1] * 100).toFixed(1)}c` : '---'}</span></div>
+      <div class="apx-tooltip-row"><span class="apx-tooltip-label">Import forecast</span><span class="apx-tooltip-value">${iF ? `${(iF[1] * 100).toFixed(1)}c` : '---'}</span></div>
+      <div class="apx-tooltip-row"><span class="apx-tooltip-label">Feed-in forecast</span><span class="apx-tooltip-value">${eF ? `${(eF[1] * 100).toFixed(1)}c` : '---'}</span></div>
+    `;
+    moveMateTip(frame, tip, ev.clientX, ev.clientY, 232);
+  });
+}
+
 function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastSeries, loadSeries) {
   const svg = document.getElementById('matePowerChart');
   if (!svg) return;
@@ -1082,7 +1298,7 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
   if (Number.isFinite(sunrise) && Number.isFinite(sunset) && sunset > sunrise) {
     const x1 = xOf(sunrise);
     const x2 = xOf(sunset);
-    sunBand = `<rect x="${x1.toFixed(2)}" y="${m.top}" width="${Math.max(0, x2 - x1).toFixed(2)}" height="${plotH.toFixed(2)}" fill="#c36a1f" fill-opacity="0.10" />`;
+    sunBand = `<rect x="${x1.toFixed(2)}" y="${m.top}" width="${Math.max(0, x2 - x1).toFixed(2)}" height="${plotH.toFixed(2)}" fill="${MATE_STYLE.daylightFill}" fill-opacity="${MATE_STYLE.daylightOpacity}" />`;
   }
 
   const pvHist = pvForecastSeries.filter((p) => Number(p?.[0]) <= Date.now());
@@ -1090,19 +1306,48 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
   const pvAreasHist = mateSplitPositive(pvHist, 0.01).map((seg) => mateArea(seg, xOf, yKw, m.top + plotH));
   const pvAreasFc = mateSplitPositive(pvFc, 0.01).map((seg) => mateArea(seg, xOf, yKw, m.top + plotH));
 
-  const nowX = xOf(Date.now());
+  const nowMs = Date.now();
+  const nowX = xOf(nowMs);
+  const batteryNow = mateLastFinite(batterySeries);
+  const pvNow = mateLastFinite(pvSeries);
   svg.innerHTML = `
     ${sunBand}
     ${grid}
-    <line x1="${nowX.toFixed(2)}" y1="${m.top}" x2="${nowX.toFixed(2)}" y2="${(m.top + plotH).toFixed(2)}" stroke="#0891b2" stroke-width="1.2" stroke-dasharray="4 4" />
+    <line x1="${nowX.toFixed(2)}" y1="${m.top}" x2="${nowX.toFixed(2)}" y2="${(m.top + plotH).toFixed(2)}" stroke="${MATE_STYLE.nowLine}" stroke-width="1.2" stroke-dasharray="4 4" />
     ${pvAreasHist.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.12" stroke="none" />`).join('')}
     ${pvAreasFc.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.07" stroke="none" />`).join('')}
-    ${matePath(batterySeries, xOf, ySoc).map((d) => `<path d="${d}" fill="none" stroke="#1d4ed8" stroke-width="2.2" />`).join('')}
-    ${matePath(minSocSeries, xOf, ySoc).map((d) => `<path d="${d}" fill="none" stroke="#14b8a6" stroke-width="2.0" />`).join('')}
-    ${matePath(pvSeries, xOf, yKw).map((d) => `<path d="${d}" fill="none" stroke="#f59e0b" stroke-width="2.1" />`).join('')}
-    ${matePath(pvForecastSeries, xOf, yKw).map((d) => `<path d="${d}" fill="none" stroke="#d97706" stroke-width="1.9" stroke-dasharray="6 4" />`).join('')}
-    ${matePath(loadSeries, xOf, yKw).map((d) => `<path d="${d}" fill="none" stroke="#7c3aed" stroke-width="1.8" />`).join('')}
+    ${matePath(batterySeries, xOf, ySoc).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.power.battery}" stroke-width="2.2" />`).join('')}
+    ${matePath(minSocSeries, xOf, ySoc).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.power.minSoc}" stroke-width="2.0" />`).join('')}
+    ${matePath(pvSeries, xOf, yKw).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.power.pv}" stroke-width="2.1" />`).join('')}
+    ${matePath(pvForecastSeries, xOf, yKw).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.power.pvForecast}" stroke-width="1.9" stroke-dasharray="6 4" />`).join('')}
+    ${matePath(loadSeries, xOf, yKw).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.power.load}" stroke-width="1.8" />`).join('')}
+    <line id="matePowerHoverLine" x1="0" y1="${m.top}" x2="0" y2="${(m.top + plotH).toFixed(2)}" stroke="#0f172a" stroke-opacity="0.45" stroke-width="1" stroke-dasharray="3 4" style="display:none" />
+    <circle id="matePowerHoverDotBattery" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.power.battery}" stroke="#fff" stroke-width="1.2" style="display:none" />
+    <circle id="matePowerHoverDotPv" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.power.pv}" stroke="#fff" stroke-width="1.2" style="display:none" />
+    <circle id="matePowerHoverDotLoad" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.power.load}" stroke="#fff" stroke-width="1.2" style="display:none" />
+    ${batteryNow ? `<circle cx="${xOf(batteryNow[0]).toFixed(2)}" cy="${ySoc(batteryNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.power.battery}" stroke="#fff" stroke-width="1.2" />
+      <text x="${(xOf(batteryNow[0]) + 8).toFixed(2)}" y="${(ySoc(batteryNow[1]) - 8).toFixed(2)}" font-size="11" fill="${MATE_STYLE.power.battery}">${batteryNow[1].toFixed(1)}%</text>` : ''}
+    ${pvNow ? `<circle cx="${xOf(pvNow[0]).toFixed(2)}" cy="${yKw(pvNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.power.pv}" stroke="#fff" stroke-width="1.2" />
+      <text x="${(xOf(pvNow[0]) + 8).toFixed(2)}" y="${(yKw(pvNow[1]) + 14).toFixed(2)}" font-size="11" fill="#b45309">${pvNow[1].toFixed(2)}kW</text>` : ''}
   `;
+
+  matePowerState = {
+    width,
+    t0,
+    t1,
+    m,
+    plotW,
+    xOf,
+    yKw,
+    ySoc,
+    series: {
+      battery: batterySeries,
+      minSoc: minSocSeries,
+      pv: pvSeries,
+      pvForecast: pvForecastSeries,
+      load: loadSeries,
+    },
+  };
 }
 
 function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastSeries) {
@@ -1142,12 +1387,39 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
     grid += `<line x1="${x.toFixed(2)}" y1="${m.top}" x2="${x.toFixed(2)}" y2="${(m.top + plotH).toFixed(2)}" stroke="#eef2f1" stroke-width="1" />`;
     grid += `<text x="${x.toFixed(2)}" y="${(height - 8).toFixed(2)}" text-anchor="middle" font-size="11" fill="#4c6a64">${label}</text>`;
   }
+  const nowX = xOf(Date.now());
+  const impNow = mateLastFinite(gridImportSeries);
+  const expNow = mateLastFinite(gridExportSeries);
   svg.innerHTML = `
     ${grid}
-    ${matePath(gridImportSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#dc2626" stroke-width="2.0" />`).join('')}
-    ${matePath(gridExportSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#16a34a" stroke-width="2.0" />`).join('')}
-    ${matePath(flowPvForecastSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="6 4" />`).join('')}
+    <line x1="${nowX.toFixed(2)}" y1="${m.top}" x2="${nowX.toFixed(2)}" y2="${(m.top + plotH).toFixed(2)}" stroke="${MATE_STYLE.nowLine}" stroke-width="1.2" stroke-dasharray="4 4" />
+    ${matePath(gridImportSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.flow.import}" stroke-width="2.0" />`).join('')}
+    ${matePath(gridExportSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.flow.export}" stroke-width="2.0" />`).join('')}
+    ${matePath(flowPvForecastSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.flow.pvForecast}" stroke-width="1.8" stroke-dasharray="6 4" />`).join('')}
+    <line id="mateFlowHoverLine" x1="0" y1="${m.top}" x2="0" y2="${(m.top + plotH).toFixed(2)}" stroke="#0f172a" stroke-opacity="0.45" stroke-width="1" stroke-dasharray="3 4" style="display:none" />
+    <circle id="mateFlowHoverDotImport" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.flow.import}" stroke="#fff" stroke-width="1.2" style="display:none" />
+    <circle id="mateFlowHoverDotExport" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.flow.export}" stroke="#fff" stroke-width="1.2" style="display:none" />
+    <circle id="mateFlowHoverDotPvForecast" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.flow.pvForecast}" stroke="#fff" stroke-width="1.2" style="display:none" />
+    ${impNow ? `<circle cx="${xOf(impNow[0]).toFixed(2)}" cy="${yOf(impNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.flow.import}" stroke="#fff" stroke-width="1.2" />
+      <text x="${(xOf(impNow[0]) + 8).toFixed(2)}" y="${(yOf(impNow[1]) - 8).toFixed(2)}" font-size="11" fill="#7f1d1d">${impNow[1].toFixed(2)}kW</text>` : ''}
+    ${expNow ? `<circle cx="${xOf(expNow[0]).toFixed(2)}" cy="${yOf(expNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.flow.export}" stroke="#fff" stroke-width="1.2" />
+      <text x="${(xOf(expNow[0]) + 8).toFixed(2)}" y="${(yOf(expNow[1]) + 14).toFixed(2)}" font-size="11" fill="#065f46">${expNow[1].toFixed(2)}kW</text>` : ''}
   `;
+
+  mateFlowState = {
+    width,
+    t0,
+    t1,
+    m,
+    plotW,
+    xOf,
+    yOf,
+    series: {
+      import: gridImportSeries,
+      export: gridExportSeries,
+      pvForecast: flowPvForecastSeries,
+    },
+  };
 }
 
 function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForecastSeries, feedinForecastSeries) {
@@ -1204,21 +1476,48 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
   if (Number.isFinite(sunrise) && Number.isFinite(sunset) && sunset > sunrise) {
     const x1 = xOf(sunrise);
     const x2 = xOf(sunset);
-    sunBand = `<rect x="${x1.toFixed(2)}" y="${m.top}" width="${Math.max(0, x2 - x1).toFixed(2)}" height="${plotH.toFixed(2)}" fill="#c36a1f" fill-opacity="0.10" />`;
+    sunBand = `<rect x="${x1.toFixed(2)}" y="${m.top}" width="${Math.max(0, x2 - x1).toFixed(2)}" height="${plotH.toFixed(2)}" fill="${MATE_STYLE.daylightFill}" fill-opacity="${MATE_STYLE.daylightOpacity}" />`;
   }
   const forecastPts = importForecastSeries.map((p, i) => [p[0], Number(feedinForecastSeries[i]?.[1]) || 0]).filter((p) => Number.isFinite(p[0]));
   const fcArea = mateArea(forecastPts.map((p, i) => [p[0], Math.max(Number(importForecastSeries[i]?.[1]) || 0, Number(feedinForecastSeries[i]?.[1]) || 0)]), xOf, yOf, m.top + plotH);
+  const nowX = xOf(Date.now());
+  const impNow = mateLastFinite(importPriceSeries);
+  const fitNow = mateLastFinite(feedinPriceSeries);
 
   svg.innerHTML = `
     ${sunBand}
     ${grid}
+    <line x1="${nowX.toFixed(2)}" y1="${m.top}" x2="${nowX.toFixed(2)}" y2="${(m.top + plotH).toFixed(2)}" stroke="${MATE_STYLE.nowLine}" stroke-width="1.2" stroke-dasharray="4 4" />
     ${zeroLine}
     ${fcArea ? `<path d="${fcArea}" fill="#f59e0b" fill-opacity="0.10" stroke="none" />` : ''}
-    ${matePath(importPriceSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#b91c1c" stroke-width="2.2" />`).join('')}
-    ${matePath(feedinPriceSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#047857" stroke-width="2.2" />`).join('')}
-    ${matePath(importForecastSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#f59e0b" stroke-width="2.0" stroke-dasharray="6 4" />`).join('')}
-    ${matePath(feedinForecastSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#22c55e" stroke-width="2.0" stroke-dasharray="6 4" />`).join('')}
+    ${matePath(importPriceSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.price.import}" stroke-width="2.2" />`).join('')}
+    ${matePath(feedinPriceSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.price.feedin}" stroke-width="2.2" />`).join('')}
+    ${matePath(importForecastSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.price.importForecast}" stroke-width="2.0" stroke-dasharray="6 4" />`).join('')}
+    ${matePath(feedinForecastSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.price.feedinForecast}" stroke-width="2.0" stroke-dasharray="6 4" />`).join('')}
+    <line id="matePriceHoverLine" x1="0" y1="${m.top}" x2="0" y2="${(m.top + plotH).toFixed(2)}" stroke="#0f172a" stroke-opacity="0.45" stroke-width="1" stroke-dasharray="3 4" style="display:none" />
+    <circle id="matePriceHoverDotImport" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.price.import}" stroke="#fff" stroke-width="1.2" style="display:none" />
+    <circle id="matePriceHoverDotFeedin" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.price.feedin}" stroke="#fff" stroke-width="1.2" style="display:none" />
+    ${impNow ? `<circle cx="${xOf(impNow[0]).toFixed(2)}" cy="${yOf(impNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.price.import}" stroke="#fff" stroke-width="1.2" />
+      <text x="${(xOf(impNow[0]) + 8).toFixed(2)}" y="${(yOf(impNow[1]) - 8).toFixed(2)}" font-size="11" fill="#7f1d1d">${(impNow[1] * 100).toFixed(1)}c</text>` : ''}
+    ${fitNow ? `<circle cx="${xOf(fitNow[0]).toFixed(2)}" cy="${yOf(fitNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.price.feedin}" stroke="#fff" stroke-width="1.2" />
+      <text x="${(xOf(fitNow[0]) + 8).toFixed(2)}" y="${(yOf(fitNow[1]) + 14).toFixed(2)}" font-size="11" fill="#065f46">${(fitNow[1] * 100).toFixed(1)}c</text>` : ''}
   `;
+
+  matePriceState = {
+    width,
+    t0,
+    t1,
+    m,
+    plotW,
+    xOf,
+    yOf,
+    series: {
+      importPrice: importPriceSeries,
+      feedinPrice: feedinPriceSeries,
+      importForecast: importForecastSeries,
+      feedinForecast: feedinForecastSeries,
+    },
+  };
 }
 
 function renderMateChartsFromSeries(args) {
@@ -1369,6 +1668,7 @@ function initCharts() {
     if (matePower) matePower.classList.add('on');
     if (mateFlow) mateFlow.classList.add('on');
     if (matePrice) matePrice.classList.add('on');
+    initMateChartInteractions();
   }
 }
 
