@@ -1860,14 +1860,19 @@ class SigEnergyOptimizer:
             stop_threshold = cfg.morning_slow_charge_rate_kw + cfg.morning_slow_export_stop_margin_kw
             current_export = s.current_export_limit if s.current_export_limit > 0.05 else 0.0
             measured_export = max(0.0, float(s.grid_export_power_kw or 0.0))
+            actual_surplus = max(s.pv_kw - s.load_kw, 0.0)
             export_is_open = current_export >= cfg.min_grid_transfer_kw
             has_surplus_window = pv_surplus >= start_threshold or (export_is_open and pv_surplus >= stop_threshold)
             if not has_surplus_window:
                 return 0.0
 
             # Export can use PV left after honoring slow-charge target; avoid double-subtracting min transfer.
-            available = max(pv_surplus - cfg.morning_slow_charge_rate_kw, 0.0)
+            available = max(actual_surplus - cfg.morning_slow_charge_rate_kw, 0.0)
             raw_limit = min(available, s.ess_max_discharge_kw)
+
+            # If measured export is above real PV surplus, battery is assisting export.
+            # Collapse toward PV-only export immediately instead of ramping/probing upward.
+            battery_assist_detected = measured_export > (actual_surplus + 0.3)
 
             # Anti-curtailment probe: if export is already saturated at its own cap,
             # gently nudge the cap upward so PV can reveal hidden headroom.
@@ -1876,7 +1881,8 @@ class SigEnergyOptimizer:
             probe_step = max(0.1, cfg.morning_slow_export_probe_step_kw)
             near_export_cap = measured_export >= max(cfg.min_grid_transfer_kw, current_export - saturation_margin)
             no_grid_import_pressure = (s.grid_import_power_kw is None) or (float(s.grid_import_power_kw) <= 0.2)
-            if probe_enabled and export_is_open and near_export_cap and no_grid_import_pressure:
+            if (probe_enabled and export_is_open and near_export_cap and no_grid_import_pressure
+                    and not battery_assist_detected):
                 raw_limit = max(raw_limit, current_export + probe_step)
 
             raw_limit = min(raw_limit, s.ess_max_discharge_kw)
@@ -1884,6 +1890,9 @@ class SigEnergyOptimizer:
                 return 0.0
             if raw_limit < cfg.min_grid_transfer_kw:
                 raw_limit = cfg.min_grid_transfer_kw
+
+            if battery_assist_detected:
+                return round(raw_limit, 1)
 
             # Smooth morning slow-charge export setpoint changes to reduce oscillation.
             if current_export <= 0:
