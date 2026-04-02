@@ -514,7 +514,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
               <span class="chart-key" style="color:#1e88e5">Battery %</span>
               <span class="chart-key" style="color:#4fd1c5">Min SoC %</span>
               <span class="chart-key" style="color:#f59e0b">PV Output kW</span>
-              <span class="chart-key dashed" style="color:#f59e0b">PV Forecast kW</span>
+              <span class="chart-key dashed" style="color:#dc2626">PV Forecast kW</span>
               <span class="chart-key" style="color:#a855f7">Consumption kW</span>
             </div>
           </div>
@@ -674,8 +674,8 @@ let configPickerGlobalBound = false;
 let decisionTraceRows = [];
 const POLL = 15000;
 const USE_MATE_CHARTS = true;
-const LIVE_POWER_COLORS = ['#1d4ed8','#14b8a6','#f59e0b','#d97706','#7c3aed'];
-const SIM_POWER_COLORS = ['#1e88e5','#4fd1c5','#f59e0b','#d97706','#a855f7'];
+const LIVE_POWER_COLORS = ['#1d4ed8','#14b8a6','#f59e0b','#dc2626','#7c3aed'];
+const SIM_POWER_COLORS = ['#1e88e5','#4fd1c5','#f59e0b','#dc2626','#a855f7'];
 let matePowerState = null;
 let mateFlowState = null;
 let matePriceState = null;
@@ -688,7 +688,7 @@ const MATE_STYLE = {
     battery: '#1e88e5',
     minSoc: '#4fd1c5',
     pv: '#f59e0b',
-    pvForecast: '#f59e0b',
+    pvForecast: '#dc2626',
     load: '#a855f7',
   },
   flow: {
@@ -1555,17 +1555,27 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
   const nowX = xOf(nowMs);
   const impNow = mateLastFinite(gridImportSeries);
   const expNow = mateLastFinite(gridExportSeries);
+  const showImpNow = impNow && Math.abs(Number(impNow[1])) >= 0.10;
+  const showExpNow = expNow && Math.abs(Number(expNow[1])) >= 0.10;
   const currentOverlap = impNow && expNow
     && Math.abs(xOf(impNow[0]) - xOf(expNow[0])) < 28
     && Math.abs(yOf(impNow[1]) - yOf(expNow[1])) < 26;
-  const impNowBadge = impNow
+  const impNowBadge = showImpNow
     ? mateValueBadge(xOf(impNow[0]), yOf(impNow[1]), `${impNow[1].toFixed(1)}kW`, MATE_STYLE.flow.import, { m, width, plotH }, { dx: 4, dy: currentOverlap ? -16 : -8 })
     : '';
-  const expNowBadge = expNow
+  const expNowBadge = showExpNow
     ? mateValueBadge(xOf(expNow[0]), yOf(expNow[1]), `${expNow[1].toFixed(1)}kW`, MATE_STYLE.flow.export, { m, width, plotH }, { dx: 4, dy: currentOverlap ? 22 : 12 })
     : '';
-  const importHistExtrema = mateHistoricExtrema(gridImportSeries, nowMs);
-  const exportHistExtrema = mateHistoricExtrema(gridExportSeries, nowMs);
+  const rawImportHistExtrema = mateHistoricExtrema(gridImportSeries, nowMs);
+  const rawExportHistExtrema = mateHistoricExtrema(gridExportSeries, nowMs);
+  const importHistExtrema = {
+    high: Math.abs(Number(rawImportHistExtrema?.high?.[1])) >= 0.10 ? rawImportHistExtrema.high : null,
+    low: Math.abs(Number(rawImportHistExtrema?.low?.[1])) >= 0.10 ? rawImportHistExtrema.low : null,
+  };
+  const exportHistExtrema = {
+    high: Math.abs(Number(rawExportHistExtrema?.high?.[1])) >= 0.10 ? rawExportHistExtrema.high : null,
+    low: Math.abs(Number(rawExportHistExtrema?.low?.[1])) >= 0.10 ? rawExportHistExtrema.low : null,
+  };
   const importExtremaLabels = mateExtremaLabels(
     importHistExtrema,
     xOf,
@@ -1602,9 +1612,9 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
     <circle id="mateFlowHoverDotExport" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.flow.export}" stroke="#fff" stroke-width="1.2" style="display:none" />
     <circle id="mateFlowHoverDotPvForecast" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.flow.pvForecast}" stroke="#fff" stroke-width="1.2" style="display:none" />
     ${impNow ? `<circle cx="${xOf(impNow[0]).toFixed(2)}" cy="${yOf(impNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.flow.import}" stroke="#fff" stroke-width="1.2" />` : ''}
-    ${impNow ? impNowBadge : ''}
+    ${showImpNow ? impNowBadge : ''}
     ${expNow ? `<circle cx="${xOf(expNow[0]).toFixed(2)}" cy="${yOf(expNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.flow.export}" stroke="#fff" stroke-width="1.2" />` : ''}
-    ${expNow ? expNowBadge : ''}
+    ${showExpNow ? expNowBadge : ''}
   `;
 
   mateFlowState = {
@@ -1719,7 +1729,7 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
     [fitNow],
   );
   const importForecastExtremaLabels = mateExtremaLabels(
-    importForecastExtrema,
+    { high: importForecastExtrema.high, low: null },
     xOf,
     yOf,
     MATE_STYLE.price.importForecast,
@@ -1729,7 +1739,7 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
     18,
   );
   const feedinForecastExtremaLabels = mateExtremaLabels(
-    feedinForecastExtrema,
+    { high: feedinForecastExtrema.high, low: null },
     xOf,
     yOf,
     MATE_STYLE.price.feedinForecast,
