@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     daily_summary_time: str = Field("23:55", env="DAILY_SUMMARY_TIME")
     notify_morning_summary: bool = Field(True, env="NOTIFY_MORNING_SUMMARY")
     morning_summary_time: str = Field("07:30", env="MORNING_SUMMARY_TIME")
+    notify_export_started_stopped: bool = Field(True, env="NOTIFY_EXPORT_STARTED_STOPPED")
+    notify_import_started_stopped: bool = Field(True, env="NOTIFY_IMPORT_STARTED_STOPPED")
+    notify_battery_alerts: bool = Field(True, env="NOTIFY_BATTERY_ALERTS")
+    notify_price_spike_alert: bool = Field(True, env="NOTIFY_PRICE_SPIKE_ALERT")
+    notify_demand_window_alert: bool = Field(True, env="NOTIFY_DEMAND_WINDOW_ALERT")
 
     # ------------------------------------------------------------------
     # EMS entity IDs

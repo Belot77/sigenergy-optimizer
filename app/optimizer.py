@@ -1294,11 +1294,12 @@ class SigEnergyOptimizer:
             else:
                 self._last_export_start_notice_at = now
                 if s.last_export_notification != "started":
-                    await notify("📤 SigEnergy: Export Started",
-                        f"💲 FIT: {s.feedin_price:.3f} $/kWh\n"
-                        f"⚡ Limit: {d.export_limit:.1f} kW\n"
-                        f"🔋 Battery: {s.battery_soc:.0f}%\n"
-                        f"🌙 Night: {d.is_evening_or_night}")
+                    if cfg.notify_export_started_stopped:
+                        await notify("📤 SigEnergy: Export Started",
+                            f"💲 FIT: {s.feedin_price:.3f} $/kWh\n"
+                            f"⚡ Limit: {d.export_limit:.1f} kW\n"
+                            f"🔋 Battery: {s.battery_soc:.0f}%\n"
+                            f"🌙 Night: {d.is_evening_or_night}")
                     await self.ha.set_input_text(cfg.last_export_notification, "started")
 
         # Export stopped
@@ -1306,11 +1307,12 @@ class SigEnergyOptimizer:
             await self.ha.logbook_log("SigEnergy Export",
                 f"Export DISABLED → Session {export_session_kwh:.3f} kWh  FIT={s.feedin_price:.3f} $/kWh")
             if s.last_export_notification != "stopped":
-                await notify("🛑 SigEnergy: Export Stopped",
-                    f"📤 Session: {export_session_kwh:.3f} kWh\n"
-                    f"📈 Daily Total: {s.daily_export_kwh:.3f} kWh\n"
-                    f"🔋 Battery: {s.battery_soc:.0f}%\n"
-                    f"💲 FIT: {s.feedin_price:.3f} $/kWh")
+                if cfg.notify_export_started_stopped:
+                    await notify("🛑 SigEnergy: Export Stopped",
+                        f"📤 Session: {export_session_kwh:.3f} kWh\n"
+                        f"📈 Daily Total: {s.daily_export_kwh:.3f} kWh\n"
+                        f"🔋 Battery: {s.battery_soc:.0f}%\n"
+                        f"💲 FIT: {s.feedin_price:.3f} $/kWh")
                 await self.ha.set_input_text(cfg.last_export_notification, "stopped")
 
         # Import started/stopped use near-zero semantics because holdoff mode uses 0.01
@@ -1324,11 +1326,12 @@ class SigEnergyOptimizer:
             await self.ha.logbook_log("SigEnergy Import",
                 f"Import ENABLED → {d.import_limit:.1f} kW  Price={s.current_price}")
             if s.last_import_notification != "started":
-                await notify("⚡ SigEnergy: Import Started",
-                    f"💲 Price: {s.current_price:.3f} $/kWh\n"
-                    f"📥 Limit: {d.import_limit:.1f} kW\n"
-                    f"🔋 Battery: {s.battery_soc:.0f}%\n"
-                    f"🌙 Night: {d.is_evening_or_night}")
+                if cfg.notify_import_started_stopped:
+                    await notify("⚡ SigEnergy: Import Started",
+                        f"💲 Price: {s.current_price:.3f} $/kWh\n"
+                        f"📥 Limit: {d.import_limit:.1f} kW\n"
+                        f"🔋 Battery: {s.battery_soc:.0f}%\n"
+                        f"🌙 Night: {d.is_evening_or_night}")
                 await self.ha.set_input_text(cfg.last_import_notification, "started")
 
         # Import stopped
@@ -1336,30 +1339,31 @@ class SigEnergyOptimizer:
             await self.ha.logbook_log("SigEnergy Import",
                 f"Import DISABLED → Session {import_session_kwh:.3f} kWh")
             if s.last_import_notification != "stopped":
-                await notify("🛑 SigEnergy: Import Stopped",
-                    f"📥 Session: {import_session_kwh:.3f} kWh\n"
-                    f"📈 Daily Total: {s.daily_import_kwh:.3f} kWh\n"
-                    f"💲 Last price: ${s.current_price:.3f}/kWh\n"
-                    f"🔋 Battery: {s.battery_soc:.0f}%")
+                if cfg.notify_import_started_stopped:
+                    await notify("🛑 SigEnergy: Import Stopped",
+                        f"📥 Session: {import_session_kwh:.3f} kWh\n"
+                        f"📈 Daily Total: {s.daily_import_kwh:.3f} kWh\n"
+                        f"💲 Last price: ${s.current_price:.3f}/kWh\n"
+                        f"🔋 Battery: {s.battery_soc:.0f}%")
                 await self.ha.set_input_text(cfg.last_import_notification, "stopped")
 
         # Battery alerts
         prev_soc_was_ok = prev_state is None or prev_state.battery_soc >= d.battery_soc_required_to_sunrise
-        if s.battery_soc < d.battery_soc_required_to_sunrise and prev_soc_was_ok:
+        if cfg.notify_battery_alerts and s.battery_soc < d.battery_soc_required_to_sunrise and prev_soc_was_ok:
             await notify("⚠️ Battery below reserve SoC",
                 f"Battery below reserve ({d.battery_soc_required_to_sunrise:.0f}%): {s.battery_soc:.0f}%")
 
-        if s.battery_soc <= 1 and (prev_state is None or prev_state.battery_soc > 1):
+        if cfg.notify_battery_alerts and s.battery_soc <= 1 and (prev_state is None or prev_state.battery_soc > 1):
             await notify("🪫 Battery Empty!", f"Battery SoC: {s.battery_soc:.0f}%")
 
-        if s.battery_soc >= 99 and (prev_state is None or prev_state.battery_soc < 99):
+        if cfg.notify_battery_alerts and s.battery_soc >= 99 and (prev_state is None or prev_state.battery_soc < 99):
             await notify("🔋 Battery Full!", f"Battery SoC: {s.battery_soc:.0f}%")
 
-        if s.price_spike_active and (not prev or not prev.export_spike_active):
+        if cfg.notify_price_spike_alert and s.price_spike_active and (not prev or not prev.export_spike_active):
             await notify("📈 Price Spike Active",
                 f"Buy: ${s.current_price:.3f}/kWh\nFIT: ${s.feedin_price:.3f}/kWh")
 
-        if s.demand_window_active and not self._prev_demand_window:
+        if cfg.notify_demand_window_alert and s.demand_window_active and not self._prev_demand_window:
             await notify("⏱️ Demand Window In Effect",
                 "Demand window active; import is blocked until it ends.")
         self._prev_demand_window = s.demand_window_active
