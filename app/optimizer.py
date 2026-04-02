@@ -81,6 +81,8 @@ class SigEnergyOptimizer:
         self._last_cycle_started: Optional[datetime] = None
         self._last_cycle_completed: Optional[datetime] = None
         self._last_cycle_error: str = ""
+        self._notif_export_active: Optional[bool] = None
+        self._last_export_start_notice_at: Optional[datetime] = None
         tz_name = os.environ.get("TZ", "Australia/Adelaide")
         try:
             self._tz = ZoneInfo(tz_name)
@@ -1263,27 +1265,44 @@ class SigEnergyOptimizer:
 
         notify = lambda title, msg: self.ha.send_notification(cfg.notification_service, title, msg)
         if prev is None:
+            self._notif_export_active = d.export_limit > 0.011
             self._prev_demand_window = s.demand_window_active
             return
 
         export_session_kwh = max(0.0, s.daily_export_kwh - s.export_session_start_kwh)
         import_session_kwh = max(0.0, s.daily_import_kwh - s.import_session_start_kwh)
 
+        # Debounce export start notifications so tiny control flaps do not spam users.
+        export_near_zero = 0.011
+        export_active_now = d.export_limit > export_near_zero
+        export_active_prev = self._notif_export_active
+        if export_active_prev is None:
+            export_active_prev = prev.export_limit > export_near_zero
+        export_started = (not export_active_prev) and export_active_now
+        export_stopped = export_active_prev and (not export_active_now)
+        self._notif_export_active = export_active_now
+
         # Export started
-        if prev.export_limit == 0 and d.export_limit > 0:
+        if export_started:
             await self.ha.set_input_number(cfg.export_session_start, s.daily_export_kwh)
             await self.ha.logbook_log("SigEnergy Export",
                 f"Export ENABLED → {d.export_limit:.1f} kW  FIT={s.feedin_price:.3f} $/kWh")
-            if s.last_export_notification != "started":
-                await notify("📤 SigEnergy: Export Started",
-                    f"💲 FIT: {s.feedin_price:.3f} $/kWh\n"
-                    f"⚡ Limit: {d.export_limit:.1f} kW\n"
-                    f"🔋 Battery: {s.battery_soc:.0f}%\n"
-                    f"🌙 Night: {d.is_evening_or_night}")
-                await self.ha.set_input_text(cfg.last_export_notification, "started")
+            now = datetime.now(timezone.utc)
+            last_notice = self._last_export_start_notice_at
+            if last_notice and (now - last_notice) < timedelta(minutes=20):
+                logger.debug("Suppressing duplicate export started notification within cooldown window")
+            else:
+                self._last_export_start_notice_at = now
+                if s.last_export_notification != "started":
+                    await notify("📤 SigEnergy: Export Started",
+                        f"💲 FIT: {s.feedin_price:.3f} $/kWh\n"
+                        f"⚡ Limit: {d.export_limit:.1f} kW\n"
+                        f"🔋 Battery: {s.battery_soc:.0f}%\n"
+                        f"🌙 Night: {d.is_evening_or_night}")
+                    await self.ha.set_input_text(cfg.last_export_notification, "started")
 
         # Export stopped
-        if prev.export_limit > 0 and d.export_limit == 0:
+        if export_stopped:
             await self.ha.logbook_log("SigEnergy Export",
                 f"Export DISABLED → Session {export_session_kwh:.3f} kWh  FIT={s.feedin_price:.3f} $/kWh")
             if s.last_export_notification != "stopped":
