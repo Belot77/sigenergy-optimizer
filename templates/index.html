@@ -2347,7 +2347,13 @@ function updateOverview() {
     : '---';
 
   setTextWithFlash('lbl-sBat', `Battery SoC (Remaining: ${fc(s.available_discharge_energy_kwh,1)} kWh)`);
-  setTextWithFlash('lbl-gBattFlow', `Discharge/Charge (${dischargeStr}/${chargeStr}, Total ${battFlowTotal} kWh)`);
+  const flowSourceRaw = String(s.battery_power_source || '').trim();
+  const flowSourceLabel = flowSourceRaw === 'direct_battery_sensor'
+    ? 'Direct battery sensor'
+    : (flowSourceRaw === 'measured_grid_flow'
+      ? 'Derived from grid flow'
+      : (flowSourceRaw === 'setpoint_balance_fallback' ? 'Setpoint fallback' : 'Unknown source'));
+  setTextWithFlash('lbl-gBattFlow', `Discharge/Charge (${dischargeStr}/${chargeStr}, Total ${battFlowTotal} kWh) [${flowSourceLabel}]`);
   setTextWithFlash('lbl-gLoad', `Power Consumption (Total: ${fc(s.daily_load_kwh,1)} kWh)`);
   setTextWithFlash('lbl-gPV', `Solar Output (Remaining: ${fc(s.forecast_remaining,1)} kWh)`);
   setTextWithFlash('lbl-gGridImp', `Grid Import (Total: ${fc(s.daily_import_kwh,1)} kWh)`);
@@ -3303,6 +3309,7 @@ const _ENTITY_GROUPS = [
     ['consumed_power_sensor',             'Consumed Power'],
     ['grid_import_power_sensor',          'Grid Import Power'],
     ['grid_export_power_sensor',          'Grid Export Power'],
+    ['battery_power_sensor',              'Battery Power'],
     ['battery_soc_sensor',                'Battery SoC'],
     ['rated_capacity_sensor',             'Rated Capacity'],
     ['available_discharge_sensor',        'Available Discharge'],
@@ -3380,6 +3387,8 @@ const _CONFIG_SECTIONS = [
     ['consumed_power_sensor', 'Consumed Power Sensor', 'text'],
     ['grid_import_power_sensor', 'Grid Import Power Sensor', 'text'],
     ['grid_export_power_sensor', 'Grid Export Power Sensor', 'text'],
+    ['battery_power_sensor', 'Battery Power Sensor', 'text'],
+    ['battery_power_sensor_invert', 'Battery Power Sensor Invert', 'bool'],
     ['battery_soc_sensor', 'Battery SoC Sensor', 'text'],
     ['rated_capacity_sensor', 'Rated Capacity Sensor', 'text'],
     ['available_discharge_sensor', 'Available Discharge Sensor', 'text'],
