@@ -915,6 +915,63 @@ function buildDaylightAnnotations() {
   return items;
 }
 
+function applyDaylightBandOverlay(chart) {
+  const g = chart?.w?.globals;
+  const inner = chart?.el?.querySelector('.apexcharts-inner');
+  if (!g || !inner) return;
+
+  inner.querySelectorAll('.daylight-band-overlay').forEach((el) => el.remove());
+
+  const sunrise = normalizeDayMarker(S?.next_sunrise_ts);
+  const sunset = normalizeDayMarker(S?.next_sunset_ts);
+  if (!Number.isFinite(sunrise) || !Number.isFinite(sunset) || sunset <= sunrise) return;
+
+  const axisMin = Number.isFinite(g.minX) ? g.minX : startOfTodayMs();
+  const axisMax = Number.isFinite(g.maxX) ? g.maxX : endOfTodayMs();
+  if (!Number.isFinite(axisMin) || !Number.isFinite(axisMax) || axisMax <= axisMin) return;
+
+  const plotX = Number(g.gridX || 0);
+  const plotY = Number(g.gridY || 0);
+  const plotW = Number(g.gridWidth || 0);
+  const plotH = Number(g.gridHeight || 0);
+  if (plotW <= 0 || plotH <= 0) return;
+
+  const xOf = (ts) => plotX + ((Math.min(axisMax, Math.max(axisMin, ts)) - axisMin) / (axisMax - axisMin)) * plotW;
+  const x1 = xOf(sunrise);
+  const x2 = xOf(sunset);
+  const w = Math.max(0, x2 - x1);
+  if (w <= 0.5) return;
+
+  const t = chartTheme();
+  const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  group.setAttribute('class', 'daylight-band-overlay');
+  group.setAttribute('pointer-events', 'none');
+
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('class', 'daylight-band-overlay');
+  rect.setAttribute('x', x1.toFixed(2));
+  rect.setAttribute('y', plotY.toFixed(2));
+  rect.setAttribute('width', w.toFixed(2));
+  rect.setAttribute('height', plotH.toFixed(2));
+  rect.setAttribute('fill', t.daylightFill);
+  rect.setAttribute('fill-opacity', String(Math.max(0.10, Number(t.daylightOpacity || 0.1))));
+  rect.setAttribute('stroke', 'none');
+  group.appendChild(rect);
+
+  const firstSeries = inner.querySelector('.apexcharts-series');
+  if (firstSeries && firstSeries.parentNode === inner) {
+    inner.insertBefore(group, firstSeries);
+  } else {
+    inner.appendChild(group);
+  }
+}
+
+function applyDaylightBandOverlays() {
+  applyDaylightBandOverlay(powerChart);
+  applyDaylightBandOverlay(flowChart);
+  applyDaylightBandOverlay(priceChart);
+}
+
 function buildPowerYAxisConfig(simulation = false) {
   const t = chartTheme();
   return [
@@ -1206,6 +1263,8 @@ function refreshCharts() {
       ].filter(Boolean),
     },
   }, false, false);
+
+  requestAnimationFrame(applyDaylightBandOverlays);
 }
 
 // ------ UI update ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1513,6 +1572,8 @@ function applySimulationOverlay(profile, options = {}) {
     pvForecastSeries: histPow.map(x=>[x.t,x.pvForecast]),
     loadSeries: simConsumptionSeries,
   }, true);
+
+  requestAnimationFrame(applyDaylightBandOverlays);
 
   simPreview = {
     profile: selected.profile,
