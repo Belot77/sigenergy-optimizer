@@ -984,8 +984,9 @@ function matePath(points, xOf, yOf) {
   let seg = [];
   for (const p of points) {
     const t = Number(p?.[0]);
-    const v = Number(p?.[1]);
-    if (Number.isFinite(t) && Number.isFinite(v)) {
+    const raw = p?.[1];
+    const v = Number(raw);
+    if (Number.isFinite(t) && raw !== null && raw !== undefined && Number.isFinite(v)) {
       seg.push([t, v]);
     } else if (seg.length) {
       if (seg.length >= 2) {
@@ -1013,12 +1014,17 @@ function mateSplitPositive(points, minValue = 0.01) {
   let seg = [];
   for (let i = 0; i < points.length; i++) {
     const p = points[i];
-    const v = Number(p?.[1]);
-    if (Number.isFinite(v) && v > minValue) {
-      if (!seg.length && i > 0 && Number(points[i - 1]?.[1]) <= minValue) seg.push(points[i - 1]);
+    const raw = p?.[1];
+    const v = Number(raw);
+    const isPositive = raw !== null && raw !== undefined && Number.isFinite(v) && v > minValue;
+    if (isPositive) {
+      const prevRaw = points[i - 1]?.[1];
+      const prevV = Number(prevRaw);
+      if (!seg.length && i > 0 && prevRaw !== null && prevRaw !== undefined && Number.isFinite(prevV) && prevV <= minValue) seg.push(points[i - 1]);
       seg.push(p);
     } else if (seg.length) {
-      seg.push(p);
+      const stopRaw = p?.[1];
+      if (stopRaw !== null && stopRaw !== undefined && Number.isFinite(Number(stopRaw))) seg.push(p);
       if (seg.length >= 2) segments.push(seg);
       seg = [];
     }
@@ -1038,7 +1044,12 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
   const t1 = endOfTodayMs();
   const xOf = (t) => m.left + ((Math.min(t1, Math.max(t0, t)) - t0) / (t1 - t0)) * plotW;
 
-  const kSeries = [pvSeries, pvForecastSeries, loadSeries].flat().map((p) => Number(p?.[1])).filter(Number.isFinite);
+  const kSeries = [pvSeries, pvForecastSeries, loadSeries]
+    .flat()
+    .map((p) => p?.[1])
+    .filter((v) => v !== null && v !== undefined)
+    .map((v) => Number(v))
+    .filter(Number.isFinite);
   const maxKw = Math.max(1, ...kSeries, 1);
   const yKw = (v) => m.top + (1 - (Math.max(0, Number(v)) / maxKw)) * plotH;
   const ySoc = (v) => m.top + (1 - (Math.max(0, Math.min(100, Number(v))) / 100)) * plotH;
@@ -1090,7 +1101,12 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
   const t0 = startOfTodayMs();
   const t1 = endOfTodayMs();
   const xOf = (t) => m.left + ((Math.min(t1, Math.max(t0, t)) - t0) / (t1 - t0)) * plotW;
-  const vals = [gridImportSeries, gridExportSeries, flowPvForecastSeries].flat().map((p) => Number(p?.[1])).filter(Number.isFinite);
+  const vals = [gridImportSeries, gridExportSeries, flowPvForecastSeries]
+    .flat()
+    .map((p) => p?.[1])
+    .filter((v) => v !== null && v !== undefined)
+    .map((v) => Number(v))
+    .filter(Number.isFinite);
   const maxY = Math.max(0.05, ...vals, 0.05);
   const yOf = (v) => m.top + (1 - (Math.max(0, Number(v)) / maxY)) * plotH;
   let grid = '';
@@ -1116,7 +1132,12 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
   const t0 = startOfTodayMs();
   const t1 = endOfTodayMs();
   const xOf = (t) => m.left + ((Math.min(t1, Math.max(t0, t)) - t0) / (t1 - t0)) * plotW;
-  const vals = [importPriceSeries, feedinPriceSeries, importForecastSeries, feedinForecastSeries].flat().map((p) => Number(p?.[1])).filter(Number.isFinite);
+  const vals = [importPriceSeries, feedinPriceSeries, importForecastSeries, feedinForecastSeries]
+    .flat()
+    .map((p) => p?.[1])
+    .filter((v) => v !== null && v !== undefined)
+    .map((v) => Number(v))
+    .filter(Number.isFinite);
   const minY = Math.min(...vals, 0);
   const maxY = Math.max(...vals, 0.01);
   const span = Math.max(0.02, maxY - minY);
