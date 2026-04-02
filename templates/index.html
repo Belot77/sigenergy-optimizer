@@ -48,6 +48,7 @@ body{background:#e8f5e9;font-family:"Segoe UI",Tahoma,Geneva,Verdana,sans-serif;
 
 /* Header */
 .app-header{background:#fff;border-bottom:1px solid #e2e8f0;padding:0 20px;display:flex;align-items:center;gap:12px;height:60px}
+.header-brand{display:flex;align-items:center;gap:8px;min-width:0}
 .app-title{font-size:17px;font-weight:700;color:#1a202c;line-height:1.2}
 .app-subtitle{font-size:11px;color:#718096}
 .header-sim{flex:1;font-size:12px;color:#2d3748;text-align:center;font-weight:500}
@@ -60,6 +61,7 @@ body{background:#e8f5e9;font-family:"Segoe UI",Tahoma,Geneva,Verdana,sans-serif;
 .hbtn.primary{background:#276749;color:#fff;border-color:#276749}
 .hbtn.primary:hover{background:#22543d}
 .hbtn:disabled{opacity:.45;cursor:not-allowed}
+.header-actions{display:flex;gap:8px;margin-left:auto;flex-shrink:0}
 .ws-dot{width:9px;height:9px;border-radius:50%;background:#a0aec0;display:inline-block;flex-shrink:0;transition:background .2s}
 .ws-dot.live{background:#38a169}
 .pending-badge{display:none;font-size:10px;font-weight:700;color:#334155;background:#e2e8f0;border:1px solid #cbd5e1;border-radius:999px;padding:2px 7px;vertical-align:middle;margin-left:8px}
@@ -271,6 +273,30 @@ select:focus,input:focus{border-color:#276749}
 @media (max-width: 1180px){.overview-work{grid-template-columns:1fr}}
 @media (max-width: 900px){.chart-hdr{display:flex;flex-direction:column}.chart-now{max-width:none;text-align:left;white-space:normal;overflow:visible;text-overflow:clip}.chart-frame{padding:6px}.scenario-grid{grid-template-columns:1fr 1fr}}
 @media (max-width: 640px){.scenario-grid{grid-template-columns:1fr}.apx-tooltip{max-width:220px;min-width:150px}.apx-tooltip-label{max-width:120px}}
+@media (max-width: 1080px){
+  .app-header{height:auto;align-items:flex-start;flex-wrap:wrap;padding:10px 14px;gap:10px}
+  .header-brand{width:100%}
+  .header-sim{order:3;flex:1 0 100%;text-align:left;font-size:11px}
+  .header-actions{width:100%;margin-left:0;justify-content:flex-start;flex-wrap:wrap;gap:6px}
+  .hbtn{padding:7px 12px}
+  .nav{padding:0 10px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  .ntab{flex:0 0 auto;padding:11px 12px}
+  #tab-overview.active{flex-direction:column;padding:12px;gap:12px}
+  .sidebar{width:100%}
+  .main-col{width:100%}
+  .status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width: 640px){
+  .app-title{font-size:15px}
+  .app-subtitle{font-size:10px}
+  .hbtn{font-size:11px;border-radius:16px;padding:6px 10px}
+  .header-actions .hbtn{flex:1 1 calc(50% - 4px)}
+  #tab-entities.active,#tab-config.active,#tab-logs.active,#tab-audit.active{padding:12px}
+  .card{padding:12px}
+  .glance-val{font-size:19px}
+  .chart-card{padding:11px}
+  .status-grid{grid-template-columns:1fr}
+}
 
 /* Dark Theme */
 html.theme-dark body{background:#0b1220;color:#e5edf8}
@@ -340,7 +366,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
 
 <!-- Header -->
 <div class="app-header">
-  <div style="display:flex;align-items:center;gap:8px">
+  <div class="header-brand">
     <div>
       <div class="app-title">SigEnergy Optimizer Control</div>
       <div class="app-subtitle">Web UI + background worker (uvicorn/FastAPI)</div>
@@ -348,7 +374,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
     <span id="wsDot" class="ws-dot" title="Live updates disconnected"></span>
   </div>
   <div class="header-sim" id="simResult"></div>
-  <div style="display:flex;gap:8px;margin-left:auto;flex-shrink:0">
+  <div class="header-actions">
     <button class="hbtn" id="btnTheme" onclick="toggleTheme()">Dark Mode</button>
     <button class="hbtn" id="btnSim" onclick="runSimulation()">Simulate Automated</button>
     <button class="hbtn" onclick="exportCSV()">Export CSV</button>
