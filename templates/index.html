@@ -4009,6 +4009,14 @@ function auditJson(v) {
   catch (_) { return String(v); }
 }
 
+function auditTimestamp(row) {
+  return String(row?.timestamp || row?.ts || '-');
+}
+
+function auditField(row) {
+  return String(row?.field || row?.target_key || '-');
+}
+
 function renderAuditTable() {
   const contentEl = document.getElementById('auditContent');
   const metaEl = document.getElementById('auditMeta');
@@ -4023,11 +4031,11 @@ function renderAuditTable() {
   const rows = auditRows.filter((row) => {
     if (!filter) return true;
     const hay = [
-      row.timestamp,
+      auditTimestamp(row),
       row.actor,
       row.action,
       row.source,
-      row.field,
+      auditField(row),
       auditJson(row.old_value),
       auditJson(row.new_value),
     ].join(' ').toLowerCase();
@@ -4044,12 +4052,14 @@ function renderAuditTable() {
   const body = rows.map((row) => {
     const oldValue = escH(auditJson(row.old_value));
     const newValue = escH(auditJson(row.new_value));
+    const timestamp = escH(auditTimestamp(row));
+    const field = escH(auditField(row));
     return `<tr>
-      <td>${escH(String(row.timestamp || '-'))}</td>
+      <td>${timestamp}</td>
       <td>${escH(String(row.actor || '-'))}</td>
       <td>${escH(String(row.action || '-'))}</td>
       <td>${escH(String(row.source || '-'))}</td>
-      <td>${escH(String(row.field || '-'))}</td>
+      <td>${field}</td>
       <td><div class="audit-code">${oldValue || '-'}</div></td>
       <td><div class="audit-code">${newValue || '-'}</div></td>
     </tr>`;

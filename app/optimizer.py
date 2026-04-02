@@ -354,6 +354,7 @@ class SigEnergyOptimizer:
         decision = self._decide(state)
         self._last_decision = decision
         await self._apply(state, decision)
+        self._record_automation_audit(state, decision, prev_decision)
         self._record_decision_trace(state, decision)
         await self._handle_notifications(state, decision, prev_decision, prev_state)
         await self._handle_daily_summaries(state, decision)
@@ -496,6 +497,64 @@ class SigEnergyOptimizer:
                 "gates": gates,
                 "values": values,
             }
+        )
+
+    def _record_automation_audit(self, s: SolarState, d: Decision, prev: Optional[Decision]) -> None:
+        cfg = self.cfg
+        if s.sigenergy_mode not in {cfg.automated_option, ""}:
+            return
+        if prev is None:
+            return
+
+        def _changed(a: float | None, b: float | None, tol: float = 0.1) -> bool:
+            try:
+                return abs(float(a) - float(b)) > tol
+            except Exception:
+                return a != b
+
+        changed_keys: list[str] = []
+        if prev.ems_mode != d.ems_mode:
+            changed_keys.append("ems_mode")
+        if _changed(prev.export_limit, d.export_limit):
+            changed_keys.append("export_limit")
+        if _changed(prev.import_limit, d.import_limit):
+            changed_keys.append("import_limit")
+        if _changed(prev.pv_max_power_limit, d.pv_max_power_limit):
+            changed_keys.append("pv_max_power_limit")
+        if _changed(prev.ess_charge_limit, d.ess_charge_limit):
+            changed_keys.append("ess_charge_limit")
+        if _changed(prev.ess_discharge_limit, d.ess_discharge_limit):
+            changed_keys.append("ess_discharge_limit")
+
+        if not changed_keys:
+            return
+
+        self.record_audit_event(
+            action="optimizer_apply",
+            source="optimizer_cycle",
+            actor="system:optimizer",
+            result="ok",
+            old_value={
+                "ems_mode": prev.ems_mode,
+                "export_limit": prev.export_limit,
+                "import_limit": prev.import_limit,
+                "pv_max_power_limit": prev.pv_max_power_limit,
+                "ess_charge_limit": prev.ess_charge_limit,
+                "ess_discharge_limit": prev.ess_discharge_limit,
+            },
+            new_value={
+                "ems_mode": d.ems_mode,
+                "export_limit": d.export_limit,
+                "import_limit": d.import_limit,
+                "pv_max_power_limit": d.pv_max_power_limit,
+                "ess_charge_limit": d.ess_charge_limit,
+                "ess_discharge_limit": d.ess_discharge_limit,
+            },
+            details={
+                "initiator": "system",
+                "changed_keys": changed_keys,
+                "reason": d.outcome_reason,
+            },
         )
 
     def _accumulate_history(self, s, d) -> None:

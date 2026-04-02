@@ -50,8 +50,23 @@ def _ha(request: Request):
 
 
 def _actor_from_request(request: Request) -> str:
+    if _is_ha_ingress_request(request):
+        return "ha_ingress_ui"
+    if _is_loopback_client(request) and not _has_forwarded_client_headers(request):
+        return "local_loopback"
+    forwarded = request.headers.get("x-forwarded-for") or request.headers.get("x-real-ip")
+    if forwarded:
+        return f"remote:{str(forwarded).split(',')[0].strip()}"
     host = request.client.host if request.client else "unknown"
-    return f"{host}:{request.client.port}" if request.client else host
+    return f"remote:{host}"
+
+
+def _source_from_request(request: Request) -> str:
+    if _is_ha_ingress_request(request):
+        return "ui_manual"
+    if _is_loopback_client(request) and not _has_forwarded_client_headers(request):
+        return "local_api"
+    return "api_client"
 
 
 def _record_audit(
@@ -67,7 +82,7 @@ def _record_audit(
     try:
         _opt(request).record_audit_event(
             action=action,
-            source="api",
+            source=_source_from_request(request),
             actor=_actor_from_request(request),
             result=result,
             target_key=target_key,
