@@ -171,6 +171,8 @@ select:focus,input:focus{border-color:#276749}
 .chart-sub{font-size:11px;color:#6b7f77;line-height:1.45;max-width:520px}
 .chart-now{font-size:11px;color:#5d6f67;text-align:right;max-width:52%;line-height:1.5;font-weight:600}
 .chart-frame{position:relative;border:1px solid #d7e6dd;border-radius:12px;padding:8px;background:linear-gradient(180deg,#f8fcfb 0%,#eff7f3 100%)}
+.mate-svg{position:absolute;left:8px;top:8px;right:8px;bottom:8px;width:calc(100% - 16px);height:calc(100% - 16px);display:none;border-radius:10px}
+.mate-svg.on{display:block}
 .chart-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
 .chart-note{font-size:11px;color:#718096;line-height:1.45}
 .chart-key{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#4a5568;font-weight:600}
@@ -499,6 +501,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           </div>
           <div class="chart-frame">
             <div id="chartPower" style="height:260px"></div>
+            <svg id="matePowerChart" class="mate-svg" viewBox="0 0 1000 260" preserveAspectRatio="none"></svg>
           </div>
           <div class="chart-foot">
             <div class="chart-note" id="powerChartNote">Hover to inspect exact values. The daylight band is aligned to Home Assistant sunrise and sunset.</div>
@@ -520,6 +523,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           </div>
           <div class="chart-frame">
             <div id="chartFlow" style="height:220px"></div>
+            <svg id="mateFlowChart" class="mate-svg" viewBox="0 0 1000 220" preserveAspectRatio="none"></svg>
           </div>
           <div class="chart-foot">
             <div class="chart-note">Solid lines show measured flow only. Dashed lines are shown only when explicit forecast data is available.</div>
@@ -541,6 +545,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           </div>
           <div class="chart-frame">
             <div id="chartPrice" style="height:230px"></div>
+            <svg id="matePriceChart" class="mate-svg" viewBox="0 0 1000 230" preserveAspectRatio="none"></svg>
           </div>
           <div class="chart-foot">
             <div class="chart-note">The zero line is emphasised so negative import periods and export spikes stand out immediately.</div>
@@ -656,6 +661,7 @@ let entityPickerState = {};
 let configPickerGlobalBound = false;
 let decisionTraceRows = [];
 const POLL = 15000;
+const USE_MATE_CHARTS = true;
 const LIVE_POWER_COLORS = ['#1d4ed8','#14b8a6','#f59e0b','#d97706','#7c3aed'];
 const SIM_POWER_COLORS = ['#1e88e5','#4fd1c5','#f59e0b','#d97706','#a855f7'];
 
@@ -972,6 +978,161 @@ function applyDaylightBandOverlays() {
   applyDaylightBandOverlay(priceChart);
 }
 
+function matePath(points, xOf, yOf) {
+  if (!Array.isArray(points) || !points.length) return '';
+  return points.map((p, i) => `${i ? 'L' : 'M'} ${xOf(p[0]).toFixed(2)} ${yOf(p[1]).toFixed(2)}`).join(' ');
+}
+
+function mateArea(points, xOf, yOf, yBase) {
+  if (!Array.isArray(points) || !points.length) return '';
+  let d = `M ${xOf(points[0][0]).toFixed(2)} ${yBase.toFixed(2)}`;
+  for (const p of points) d += ` L ${xOf(p[0]).toFixed(2)} ${yOf(p[1]).toFixed(2)}`;
+  d += ` L ${xOf(points[points.length - 1][0]).toFixed(2)} ${yBase.toFixed(2)} Z`;
+  return d;
+}
+
+function mateSplitPositive(points, minValue = 0.01) {
+  const segments = [];
+  let seg = [];
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const v = Number(p?.[1]);
+    if (Number.isFinite(v) && v > minValue) {
+      if (!seg.length && i > 0 && Number(points[i - 1]?.[1]) <= minValue) seg.push(points[i - 1]);
+      seg.push(p);
+    } else if (seg.length) {
+      seg.push(p);
+      if (seg.length >= 2) segments.push(seg);
+      seg = [];
+    }
+  }
+  if (seg.length >= 2) segments.push(seg);
+  return segments;
+}
+
+function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastSeries, loadSeries) {
+  const svg = document.getElementById('matePowerChart');
+  if (!svg) return;
+  const width = 1000, height = 260;
+  const m = { left: 56, right: 40, top: 12, bottom: 32 };
+  const plotW = width - m.left - m.right;
+  const plotH = height - m.top - m.bottom;
+  const t0 = startOfTodayMs();
+  const t1 = endOfTodayMs();
+  const xOf = (t) => m.left + ((Math.min(t1, Math.max(t0, t)) - t0) / (t1 - t0)) * plotW;
+
+  const kSeries = [pvSeries, pvForecastSeries, loadSeries].flat().map((p) => Number(p?.[1])).filter(Number.isFinite);
+  const maxKw = Math.max(1, ...kSeries, 1);
+  const yKw = (v) => m.top + (1 - (Math.max(0, Number(v)) / maxKw)) * plotH;
+  const ySoc = (v) => m.top + (1 - (Math.max(0, Math.min(100, Number(v))) / 100)) * plotH;
+
+  let grid = '';
+  for (let i = 0; i <= 6; i++) {
+    const y = m.top + (i / 6) * plotH;
+    grid += `<line x1="${m.left}" y1="${y.toFixed(2)}" x2="${(width - m.right).toFixed(2)}" y2="${y.toFixed(2)}" stroke="#d5dfdd" stroke-width="1" />`;
+  }
+  for (let i = 0; i <= 8; i++) {
+    const x = m.left + (i / 8) * plotW;
+    grid += `<line x1="${x.toFixed(2)}" y1="${m.top}" x2="${x.toFixed(2)}" y2="${(m.top + plotH).toFixed(2)}" stroke="#eef2f1" stroke-width="1" />`;
+  }
+
+  const sunrise = normalizeDayMarker(S?.next_sunrise_ts);
+  const sunset = normalizeDayMarker(S?.next_sunset_ts);
+  let sunBand = '';
+  if (Number.isFinite(sunrise) && Number.isFinite(sunset) && sunset > sunrise) {
+    const x1 = xOf(sunrise);
+    const x2 = xOf(sunset);
+    sunBand = `<rect x="${x1.toFixed(2)}" y="${m.top}" width="${Math.max(0, x2 - x1).toFixed(2)}" height="${plotH.toFixed(2)}" fill="#c36a1f" fill-opacity="0.10" />`;
+  }
+
+  const pvHist = pvForecastSeries.filter((p) => Number(p?.[0]) <= Date.now());
+  const pvFc = pvForecastSeries.filter((p) => Number(p?.[0]) > Date.now());
+  const pvAreasHist = mateSplitPositive(pvHist, 0.01).map((seg) => mateArea(seg, xOf, yKw, m.top + plotH));
+  const pvAreasFc = mateSplitPositive(pvFc, 0.01).map((seg) => mateArea(seg, xOf, yKw, m.top + plotH));
+
+  svg.innerHTML = `
+    ${sunBand}
+    ${grid}
+    ${pvAreasHist.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.12" stroke="none" />`).join('')}
+    ${pvAreasFc.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.07" stroke="none" />`).join('')}
+    ${matePath(batterySeries, xOf, ySoc) ? `<path d="${matePath(batterySeries, xOf, ySoc)}" fill="none" stroke="#1d4ed8" stroke-width="2.2" />` : ''}
+    ${matePath(minSocSeries, xOf, ySoc) ? `<path d="${matePath(minSocSeries, xOf, ySoc)}" fill="none" stroke="#14b8a6" stroke-width="2.0" />` : ''}
+    ${matePath(pvSeries, xOf, yKw) ? `<path d="${matePath(pvSeries, xOf, yKw)}" fill="none" stroke="#f59e0b" stroke-width="2.1" />` : ''}
+    ${matePath(pvForecastSeries, xOf, yKw) ? `<path d="${matePath(pvForecastSeries, xOf, yKw)}" fill="none" stroke="#d97706" stroke-width="1.9" stroke-dasharray="6 4" />` : ''}
+    ${matePath(loadSeries, xOf, yKw) ? `<path d="${matePath(loadSeries, xOf, yKw)}" fill="none" stroke="#7c3aed" stroke-width="1.8" />` : ''}
+  `;
+}
+
+function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastSeries) {
+  const svg = document.getElementById('mateFlowChart');
+  if (!svg) return;
+  const width = 1000, height = 220;
+  const m = { left: 52, right: 20, top: 10, bottom: 28 };
+  const plotW = width - m.left - m.right;
+  const plotH = height - m.top - m.bottom;
+  const t0 = startOfTodayMs();
+  const t1 = endOfTodayMs();
+  const xOf = (t) => m.left + ((Math.min(t1, Math.max(t0, t)) - t0) / (t1 - t0)) * plotW;
+  const vals = [gridImportSeries, gridExportSeries, flowPvForecastSeries].flat().map((p) => Number(p?.[1])).filter(Number.isFinite);
+  const maxY = Math.max(0.05, ...vals, 0.05);
+  const yOf = (v) => m.top + (1 - (Math.max(0, Number(v)) / maxY)) * plotH;
+  let grid = '';
+  for (let i = 0; i <= 5; i++) {
+    const y = m.top + (i / 5) * plotH;
+    grid += `<line x1="${m.left}" y1="${y.toFixed(2)}" x2="${(width - m.right).toFixed(2)}" y2="${y.toFixed(2)}" stroke="#e6eceb" stroke-width="1" />`;
+  }
+  svg.innerHTML = `
+    ${grid}
+    ${matePath(gridImportSeries, xOf, yOf) ? `<path d="${matePath(gridImportSeries, xOf, yOf)}" fill="none" stroke="#dc2626" stroke-width="2.0" />` : ''}
+    ${matePath(gridExportSeries, xOf, yOf) ? `<path d="${matePath(gridExportSeries, xOf, yOf)}" fill="none" stroke="#16a34a" stroke-width="2.0" />` : ''}
+    ${matePath(flowPvForecastSeries, xOf, yOf) ? `<path d="${matePath(flowPvForecastSeries, xOf, yOf)}" fill="none" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="6 4" />` : ''}
+  `;
+}
+
+function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForecastSeries, feedinForecastSeries) {
+  const svg = document.getElementById('matePriceChart');
+  if (!svg) return;
+  const width = 1000, height = 230;
+  const m = { left: 54, right: 22, top: 10, bottom: 30 };
+  const plotW = width - m.left - m.right;
+  const plotH = height - m.top - m.bottom;
+  const t0 = startOfTodayMs();
+  const t1 = endOfTodayMs();
+  const xOf = (t) => m.left + ((Math.min(t1, Math.max(t0, t)) - t0) / (t1 - t0)) * plotW;
+  const vals = [importPriceSeries, feedinPriceSeries, importForecastSeries, feedinForecastSeries].flat().map((p) => Number(p?.[1])).filter(Number.isFinite);
+  const minY = Math.min(...vals, 0);
+  const maxY = Math.max(...vals, 0.01);
+  const span = Math.max(0.02, maxY - minY);
+  const yOf = (v) => m.top + (1 - ((Number(v) - (minY - span * 0.1)) / (span * 1.2))) * plotH;
+
+  const sunrise = normalizeDayMarker(S?.next_sunrise_ts);
+  const sunset = normalizeDayMarker(S?.next_sunset_ts);
+  let sunBand = '';
+  if (Number.isFinite(sunrise) && Number.isFinite(sunset) && sunset > sunrise) {
+    const x1 = xOf(sunrise);
+    const x2 = xOf(sunset);
+    sunBand = `<rect x="${x1.toFixed(2)}" y="${m.top}" width="${Math.max(0, x2 - x1).toFixed(2)}" height="${plotH.toFixed(2)}" fill="#c36a1f" fill-opacity="0.10" />`;
+  }
+  const forecastPts = importForecastSeries.map((p, i) => [p[0], Number(feedinForecastSeries[i]?.[1]) || 0]).filter((p) => Number.isFinite(p[0]));
+  const fcArea = mateArea(forecastPts.map((p, i) => [p[0], Math.max(Number(importForecastSeries[i]?.[1]) || 0, Number(feedinForecastSeries[i]?.[1]) || 0)]), xOf, yOf, m.top + plotH);
+
+  svg.innerHTML = `
+    ${sunBand}
+    ${fcArea ? `<path d="${fcArea}" fill="#f59e0b" fill-opacity="0.10" stroke="none" />` : ''}
+    ${matePath(importPriceSeries, xOf, yOf) ? `<path d="${matePath(importPriceSeries, xOf, yOf)}" fill="none" stroke="#b91c1c" stroke-width="2.2" />` : ''}
+    ${matePath(feedinPriceSeries, xOf, yOf) ? `<path d="${matePath(feedinPriceSeries, xOf, yOf)}" fill="none" stroke="#047857" stroke-width="2.2" />` : ''}
+    ${matePath(importForecastSeries, xOf, yOf) ? `<path d="${matePath(importForecastSeries, xOf, yOf)}" fill="none" stroke="#f59e0b" stroke-width="2.0" stroke-dasharray="6 4" />` : ''}
+    ${matePath(feedinForecastSeries, xOf, yOf) ? `<path d="${matePath(feedinForecastSeries, xOf, yOf)}" fill="none" stroke="#22c55e" stroke-width="2.0" stroke-dasharray="6 4" />` : ''}
+  `;
+}
+
+function renderMateChartsFromSeries(args) {
+  if (!USE_MATE_CHARTS) return;
+  renderMatePowerChart(args.batterySeries, args.minSocSeries, args.pvSeries, args.pvForecastSeries, args.loadSeries);
+  renderMateFlowChart(args.gridImportSeries, args.gridExportSeries, args.flowPvForecastSeries);
+  renderMatePriceChart(args.importPriceSeries, args.feedinPriceSeries, args.importForecastSeries, args.feedinForecastSeries);
+}
+
 function buildPowerYAxisConfig(simulation = false) {
   const t = chartTheme();
   return [
@@ -1099,6 +1260,21 @@ function initCharts() {
     annotations:{ yaxis:[{y:0, borderColor:t.zeroLine, strokeDashArray:3, label:{text:'0',style:{fontSize:'10px',color:t.zeroLabelColor,background:t.zeroLabelBg}}}] },
   });
   priceChart.render();
+
+  if (USE_MATE_CHARTS) {
+    const apxPower = document.getElementById('chartPower');
+    const apxFlow = document.getElementById('chartFlow');
+    const apxPrice = document.getElementById('chartPrice');
+    if (apxPower) apxPower.style.display = 'none';
+    if (apxFlow) apxFlow.style.display = 'none';
+    if (apxPrice) apxPrice.style.display = 'none';
+    const matePower = document.getElementById('matePowerChart');
+    const mateFlow = document.getElementById('mateFlowChart');
+    const matePrice = document.getElementById('matePriceChart');
+    if (matePower) matePower.classList.add('on');
+    if (mateFlow) mateFlow.classList.add('on');
+    if (matePrice) matePrice.classList.add('on');
+  }
 }
 
 // ------ History backfill from server on load ------------------------------------------------------------------------------------------------------------------
@@ -1264,7 +1440,24 @@ function refreshCharts() {
     },
   }, false, false);
 
-  requestAnimationFrame(applyDaylightBandOverlays);
+  if (USE_MATE_CHARTS) {
+    renderMateChartsFromSeries({
+      batterySeries,
+      minSocSeries,
+      pvSeries,
+      pvForecastSeries,
+      loadSeries,
+      gridImportSeries,
+      gridExportSeries,
+      flowPvForecastSeries,
+      importPriceSeries,
+      feedinPriceSeries,
+      importForecastSeries,
+      feedinForecastSeries,
+    });
+  } else {
+    requestAnimationFrame(applyDaylightBandOverlays);
+  }
 }
 
 // ------ UI update ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1573,7 +1766,24 @@ function applySimulationOverlay(profile, options = {}) {
     loadSeries: simConsumptionSeries,
   }, true);
 
-  requestAnimationFrame(applyDaylightBandOverlays);
+  if (USE_MATE_CHARTS) {
+    renderMateChartsFromSeries({
+      batterySeries: simBatterySeries,
+      minSocSeries: histPow.map(x=>[x.t,x.minSoc]),
+      pvSeries: simPvSeries,
+      pvForecastSeries: histPow.map(x=>[x.t,x.pvForecast]),
+      loadSeries: simConsumptionSeries,
+      gridImportSeries: histPow.map(x=>[x.t,x.imp]),
+      gridExportSeries: histPow.map(x=>[x.t,x.exp]),
+      flowPvForecastSeries: histPow.map(x=>[x.t,x.pvForecast]),
+      importPriceSeries: trimFuture(histPri.map(x=>[x.t,x.imp]), now),
+      feedinPriceSeries: trimFuture(histPri.map(x=>[x.t,x.fit]), now),
+      importForecastSeries: trimPast(parseCurvePoints(S?.price_forecast_curve), now),
+      feedinForecastSeries: trimPast(parseCurvePoints(S?.feedin_forecast_curve), now),
+    });
+  } else {
+    requestAnimationFrame(applyDaylightBandOverlays);
+  }
 
   simPreview = {
     profile: selected.profile,
