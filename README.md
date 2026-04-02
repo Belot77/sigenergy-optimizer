@@ -236,7 +236,7 @@ Uninstall:
 
 ## Version
 
-2.1.3 (March 2026)
+2.1.64 (April 2026)
 
 ## Maintainer Release Flow
 
