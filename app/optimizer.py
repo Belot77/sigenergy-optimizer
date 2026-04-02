@@ -916,7 +916,11 @@ class SigEnergyOptimizer:
             evening_export_boost_active, morning_dump_active, morning_dump_limit,
             battery_full_safeguard_block,
             export_tier_limit, hours_to_sunrise, cap,
-            pv_surplus_actual, is_evening_or_night, morning_slow_charge_active,
+            # Use forecast-based surplus (solar_potential_kw − load) so the morning
+            # slow-charge export branch sees uncurtailed PV potential rather than the
+            # inverter-curtailed measured output, which causes a self-locking feedback
+            # loop where low export limit → low pv_kw reading → low export limit.
+            pv_surplus, is_evening_or_night, morning_slow_charge_active,
             within_morning_grace,
         )
         d.export_limit = desired_export_limit
