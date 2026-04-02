@@ -1329,8 +1329,8 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
     ${sunBand}
     ${grid}
     <line x1="${nowX.toFixed(2)}" y1="${m.top}" x2="${nowX.toFixed(2)}" y2="${(m.top + plotH).toFixed(2)}" stroke="${MATE_STYLE.nowLine}" stroke-width="1.2" stroke-dasharray="4 4" />
-    ${pvAreasHist.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.12" stroke="none" />`).join('')}
-    ${pvAreasFc.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.07" stroke="none" />`).join('')}
+    ${pvAreasHist.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.18" stroke="none" />`).join('')}
+    ${pvAreasFc.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.12" stroke="none" />`).join('')}
     ${matePath(batterySeries, xOf, ySoc).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.power.battery}" stroke-width="2.2" />`).join('')}
     ${matePath(minSocSeries, xOf, ySoc).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.power.minSoc}" stroke-width="2.0" />`).join('')}
     ${matePath(pvSeries, xOf, yKw).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.power.pv}" stroke-width="2.1" />`).join('')}
@@ -1383,6 +1383,7 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
     .filter(Number.isFinite);
   const maxY = Math.max(0.05, ...vals, 0.05);
   const yOf = (v) => m.top + (1 - (Math.max(0, Number(v)) / maxY)) * plotH;
+  const pvFlowAreas = mateSplitPositive(flowPvForecastSeries, 0.01).map((seg) => mateArea(seg, xOf, yOf, m.top + plotH));
   let grid = '';
   const yTicks = 5;
   const xTicks = 8;
@@ -1410,6 +1411,7 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
   svg.innerHTML = `
     ${grid}
     <line x1="${nowX.toFixed(2)}" y1="${m.top}" x2="${nowX.toFixed(2)}" y2="${(m.top + plotH).toFixed(2)}" stroke="${MATE_STYLE.nowLine}" stroke-width="1.2" stroke-dasharray="4 4" />
+    ${pvFlowAreas.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.14" stroke="none" />`).join('')}
     ${matePath(gridImportSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.flow.import}" stroke-width="2.0" />`).join('')}
     ${matePath(gridExportSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.flow.export}" stroke-width="2.0" />`).join('')}
     ${matePath(flowPvForecastSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.flow.pvForecast}" stroke-width="1.8" stroke-dasharray="6 4" />`).join('')}
@@ -1495,8 +1497,6 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
     const x2 = xOf(sunset);
     sunBand = `<rect x="${x1.toFixed(2)}" y="${m.top}" width="${Math.max(0, x2 - x1).toFixed(2)}" height="${plotH.toFixed(2)}" fill="${MATE_STYLE.daylightFill}" fill-opacity="${MATE_STYLE.daylightOpacity}" />`;
   }
-  const forecastPts = importForecastSeries.map((p, i) => [p[0], Number(feedinForecastSeries[i]?.[1]) || 0]).filter((p) => Number.isFinite(p[0]));
-  const fcArea = mateArea(forecastPts.map((p, i) => [p[0], Math.max(Number(importForecastSeries[i]?.[1]) || 0, Number(feedinForecastSeries[i]?.[1]) || 0)]), xOf, yOf, m.top + plotH);
   const nowX = xOf(Date.now());
   const impNow = mateLastFinite(importPriceSeries);
   const fitNow = mateLastFinite(feedinPriceSeries);
@@ -1506,7 +1506,6 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
     ${grid}
     <line x1="${nowX.toFixed(2)}" y1="${m.top}" x2="${nowX.toFixed(2)}" y2="${(m.top + plotH).toFixed(2)}" stroke="${MATE_STYLE.nowLine}" stroke-width="1.2" stroke-dasharray="4 4" />
     ${zeroLine}
-    ${fcArea ? `<path d="${fcArea}" fill="#f59e0b" fill-opacity="0.10" stroke="none" />` : ''}
     ${matePath(importPriceSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.price.import}" stroke-width="2.2" />`).join('')}
     ${matePath(feedinPriceSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.price.feedin}" stroke-width="2.2" />`).join('')}
     ${matePath(importForecastSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.price.importForecast}" stroke-width="2.0" stroke-dasharray="6 4" />`).join('')}
