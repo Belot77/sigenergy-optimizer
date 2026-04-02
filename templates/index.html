@@ -979,8 +979,25 @@ function applyDaylightBandOverlays() {
 }
 
 function matePath(points, xOf, yOf) {
-  if (!Array.isArray(points) || !points.length) return '';
-  return points.map((p, i) => `${i ? 'L' : 'M'} ${xOf(p[0]).toFixed(2)} ${yOf(p[1]).toFixed(2)}`).join(' ');
+  if (!Array.isArray(points) || points.length < 2) return [];
+  const paths = [];
+  let seg = [];
+  for (const p of points) {
+    const t = Number(p?.[0]);
+    const v = Number(p?.[1]);
+    if (Number.isFinite(t) && Number.isFinite(v)) {
+      seg.push([t, v]);
+    } else if (seg.length) {
+      if (seg.length >= 2) {
+        paths.push(seg.map((q, i) => `${i ? 'L' : 'M'} ${xOf(q[0]).toFixed(2)} ${yOf(q[1]).toFixed(2)}`).join(' '));
+      }
+      seg = [];
+    }
+  }
+  if (seg.length >= 2) {
+    paths.push(seg.map((q, i) => `${i ? 'L' : 'M'} ${xOf(q[0]).toFixed(2)} ${yOf(q[1]).toFixed(2)}`).join(' '));
+  }
+  return paths;
 }
 
 function mateArea(points, xOf, yOf, yBase) {
@@ -1055,11 +1072,11 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
     ${grid}
     ${pvAreasHist.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.12" stroke="none" />`).join('')}
     ${pvAreasFc.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.07" stroke="none" />`).join('')}
-    ${matePath(batterySeries, xOf, ySoc) ? `<path d="${matePath(batterySeries, xOf, ySoc)}" fill="none" stroke="#1d4ed8" stroke-width="2.2" />` : ''}
-    ${matePath(minSocSeries, xOf, ySoc) ? `<path d="${matePath(minSocSeries, xOf, ySoc)}" fill="none" stroke="#14b8a6" stroke-width="2.0" />` : ''}
-    ${matePath(pvSeries, xOf, yKw) ? `<path d="${matePath(pvSeries, xOf, yKw)}" fill="none" stroke="#f59e0b" stroke-width="2.1" />` : ''}
-    ${matePath(pvForecastSeries, xOf, yKw) ? `<path d="${matePath(pvForecastSeries, xOf, yKw)}" fill="none" stroke="#d97706" stroke-width="1.9" stroke-dasharray="6 4" />` : ''}
-    ${matePath(loadSeries, xOf, yKw) ? `<path d="${matePath(loadSeries, xOf, yKw)}" fill="none" stroke="#7c3aed" stroke-width="1.8" />` : ''}
+    ${matePath(batterySeries, xOf, ySoc).map((d) => `<path d="${d}" fill="none" stroke="#1d4ed8" stroke-width="2.2" />`).join('')}
+    ${matePath(minSocSeries, xOf, ySoc).map((d) => `<path d="${d}" fill="none" stroke="#14b8a6" stroke-width="2.0" />`).join('')}
+    ${matePath(pvSeries, xOf, yKw).map((d) => `<path d="${d}" fill="none" stroke="#f59e0b" stroke-width="2.1" />`).join('')}
+    ${matePath(pvForecastSeries, xOf, yKw).map((d) => `<path d="${d}" fill="none" stroke="#d97706" stroke-width="1.9" stroke-dasharray="6 4" />`).join('')}
+    ${matePath(loadSeries, xOf, yKw).map((d) => `<path d="${d}" fill="none" stroke="#7c3aed" stroke-width="1.8" />`).join('')}
   `;
 }
 
@@ -1083,9 +1100,9 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
   }
   svg.innerHTML = `
     ${grid}
-    ${matePath(gridImportSeries, xOf, yOf) ? `<path d="${matePath(gridImportSeries, xOf, yOf)}" fill="none" stroke="#dc2626" stroke-width="2.0" />` : ''}
-    ${matePath(gridExportSeries, xOf, yOf) ? `<path d="${matePath(gridExportSeries, xOf, yOf)}" fill="none" stroke="#16a34a" stroke-width="2.0" />` : ''}
-    ${matePath(flowPvForecastSeries, xOf, yOf) ? `<path d="${matePath(flowPvForecastSeries, xOf, yOf)}" fill="none" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="6 4" />` : ''}
+    ${matePath(gridImportSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#dc2626" stroke-width="2.0" />`).join('')}
+    ${matePath(gridExportSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#16a34a" stroke-width="2.0" />`).join('')}
+    ${matePath(flowPvForecastSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="6 4" />`).join('')}
   `;
 }
 
@@ -1119,10 +1136,10 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
   svg.innerHTML = `
     ${sunBand}
     ${fcArea ? `<path d="${fcArea}" fill="#f59e0b" fill-opacity="0.10" stroke="none" />` : ''}
-    ${matePath(importPriceSeries, xOf, yOf) ? `<path d="${matePath(importPriceSeries, xOf, yOf)}" fill="none" stroke="#b91c1c" stroke-width="2.2" />` : ''}
-    ${matePath(feedinPriceSeries, xOf, yOf) ? `<path d="${matePath(feedinPriceSeries, xOf, yOf)}" fill="none" stroke="#047857" stroke-width="2.2" />` : ''}
-    ${matePath(importForecastSeries, xOf, yOf) ? `<path d="${matePath(importForecastSeries, xOf, yOf)}" fill="none" stroke="#f59e0b" stroke-width="2.0" stroke-dasharray="6 4" />` : ''}
-    ${matePath(feedinForecastSeries, xOf, yOf) ? `<path d="${matePath(feedinForecastSeries, xOf, yOf)}" fill="none" stroke="#22c55e" stroke-width="2.0" stroke-dasharray="6 4" />` : ''}
+    ${matePath(importPriceSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#b91c1c" stroke-width="2.2" />`).join('')}
+    ${matePath(feedinPriceSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#047857" stroke-width="2.2" />`).join('')}
+    ${matePath(importForecastSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#f59e0b" stroke-width="2.0" stroke-dasharray="6 4" />`).join('')}
+    ${matePath(feedinForecastSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="#22c55e" stroke-width="2.0" stroke-dasharray="6 4" />`).join('')}
   `;
 }
 
