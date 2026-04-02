@@ -1093,14 +1093,28 @@ class SigEnergyOptimizer:
         # ---- Battery ETA -------------------------------------------
         # Prefer measured grid flow for battery power estimation; setpoint-based math
         # can diverge from actual inverter behavior and misreport charge/discharge.
+        measured_import = max(float(s.grid_import_power_kw or 0.0), 0.0)
+        measured_export = max(float(s.grid_export_power_kw or 0.0), 0.0)
+        measured_balance_kw = s.pv_kw + measured_import - measured_export - s.load_kw
+
         if s.battery_power_sensor_kw is not None:
             battery_power_kw = float(s.battery_power_sensor_kw)
             battery_power_source = "direct_battery_sensor"
             effective_import_for_math = 0.0
+
+            # Some SigEnergy installs appear to under-report the direct battery sensor
+            # during morning slow-charge even while plant-level power balance shows the
+            # battery absorbing substantially more. In that case, prefer measured plant
+            # balance so the UI and ETA do not report an obviously low charge rate.
+            if (
+                morning_slow_charge_active
+                and battery_power_kw > 0.0
+                and measured_balance_kw > battery_power_kw + 1.0
+            ):
+                battery_power_kw = measured_balance_kw
+                battery_power_source = "morning_slow_charge_balance_override"
         elif s.grid_import_power_kw is not None and s.grid_export_power_kw is not None:
-            measured_import = max(float(s.grid_import_power_kw), 0.0)
-            measured_export = max(float(s.grid_export_power_kw), 0.0)
-            battery_power_kw = s.pv_kw + measured_import - measured_export - s.load_kw
+            battery_power_kw = measured_balance_kw
             battery_power_source = "measured_grid_flow"
             effective_import_for_math = measured_import
         else:
