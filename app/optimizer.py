@@ -2186,14 +2186,10 @@ class SigEnergyOptimizer:
             return max(cover_load, 0.1)
         if morning_dump:
             return cfg.pv_max_power_normal
-        if morning_slow_charge and cfg.slow_charge_holdoff:
-            load_kw = s.load_kw
-            cap = load_kw + cfg.slow_charge_limit_kw
-            cap = min(cap, cfg.pv_max_power_normal)
-            pv_surplus = max(s.pv_kw - load_kw, 0.0)
-            if pv_surplus >= cfg.min_grid_transfer_kw:
-                return cfg.pv_max_power_normal
-            return max(cap, 0.1)
+        if morning_slow_charge:
+            # Never cap PV potential during morning slow-charge. Capping based on
+            # measured PV can lock the inverter into a low-production equilibrium.
+            return cfg.pv_max_power_normal
         return cfg.pv_max_power_normal
 
     def _desired_ess_charge_limit(self, s: SolarState, desired_import: float,
