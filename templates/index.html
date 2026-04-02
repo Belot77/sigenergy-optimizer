@@ -1310,6 +1310,17 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
   const nowX = xOf(nowMs);
   const batteryNow = mateLastFinite(batterySeries);
   const pvNow = mateLastFinite(pvSeries);
+  const batteryNowX = batteryNow ? xOf(batteryNow[0]) : NaN;
+  const batteryNowY = batteryNow ? ySoc(batteryNow[1]) : NaN;
+  const pvNowX = pvNow ? xOf(pvNow[0]) : NaN;
+  const pvNowY = pvNow ? yKw(pvNow[1]) : NaN;
+  const markerOverlap = Number.isFinite(batteryNowX) && Number.isFinite(batteryNowY) && Number.isFinite(pvNowX) && Number.isFinite(pvNowY)
+    && Math.abs(batteryNowX - pvNowX) < 24
+    && Math.abs(batteryNowY - pvNowY) < 24;
+  const batteryLabelDx = 8;
+  const batteryLabelDy = -8;
+  const pvLabelDx = markerOverlap ? 56 : 8;
+  const pvLabelDy = markerOverlap ? 18 : 14;
   svg.innerHTML = `
     ${sunBand}
     ${grid}
@@ -1325,10 +1336,10 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
     <circle id="matePowerHoverDotBattery" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.power.battery}" stroke="#fff" stroke-width="1.2" style="display:none" />
     <circle id="matePowerHoverDotPv" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.power.pv}" stroke="#fff" stroke-width="1.2" style="display:none" />
     <circle id="matePowerHoverDotLoad" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.power.load}" stroke="#fff" stroke-width="1.2" style="display:none" />
-    ${batteryNow ? `<circle cx="${xOf(batteryNow[0]).toFixed(2)}" cy="${ySoc(batteryNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.power.battery}" stroke="#fff" stroke-width="1.2" />
-      <text x="${(xOf(batteryNow[0]) + 8).toFixed(2)}" y="${(ySoc(batteryNow[1]) - 8).toFixed(2)}" font-size="11" fill="${MATE_STYLE.power.battery}">${batteryNow[1].toFixed(1)}%</text>` : ''}
-    ${pvNow ? `<circle cx="${xOf(pvNow[0]).toFixed(2)}" cy="${yKw(pvNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.power.pv}" stroke="#fff" stroke-width="1.2" />
-      <text x="${(xOf(pvNow[0]) + 8).toFixed(2)}" y="${(yKw(pvNow[1]) + 14).toFixed(2)}" font-size="11" fill="#b45309">${pvNow[1].toFixed(2)}kW</text>` : ''}
+    ${batteryNow ? `<circle cx="${batteryNowX.toFixed(2)}" cy="${batteryNowY.toFixed(2)}" r="4" fill="${MATE_STYLE.power.battery}" stroke="#fff" stroke-width="1.2" />
+      <text x="${(batteryNowX + batteryLabelDx).toFixed(2)}" y="${(batteryNowY + batteryLabelDy).toFixed(2)}" font-size="11" fill="${MATE_STYLE.power.battery}">${batteryNow[1].toFixed(1)}%</text>` : ''}
+    ${pvNow ? `<circle cx="${pvNowX.toFixed(2)}" cy="${pvNowY.toFixed(2)}" r="4" fill="${MATE_STYLE.power.pv}" stroke="#fff" stroke-width="1.2" />
+      <text x="${(pvNowX + pvLabelDx).toFixed(2)}" y="${(pvNowY + pvLabelDy).toFixed(2)}" font-size="11" fill="#b45309">${pvNow[1].toFixed(2)}kW</text>` : ''}
   `;
 
   matePowerState = {
