@@ -97,6 +97,8 @@ class SigEnergyOptimizer:
         db_path = os.environ.get("STATE_DB_PATH", "/data/optimizer_state.db")
         self._state_store = StateStore(db_path)
         self._decision_trace: deque[dict[str, Any]] = deque(maxlen=1000)
+        # Serialize cycle apply and manual mode writes to avoid race-driven reverts.
+        self._control_lock = asyncio.Lock()
 
         # Shared queue — HAWebSocketClient puts entity_ids here; we consume them
         self.trigger_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
@@ -347,19 +349,20 @@ class SigEnergyOptimizer:
         return self._last_decision
 
     async def _tick(self) -> None:
-        prev_decision = self._last_decision
-        prev_state = self._last_state
-        state = await self._read_state()
-        self._last_state = state
-        decision = self._decide(state)
-        self._last_decision = decision
-        await self._apply(state, decision)
-        self._record_automation_audit(state, decision, prev_decision)
-        self._record_decision_trace(state, decision)
-        await self._handle_notifications(state, decision, prev_decision, prev_state)
-        await self._handle_daily_summaries(state, decision)
-        self._accumulate_history(state, decision)
-        self._record_price_tracking(state)
+        async with self._control_lock:
+            prev_decision = self._last_decision
+            prev_state = self._last_state
+            state = await self._read_state()
+            self._last_state = state
+            decision = self._decide(state)
+            self._last_decision = decision
+            await self._apply(state, decision)
+            self._record_automation_audit(state, decision, prev_decision)
+            self._record_decision_trace(state, decision)
+            await self._handle_notifications(state, decision, prev_decision, prev_state)
+            await self._handle_daily_summaries(state, decision)
+            self._accumulate_history(state, decision)
+            self._record_price_tracking(state)
 
     def _record_price_tracking(self, s: SolarState) -> None:
         now = datetime.now(self._tz)
@@ -767,7 +770,9 @@ class SigEnergyOptimizer:
         s.last_import_notification = _sv(cfg.last_import_notification, "stopped")
 
         # ---- Mode select ----------------------------------------------
-        s.sigenergy_mode = _sv(cfg.sigenergy_mode_select, "Automated")
+        last_mode = self._last_state.sigenergy_mode if self._last_state else ""
+        mode_default = last_mode if last_mode else cfg.automated_option
+        s.sigenergy_mode = _sv(cfg.sigenergy_mode_select, mode_default)
 
         return s
 
@@ -1267,51 +1272,54 @@ class SigEnergyOptimizer:
         cfg = self.cfg
         ha = self.ha
 
-        # Update the input_select in HA
-        await ha.select_option(cfg.sigenergy_mode_select, mode_label)
+        async with self._control_lock:
+            # Update the input_select in HA
+            await ha.select_option(cfg.sigenergy_mode_select, mode_label)
+            if self._last_state is not None:
+                self._last_state.sigenergy_mode = mode_label
 
-        if mode_label == cfg.automated_option:
-            # Re-enable the optimiser (nothing else needed — next tick applies)
-            logger.info("Mode → Automated")
-            return
+            if mode_label == cfg.automated_option:
+                # Re-enable the optimiser (nothing else needed — next tick applies)
+                logger.info("Mode → Automated")
+                return
 
-        # All manual modes disable the optimizer for one cycle
-        # (the next _apply will skip because sigenergy_mode != "Automated")
-        logger.info("Manual mode → %s", mode_label)
+            # All manual modes disable the optimizer for one cycle
+            # (the next _apply will skip because sigenergy_mode != "Automated")
+            logger.info("Manual mode → %s", mode_label)
 
-        if mode_label == cfg.manual_option:
-            return  # just disables optimizer, no limit changes
+            if mode_label == cfg.manual_option:
+                return  # just disables optimizer, no limit changes
 
-        # Resolve rated limits from live state, then last-known-good cache.
-        import_cap, export_cap = self.get_power_caps_kw(self._last_state)
+            # Resolve rated limits from live state, then last-known-good cache.
+            import_cap, export_cap = self.get_power_caps_kw(self._last_state)
 
-        block = cfg.block_flow_limit_value
-        pv_max = cfg.pv_max_power_value
-        ess_charge = cfg.ess_charge_limit_value
-        ess_discharge = cfg.ess_discharge_limit_value
+            block = cfg.block_flow_limit_value
+            pv_max = cfg.pv_max_power_value
+            ess_charge = cfg.ess_charge_limit_value
+            ess_discharge = cfg.ess_discharge_limit_value
 
-        if mode_label == cfg.full_export_option:
-            await ha.select_option(cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)
-            await ha.set_number(cfg.grid_export_limit, export_cap)
-            await ha.set_number(cfg.grid_import_limit, block)
-        elif mode_label == cfg.full_import_option:
-            await ha.select_option(cfg.ems_mode_select, MODE_CMD_CHARGE_GRID)
-            await ha.set_number(cfg.grid_export_limit, block)
-            await ha.set_number(cfg.grid_import_limit, import_cap)
-        elif mode_label == cfg.full_import_pv_option:
-            await ha.select_option(cfg.ems_mode_select, MODE_CMD_CHARGE_PV)
-            await ha.set_number(cfg.grid_export_limit, block)
-            await ha.set_number(cfg.grid_import_limit, import_cap)
-        elif mode_label == cfg.block_flow_option:
-            await ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF)
-            await ha.set_number(cfg.grid_export_limit, block)
-            await ha.set_number(cfg.grid_import_limit, block)
+            if mode_label == cfg.full_export_option:
+                await ha.select_option(cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)
+                await ha.set_number(cfg.grid_export_limit, export_cap)
+                await ha.set_number(cfg.grid_import_limit, block)
+            elif mode_label == cfg.full_import_option:
+                await ha.select_option(cfg.ems_mode_select, MODE_CMD_CHARGE_GRID)
+                await ha.set_number(cfg.grid_export_limit, block)
+                await ha.set_number(cfg.grid_import_limit, import_cap)
+            elif mode_label == cfg.full_import_pv_option:
+                await ha.select_option(cfg.ems_mode_select, MODE_CMD_CHARGE_PV)
+                await ha.set_number(cfg.grid_export_limit, block)
+                await ha.set_number(cfg.grid_import_limit, import_cap)
+            elif mode_label == cfg.block_flow_option:
+                await ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF)
+                await ha.set_number(cfg.grid_export_limit, block)
+                await ha.set_number(cfg.grid_import_limit, block)
 
-        if cfg.ess_max_charging_limit:
-            await ha.set_number(cfg.ess_max_charging_limit, ess_charge)
-        if cfg.ess_max_discharging_limit:
-            await ha.set_number(cfg.ess_max_discharging_limit, ess_discharge)
-        await ha.set_number(cfg.pv_max_power_limit, pv_max)
+            if cfg.ess_max_charging_limit:
+                await ha.set_number(cfg.ess_max_charging_limit, ess_charge)
+            if cfg.ess_max_discharging_limit:
+                await ha.set_number(cfg.ess_max_discharging_limit, ess_discharge)
+            await ha.set_number(cfg.pv_max_power_limit, pv_max)
 
     # ------------------------------------------------------------------
     # Notification helpers
@@ -1811,6 +1819,16 @@ class SigEnergyOptimizer:
             if not (morning_slow_charge_active and pv_surplus >= cfg.morning_slow_charge_rate_kw + cfg.min_grid_transfer_kw):
                 return 0.0
 
+        # When near the export floor, never allow battery-backed export on bypass paths.
+        # Keep export limited to measured PV excess so empty batteries cannot sustain large export.
+        def cap_near_floor_to_pv(limit_value: float) -> float:
+            if limit_value <= 0:
+                return 0.0
+            if bypass_min_soc and bsoc <= (export_min_soc + 0.05):
+                excess_solar_kw = max(s.pv_kw - s.load_kw, 0.0)
+                return min(limit_value, excess_solar_kw)
+            return limit_value
+
         # Morning slow charge with PV surplus
         if morning_slow_charge_active:
             start_threshold = cfg.morning_slow_charge_rate_kw + cfg.morning_slow_export_start_margin_kw
@@ -1856,12 +1874,26 @@ class SigEnergyOptimizer:
             if spike and cfg.export_spike_full_power:
                 cap_val = max(tier_limit, cfg.cap_total_import)
             limit = min(cap_val, s.ess_max_discharge_kw)
+            limit = cap_near_floor_to_pv(limit)
             return max(cfg.min_grid_transfer_kw, round(limit, 1)) if limit > 0 else 0.0
 
         if positive_fit_override:
             eff_tier = tier_limit if tier_limit > 0 else cfg.export_limit_low
             limit = min(eff_tier, s.ess_max_discharge_kw)
+            limit = cap_near_floor_to_pv(limit)
             return max(cfg.min_grid_transfer_kw, round(limit, 1)) if limit > 0 else 0.0
+
+        # Solar-surplus bypass should allow exporting real PV excess even when SoC is low.
+        # Keep this PV-only by capping to measured excess so battery energy is not exported.
+        if surplus_bypass:
+            raw_surplus = max(s.pv_kw - s.load_kw, 0.0)
+            limit = min(tier_limit, s.ess_max_discharge_kw, raw_surplus)
+            limit = cap_near_floor_to_pv(limit)
+            if limit <= 0:
+                return 0.0
+            if limit < cfg.min_grid_transfer_kw:
+                return cfg.min_grid_transfer_kw
+            return round(limit, 1)
 
         if tier_limit <= 0:
             return 0.0
@@ -1900,6 +1932,8 @@ class SigEnergyOptimizer:
                 charge_priority = 0 if surplus_bypass else (max_charge if bsoc < 98 else 0)
                 pv_surplus_net = max(raw_surplus - charge_priority, 0.0)
                 limit = min(limit, pv_surplus_net)
+
+        limit = cap_near_floor_to_pv(limit)
 
         if limit <= 0:
             return 0.0
