@@ -166,10 +166,10 @@ select:focus,input:focus{border-color:#276749}
 /* Chart cards */
 .chart-card{background:linear-gradient(180deg,#ffffff 0%,#f7fbf9 100%);border:1px solid #d7e6dd;border-radius:14px;padding:14px;box-shadow:0 10px 28px rgba(39,103,73,.06)}
 .chart-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:12px}
-.chart-title-wrap{display:flex;flex-direction:column;gap:4px}
+.chart-title-wrap{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
 .chart-title{font-size:13px;font-weight:700;color:#1f3b2f;letter-spacing:.01em}
 .chart-sub{font-size:11px;color:#6b7f77;line-height:1.45;max-width:520px}
-.chart-now{font-size:11px;color:#5d6f67;text-align:right;max-width:52%;line-height:1.5;font-weight:600}
+.chart-now{font-size:10.5px;color:#5d6f67;text-align:right;max-width:64%;line-height:1.35;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:auto;flex-shrink:0}
 .chart-frame{position:relative;border:1px solid #d7e6dd;border-radius:12px;padding:8px;background:linear-gradient(180deg,#f8fcfb 0%,#eff7f3 100%)}
 .mate-svg{display:none;width:100%;border-radius:10px}
 .mate-svg.on{display:block}
@@ -266,7 +266,7 @@ select:focus,input:focus{border-color:#276749}
 .cfg-msg{font-size:12px;color:#276749;min-height:16px}
 @media (max-width: 900px){.cfg-grid{grid-template-columns:1fr}}
 @media (max-width: 1180px){.overview-work{grid-template-columns:1fr}}
-@media (max-width: 900px){.chart-hdr{flex-direction:column}.chart-now{max-width:none;text-align:left}.chart-frame{padding:6px}.scenario-grid{grid-template-columns:1fr 1fr}}
+@media (max-width: 900px){.chart-hdr{flex-direction:column}.chart-now{max-width:none;text-align:left;white-space:normal;overflow:visible;text-overflow:clip}.chart-frame{padding:6px}.scenario-grid{grid-template-columns:1fr 1fr}}
 @media (max-width: 640px){.scenario-grid{grid-template-columns:1fr}.apx-tooltip{max-width:220px;min-width:150px}.apx-tooltip-label{max-width:120px}}
 
 /* Dark Theme */
@@ -496,7 +496,6 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           <div class="chart-hdr">
             <div class="chart-title-wrap">
               <div class="chart-title">Today Power &amp; SoC</div>
-              <div class="chart-sub">Battery, reserve floor, PV output and grid flow in one view. Solid lines show measured history up to now. Dashed lines appear only for explicit forecast or simulation data.</div>
             </div>
             <div class="chart-now" id="nowPower">---</div>
           </div>
@@ -521,7 +520,6 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           <div class="chart-hdr">
             <div class="chart-title-wrap">
               <div class="chart-title">Today Grid Flow &amp; Solar Window</div>
-              <div class="chart-sub">Grid import/export through the day window. Future flat carry-forward lines are suppressed so only real measured data is shown.</div>
             </div>
             <div class="chart-now" id="nowFlow">---</div>
           </div>
@@ -544,7 +542,6 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           <div class="chart-hdr">
             <div class="chart-title-wrap">
               <div class="chart-title">Today Price Curves (Import vs Feed-In)</div>
-              <div class="chart-sub">Import and export price traces share the same day window with a daylight context band so you can see arbitrage windows at a glance.</div>
             </div>
             <div class="chart-now" id="nowPrice">---</div>
           </div>
@@ -1351,6 +1348,13 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
   const batteryLabelDy = markerOverlap ? -12 : -8;
   const pvLabelDx = 8;
   const pvLabelDy = markerOverlap ? 22 : 14;
+  const labelMinY = m.top + 12;
+  const labelMaxY = m.top + plotH - 6;
+  const labelMaxX = width - m.right - 56;
+  const batteryLabelX = batteryNow ? Math.max(m.left + 4, Math.min(labelMaxX, batteryNowX + batteryLabelDx)) : NaN;
+  const batteryLabelY = batteryNow ? Math.max(labelMinY, Math.min(labelMaxY, batteryNowY + batteryLabelDy)) : NaN;
+  const pvLabelX = pvNow ? Math.max(m.left + 4, Math.min(labelMaxX, pvNowX + pvLabelDx)) : NaN;
+  const pvLabelY = pvNow ? Math.max(labelMinY, Math.min(labelMaxY, pvNowY + pvLabelDy)) : NaN;
   svg.innerHTML = `
     ${sunBand}
     ${grid}
@@ -1366,9 +1370,9 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
     <circle id="matePowerHoverDotPv" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.power.pv}" stroke="#fff" stroke-width="1.2" style="display:none" />
     <circle id="matePowerHoverDotLoad" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.power.load}" stroke="#fff" stroke-width="1.2" style="display:none" />
     ${batteryNow ? `<circle cx="${batteryNowX.toFixed(2)}" cy="${batteryNowY.toFixed(2)}" r="4" fill="${MATE_STYLE.power.battery}" stroke="#fff" stroke-width="1.2" />
-      <text x="${(batteryNowX + batteryLabelDx).toFixed(2)}" y="${(batteryNowY + batteryLabelDy).toFixed(2)}" font-size="11" fill="${MATE_STYLE.power.battery}">${batteryNow[1].toFixed(1)}%</text>` : ''}
+      <text x="${batteryLabelX.toFixed(2)}" y="${batteryLabelY.toFixed(2)}" font-size="11" fill="${MATE_STYLE.power.battery}">${batteryNow[1].toFixed(1)}%</text>` : ''}
     ${pvNow ? `<circle cx="${pvNowX.toFixed(2)}" cy="${pvNowY.toFixed(2)}" r="4" fill="${MATE_STYLE.power.pv}" stroke="#fff" stroke-width="1.2" />
-      <text x="${(pvNowX + pvLabelDx).toFixed(2)}" y="${(pvNowY + pvLabelDy).toFixed(2)}" font-size="11" fill="#b45309">${pvNow[1].toFixed(2)}kW</text>` : ''}
+      <text x="${pvLabelX.toFixed(2)}" y="${pvLabelY.toFixed(2)}" font-size="11" fill="#b45309">${pvNow[1].toFixed(2)}kW</text>` : ''}
   `;
 
   matePowerState = {
