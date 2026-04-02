@@ -597,11 +597,12 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
       </div>
 
       <aside class="glance-rail">
-        <div class="glance-card" id="card-sBat"><div class="glance-lbl">Battery SoC</div><div class="glance-val" id="sBat">---</div></div>
-        <div class="glance-card" id="card-gPV"><div class="glance-lbl">PV Power</div><div class="glance-val" id="gPV">---</div></div>
-        <div class="glance-card" id="card-gLoad"><div class="glance-lbl">Load</div><div class="glance-val" id="gLoad">---</div></div>
-        <div class="glance-card" id="card-gGridExp"><div class="glance-lbl">Grid Export</div><div class="glance-val" id="gGridExp">---</div></div>
-        <div class="glance-card" id="card-gGridImp"><div class="glance-lbl">Grid Import</div><div class="glance-val" id="gGridImp">---</div></div>
+        <div class="glance-card" id="card-sBat"><div class="glance-lbl" id="lbl-sBat">Battery SoC</div><div class="glance-val" id="sBat">---</div></div>
+        <div class="glance-card" id="card-gBattFlow"><div class="glance-lbl" id="lbl-gBattFlow">Discharge/Charge</div><div class="glance-val" id="gBattFlow">---</div></div>
+        <div class="glance-card" id="card-gLoad"><div class="glance-lbl" id="lbl-gLoad">Power Consumption</div><div class="glance-val" id="gLoad">---</div></div>
+        <div class="glance-card" id="card-gPV"><div class="glance-lbl" id="lbl-gPV">Solar Output</div><div class="glance-val" id="gPV">---</div></div>
+        <div class="glance-card" id="card-gGridImp"><div class="glance-lbl" id="lbl-gGridImp">Grid Import</div><div class="glance-val" id="gGridImp">---</div></div>
+        <div class="glance-card" id="card-gGridExp"><div class="glance-lbl" id="lbl-gGridExp">Grid Export</div><div class="glance-val" id="gGridExp">---</div></div>
 
         <div class="forecast-rail">
           <div class="glance-card forecast-card" id="card-pvForecastToday"><div class="glance-lbl">PV Forecast Today</div><div class="glance-val" id="pvForecastToday">---</div></div>
@@ -2169,6 +2170,11 @@ function refreshCharts() {
 // ------ UI update ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 function fc(v,d=2){ return (v==null)?'---':Number(v).toFixed(d); }
 function fcc(v){ if(v==null) return '---'; const c=Number(v)*100; return Math.abs(c)<1 ? c.toFixed(1)+'c' : Math.round(c)+'c'; }
+function fcs(v,d=2){
+  if (v == null || !Number.isFinite(Number(v))) return '---';
+  const n = Number(v);
+  return `${n >= 0 ? '+' : ''}${n.toFixed(d)}`;
+}
 function ts(){ return new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
 function tsISO(iso){ return iso ? new Date(iso).toLocaleString('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).replace(',','T').replace(' ','') : '---'; }
 
@@ -2307,6 +2313,22 @@ function updateOverview() {
   setTextWithFlash('sImpLimVal', fc(s.import_limit,2)+' kW');
   setTextWithFlash('sPVMax', fc(s.pv_max_power_limit,2)+' kW');
   setTextWithFlash('sESSThresh', '1.0 kW');
+  const chargeKwh = Number(s.daily_battery_charge_kwh);
+  const dischargeKwh = Number(s.daily_battery_discharge_kwh);
+  const chargeStr = Number.isFinite(chargeKwh) ? `+${fc(chargeKwh,1)}` : '+---';
+  const dischargeStr = Number.isFinite(dischargeKwh) ? `-${fc(dischargeKwh,1)}` : '----';
+  const battFlowTotal = Number.isFinite(chargeKwh) && Number.isFinite(dischargeKwh)
+    ? `${fc(chargeKwh + dischargeKwh,1)}`
+    : '---';
+
+  setTextWithFlash('lbl-sBat', `Battery SoC (Remaining: ${fc(s.available_discharge_energy_kwh,1)} kWh)`);
+  setTextWithFlash('lbl-gBattFlow', `Discharge/Charge (${dischargeStr}/${chargeStr}, Total ${battFlowTotal} kWh)`);
+  setTextWithFlash('lbl-gLoad', `Power Consumption (Total: ${fc(s.daily_load_kwh,1)} kWh)`);
+  setTextWithFlash('lbl-gPV', `Solar Output (Remaining: ${fc(s.forecast_remaining,1)} kWh)`);
+  setTextWithFlash('lbl-gGridImp', `Grid Import (Total: ${fc(s.daily_import_kwh,1)} kWh)`);
+  setTextWithFlash('lbl-gGridExp', `Grid Export (Total: ${fc(s.daily_export_kwh,1)} kWh)`);
+
+  setTextWithFlash('gBattFlow', fcs(s.battery_power_kw,2) + ' kW');
   setTextWithFlash('gPV', fc(s.pv_kw,1) + ' kW');
   setTextWithFlash('gLoad', fc(s.load_kw,1) + ' kW');
   setTextWithFlash('gGridExp', fc(s.grid_export_power_kw,1) + ' kW');
@@ -2319,6 +2341,10 @@ function updateOverview() {
   setGlanceFill('card-sBat', s.battery_soc, 'rgba(34,197,94,.22)');
   setGlanceFill('card-gPV', (Number(s.pv_kw) / Math.max(1, Number(s.pv_max_power_limit) || 25)) * 100, 'rgba(132,204,22,.22)');
   setGlanceFill('card-gLoad', (Number(s.load_kw) / Math.max(1, Number(s.pv_max_power_limit) || 25)) * 100, 'rgba(163,230,53,.22)');
+  const battAbs = Math.abs(Number(s.battery_power_kw) || 0);
+  const battMax = Math.max(1, Number(s.ess_max_charge_kw) || 0, Number(s.ess_max_discharge_kw) || 0, getChargeClampMax(), getDischargeClampMax());
+  const battFlowColor = Number(s.battery_power_kw) >= 0 ? 'rgba(59,130,246,.24)' : 'rgba(239,68,68,.24)';
+  setGlanceFill('card-gBattFlow', (battAbs / battMax) * 100, battFlowColor);
   setGlanceFill('card-gGridExp', (Number(s.grid_export_power_kw) / Math.max(1, Number(s.export_limit) || getDischargeClampMax())) * 100, 'rgba(74,222,128,.22)');
   setGlanceFill('card-gGridImp', (Number(s.grid_import_power_kw) / Math.max(1, Number(s.import_limit) || getChargeClampMax())) * 100, 'rgba(251,191,36,.22)');
   setGlanceFill('card-pvForecastToday', (Number(s.forecast_today) / Math.max(1, Number(s.forecast_tomorrow) || Number(s.forecast_today) || 1)) * 100, 'rgba(96,165,250,.20)');
@@ -2358,6 +2384,10 @@ function updateOverview() {
 
   // Feed-in price: higher percentile is better.
   applyGlanceTone('card-sFIT', feedinPricePosition / 100, 0.20);
+
+  // Battery flow: charging trends green, discharging trends red.
+  const battFlowScore = Number(s.battery_power_kw) >= 0 ? 0.78 : 0.28;
+  applyGlanceTone('card-gBattFlow', battFlowScore, 0.24);
 
   // Flow cards: high import is bad, high export is good.
   applyGlanceTone('card-gGridImp', 1 - importRatio, 0.22);
