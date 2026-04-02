@@ -183,6 +183,9 @@ class Settings(BaseSettings):
     morning_slow_export_stop_margin_kw: float = Field(0.2, env="MORNING_SLOW_EXPORT_STOP_MARGIN_KW")
     morning_slow_export_ramp_up_step_kw: float = Field(0.8, env="MORNING_SLOW_EXPORT_RAMP_UP_STEP_KW")
     morning_slow_export_ramp_down_step_kw: float = Field(1.2, env="MORNING_SLOW_EXPORT_RAMP_DOWN_STEP_KW")
+    morning_slow_export_probe_enabled: bool = Field(True, env="MORNING_SLOW_EXPORT_PROBE_ENABLED")
+    morning_slow_export_probe_step_kw: float = Field(0.4, env="MORNING_SLOW_EXPORT_PROBE_STEP_KW")
+    morning_slow_export_probe_saturation_margin_kw: float = Field(0.2, env="MORNING_SLOW_EXPORT_PROBE_SATURATION_MARGIN_KW")
 
     # ------------------------------------------------------------------
     # Morning dump

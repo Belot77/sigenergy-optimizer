@@ -1107,6 +1107,9 @@ class SigEnergyOptimizer:
             "cfg_morning_slow_export_stop_margin_kw": cfg.morning_slow_export_stop_margin_kw,
             "cfg_morning_slow_export_ramp_up_step_kw": cfg.morning_slow_export_ramp_up_step_kw,
             "cfg_morning_slow_export_ramp_down_step_kw": cfg.morning_slow_export_ramp_down_step_kw,
+            "cfg_morning_slow_export_probe_enabled": cfg.morning_slow_export_probe_enabled,
+            "cfg_morning_slow_export_probe_step_kw": cfg.morning_slow_export_probe_step_kw,
+            "cfg_morning_slow_export_probe_saturation_margin_kw": cfg.morning_slow_export_probe_saturation_margin_kw,
             "cfg_target_battery_charge": cfg.target_battery_charge,
             "cfg_max_price_threshold": cfg.max_price_threshold,
             "cfg_export_threshold_low": cfg.export_threshold_low,
@@ -1729,6 +1732,7 @@ class SigEnergyOptimizer:
             start_threshold = cfg.morning_slow_charge_rate_kw + cfg.morning_slow_export_start_margin_kw
             stop_threshold = cfg.morning_slow_charge_rate_kw + cfg.morning_slow_export_stop_margin_kw
             current_export = s.current_export_limit if s.current_export_limit > 0.05 else 0.0
+            measured_export = max(0.0, float(s.grid_export_power_kw or 0.0))
             export_is_open = current_export >= cfg.min_grid_transfer_kw
             has_surplus_window = pv_surplus >= start_threshold or (export_is_open and pv_surplus >= stop_threshold)
             if not has_surplus_window:
@@ -1737,6 +1741,18 @@ class SigEnergyOptimizer:
             # Export can use PV left after honoring slow-charge target; avoid double-subtracting min transfer.
             available = max(pv_surplus - cfg.morning_slow_charge_rate_kw, 0.0)
             raw_limit = min(available, s.ess_max_discharge_kw)
+
+            # Anti-curtailment probe: if export is already saturated at its own cap,
+            # gently nudge the cap upward so PV can reveal hidden headroom.
+            probe_enabled = bool(cfg.morning_slow_export_probe_enabled)
+            saturation_margin = max(0.05, cfg.morning_slow_export_probe_saturation_margin_kw)
+            probe_step = max(0.1, cfg.morning_slow_export_probe_step_kw)
+            near_export_cap = measured_export >= max(cfg.min_grid_transfer_kw, current_export - saturation_margin)
+            no_grid_import_pressure = (s.grid_import_power_kw is None) or (float(s.grid_import_power_kw) <= 0.2)
+            if probe_enabled and export_is_open and near_export_cap and no_grid_import_pressure:
+                raw_limit = max(raw_limit, current_export + probe_step)
+
+            raw_limit = min(raw_limit, s.ess_max_discharge_kw)
             if raw_limit <= 0:
                 return 0.0
             if raw_limit < cfg.min_grid_transfer_kw:
