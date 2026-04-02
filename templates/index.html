@@ -108,11 +108,14 @@ body{background:#e8f5e9;font-family:"Segoe UI",Tahoma,Geneva,Verdana,sans-serif;
 .overview-work{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:12px;align-items:start}
 .charts-col{display:flex;flex-direction:column;gap:12px;min-width:0}
 .glance-rail{display:flex;flex-direction:column;gap:8px}
-.glance-card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px}
+.glance-card{--fill-pct:0%;--fill-color:rgba(34,197,94,.16);--glance-bg:#ffffff;background:linear-gradient(90deg,var(--fill-color) 0,var(--fill-color) var(--fill-pct),var(--glance-bg) var(--fill-pct),var(--glance-bg) 100%);border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;transition:background .2s ease,border-color .2s ease}
 .glance-lbl{font-size:10px;font-weight:700;color:#718096;text-transform:uppercase;letter-spacing:.05em}
 .glance-val{font-size:22px;font-weight:800;color:#1a202c;line-height:1.15}
 .glance-sub{font-size:12px;color:#4a5568;font-weight:600;line-height:1.25}
 .glance-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.forecast-rail{display:flex;flex-direction:column;gap:8px}
+.forecast-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px}
+.forecast-card .glance-val{font-size:14px}
 
 /* Cards */
 .card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px}
@@ -277,7 +280,7 @@ html.theme-dark .app-subtitle,html.theme-dark .header-sim,html.theme-dark .ntab{
 html.theme-dark .ntab.active{color:#7dd3fc;border-bottom-color:#38bdf8}
 html.theme-dark .ntab:hover:not(.active){color:#e5edf8}
 html.theme-dark .card,html.theme-dark .scell,html.theme-dark .reason-bar,html.theme-dark .cfg-section,html.theme-dark .audit-table-wrap{background:#121b2d;border-color:#2a3850}
-html.theme-dark .glance-card{background:#121b2d;border-color:#2a3850}
+html.theme-dark .glance-card{--glance-bg:#121b2d;border-color:#2a3850}
 html.theme-dark .scenario-wrap{background:#121b2d;border-color:#2a3850}
 html.theme-dark .chart-card,html.theme-dark .chart-frame{background:#121b2d;border-color:#2a3850;box-shadow:none}
 html.theme-dark #chartPower,html.theme-dark #chartPrice{background:#0f172a;border-radius:10px}
@@ -476,6 +479,8 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
       <div class="action-msg" id="msgThresholds"></div>
     </div>
 
+    <div class="reason-bar" id="reasonBar">Waiting for first cycle---</div>
+
   </div>
 
   <!-- MAIN COLUMN -->
@@ -562,21 +567,27 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
       </div>
 
       <aside class="glance-rail">
-        <div class="glance-card"><div class="glance-lbl">Battery SoC</div><div class="glance-val" id="sBat">---</div></div>
-        <div class="glance-card"><div class="glance-lbl">PV Power</div><div class="glance-val" id="gPV">---</div></div>
-        <div class="glance-card"><div class="glance-lbl">Load</div><div class="glance-val" id="gLoad">---</div></div>
-        <div class="glance-card"><div class="glance-lbl">Grid Export</div><div class="glance-val" id="gGridExp">---</div></div>
-        <div class="glance-card"><div class="glance-lbl">Grid Import</div><div class="glance-val" id="gGridImp">---</div></div>
+        <div class="glance-card" id="card-sBat"><div class="glance-lbl">Battery SoC</div><div class="glance-val" id="sBat">---</div></div>
+        <div class="glance-card" id="card-gPV"><div class="glance-lbl">PV Power</div><div class="glance-val" id="gPV">---</div></div>
+        <div class="glance-card" id="card-gLoad"><div class="glance-lbl">Load</div><div class="glance-val" id="gLoad">---</div></div>
+        <div class="glance-card" id="card-gGridExp"><div class="glance-lbl">Grid Export</div><div class="glance-val" id="gGridExp">---</div></div>
+        <div class="glance-card" id="card-gGridImp"><div class="glance-lbl">Grid Import</div><div class="glance-val" id="gGridImp">---</div></div>
+
+        <div class="forecast-rail">
+          <div class="glance-card forecast-card" id="card-pvForecastToday"><div class="glance-lbl">PV Forecast Today</div><div class="glance-val" id="pvForecastToday">---</div></div>
+          <div class="glance-card forecast-card" id="card-pvForecastRemaining"><div class="glance-lbl">PV Forecast Remaining Today</div><div class="glance-val" id="pvForecastRemaining">---</div></div>
+          <div class="glance-card forecast-card" id="card-pvForecastTomorrow"><div class="glance-lbl">PV Forecast Tomorrow</div><div class="glance-val" id="pvForecastTomorrow">---</div></div>
+        </div>
 
         <div class="glance-grid">
-          <div class="glance-card"><div class="glance-lbl">Sunrise SoC Req</div><div class="glance-sub" id="sSunrise">---</div></div>
-          <div class="glance-card"><div class="glance-lbl">Export Floor SoC</div><div class="glance-sub" id="gExpFloor">---</div></div>
-          <div class="glance-card"><div class="glance-lbl">Import Price</div><div class="glance-sub" id="sImpPrice">---</div></div>
-          <div class="glance-card"><div class="glance-lbl">Export Limit</div><div class="glance-sub" id="sExpLimVal">---</div></div>
-          <div class="glance-card"><div class="glance-lbl">Feed-in Price</div><div class="glance-sub" id="sFIT">---</div></div>
-          <div class="glance-card"><div class="glance-lbl">Import Limit</div><div class="glance-sub" id="sImpLimVal">---</div></div>
-          <div class="glance-card"><div class="glance-lbl">PV Max</div><div class="glance-sub" id="sPVMax">---</div></div>
-          <div class="glance-card"><div class="glance-lbl">ESS-First PV Thresh</div><div class="glance-sub" id="sESSThresh">1.0 kW</div></div>
+          <div class="glance-card" id="card-sSunrise"><div class="glance-lbl">Sunrise SoC Req</div><div class="glance-sub" id="sSunrise">---</div></div>
+          <div class="glance-card" id="card-gExpFloor"><div class="glance-lbl">Export Floor SoC</div><div class="glance-sub" id="gExpFloor">---</div></div>
+          <div class="glance-card" id="card-sImpPrice"><div class="glance-lbl">Import Price</div><div class="glance-sub" id="sImpPrice">---</div></div>
+          <div class="glance-card" id="card-sExpLimVal"><div class="glance-lbl">Export Limit</div><div class="glance-sub" id="sExpLimVal">---</div></div>
+          <div class="glance-card" id="card-sFIT"><div class="glance-lbl">Feed-in Price</div><div class="glance-sub" id="sFIT">---</div></div>
+          <div class="glance-card" id="card-sImpLimVal"><div class="glance-lbl">Import Limit</div><div class="glance-sub" id="sImpLimVal">---</div></div>
+          <div class="glance-card" id="card-sPVMax"><div class="glance-lbl">PV Max</div><div class="glance-sub" id="sPVMax">---</div></div>
+          <div class="glance-card" id="card-sESSThresh"><div class="glance-lbl">ESS-First PV Thresh</div><div class="glance-sub" id="sESSThresh">1.0 kW</div></div>
         </div>
 
         <div class="glance-card"><div class="glance-lbl">Cycle Started</div><div class="glance-sub" id="cycleStart">---</div></div>
@@ -586,9 +597,6 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
         <div class="glance-card"><div class="glance-lbl">Last Error</div><div class="glance-sub" id="sErr">none</div></div>
       </aside>
     </div>
-
-    <!-- Reason bar -->
-    <div class="reason-bar" id="reasonBar">Waiting for first cycle---</div>
 
   </div>
 </div>
@@ -2096,6 +2104,25 @@ function setTextWithFlash(id, nextText) {
   }
 }
 
+function setGlanceFill(cardId, percent, color) {
+  const el = document.getElementById(cardId);
+  if (!el) return;
+  const pct = Math.max(0, Math.min(100, Number(percent) || 0));
+  el.style.setProperty('--fill-pct', `${pct}%`);
+  if (color) el.style.setProperty('--fill-color', color);
+}
+
+function finiteSeriesValues(points) {
+  return (Array.isArray(points) ? points : [])
+    .map((p) => Number(Array.isArray(p) ? p[1] : p?.value ?? p))
+    .filter(Number.isFinite);
+}
+
+function seriesMinMax(points) {
+  const vals = finiteSeriesValues(points);
+  return vals.length ? { min: Math.min(...vals), max: Math.max(...vals) } : { min: null, max: null };
+}
+
 function updateOverview() {
   const s = S;
   const staleEl = document.getElementById('staleBanner');
@@ -2109,12 +2136,14 @@ function updateOverview() {
   }
   // Chart now labels
   document.getElementById('nowPower').textContent = simActive && simPreview
-    ? `Simulation: ${PROFILE_META[simPreview.profile]?.label || 'Selected profile'} | Battery ${fc(s.battery_soc,1)}% -> ${fc(simPreview.projectedBattery,1)}%, Import ${fc(simPreview.importLimit,1)}kW, Export ${fc(simPreview.exportLimit,1)}kW`
-    : `Now: Battery ${fc(s.battery_soc,1)}%, Min SoC ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Forecast ${fc(s.solar_power_now_kw,1)}kW`;
+    ? `Simulation: ${PROFILE_META[simPreview.profile]?.label || 'Selected profile'} | Battery ${fc(s.battery_soc,1)}% -> ${fc(simPreview.projectedBattery,1)}%, Load ${fc(s.load_kw,1)}kW, Import ${fc(simPreview.importLimit,1)}kW, Export ${fc(simPreview.exportLimit,1)}kW`
+    : `Now: Battery ${fc(s.battery_soc,1)}%, Min SoC ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Forecast ${fc(s.solar_power_now_kw,1)}kW, Load ${fc(s.load_kw,1)}kW`;
+  const importForecastRange = seriesMinMax(parseCurvePoints(S?.price_forecast_curve));
+  const feedinForecastRange = seriesMinMax(parseCurvePoints(S?.feedin_forecast_curve));
   document.getElementById('nowPrice').textContent =
-    `Now: Import price ${fcc(s.current_price)}/kWh, Feed-in price ${fcc(s.feedin_price)}/kWh, PV today ${fc(s.forecast_today,1)}kWh`;
+    `Now: Import price ${fcc(s.current_price)}/kWh, Feed-in price ${fcc(s.feedin_price)}/kWh, Import forecast low/high ${importForecastRange.min != null ? fcc(importForecastRange.min) : '---'}/${importForecastRange.max != null ? fcc(importForecastRange.max) : '---'}, Feed-in forecast low/high ${feedinForecastRange.min != null ? fcc(feedinForecastRange.min) : '---'}/${feedinForecastRange.max != null ? fcc(feedinForecastRange.max) : '---'}`;
   document.getElementById('nowFlow').textContent =
-    `Now: Import ${fc(s.grid_import_power_kw,1)}kW, Export ${fc(s.grid_export_power_kw,1)}kW, Load ${fc(s.load_kw,1)}kW`;
+    `Now: Import ${fc(s.grid_import_power_kw,1)}kW, Export ${fc(s.grid_export_power_kw,1)}kW`;
 
   // Cycle timing
   setTextWithFlash('cycleStart', tsISO(s.last_cycle_started));
@@ -2138,6 +2167,26 @@ function updateOverview() {
   setTextWithFlash('gGridExp', fc(s.grid_export_power_kw,1) + ' kW');
   setTextWithFlash('gGridImp', fc(s.grid_import_power_kw,1) + ' kW');
   setTextWithFlash('gExpFloor', Number.isFinite(Number(uiCfg?.min_export_target_soc)) ? fc(uiCfg.min_export_target_soc,1) + '%' : fc(s.min_soc_to_sunrise,1) + '%');
+  setTextWithFlash('pvForecastToday', fc(s.forecast_today,2) + ' kWh');
+  setTextWithFlash('pvForecastRemaining', fc(s.forecast_remaining,2) + ' kWh');
+  setTextWithFlash('pvForecastTomorrow', fc(s.forecast_tomorrow,2) + ' kWh');
+
+  setGlanceFill('card-sBat', s.battery_soc, 'rgba(34,197,94,.22)');
+  setGlanceFill('card-gPV', (Number(s.pv_kw) / Math.max(1, Number(s.pv_max_power_limit) || 25)) * 100, 'rgba(132,204,22,.22)');
+  setGlanceFill('card-gLoad', (Number(s.load_kw) / Math.max(1, Number(s.pv_max_power_limit) || 25)) * 100, 'rgba(163,230,53,.22)');
+  setGlanceFill('card-gGridExp', (Number(s.grid_export_power_kw) / Math.max(1, Number(s.export_limit) || getDischargeClampMax())) * 100, 'rgba(74,222,128,.22)');
+  setGlanceFill('card-gGridImp', (Number(s.grid_import_power_kw) / Math.max(1, Number(s.import_limit) || getChargeClampMax())) * 100, 'rgba(251,191,36,.22)');
+  setGlanceFill('card-pvForecastToday', (Number(s.forecast_today) / Math.max(1, Number(s.forecast_tomorrow) || Number(s.forecast_today) || 1)) * 100, 'rgba(96,165,250,.20)');
+  setGlanceFill('card-pvForecastRemaining', (Number(s.forecast_remaining) / Math.max(1, Number(s.forecast_today) || 1)) * 100, 'rgba(59,130,246,.18)');
+  setGlanceFill('card-pvForecastTomorrow', (Number(s.forecast_tomorrow) / Math.max(1, Math.max(Number(s.forecast_today) || 0, Number(s.forecast_tomorrow) || 0, 1))) * 100, 'rgba(37,99,235,.18)');
+  setGlanceFill('card-sSunrise', s.sunrise_soc_target, 'rgba(45,212,191,.20)');
+  setGlanceFill('card-gExpFloor', Number.isFinite(Number(uiCfg?.min_export_target_soc)) ? Number(uiCfg.min_export_target_soc) : Number(s.min_soc_to_sunrise), 'rgba(74,222,128,.20)');
+  setGlanceFill('card-sImpPrice', importForecastRange.max != null && importForecastRange.min != null ? ((Number(s.current_price) - importForecastRange.min) / Math.max(0.001, importForecastRange.max - importForecastRange.min)) * 100 : 0, 'rgba(251,146,60,.20)');
+  setGlanceFill('card-sExpLimVal', (Number(s.export_limit) / Math.max(1, getDischargeClampMax())) * 100, 'rgba(74,222,128,.20)');
+  setGlanceFill('card-sFIT', feedinForecastRange.max != null && feedinForecastRange.min != null ? ((Number(s.feedin_price) - feedinForecastRange.min) / Math.max(0.001, feedinForecastRange.max - feedinForecastRange.min)) * 100 : 0, 'rgba(74,222,128,.18)');
+  setGlanceFill('card-sImpLimVal', (Number(s.import_limit) / Math.max(1, getChargeClampMax())) * 100, 'rgba(251,191,36,.20)');
+  setGlanceFill('card-sPVMax', (Number(s.pv_max_power_limit) / Math.max(25, Number(s.pv_max_power_limit) || 25)) * 100, 'rgba(74,222,128,.20)');
+  setGlanceFill('card-sESSThresh', (Number(1.0) / 5) * 100, 'rgba(134,239,172,.18)');
 
   // Reason
   document.getElementById('reasonBar').textContent = s.outcome_reason || '---';
