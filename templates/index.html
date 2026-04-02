@@ -908,6 +908,141 @@ function buildDaylightAnnotations() {
   return items;
 }
 
+function buildSunBandPath(sunriseMs, sunsetMs, xOf, yBase, amplitude, segments = 40) {
+  if (!Number.isFinite(sunriseMs) || !Number.isFinite(sunsetMs) || sunsetMs <= sunriseMs) return '';
+  let d = `M ${xOf(sunriseMs).toFixed(2)} ${yBase.toFixed(2)}`;
+  for (let i = 0; i <= segments; i++) {
+    const f = i / segments;
+    const t = sunriseMs + f * (sunsetMs - sunriseMs);
+    const y = yBase - (Math.sin(Math.PI * f) * amplitude);
+    d += ` L ${xOf(t).toFixed(2)} ${y.toFixed(2)}`;
+  }
+  d += ` L ${xOf(sunsetMs).toFixed(2)} ${yBase.toFixed(2)} Z`;
+  return d;
+}
+
+function splitPositiveSegmentsFromPairs(points, minValue = 0.01) {
+  const segments = [];
+  let current = [];
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const v = Number(p?.[1]);
+    const isPositive = Number.isFinite(v) && v > minValue;
+    if (isPositive) {
+      if (!current.length && i > 0) {
+        const prev = points[i - 1];
+        const prevV = Number(prev?.[1]);
+        if (Number.isFinite(prevV) && prevV <= minValue) current.push(prev);
+      }
+      current.push(p);
+    } else if (current.length) {
+      if (Array.isArray(p)) current.push(p);
+      if (current.length >= 2) segments.push(current);
+      current = [];
+    }
+  }
+  if (current.length >= 2) segments.push(current);
+  return segments;
+}
+
+function buildAreaPathFromPairs(points, xOf, yOf, yBase) {
+  if (!points.length) return '';
+  let d = `M ${xOf(points[0][0]).toFixed(2)} ${yBase.toFixed(2)}`;
+  for (const p of points) d += ` L ${xOf(p[0]).toFixed(2)} ${yOf(p[1]).toFixed(2)}`;
+  d += ` L ${xOf(points[points.length - 1][0]).toFixed(2)} ${yBase.toFixed(2)} Z`;
+  return d;
+}
+
+function injectFriendStyleChartOverlay(chart, pvSeries, nowMs) {
+  const g = chart?.w?.globals;
+  const inner = chart?.el?.querySelector('.apexcharts-inner');
+  if (!g || !inner || !Number.isFinite(g.gridWidth) || !Number.isFinite(g.gridHeight)) return;
+
+  inner.querySelectorAll('.friend-overlay').forEach((el) => el.remove());
+
+  const axisMin = Number.isFinite(g.minX) ? g.minX : startOfTodayMs();
+  const axisMax = Number.isFinite(g.maxX) ? g.maxX : endOfTodayMs();
+  if (!Number.isFinite(axisMin) || !Number.isFinite(axisMax) || axisMax <= axisMin) return;
+
+  const gridX = Number(g.gridX || 0);
+  const gridY = Number(g.gridY || 0);
+  const gridW = Number(g.gridWidth || 0);
+  const gridH = Number(g.gridHeight || 0);
+  const xOf = (ts) => gridX + ((Math.min(axisMax, Math.max(axisMin, ts)) - axisMin) / (axisMax - axisMin)) * gridW;
+  const yBase = gridY + gridH;
+
+  const t = chartTheme();
+  const overlayGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  overlayGroup.setAttribute('class', 'friend-overlay');
+  overlayGroup.setAttribute('pointer-events', 'none');
+
+  const sunrise = normalizeDayMarker(S?.next_sunrise_ts);
+  const sunset = normalizeDayMarker(S?.next_sunset_ts);
+  if (Number.isFinite(sunrise) && Number.isFinite(sunset) && sunset > sunrise) {
+    const sunPathD = buildSunBandPath(
+      Math.max(axisMin, sunrise),
+      Math.min(axisMax, sunset),
+      xOf,
+      yBase,
+      Math.max(0, gridH - 4)
+    );
+    if (sunPathD) {
+      const sunPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      sunPath.setAttribute('class', 'friend-overlay');
+      sunPath.setAttribute('d', sunPathD);
+      sunPath.setAttribute('fill', t.daylightFill);
+      sunPath.setAttribute('fill-opacity', String(Math.max(0.06, Number(t.daylightOpacity || 0.1))));
+      sunPath.setAttribute('stroke', 'none');
+      overlayGroup.appendChild(sunPath);
+    }
+  }
+
+  const validPv = (Array.isArray(pvSeries) ? pvSeries : [])
+    .filter((p) => Array.isArray(p) && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])) && Number(p[1]) > 0)
+    .map((p) => [Number(p[0]), Number(p[1])]);
+
+  if (validPv.length > 1) {
+    const pvMax = Math.max(0.1, ...validPv.map((p) => p[1]));
+    const yOf = (v) => gridY + (1 - (Math.max(0, Math.min(pvMax, Number(v))) / pvMax)) * gridH;
+    const hist = validPv.filter((p) => p[0] <= nowMs);
+    const fcst = validPv.filter((p) => p[0] >= nowMs);
+
+    const histAreas = splitPositiveSegmentsFromPairs(hist, 0.01)
+      .map((seg) => buildAreaPathFromPairs(seg, xOf, yOf, yBase))
+      .filter(Boolean);
+    const fcAreas = splitPositiveSegmentsFromPairs(fcst, 0.01)
+      .map((seg) => buildAreaPathFromPairs(seg, xOf, yOf, yBase))
+      .filter(Boolean);
+
+    for (const d of histAreas) {
+      const pvArea = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      pvArea.setAttribute('class', 'friend-overlay');
+      pvArea.setAttribute('d', d);
+      pvArea.setAttribute('fill', '#f59e0b');
+      pvArea.setAttribute('fill-opacity', isDarkTheme() ? '0.14' : '0.10');
+      pvArea.setAttribute('stroke', 'none');
+      overlayGroup.appendChild(pvArea);
+    }
+    for (const d of fcAreas) {
+      const pvArea = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      pvArea.setAttribute('class', 'friend-overlay');
+      pvArea.setAttribute('d', d);
+      pvArea.setAttribute('fill', '#f59e0b');
+      pvArea.setAttribute('fill-opacity', isDarkTheme() ? '0.08' : '0.06');
+      pvArea.setAttribute('stroke', 'none');
+      overlayGroup.appendChild(pvArea);
+    }
+  }
+
+  inner.insertBefore(overlayGroup, inner.firstChild);
+}
+
+function applyFriendChartOverlays(powerPvSeries, flowPvSeries, pricePvSeries, nowMs) {
+  injectFriendStyleChartOverlay(powerChart, powerPvSeries, nowMs);
+  injectFriendStyleChartOverlay(flowChart, flowPvSeries, nowMs);
+  injectFriendStyleChartOverlay(priceChart, pricePvSeries, nowMs);
+}
+
 function buildPowerYAxisConfig(simulation = false) {
   const t = chartTheme();
   return [
@@ -1140,6 +1275,7 @@ function refreshCharts() {
   setPowerChartNarrative(false);
 
   const flowPvForecastSeries = trimFuture(histPow.map(x=>[x.t,x.pvForecast]), nowMs);
+  const pricePvForecastSeries = trimFuture(histPow.map(x=>[x.t,x.pvForecast]), nowMs);
   flowChart.updateSeries([
     {name:'Grid import', data: gridImportSeries},
     {name:'Grid export', data: gridExportSeries},
@@ -1199,6 +1335,10 @@ function refreshCharts() {
       ].filter(Boolean),
     },
   }, false, false);
+
+  requestAnimationFrame(() => {
+    applyFriendChartOverlays(pvForecastSeries, flowPvForecastSeries, pricePvForecastSeries, nowMs);
+  });
 }
 
 // ------ UI update ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1506,6 +1646,15 @@ function applySimulationOverlay(profile, options = {}) {
     pvForecastSeries: histPow.map(x=>[x.t,x.pvForecast]),
     loadSeries: simConsumptionSeries,
   }, true);
+
+  requestAnimationFrame(() => {
+    applyFriendChartOverlays(
+      histPow.map(x=>[x.t,x.pvForecast]),
+      histPow.map(x=>[x.t,x.pvForecast]),
+      histPow.map(x=>[x.t,x.pvForecast]),
+      now
+    );
+  });
 
   simPreview = {
     profile: selected.profile,
