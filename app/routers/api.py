@@ -565,6 +565,8 @@ async def get_status(request: Request) -> dict[str, Any]:
         "effective_export_setpoint": (0.01 if d and d.export_limit <= 0 else (d.export_limit if d else None)),
         "effective_import_setpoint": (0.01 if d and d.import_limit <= 0 else (d.import_limit if d else None)),
         "pv_max_power_limit": d.pv_max_power_limit if d else None,
+        "ess_charge_limit": d.ess_charge_limit if d else None,
+        "ess_discharge_limit": d.ess_discharge_limit if d else None,
         "battery_eta": d.battery_eta_formatted if d else None,
         "battery_power_kw": d.battery_power_kw if d else None,
         "outcome_reason": d.outcome_reason if d else None,
@@ -732,6 +734,8 @@ class ESSRequest(BaseModel):
     grid_import_limit: float
     pv_max_power_limit: float
     ha_control: Optional[bool] = None
+    ess_charge_limit: Optional[float] = None
+    ess_discharge_limit: Optional[float] = None
 
 
 @router.post("/set_ess")
@@ -749,6 +753,17 @@ async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
         ("pv_max_power_limit", body.pv_max_power_limit, pv_cap_kw),
     ]:
         if not (0.0 <= number <= cap):
+            field_errors.append(
+                {
+                    "key": name,
+                    "error": f"value {number} kW is outside allowed range 0-{cap:.2f} kW",
+                }
+            )
+    for name, number, cap in [
+        ("ess_charge_limit", body.ess_charge_limit, charge_cap_kw),
+        ("ess_discharge_limit", body.ess_discharge_limit, discharge_cap_kw),
+    ]:
+        if number is not None and not (0.0 <= number <= cap):
             field_errors.append(
                 {
                     "key": name,
@@ -775,6 +790,10 @@ async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
         await ha.set_number(cfg.grid_export_limit, body.grid_export_limit)
         await ha.set_number(cfg.grid_import_limit, body.grid_import_limit)
         await ha.set_number(cfg.pv_max_power_limit, body.pv_max_power_limit)
+        if body.ess_charge_limit is not None:
+            await ha.set_number(cfg.ess_max_charging_limit, body.ess_charge_limit)
+        if body.ess_discharge_limit is not None:
+            await ha.set_number(cfg.ess_max_discharging_limit, body.ess_discharge_limit)
         if body.ha_control is not None:
             if body.ha_control:
                 await ha.turn_on(cfg.ha_control_switch)

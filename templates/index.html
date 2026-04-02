@@ -425,6 +425,10 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
       <input type="number" id="impLim" min="0" max="50" step="0.1" value="0.0" style="margin-bottom:6px">
       <div class="flabel">PV Max Power Limit (kW)</div>
       <input type="number" id="pvMax" min="0" max="50" step="0.1" value="25.0" style="margin-bottom:6px">
+      <div class="flabel">ESS Max Charge Limit (kW)</div>
+      <input type="number" id="essChgLim" min="0" max="30" step="0.1" value="21.0" style="margin-bottom:6px">
+      <div class="flabel">ESS Max Discharge Limit (kW)</div>
+      <input type="number" id="essDchLim" min="0" max="30" step="0.1" value="24.0" style="margin-bottom:6px">
       <button class="sbtn" onclick="applyESS(this)">Apply ESS Controls</button>
       <div class="action-msg" id="msgEss"></div>
     </div>
@@ -2342,12 +2346,14 @@ function updateOverview() {
     syncSel('modeSelect', s.sigenergy_mode);
   }
   // Only sync ESS inputs when none of them have focus (avoids overwriting mid-edit)
-  const essInputIds = new Set(['emsMode', 'expLim', 'impLim', 'pvMax', 'haCtrl']);
+  const essInputIds = new Set(['emsMode', 'expLim', 'impLim', 'pvMax', 'haCtrl', 'essChgLim', 'essDchLim']);
   if (!essInputIds.has(focusedId)) {
     syncSel('emsMode', s.ems_mode);
     document.getElementById('expLim').value = fc(s.export_limit, 2);
     document.getElementById('impLim').value = fc(s.import_limit, 2);
     document.getElementById('pvMax').value  = fc(s.pv_max_power_limit, 2);
+    document.getElementById('essChgLim').value = fc(s.ess_charge_limit, 2);
+    document.getElementById('essDchLim').value = fc(s.ess_discharge_limit, 2);
     document.getElementById('haCtrl').value = s.ha_control_enabled ? 'on' : 'off';
   }
 
@@ -2966,6 +2972,8 @@ async function applyESS(btn) {
     impLim: document.getElementById('impLim').value,
     pvMax: document.getElementById('pvMax').value,
     haCtrl: document.getElementById('haCtrl').value,
+    essChgLim: document.getElementById('essChgLim').value,
+    essDchLim: document.getElementById('essDchLim').value,
   };
   setActionMessage('msgEss', 'warn', `Sending ESS update at ${ts()}...`);
   setPendingBadge('pending-ess', true, 'saving', 'Saving...');
@@ -2976,12 +2984,16 @@ async function applyESS(btn) {
       grid_export_limit: +document.getElementById('expLim').value||0,
       grid_import_limit: +document.getElementById('impLim').value||0,
       pv_max_power_limit: +document.getElementById('pvMax').value||25,
+      ess_charge_limit: +document.getElementById('essChgLim').value||0,
+      ess_discharge_limit: +document.getElementById('essDchLim').value||0,
     };
     await post('api/set_ess', {
       ems_mode: target.ems_mode,
       grid_export_limit: target.grid_export_limit,
       grid_import_limit: target.grid_import_limit,
       pv_max_power_limit: target.pv_max_power_limit,
+      ess_charge_limit: target.ess_charge_limit,
+      ess_discharge_limit: target.ess_discharge_limit,
       ha_control: document.getElementById('haCtrl').value === 'on',
     });
     const ok = await waitForStatusMatch((s) => {
@@ -2989,7 +3001,9 @@ async function applyESS(btn) {
       const sameExp = Math.abs(Number(s.export_limit || 0) - target.grid_export_limit) < 0.11;
       const sameImp = Math.abs(Number(s.import_limit || 0) - target.grid_import_limit) < 0.11;
       const samePv = Math.abs(Number(s.pv_max_power_limit || 0) - target.pv_max_power_limit) < 0.11;
-      return sameMode && sameExp && sameImp && samePv;
+      const sameChg = target.ess_charge_limit == null || Math.abs(Number(s.ess_charge_limit ?? 0) - target.ess_charge_limit) < 0.11;
+      const sameDch = target.ess_discharge_limit == null || Math.abs(Number(s.ess_discharge_limit ?? 0) - target.ess_discharge_limit) < 0.11;
+      return sameMode && sameExp && sameImp && samePv && sameChg && sameDch;
     });
     btn.textContent = ok ? 'Applied ---' : 'Applied (pending)';
     setPendingBadge('pending-ess', true, ok ? 'saved' : 'saving', ok ? 'Saved' : 'Pending...');
@@ -3006,6 +3020,8 @@ async function applyESS(btn) {
     document.getElementById('impLim').value = prev.impLim;
     document.getElementById('pvMax').value = prev.pvMax;
     document.getElementById('haCtrl').value = prev.haCtrl;
+    document.getElementById('essChgLim').value = prev.essChgLim;
+    document.getElementById('essDchLim').value = prev.essDchLim;
     const fieldTxt = formatFieldErrors(e.fieldErrors);
     setActionMessage('msgEss', 'err', `ESS update failed at ${ts()}: ${e.message || String(e)}${fieldTxt ? ' | ' + fieldTxt : ''}`);
     console.error('applyESS:', e.message);
