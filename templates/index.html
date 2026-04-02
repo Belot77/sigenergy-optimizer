@@ -876,7 +876,7 @@ function priceAxisBounds(seriesList) {
 }
 
 function normalizeDayMarker(ts) {
-  const ms = Date.parse(ts || '');
+  const ms = Number.isFinite(Number(ts)) ? Number(ts) : Date.parse(ts || '');
   if (!Number.isFinite(ms)) return null;
   const dayStart = startOfTodayMs();
   const dayEnd = endOfTodayMs();
@@ -1034,13 +1034,36 @@ function injectFriendStyleChartOverlay(chart, pvSeries, nowMs) {
     }
   }
 
-  inner.insertBefore(overlayGroup, inner.firstChild);
+  const firstSeries = inner.querySelector('.apexcharts-series');
+  if (firstSeries && firstSeries.parentNode === inner) {
+    inner.insertBefore(overlayGroup, firstSeries);
+  } else {
+    inner.appendChild(overlayGroup);
+  }
 }
 
 function applyFriendChartOverlays(powerPvSeries, flowPvSeries, pricePvSeries, nowMs) {
   injectFriendStyleChartOverlay(powerChart, powerPvSeries, nowMs);
   injectFriendStyleChartOverlay(flowChart, flowPvSeries, nowMs);
   injectFriendStyleChartOverlay(priceChart, pricePvSeries, nowMs);
+}
+
+function ensureNowPoint(series, value, nowMs) {
+  const v = Number(value);
+  if (!Array.isArray(series) || !Number.isFinite(v) || !Number.isFinite(nowMs)) return series;
+  const out = series.slice();
+  if (!out.length) {
+    out.push([nowMs, v]);
+    return out;
+  }
+  const last = out[out.length - 1];
+  const lastTs = Number(last?.[0]);
+  if (Number.isFinite(lastTs) && Math.abs(nowMs - lastTs) <= 60000) {
+    out[out.length - 1] = [nowMs, v];
+  } else if (!Number.isFinite(lastTs) || nowMs > lastTs) {
+    out.push([nowMs, v]);
+  }
+  return out;
 }
 
 function buildPowerYAxisConfig(simulation = false) {
@@ -1257,13 +1280,13 @@ function refreshCharts() {
   if (!powerChart || !flowChart || !priceChart) return;
   const t = chartTheme();
   const nowMs = Date.now();
-  const batterySeries = trimFuture(histPow.map(x=>[x.t,x.battery]), nowMs);
-  const minSocSeries = trimFuture(histPow.map(x=>[x.t,x.minSoc]), nowMs);
-  const pvSeries = trimFuture(histPow.map(x=>[x.t,x.pv]), nowMs);
-  const pvForecastSeries = trimFuture(histPow.map(x=>[x.t,x.pvForecast]), nowMs);
-  const gridImportSeries = trimFuture(histPow.map(x=>[x.t,x.imp]), nowMs);
-  const gridExportSeries = trimFuture(histPow.map(x=>[x.t,x.exp]), nowMs);
-  const loadSeries = trimFuture(histPow.map(x=>[x.t,x.load]), nowMs);
+  const batterySeries = ensureNowPoint(trimFuture(histPow.map(x=>[x.t,x.battery]), nowMs), S?.battery_soc, nowMs);
+  const minSocSeries = ensureNowPoint(trimFuture(histPow.map(x=>[x.t,x.minSoc]), nowMs), S?.min_soc_to_sunrise, nowMs);
+  const pvSeries = ensureNowPoint(trimFuture(histPow.map(x=>[x.t,x.pv]), nowMs), S?.pv_kw, nowMs);
+  const pvForecastSeries = ensureNowPoint(trimFuture(histPow.map(x=>[x.t,x.pvForecast]), nowMs), S?.solar_power_now_kw, nowMs);
+  const gridImportSeries = ensureNowPoint(trimFuture(histPow.map(x=>[x.t,x.imp]), nowMs), S?.grid_import_power_kw, nowMs);
+  const gridExportSeries = ensureNowPoint(trimFuture(histPow.map(x=>[x.t,x.exp]), nowMs), S?.grid_export_power_kw, nowMs);
+  const loadSeries = ensureNowPoint(trimFuture(histPow.map(x=>[x.t,x.load]), nowMs), S?.load_kw, nowMs);
   const powerSeries = [
     {name:'Battery %',     data: batterySeries},
     {name:'Min SoC %',     data: minSocSeries},
@@ -1274,8 +1297,8 @@ function refreshCharts() {
   applyPowerChartMode(powerSeries, { batterySeries, minSocSeries, pvSeries, pvForecastSeries, loadSeries }, false);
   setPowerChartNarrative(false);
 
-  const flowPvForecastSeries = trimFuture(histPow.map(x=>[x.t,x.pvForecast]), nowMs);
-  const pricePvForecastSeries = trimFuture(histPow.map(x=>[x.t,x.pvForecast]), nowMs);
+  const flowPvForecastSeries = ensureNowPoint(trimFuture(histPow.map(x=>[x.t,x.pvForecast]), nowMs), S?.solar_power_now_kw, nowMs);
+  const pricePvForecastSeries = ensureNowPoint(trimFuture(histPow.map(x=>[x.t,x.pvForecast]), nowMs), S?.solar_power_now_kw, nowMs);
   flowChart.updateSeries([
     {name:'Grid import', data: gridImportSeries},
     {name:'Grid export', data: gridExportSeries},
