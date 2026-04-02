@@ -1055,9 +1055,19 @@ class SigEnergyOptimizer:
         )
 
         # ---- Battery ETA -------------------------------------------
-        # Keep holdoff sentinel (0.01 kW) out of analytical flow/ETA math.
-        effective_import_for_math = 0.0 if desired_import_limit <= 0.011 else desired_import_limit
-        battery_power_kw = (s.pv_kw + (effective_import_for_math - desired_export_limit) - s.load_kw)
+        # Prefer measured grid flow for battery power estimation; setpoint-based math
+        # can diverge from actual inverter behavior and misreport charge/discharge.
+        if s.grid_import_power_kw is not None and s.grid_export_power_kw is not None:
+            measured_import = max(float(s.grid_import_power_kw), 0.0)
+            measured_export = max(float(s.grid_export_power_kw), 0.0)
+            battery_power_kw = s.pv_kw + measured_import - measured_export - s.load_kw
+            battery_power_source = "measured_grid_flow"
+            effective_import_for_math = measured_import
+        else:
+            # Keep holdoff sentinel (0.01 kW) out of analytical flow/ETA math.
+            effective_import_for_math = 0.0 if desired_import_limit <= 0.011 else desired_import_limit
+            battery_power_kw = s.pv_kw + (effective_import_for_math - desired_export_limit) - s.load_kw
+            battery_power_source = "setpoint_balance_fallback"
         d.battery_power_kw = battery_power_kw
         d.battery_eta_formatted = self._battery_eta(s, battery_power_kw)
 
@@ -1167,6 +1177,7 @@ class SigEnergyOptimizer:
             "desired_pv_max": desired_pv_max,
             "effective_import_for_math": effective_import_for_math,
             "battery_power_kw": battery_power_kw,
+            "battery_power_source": battery_power_source,
             "ess_charge_limit": d.ess_charge_limit,
             "ess_discharge_limit": d.ess_discharge_limit,
             "holdoff_entry_floor": self._holdoff_entry_floor,
