@@ -1275,8 +1275,18 @@ class SigEnergyOptimizer:
         # ESS charge / discharge limits
         if cfg.ess_max_charging_limit:
             await ha.set_number(cfg.ess_max_charging_limit, d.ess_charge_limit)
-        if cfg.ess_max_discharging_limit and not d.morning_slow_charge_active:
-            await ha.set_number(cfg.ess_max_discharging_limit, d.ess_discharge_limit)
+        if cfg.ess_max_discharging_limit:
+            if d.morning_slow_charge_active:
+                measured_export = max(0.0, float(s.grid_export_power_kw or 0.0))
+                pv_surplus_now = max(s.pv_kw - s.load_kw, 0.0)
+                if measured_export > (pv_surplus_now + 0.3):
+                    logger.warning(
+                        "Battery-backed export detected during slow charge: export=%.2fkW surplus=%.2fkW; forcing discharge limit to 0.01kW",
+                        measured_export,
+                        pv_surplus_now,
+                    )
+            discharge_limit = 0.01 if d.morning_slow_charge_active else d.ess_discharge_limit
+            await ha.set_number(cfg.ess_max_discharging_limit, discharge_limit)
 
         # PV max power limit
         if abs(d.pv_max_power_limit - s.current_pv_max_power_limit) > 0.05:
