@@ -108,10 +108,10 @@ body{background:#e8f5e9;font-family:"Segoe UI",Tahoma,Geneva,Verdana,sans-serif;
 .overview-work{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:12px;align-items:start}
 .charts-col{display:flex;flex-direction:column;gap:12px;min-width:0}
 .glance-rail{display:flex;flex-direction:column;gap:8px}
-.glance-card{--fill-pct:0%;--fill-color:rgba(34,197,94,.16);--glance-bg:#ffffff;background:linear-gradient(90deg,var(--fill-color) 0,var(--fill-color) var(--fill-pct),var(--glance-bg) var(--fill-pct),var(--glance-bg) 100%);border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;transition:background .2s ease,border-color .2s ease}
+.glance-card{--fill-pct:0%;--fill-color:rgba(34,197,94,.16);--glance-bg:#ffffff;--tone-border:#e2e8f0;--tone-value:#1a202c;background:linear-gradient(90deg,var(--fill-color) 0,var(--fill-color) var(--fill-pct),var(--glance-bg) var(--fill-pct),var(--glance-bg) 100%);border:1px solid var(--tone-border);border-radius:8px;padding:8px 10px;transition:background .2s ease,border-color .2s ease,color .2s ease}
 .glance-lbl{font-size:10px;font-weight:700;color:#718096;text-transform:uppercase;letter-spacing:.05em}
-.glance-val{font-size:22px;font-weight:800;color:#1a202c;line-height:1.15}
-.glance-sub{font-size:12px;color:#4a5568;font-weight:600;line-height:1.25}
+.glance-val{font-size:22px;font-weight:800;color:var(--tone-value,#1a202c);line-height:1.15}
+.glance-sub{font-size:12px;color:var(--tone-value,#4a5568);font-weight:600;line-height:1.25}
 .glance-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .forecast-rail{display:flex;flex-direction:column;gap:8px}
 .forecast-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px}
@@ -295,8 +295,8 @@ html.theme-dark .scenario-card.active{border-color:#7dd3fc;box-shadow:0 0 0 2px 
 html.theme-dark .card-title,html.theme-dark .sval,html.theme-dark .reason-bar,html.theme-dark .cfg-section summary,html.theme-dark .audit-table td,html.theme-dark .chart-title,html.theme-dark .scenario-title,html.theme-dark .scenario-name,html.theme-dark .chart-now{color:#eaf2ff}
 html.theme-dark .flabel,html.theme-dark .slbl,html.theme-dark .cfg-field label,html.theme-dark .cfg-summary-note,html.theme-dark .audit-table th,html.theme-dark .chart-sub,html.theme-dark .chart-note,html.theme-dark .preview-note,html.theme-dark .scenario-note,html.theme-dark .preview-sub{color:#b8c6db}
 html.theme-dark .glance-lbl{color:#9fb3cf}
-html.theme-dark .glance-val{color:#f1f7ff}
-html.theme-dark .glance-sub{color:#c8d8ef}
+html.theme-dark .glance-val{color:var(--tone-value,#f1f7ff)}
+html.theme-dark .glance-sub{color:var(--tone-value,#c8d8ef)}
 html.theme-dark .scenario-metric{color:#c6d4ea}
 html.theme-dark .scenario-metric strong{color:#f2f7ff}
 html.theme-dark .cfg-section[open] summary{background:#1a2740;border-bottom-color:#2a3850}
@@ -1570,11 +1570,13 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
   const rawExportHistExtrema = mateHistoricExtrema(gridExportSeries, nowMs);
   const importHistExtrema = {
     high: Math.abs(Number(rawImportHistExtrema?.high?.[1])) >= 0.10 ? rawImportHistExtrema.high : null,
-    low: Math.abs(Number(rawImportHistExtrema?.low?.[1])) >= 0.10 ? rawImportHistExtrema.low : null,
+    // Keep low extrema even near zero so minimum points are always visible.
+    low: rawImportHistExtrema?.low || null,
   };
   const exportHistExtrema = {
     high: Math.abs(Number(rawExportHistExtrema?.high?.[1])) >= 0.10 ? rawExportHistExtrema.high : null,
-    low: Math.abs(Number(rawExportHistExtrema?.low?.[1])) >= 0.10 ? rawExportHistExtrema.low : null,
+    // Keep low extrema even near zero so minimum points are always visible.
+    low: rawExportHistExtrema?.low || null,
   };
   const importExtremaLabels = mateExtremaLabels(
     importHistExtrema,
@@ -1585,7 +1587,6 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
     { m, width, plotH },
     -10,
     16,
-    [impNow],
   );
   const exportExtremaLabels = mateExtremaLabels(
     exportHistExtrema,
@@ -1596,7 +1597,6 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
     { m, width, plotH },
     -22,
     22,
-    [expNow],
   );
   svg.innerHTML = `
     ${grid}
@@ -2177,6 +2177,43 @@ function setGlanceFill(cardId, percent, color) {
   if (color) el.style.setProperty('--fill-color', color);
 }
 
+function clamp01(v) {
+  return Math.max(0, Math.min(1, Number(v) || 0));
+}
+
+function toneHueFromScore(score) {
+  return Math.round(clamp01(score) * 120);
+}
+
+function toneFillColor(score, alpha = 0.22) {
+  return `hsla(${toneHueFromScore(score)}, 82%, 45%, ${alpha})`;
+}
+
+function toneBorderColor(score) {
+  return `hsl(${toneHueFromScore(score)}, 76%, 38%)`;
+}
+
+function toneTextColor(score, darkTheme = false) {
+  if (darkTheme) {
+    return `hsl(${toneHueFromScore(score)}, 90%, 85%)`;
+  }
+  return `hsl(${toneHueFromScore(score)}, 74%, 30%)`;
+}
+
+function applyGlanceTone(cardId, score, alpha = 0.22) {
+  const el = document.getElementById(cardId);
+  if (!el) return;
+  if (!Number.isFinite(Number(score))) {
+    el.style.removeProperty('--tone-border');
+    el.style.removeProperty('--tone-value');
+    return;
+  }
+  const s = clamp01(score);
+  el.style.setProperty('--fill-color', toneFillColor(s, alpha));
+  el.style.setProperty('--tone-border', toneBorderColor(s));
+  el.style.setProperty('--tone-value', toneTextColor(s, isDarkTheme()));
+}
+
 function finiteSeriesValues(points) {
   return (Array.isArray(points) ? points : [])
     .map((p) => Number(Array.isArray(p) ? p[1] : p?.value ?? p))
@@ -2246,12 +2283,40 @@ function updateOverview() {
   setGlanceFill('card-gExpFloor', Number.isFinite(Number(uiCfg?.min_export_target_soc)) ? Number(uiCfg.min_export_target_soc) : Number(s.min_soc_to_sunrise), 'rgba(74,222,128,.20)');
   const importForecastRange = seriesMinMax(parseCurvePoints(S?.price_forecast_curve));
   const feedinForecastRange = seriesMinMax(parseCurvePoints(S?.feedin_forecast_curve));
-  setGlanceFill('card-sImpPrice', importForecastRange.max != null && importForecastRange.min != null ? ((Number(s.current_price) - importForecastRange.min) / Math.max(0.001, importForecastRange.max - importForecastRange.min)) * 100 : 0, 'rgba(251,146,60,.20)');
+  const importPricePosition = importForecastRange.max != null && importForecastRange.min != null
+    ? ((Number(s.current_price) - importForecastRange.min) / Math.max(0.001, importForecastRange.max - importForecastRange.min)) * 100
+    : 0;
+  setGlanceFill('card-sImpPrice', importPricePosition, 'rgba(251,146,60,.20)');
   setGlanceFill('card-sExpLimVal', (Number(s.export_limit) / Math.max(1, getDischargeClampMax())) * 100, 'rgba(74,222,128,.20)');
-  setGlanceFill('card-sFIT', feedinForecastRange.max != null && feedinForecastRange.min != null ? ((Number(s.feedin_price) - feedinForecastRange.min) / Math.max(0.001, feedinForecastRange.max - feedinForecastRange.min)) * 100 : 0, 'rgba(74,222,128,.18)');
+  const feedinPricePosition = feedinForecastRange.max != null && feedinForecastRange.min != null
+    ? ((Number(s.feedin_price) - feedinForecastRange.min) / Math.max(0.001, feedinForecastRange.max - feedinForecastRange.min)) * 100
+    : 0;
+  setGlanceFill('card-sFIT', feedinPricePosition, 'rgba(74,222,128,.18)');
   setGlanceFill('card-sImpLimVal', (Number(s.import_limit) / Math.max(1, getChargeClampMax())) * 100, 'rgba(251,191,36,.20)');
   setGlanceFill('card-sPVMax', (Number(s.pv_max_power_limit) / Math.max(25, Number(s.pv_max_power_limit) || 25)) * 100, 'rgba(74,222,128,.20)');
   setGlanceFill('card-sESSThresh', (Number(1.0) / 5) * 100, 'rgba(134,239,172,.18)');
+
+  // Dynamic red -> yellow -> green tones for key quick-look cards.
+  const soc = Number(s.battery_soc);
+  const sunriseTarget = Number(s.sunrise_soc_target);
+  const importRatio = Number(s.grid_import_power_kw) / Math.max(1, Number(s.import_limit) || getChargeClampMax());
+  const exportRatio = Number(s.grid_export_power_kw) / Math.max(1, Number(s.export_limit) || getDischargeClampMax());
+
+  // Battery: red below ~20%, yellow around mid-range, green when comfortably high.
+  applyGlanceTone('card-sBat', Number.isFinite(soc) ? (soc - 20) / 60 : NaN, 0.24);
+
+  // Sunrise requirement card trends red when current SoC is below required target.
+  applyGlanceTone('card-sSunrise', (soc - sunriseTarget + 12) / 24, 0.22);
+
+  // Import price: lower percentile is better (greener), higher is worse (redder).
+  applyGlanceTone('card-sImpPrice', 1 - (importPricePosition / 100), 0.22);
+
+  // Feed-in price: higher percentile is better.
+  applyGlanceTone('card-sFIT', feedinPricePosition / 100, 0.20);
+
+  // Flow cards: high import is bad, high export is good.
+  applyGlanceTone('card-gGridImp', 1 - importRatio, 0.22);
+  applyGlanceTone('card-gGridExp', exportRatio, 0.22);
 
   // Reason
   document.getElementById('reasonBar').textContent = s.outcome_reason || '---';
