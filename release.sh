@@ -16,6 +16,8 @@ if [ "${#ARGS[@]}" -gt 0 ]; then
 fi
 COMMIT_MESSAGE="${ARGS[*]:-}"
 ADDON_CONFIG="sigenergy_optimizer_addon/config.yaml"
+ADDON_BUILD="sigenergy_optimizer_addon/build.yaml"
+ADDON_BUILDSTAMP="sigenergy_optimizer_addon/buildstamp.txt"
 WORKFLOW_FILE=".github/workflows/build.yml"
 POLL_INTERVAL=5
 MAX_WAIT_SECONDS=3600
@@ -160,6 +162,8 @@ echo "Bumping $CURRENT -> $NEW ($BUMP)"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "[dry-run] Would update ${ADDON_CONFIG} to version ${NEW}."
+  echo "[dry-run] Would update ${ADDON_BUILD} label to version ${NEW}."
+  echo "[dry-run] Would update ${ADDON_BUILDSTAMP} to ${NEW}."
   [ -n "$COMMIT_MESSAGE" ] || COMMIT_MESSAGE="Release ${TAG}"
   echo "[dry-run] Would run: git add -A"
   echo "[dry-run] Would run: git commit -m \"${COMMIT_MESSAGE}\""
@@ -171,6 +175,8 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 
 sed -i "s/^version: .*/version: \"${NEW}\"/" "$ADDON_CONFIG"
+sed -i "s/\(io.hass.version: \"\)[^\"]*\(\"\)/\1${NEW}\2/" "$ADDON_BUILD"
+printf "%s\n" "$NEW" > "$ADDON_BUILDSTAMP"
 
 git add -A
 if git diff --cached --quiet; then

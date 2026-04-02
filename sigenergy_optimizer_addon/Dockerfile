@@ -1,5 +1,6 @@
 ARG BUILD_FROM=docker.io/library/python:3.12-alpine
 FROM ${BUILD_FROM}
+ARG SOURCE_REF=main
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -11,10 +12,9 @@ RUN apk add --no-cache bash ca-certificates git
 
 SHELL ["/bin/sh", "-o", "pipefail", "-c"]
 
-COPY buildstamp.txt /tmp/buildstamp.txt
-
-RUN echo "Building source stamp: $(cat /tmp/buildstamp.txt)" \
+RUN echo "Building source ref: ${SOURCE_REF}" \
     && git clone --depth 1 https://github.com/Belot77/sigenergy-optimizer /tmp/src \
+    && if [ "${SOURCE_REF}" != "main" ]; then cd /tmp/src && git fetch --depth 1 origin "${SOURCE_REF}" && git checkout -q FETCH_HEAD; fi \
     && cp /tmp/src/requirements.txt /app/requirements.txt \
     && cp -r /tmp/src/app /app/app \
     && cp -r /tmp/src/templates /app/templates \

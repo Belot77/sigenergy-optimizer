@@ -47,6 +47,8 @@ jobs:
         with:
           context: .
           file: sigenergy_optimizer_addon/Dockerfile
+          build-args: |
+            SOURCE_REF=${{ github.sha }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
