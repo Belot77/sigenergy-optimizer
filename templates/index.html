@@ -1354,7 +1354,7 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
   const svg = document.getElementById('mateFlowChart');
   if (!svg) return;
   const width = 1000, height = 220;
-  const m = { left: 52, right: 20, top: 10, bottom: 28 };
+  const m = { left: 52, right: 42, top: 10, bottom: 28 };
   const plotW = width - m.left - m.right;
   const plotH = height - m.top - m.bottom;
   const t0 = startOfTodayMs();
@@ -1390,6 +1390,8 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
   const nowX = xOf(Date.now());
   const impNow = mateLastFinite(gridImportSeries);
   const expNow = mateLastFinite(gridExportSeries);
+  const showImpLabel = impNow && Math.abs(impNow[1]) >= 0.10;
+  const showExpLabel = expNow && Math.abs(expNow[1]) >= 0.10;
   svg.innerHTML = `
     ${grid}
     <line x1="${nowX.toFixed(2)}" y1="${m.top}" x2="${nowX.toFixed(2)}" y2="${(m.top + plotH).toFixed(2)}" stroke="${MATE_STYLE.nowLine}" stroke-width="1.2" stroke-dasharray="4 4" />
@@ -1400,10 +1402,10 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
     <circle id="mateFlowHoverDotImport" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.flow.import}" stroke="#fff" stroke-width="1.2" style="display:none" />
     <circle id="mateFlowHoverDotExport" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.flow.export}" stroke="#fff" stroke-width="1.2" style="display:none" />
     <circle id="mateFlowHoverDotPvForecast" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.flow.pvForecast}" stroke="#fff" stroke-width="1.2" style="display:none" />
-    ${impNow ? `<circle cx="${xOf(impNow[0]).toFixed(2)}" cy="${yOf(impNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.flow.import}" stroke="#fff" stroke-width="1.2" />
-      <text x="${(xOf(impNow[0]) + 8).toFixed(2)}" y="${(yOf(impNow[1]) - 8).toFixed(2)}" font-size="11" fill="#7f1d1d">${impNow[1].toFixed(2)}kW</text>` : ''}
-    ${expNow ? `<circle cx="${xOf(expNow[0]).toFixed(2)}" cy="${yOf(expNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.flow.export}" stroke="#fff" stroke-width="1.2" />
-      <text x="${(xOf(expNow[0]) + 8).toFixed(2)}" y="${(yOf(expNow[1]) + 14).toFixed(2)}" font-size="11" fill="#065f46">${expNow[1].toFixed(2)}kW</text>` : ''}
+    ${impNow ? `<circle cx="${xOf(impNow[0]).toFixed(2)}" cy="${yOf(impNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.flow.import}" stroke="#fff" stroke-width="1.2" />` : ''}
+    ${showImpLabel ? `<text x="${(xOf(impNow[0]) + 8).toFixed(2)}" y="${(yOf(impNow[1]) - 8).toFixed(2)}" font-size="11" fill="#7f1d1d">${impNow[1].toFixed(2)}kW</text>` : ''}
+    ${expNow ? `<circle cx="${xOf(expNow[0]).toFixed(2)}" cy="${yOf(expNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.flow.export}" stroke="#fff" stroke-width="1.2" />` : ''}
+    ${showExpLabel ? `<text x="${(xOf(expNow[0]) + 8).toFixed(2)}" y="${(yOf(expNow[1]) + 14).toFixed(2)}" font-size="11" fill="#065f46">${expNow[1].toFixed(2)}kW</text>` : ''}
   `;
 
   mateFlowState = {
@@ -1426,7 +1428,7 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
   const svg = document.getElementById('matePriceChart');
   if (!svg) return;
   const width = 1000, height = 230;
-  const m = { left: 54, right: 22, top: 10, bottom: 30 };
+  const m = { left: 54, right: 42, top: 10, bottom: 30 };
   const plotW = width - m.left - m.right;
   const plotH = height - m.top - m.bottom;
   const t0 = startOfTodayMs();
