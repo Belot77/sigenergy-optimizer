@@ -605,6 +605,8 @@ class SigEnergyOptimizer:
             cfg.last_export_notification, cfg.last_import_notification,
             cfg.sigenergy_mode_select,
         ]
+        if cfg.battery_power_sensor:
+            entity_ids.append(cfg.battery_power_sensor)
         if cfg.grid_import_power_sensor:
             entity_ids.append(cfg.grid_import_power_sensor)
         if cfg.grid_export_power_sensor:
@@ -648,6 +650,13 @@ class SigEnergyOptimizer:
         if cfg.grid_export_power_sensor:
             grid_export_raw = _fv(cfg.grid_export_power_sensor)
             s.grid_export_power_kw = grid_export_raw / 1000 if grid_export_raw > 100 else grid_export_raw
+        if cfg.battery_power_sensor:
+            battery_power_raw = _fv(cfg.battery_power_sensor, None)
+            if isinstance(battery_power_raw, (int, float)):
+                battery_power_kw = battery_power_raw / 1000 if abs(battery_power_raw) > 100 else battery_power_raw
+                if cfg.battery_power_sensor_invert:
+                    battery_power_kw = -battery_power_kw
+                s.battery_power_sensor_kw = battery_power_kw
 
         s.battery_soc = max(0.0, min(100.0, _fv(cfg.battery_soc_sensor)))
 
@@ -1057,7 +1066,11 @@ class SigEnergyOptimizer:
         # ---- Battery ETA -------------------------------------------
         # Prefer measured grid flow for battery power estimation; setpoint-based math
         # can diverge from actual inverter behavior and misreport charge/discharge.
-        if s.grid_import_power_kw is not None and s.grid_export_power_kw is not None:
+        if s.battery_power_sensor_kw is not None:
+            battery_power_kw = float(s.battery_power_sensor_kw)
+            battery_power_source = "direct_battery_sensor"
+            effective_import_for_math = 0.0
+        elif s.grid_import_power_kw is not None and s.grid_export_power_kw is not None:
             measured_import = max(float(s.grid_import_power_kw), 0.0)
             measured_export = max(float(s.grid_export_power_kw), 0.0)
             battery_power_kw = s.pv_kw + measured_import - measured_export - s.load_kw
@@ -1178,6 +1191,7 @@ class SigEnergyOptimizer:
             "effective_import_for_math": effective_import_for_math,
             "battery_power_kw": battery_power_kw,
             "battery_power_source": battery_power_source,
+            "battery_power_sensor_kw": s.battery_power_sensor_kw,
             "ess_charge_limit": d.ess_charge_limit,
             "ess_discharge_limit": d.ess_discharge_limit,
             "holdoff_entry_floor": self._holdoff_entry_floor,

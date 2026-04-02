@@ -16,6 +16,7 @@ class SolarState:
     load_kw: float = 0.0
     grid_import_power_kw: Optional[float] = None
     grid_export_power_kw: Optional[float] = None
+    battery_power_sensor_kw: Optional[float] = None
     battery_soc: float = 0.0
     battery_capacity_kwh: float = 10.0
     available_discharge_energy_kwh: float = 0.0

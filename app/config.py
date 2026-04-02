@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     consumed_power_sensor: str = Field("sensor.sigen_plant_consumed_power", env="CONSUMED_POWER_SENSOR")
     grid_import_power_sensor: str = Field("sensor.sigen_plant_grid_import_power", env="GRID_IMPORT_POWER_SENSOR")
     grid_export_power_sensor: str = Field("sensor.sigen_plant_grid_export_power", env="GRID_EXPORT_POWER_SENSOR")
+    battery_power_sensor: str = Field("sensor.sigen_plant_battery_power", env="BATTERY_POWER_SENSOR")
+    battery_power_sensor_invert: bool = Field(False, env="BATTERY_POWER_SENSOR_INVERT")
     battery_soc_sensor: str = Field("sensor.sigen_plant_battery_state_of_charge", env="BATTERY_SOC_SENSOR")
     rated_capacity_sensor: str = Field("sensor.sigen_plant_rated_energy_capacity", env="RATED_CAPACITY_SENSOR")
     available_discharge_sensor: str = Field("sensor.sigen_plant_available_max_discharging_capacity", env="AVAILABLE_DISCHARGE_SENSOR")
