@@ -1360,9 +1360,9 @@ function initCharts() {
     const apxPower = document.getElementById('chartPower');
     const apxFlow = document.getElementById('chartFlow');
     const apxPrice = document.getElementById('chartPrice');
-    if (apxPower) { apxPower.style.visibility = 'hidden'; apxPower.style.pointerEvents = 'none'; apxPower.setAttribute('aria-hidden', 'true'); }
-    if (apxFlow) { apxFlow.style.visibility = 'hidden'; apxFlow.style.pointerEvents = 'none'; apxFlow.setAttribute('aria-hidden', 'true'); }
-    if (apxPrice) { apxPrice.style.visibility = 'hidden'; apxPrice.style.pointerEvents = 'none'; apxPrice.setAttribute('aria-hidden', 'true'); }
+    if (apxPower) { apxPower.style.display = 'none'; apxPower.setAttribute('aria-hidden', 'true'); }
+    if (apxFlow) { apxFlow.style.display = 'none'; apxFlow.setAttribute('aria-hidden', 'true'); }
+    if (apxPrice) { apxPrice.style.display = 'none'; apxPrice.setAttribute('aria-hidden', 'true'); }
     const matePower = document.getElementById('matePowerChart');
     const mateFlow = document.getElementById('mateFlowChart');
     const matePrice = document.getElementById('matePriceChart');
