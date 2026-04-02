@@ -1244,10 +1244,15 @@ class SigEnergyOptimizer:
         if not effective_ha_control:
             return
 
+        ems_mode_to_apply = MODE_MAX_SELF if d.morning_slow_charge_active else d.ems_mode
+
         # EMS mode
-        if s.current_ems_mode != d.ems_mode:
-            logger.info("EMS mode: %s → %s", s.current_ems_mode, d.ems_mode)
-            await ha.select_option(cfg.ems_mode_select, d.ems_mode)
+        if s.current_ems_mode != ems_mode_to_apply:
+            logger.info("EMS mode: %s → %s", s.current_ems_mode, ems_mode_to_apply)
+            ok_mode = await ha.select_option(cfg.ems_mode_select, ems_mode_to_apply)
+            if not ok_mode:
+                await _safe_fallback(f"failed setting EMS mode to {ems_mode_to_apply}")
+                return
 
         # Export limit
         near_zero = 0.011
