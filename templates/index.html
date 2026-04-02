@@ -171,7 +171,7 @@ select:focus,input:focus{border-color:#276749}
 .chart-sub{font-size:11px;color:#6b7f77;line-height:1.45;max-width:520px}
 .chart-now{font-size:11px;color:#5d6f67;text-align:right;max-width:52%;line-height:1.5;font-weight:600}
 .chart-frame{position:relative;border:1px solid #d7e6dd;border-radius:12px;padding:8px;background:linear-gradient(180deg,#f8fcfb 0%,#eff7f3 100%)}
-.mate-svg{position:absolute;left:8px;top:8px;right:8px;bottom:8px;width:calc(100% - 16px);height:calc(100% - 16px);display:none;border-radius:10px}
+.mate-svg{display:none;width:100%;border-radius:10px}
 .mate-svg.on{display:block}
 .chart-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
 .chart-note{font-size:11px;color:#718096;line-height:1.45}
@@ -501,7 +501,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           </div>
           <div class="chart-frame">
             <div id="chartPower" style="height:260px"></div>
-            <svg id="matePowerChart" class="mate-svg" viewBox="0 0 1000 260" preserveAspectRatio="none"></svg>
+            <svg id="matePowerChart" class="mate-svg" viewBox="0 0 1000 260" preserveAspectRatio="none" style="height:260px"></svg>
           </div>
           <div class="chart-foot">
             <div class="chart-note" id="powerChartNote">Hover to inspect exact values. The daylight band is aligned to Home Assistant sunrise and sunset.</div>
@@ -523,7 +523,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           </div>
           <div class="chart-frame">
             <div id="chartFlow" style="height:220px"></div>
-            <svg id="mateFlowChart" class="mate-svg" viewBox="0 0 1000 220" preserveAspectRatio="none"></svg>
+            <svg id="mateFlowChart" class="mate-svg" viewBox="0 0 1000 220" preserveAspectRatio="none" style="height:220px"></svg>
           </div>
           <div class="chart-foot">
             <div class="chart-note">Solid lines show measured flow only. Dashed lines are shown only when explicit forecast data is available.</div>
@@ -545,7 +545,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
           </div>
           <div class="chart-frame">
             <div id="chartPrice" style="height:230px"></div>
-            <svg id="matePriceChart" class="mate-svg" viewBox="0 0 1000 230" preserveAspectRatio="none"></svg>
+            <svg id="matePriceChart" class="mate-svg" viewBox="0 0 1000 230" preserveAspectRatio="none" style="height:230px"></svg>
           </div>
           <div class="chart-foot">
             <div class="chart-note">The zero line is emphasised so negative import periods and export spikes stand out immediately.</div>
@@ -1265,9 +1265,9 @@ function initCharts() {
     const apxPower = document.getElementById('chartPower');
     const apxFlow = document.getElementById('chartFlow');
     const apxPrice = document.getElementById('chartPrice');
-    if (apxPower) apxPower.style.display = 'none';
-    if (apxFlow) apxFlow.style.display = 'none';
-    if (apxPrice) apxPrice.style.display = 'none';
+    if (apxPower) { apxPower.style.visibility = 'hidden'; apxPower.style.pointerEvents = 'none'; apxPower.setAttribute('aria-hidden', 'true'); }
+    if (apxFlow) { apxFlow.style.visibility = 'hidden'; apxFlow.style.pointerEvents = 'none'; apxFlow.setAttribute('aria-hidden', 'true'); }
+    if (apxPrice) { apxPrice.style.visibility = 'hidden'; apxPrice.style.pointerEvents = 'none'; apxPrice.setAttribute('aria-hidden', 'true'); }
     const matePower = document.getElementById('matePowerChart');
     const mateFlow = document.getElementById('mateFlowChart');
     const matePrice = document.getElementById('matePriceChart');
