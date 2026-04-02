@@ -1331,8 +1331,9 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
     sunBand = `<rect x="${x1.toFixed(2)}" y="${m.top}" width="${Math.max(0, x2 - x1).toFixed(2)}" height="${plotH.toFixed(2)}" fill="${MATE_STYLE.daylightFill}" fill-opacity="${MATE_STYLE.daylightOpacity}" />`;
   }
 
-  const pvHist = pvForecastSeries.filter((p) => Number(p?.[0]) <= Date.now());
-  const pvFc = pvForecastSeries.filter((p) => Number(p?.[0]) > Date.now());
+  const nowMs = Date.now();
+  const pvHist = pvForecastSeries.filter((p) => Number(p?.[0]) <= nowMs);
+  const pvFc = pvForecastSeries.filter((p) => Number(p?.[0]) >= nowMs);
   const pvAreasHist = mateSplitPositive(pvHist, 0.01).map((seg) => mateArea(seg, xOf, yKw, m.top + plotH));
   const pvAreasFc = mateSplitPositive(pvFc, 0.01).map((seg) => mateArea(seg, xOf, yKw, m.top + plotH));
 
