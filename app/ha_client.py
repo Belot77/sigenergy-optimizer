@@ -163,7 +163,8 @@ class HAClient:
         return await self.call_service("number", "set_value", {"entity_id": entity_id, "value": round(value, 2)})
 
     async def select_option(self, entity_id: str, option: str) -> bool:
-        return await self.call_service("select", "select_option", {"entity_id": entity_id, "option": option})
+        domain = entity_id.split(".", 1)[0] if "." in entity_id else "select"
+        return await self.call_service(domain, "select_option", {"entity_id": entity_id, "option": option})
 
     async def turn_on(self, entity_id: str) -> bool:
         domain = entity_id.split(".")[0]

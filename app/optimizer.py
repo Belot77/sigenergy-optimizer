@@ -1226,7 +1226,13 @@ class SigEnergyOptimizer:
                 s.sigenergy_mode,
                 self._manual_mode_override,
             )
-            await ha.select_option(cfg.sigenergy_mode_select, self._manual_mode_override)
+            ok_restore = await ha.select_option(cfg.sigenergy_mode_select, self._manual_mode_override)
+            if not ok_restore:
+                logger.error(
+                    "Failed to restore mode selector %s to %s",
+                    cfg.sigenergy_mode_select,
+                    self._manual_mode_override,
+                )
             s.sigenergy_mode = self._manual_mode_override
             effective_mode = self._manual_mode_override
 
@@ -1343,7 +1349,11 @@ class SigEnergyOptimizer:
 
         async with self._control_lock:
             # Update the input_select in HA
-            await ha.select_option(cfg.sigenergy_mode_select, mode_label)
+            ok_mode_select = await ha.select_option(cfg.sigenergy_mode_select, mode_label)
+            if not ok_mode_select:
+                raise RuntimeError(
+                    f"Failed to set mode selector {cfg.sigenergy_mode_select} to '{mode_label}'"
+                )
             if mode_label == cfg.automated_option:
                 self._manual_mode_override = None
             else:
