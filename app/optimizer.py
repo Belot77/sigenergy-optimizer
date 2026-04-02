@@ -1211,6 +1211,14 @@ class SigEnergyOptimizer:
         cfg = self.cfg
         ha = self.ha
 
+        async def _safe_fallback(reason: str) -> None:
+            logger.error("Entering safe fallback: %s", reason)
+            await ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF)
+            await ha.set_number(cfg.grid_export_limit, 0.01)
+            await ha.set_number(cfg.grid_import_limit, 0.01)
+            if cfg.ess_max_discharging_limit:
+                await ha.set_number(cfg.ess_max_discharging_limit, 0.01)
+
         effective_mode = self._manual_mode_override or s.sigenergy_mode
         if self._manual_mode_override and s.sigenergy_mode != self._manual_mode_override:
             logger.warning(
@@ -1261,7 +1269,10 @@ class SigEnergyOptimizer:
         export_turning_on = s.current_export_limit <= near_zero and export_val > near_zero
         export_turning_off = s.current_export_limit > near_zero and export_val <= near_zero
         if abs(export_val - s.current_export_limit) >= cfg.min_change_threshold or export_turning_on or export_turning_off:
-            await ha.set_number(cfg.grid_export_limit, export_val)
+            ok_export = await ha.set_number(cfg.grid_export_limit, export_val)
+            if not ok_export:
+                await _safe_fallback(f"failed setting export limit to {export_val:.2f}kW")
+                return
 
         # Import limit
         import_val = 0.01 if d.import_limit == 0 else d.import_limit
@@ -1270,11 +1281,16 @@ class SigEnergyOptimizer:
         import_turning_on = s.current_import_limit <= near_zero and import_val > near_zero
         import_turning_off = s.current_import_limit > near_zero and import_val <= near_zero
         if abs(import_val - s.current_import_limit) >= cfg.min_change_threshold or import_turning_on or import_turning_off:
-            await ha.set_number(cfg.grid_import_limit, import_val)
+            ok_import = await ha.set_number(cfg.grid_import_limit, import_val)
+            if not ok_import:
+                await _safe_fallback(f"failed setting import limit to {import_val:.2f}kW")
+                return
 
         # ESS charge / discharge limits
         if cfg.ess_max_charging_limit:
-            await ha.set_number(cfg.ess_max_charging_limit, d.ess_charge_limit)
+            ok_chg = await ha.set_number(cfg.ess_max_charging_limit, d.ess_charge_limit)
+            if not ok_chg:
+                logger.error("Failed setting ESS charge limit to %.2fkW", d.ess_charge_limit)
         if cfg.ess_max_discharging_limit:
             if d.morning_slow_charge_active:
                 measured_export = max(0.0, float(s.grid_export_power_kw or 0.0))
@@ -1286,7 +1302,10 @@ class SigEnergyOptimizer:
                         pv_surplus_now,
                     )
             discharge_limit = 0.01 if d.morning_slow_charge_active else d.ess_discharge_limit
-            await ha.set_number(cfg.ess_max_discharging_limit, discharge_limit)
+            ok_dis = await ha.set_number(cfg.ess_max_discharging_limit, discharge_limit)
+            if not ok_dis and d.morning_slow_charge_active:
+                await _safe_fallback(f"failed setting ESS discharge limit to {discharge_limit:.2f}kW")
+                return
 
         # PV max power limit
         if abs(d.pv_max_power_limit - s.current_pv_max_power_limit) > 0.05:
