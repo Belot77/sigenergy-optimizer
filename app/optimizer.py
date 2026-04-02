@@ -1378,8 +1378,10 @@ class SigEnergyOptimizer:
 
             block = cfg.block_flow_limit_value
             pv_max = cfg.pv_max_power_value
-            ess_charge = cfg.ess_charge_limit_value
-            ess_discharge = cfg.ess_discharge_limit_value
+            # In manual modes, release any temporary optimizer caps (e.g. slow-charge 3kW)
+            # and restore ESS limits to the device-rated caps.
+            ess_charge = import_cap if import_cap > 0 else cfg.ess_charge_limit_value
+            ess_discharge = export_cap if export_cap > 0 else cfg.ess_discharge_limit_value
 
             if mode_label == cfg.full_export_option:
                 await ha.select_option(cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)
