@@ -857,6 +857,23 @@ function parseCurvePoints(points) {
     .sort((a, b) => a[0] - b[0]);
 }
 
+function mergeSeriesByTimestamp(primary, secondary) {
+  const merged = new Map();
+  for (const [t, v] of (Array.isArray(primary) ? primary : [])) {
+    merged.set(Number(t), [Number(t), v]);
+  }
+  for (const [t, v] of (Array.isArray(secondary) ? secondary : [])) {
+    merged.set(Number(t), [Number(t), v]);
+  }
+  return Array.from(merged.values()).sort((a, b) => a[0] - b[0]);
+}
+
+function buildPvForecastSeries(nowMs) {
+  const pvForecastHistory = trimFuture(histPow.map(x => [x.t, x.pvForecast]), nowMs);
+  const pvForecastFuture = trimPast(parseCurvePoints(S?.solar_forecast_curve), nowMs);
+  return mergeSeriesByTimestamp(pvForecastHistory, pvForecastFuture);
+}
+
 function buildSeriesAnnotation(points, seriesName, color, formatter, offsetY=0) {
   if (!Array.isArray(points) || !points.length) return null;
   let x = null;
@@ -1776,7 +1793,7 @@ function refreshCharts() {
   const batterySeries = trimFuture(histPow.map(x=>[x.t,x.battery]), nowMs);
   const minSocSeries = trimFuture(histPow.map(x=>[x.t,x.minSoc]), nowMs);
   const pvSeries = trimFuture(histPow.map(x=>[x.t,x.pv]), nowMs);
-  const pvForecastSeries = trimFuture(histPow.map(x=>[x.t,x.pvForecast]), nowMs);
+  const pvForecastSeries = buildPvForecastSeries(nowMs);
   const gridImportSeries = trimFuture(histPow.map(x=>[x.t,x.imp]), nowMs);
   const gridExportSeries = trimFuture(histPow.map(x=>[x.t,x.exp]), nowMs);
   const loadSeries = trimFuture(histPow.map(x=>[x.t,x.load]), nowMs);
@@ -1790,7 +1807,7 @@ function refreshCharts() {
   applyPowerChartMode(powerSeries, { batterySeries, minSocSeries, pvSeries, pvForecastSeries, loadSeries }, false);
   setPowerChartNarrative(false);
 
-  const flowPvForecastSeries = trimFuture(histPow.map(x=>[x.t,x.pvForecast]), nowMs);
+  const flowPvForecastSeries = pvForecastSeries;
   flowChart.updateSeries([
     {name:'Grid import', data: gridImportSeries},
     {name:'Grid export', data: gridExportSeries},

@@ -592,6 +592,11 @@ async def get_status(request: Request) -> dict[str, Any]:
             cfg.price_forecast_time_key,
             cfg.feedin_forecast_value_key,
         ),
+        "solar_forecast_curve": _serialize_forecast_curve(
+            s.solcast_detailed if s else [],
+            "period_start",
+            "pv_estimate",
+        ),
         "demand_window": s.demand_window_active if s else None,
         "price_spike": s.price_spike_active if s else None,
         "ha_control_enabled": s.ha_control_enabled if s else None,
