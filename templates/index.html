@@ -169,7 +169,7 @@ select:focus,input:focus{border-color:#276749}
 .chart-title-wrap{display:flex;flex-direction:column;gap:4px;min-width:0}
 .chart-title{font-size:13px;font-weight:700;color:#1f3b2f;letter-spacing:.01em}
 .chart-sub{font-size:11px;color:#6b7f77;line-height:1.45;max-width:520px}
-.chart-now{font-size:10px;color:#5d6f67;text-align:right;line-height:1.25;font-weight:600;white-space:nowrap;overflow:visible;text-overflow:clip;justify-self:end;max-width:100%}
+.chart-now{font-size:10.5px;color:#5d6f67;text-align:right;line-height:1.35;font-weight:600;white-space:normal;overflow-wrap:anywhere;justify-self:end;max-width:100%}
 .chart-frame{position:relative;border:1px solid #d7e6dd;border-radius:12px;padding:8px;background:linear-gradient(180deg,#f8fcfb 0%,#eff7f3 100%)}
 .mate-svg{display:none;width:100%;border-radius:10px}
 .mate-svg.on{display:block}
@@ -795,6 +795,42 @@ function trimFuture(points, cutoffMs = Date.now()) {
 
 function trimPast(points, cutoffMs = Date.now()) {
   return (Array.isArray(points) ? points : []).map(([t, value]) => [t, t >= cutoffMs ? value : null]);
+}
+
+function toFinitePoints(points) {
+  return (Array.isArray(points) ? points : [])
+    .map((p) => [Number(p?.[0]), Number(p?.[1])])
+    .filter(([t, v]) => Number.isFinite(t) && Number.isFinite(v))
+    .sort((a, b) => a[0] - b[0]);
+}
+
+function seriesStats(points, nowMs = Date.now()) {
+  const clean = toFinitePoints(points);
+  const hist = clean.filter(([t]) => t <= nowMs).map(([, v]) => v);
+  const forecast = clean.filter(([t]) => t > nowMs).map(([, v]) => v);
+  return {
+    histHigh: hist.length ? Math.max(...hist) : null,
+    histLow: hist.length ? Math.min(...hist) : null,
+    current: hist.length ? hist[hist.length - 1] : null,
+    forecastHigh: forecast.length ? Math.max(...forecast) : null,
+    forecastLow: forecast.length ? Math.min(...forecast) : null,
+  };
+}
+
+function fmtPctStat(v) {
+  return Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}%` : 'n/a';
+}
+
+function fmtKwStat(v) {
+  return Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}kW` : 'n/a';
+}
+
+function fmtPriceStat(v) {
+  return Number.isFinite(Number(v)) ? `${(Number(v) * 100).toFixed(1)}c/kWh` : 'n/a';
+}
+
+function metricSummary(label, histHigh, histLow, current, fcHigh, fcLow, formatter) {
+  return `${label}: Hist Hi ${formatter(histHigh)}, Hist Lo ${formatter(histLow)}, Current ${formatter(current)}, Fcst Hi ${formatter(fcHigh)}, Fcst Lo ${formatter(fcLow)}`;
 }
 
 function lastSeriesValue(opts) {
@@ -1957,14 +1993,97 @@ function updateOverview() {
       staleEl.textContent = `Live data is stale (${Math.round(age)}s old). Waiting for fresh status from Home Assistant...`;
     }
   }
-  // Chart now labels
-  document.getElementById('nowPower').textContent = simActive && simPreview
-    ? `Sim ${PROFILE_META[simPreview.profile]?.label || 'Profile'} | Bat ${fc(s.battery_soc,1)}% -> ${fc(simPreview.projectedBattery,1)}%, Imp ${fc(simPreview.importLimit,1)}kW, Exp ${fc(simPreview.exportLimit,1)}kW`
-    : `Now: Bat ${fc(s.battery_soc,1)}%, Min ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Fcst ${fc(s.solar_power_now_kw,1)}kW`;
-  document.getElementById('nowPrice').textContent =
-    `Now: Imp ${fcc(s.current_price)}/kWh, FiT ${fcc(s.feedin_price)}/kWh, PV ${fc(s.forecast_today,1)}kWh`;
-  document.getElementById('nowFlow').textContent =
-    `Now: Imp ${fc(s.grid_import_power_kw,1)}kW, Exp ${fc(s.grid_export_power_kw,1)}kW, Load ${fc(s.load_kw,1)}kW`;
+  // Chart now labels (descriptive historical/current/forecast summaries)
+  const nowMs = Date.now();
+  const batteryPoints = histPow.map((x) => [x.t, x.battery]);
+  const pvPoints = histPow.map((x) => [x.t, x.pv]);
+  const importPoints = histPow.map((x) => [x.t, x.imp]);
+  const exportPoints = histPow.map((x) => [x.t, x.exp]);
+  const importPricePoints = histPri.map((x) => [x.t, x.imp]);
+  const feedinPricePoints = histPri.map((x) => [x.t, x.fit]);
+  const pvForecastPoints = parseCurvePoints(S?.solar_forecast_curve);
+  const importPriceForecastPoints = parseCurvePoints(S?.price_forecast_curve);
+  const feedinPriceForecastPoints = parseCurvePoints(S?.feedin_forecast_curve);
+
+  const batteryStats = seriesStats(batteryPoints, nowMs);
+  const pvStats = seriesStats(pvPoints, nowMs);
+  const pvForecastStats = seriesStats(pvForecastPoints, nowMs);
+  const projectedBattery = simActive && simPreview && Number.isFinite(Number(simPreview.projectedBattery))
+    ? Number(simPreview.projectedBattery)
+    : null;
+  const batteryForecastHigh = Number.isFinite(projectedBattery) ? projectedBattery : batteryStats.forecastHigh;
+  const batteryForecastLow = Number.isFinite(projectedBattery) ? projectedBattery : batteryStats.forecastLow;
+
+  const importFlowStats = seriesStats(importPoints, nowMs);
+  const exportFlowStats = seriesStats(exportPoints, nowMs);
+
+  const importPriceStats = seriesStats(importPricePoints, nowMs);
+  const importPriceForecastStats = seriesStats(importPriceForecastPoints, nowMs);
+  const feedinPriceStats = seriesStats(feedinPricePoints, nowMs);
+  const feedinPriceForecastStats = seriesStats(feedinPriceForecastPoints, nowMs);
+
+  document.getElementById('nowPower').textContent = [
+    metricSummary(
+      'Battery %',
+      batteryStats.histHigh,
+      batteryStats.histLow,
+      batteryStats.current,
+      batteryForecastHigh,
+      batteryForecastLow,
+      fmtPctStat,
+    ),
+    metricSummary(
+      'PV Output',
+      pvStats.histHigh,
+      pvStats.histLow,
+      pvStats.current,
+      pvForecastStats.forecastHigh,
+      pvForecastStats.forecastLow,
+      fmtKwStat,
+    ),
+  ].join(' | ');
+
+  document.getElementById('nowFlow').textContent = [
+    metricSummary(
+      'Import',
+      importFlowStats.histHigh,
+      importFlowStats.histLow,
+      importFlowStats.current,
+      importFlowStats.forecastHigh,
+      importFlowStats.forecastLow,
+      fmtKwStat,
+    ),
+    metricSummary(
+      'Export',
+      exportFlowStats.histHigh,
+      exportFlowStats.histLow,
+      exportFlowStats.current,
+      exportFlowStats.forecastHigh,
+      exportFlowStats.forecastLow,
+      fmtKwStat,
+    ),
+  ].join(' | ');
+
+  document.getElementById('nowPrice').textContent = [
+    metricSummary(
+      'Import Price',
+      importPriceStats.histHigh,
+      importPriceStats.histLow,
+      importPriceStats.current,
+      importPriceForecastStats.forecastHigh,
+      importPriceForecastStats.forecastLow,
+      fmtPriceStat,
+    ),
+    metricSummary(
+      'Feed-in Price',
+      feedinPriceStats.histHigh,
+      feedinPriceStats.histLow,
+      feedinPriceStats.current,
+      feedinPriceForecastStats.forecastHigh,
+      feedinPriceForecastStats.forecastLow,
+      fmtPriceStat,
+    ),
+  ].join(' | ');
 
   // Cycle timing
   setTextWithFlash('cycleStart', tsISO(s.last_cycle_started));
