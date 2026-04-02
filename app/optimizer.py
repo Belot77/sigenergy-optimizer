@@ -356,6 +356,25 @@ class SigEnergyOptimizer:
             state = await self._read_state()
             self._last_state = state
             decision = self._decide(state)
+            effective_mode = self._manual_mode_override or state.sigenergy_mode
+            if effective_mode not in {self.cfg.automated_option, ""}:
+                decision.ems_mode = state.current_ems_mode
+                decision.export_limit = state.current_export_limit
+                decision.import_limit = state.current_import_limit
+                decision.pv_max_power_limit = state.current_pv_max_power_limit
+                decision.ess_charge_limit = (
+                    state.current_ess_charge_limit
+                    if state.current_ess_charge_limit is not None
+                    else decision.ess_charge_limit
+                )
+                decision.ess_discharge_limit = (
+                    state.current_ess_discharge_limit
+                    if state.current_ess_discharge_limit is not None
+                    else decision.ess_discharge_limit
+                )
+                decision.export_reason = f"Manual mode active ({effective_mode})"
+                decision.import_reason = "manual"
+                decision.outcome_reason = f"Manual mode active ({effective_mode}); optimizer writes paused"
             self._last_decision = decision
             await self._apply(state, decision)
             self._record_automation_audit(state, decision, prev_decision)
@@ -605,6 +624,10 @@ class SigEnergyOptimizer:
             cfg.last_export_notification, cfg.last_import_notification,
             cfg.sigenergy_mode_select,
         ]
+        if cfg.ess_max_charging_limit:
+            entity_ids.append(cfg.ess_max_charging_limit)
+        if cfg.ess_max_discharging_limit:
+            entity_ids.append(cfg.ess_max_discharging_limit)
         if cfg.battery_power_sensor:
             entity_ids.append(cfg.battery_power_sensor)
         if cfg.grid_import_power_sensor:
@@ -687,6 +710,10 @@ class SigEnergyOptimizer:
         s.current_export_limit = _fv(cfg.grid_export_limit)
         s.current_import_limit = _fv(cfg.grid_import_limit)
         s.current_pv_max_power_limit = _fv(cfg.pv_max_power_limit)
+        if cfg.ess_max_charging_limit:
+            s.current_ess_charge_limit = _fv(cfg.ess_max_charging_limit)
+        if cfg.ess_max_discharging_limit:
+            s.current_ess_discharge_limit = _fv(cfg.ess_max_discharging_limit)
         s.current_ems_mode = _sv(cfg.ems_mode_select, MODE_MAX_SELF)
         s.ha_control_enabled = _bv(cfg.ha_control_switch)
 
@@ -1263,10 +1290,6 @@ class SigEnergyOptimizer:
 
         # If in a manual mode, skip optimizer actions
         if effective_mode not in {cfg.automated_option, ""}:
-            if effective_mode != cfg.manual_option:
-                targets = self._manual_mode_targets(effective_mode, s)
-                if targets:
-                    await self._apply_manual_mode_targets(targets)
             logger.debug("Manual mode active (%s), skipping apply", effective_mode)
             return
         effective_ha_control = s.ha_control_enabled or d.needs_ha_control_switch
