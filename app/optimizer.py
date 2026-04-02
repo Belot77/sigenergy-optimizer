@@ -1263,6 +1263,10 @@ class SigEnergyOptimizer:
 
         # If in a manual mode, skip optimizer actions
         if effective_mode not in {cfg.automated_option, ""}:
+            if effective_mode != cfg.manual_option:
+                targets = self._manual_mode_targets(effective_mode, s)
+                if targets:
+                    await self._apply_manual_mode_targets(targets)
             logger.debug("Manual mode active (%s), skipping apply", effective_mode)
             return
         effective_ha_control = s.ha_control_enabled or d.needs_ha_control_switch
@@ -1363,6 +1367,85 @@ class SigEnergyOptimizer:
             d.outcome_reason[:80]
         )
 
+    def _manual_mode_targets(self, mode_label: str, state: Optional[SolarState] = None) -> Optional[dict[str, float | str]]:
+        cfg = self.cfg
+        if mode_label in {cfg.automated_option, cfg.manual_option, ""}:
+            return None
+
+        import_cap, export_cap = self.get_power_caps_kw(state)
+        block = cfg.block_flow_limit_value
+        pv_max = cfg.pv_max_power_value
+
+        # Prevent temporary low control limits (e.g. 3kW slow-charge caps) from being
+        # treated as restored manual caps.
+        ess_charge = max(import_cap, cfg.ess_charge_limit_value)
+        ess_discharge = max(export_cap, cfg.ess_discharge_limit_value)
+
+        if mode_label == cfg.full_export_option:
+            return {
+                "ems_mode": MODE_CMD_DISCHARGE_PV,
+                "grid_export_limit": export_cap,
+                "grid_import_limit": block,
+                "pv_max_power_limit": pv_max,
+                "ess_charge_limit": ess_charge,
+                "ess_discharge_limit": ess_discharge,
+            }
+        if mode_label == cfg.full_import_option:
+            return {
+                "ems_mode": MODE_CMD_CHARGE_GRID,
+                "grid_export_limit": block,
+                "grid_import_limit": import_cap,
+                "pv_max_power_limit": pv_max,
+                "ess_charge_limit": ess_charge,
+                "ess_discharge_limit": ess_discharge,
+            }
+        if mode_label == cfg.full_import_pv_option:
+            return {
+                "ems_mode": MODE_CMD_CHARGE_PV,
+                "grid_export_limit": block,
+                "grid_import_limit": import_cap,
+                "pv_max_power_limit": pv_max,
+                "ess_charge_limit": ess_charge,
+                "ess_discharge_limit": ess_discharge,
+            }
+        if mode_label == cfg.block_flow_option:
+            return {
+                "ems_mode": MODE_MAX_SELF,
+                "grid_export_limit": block,
+                "grid_import_limit": block,
+                "pv_max_power_limit": pv_max,
+                "ess_charge_limit": ess_charge,
+                "ess_discharge_limit": ess_discharge,
+            }
+        return None
+
+    async def _apply_manual_mode_targets(self, targets: dict[str, float | str]) -> None:
+        cfg = self.cfg
+        ha = self.ha
+        ok_mode = await ha.select_option(cfg.ems_mode_select, str(targets["ems_mode"]))
+        ok_exp = await ha.set_number(cfg.grid_export_limit, float(targets["grid_export_limit"]))
+        ok_imp = await ha.set_number(cfg.grid_import_limit, float(targets["grid_import_limit"]))
+        ok_pv = await ha.set_number(cfg.pv_max_power_limit, float(targets["pv_max_power_limit"]))
+
+        ok_chg = True
+        if cfg.ess_max_charging_limit:
+            ok_chg = await ha.set_number(cfg.ess_max_charging_limit, float(targets["ess_charge_limit"]))
+
+        ok_dis = True
+        if cfg.ess_max_discharging_limit:
+            ok_dis = await ha.set_number(cfg.ess_max_discharging_limit, float(targets["ess_discharge_limit"]))
+
+        if not all([ok_mode, ok_exp, ok_imp, ok_pv, ok_chg, ok_dis]):
+            logger.error(
+                "Manual mode target apply had failures: mode=%s exp=%s imp=%s pv=%s chg=%s dis=%s",
+                ok_mode,
+                ok_exp,
+                ok_imp,
+                ok_pv,
+                ok_chg,
+                ok_dis,
+            )
+
     # ------------------------------------------------------------------
     # 4. Manual mode application (mirrors sigenergy_manual_control.yaml)
     # ------------------------------------------------------------------
@@ -1397,39 +1480,9 @@ class SigEnergyOptimizer:
 
             if mode_label == cfg.manual_option:
                 return  # just disables optimizer, no limit changes
-
-            # Resolve rated limits from live state, then last-known-good cache.
-            import_cap, export_cap = self.get_power_caps_kw(self._last_state)
-
-            block = cfg.block_flow_limit_value
-            pv_max = cfg.pv_max_power_value
-            # In manual modes, release any temporary optimizer caps (e.g. slow-charge 3kW)
-            # and restore ESS limits to the device-rated caps.
-            ess_charge = import_cap if import_cap > 0 else cfg.ess_charge_limit_value
-            ess_discharge = export_cap if export_cap > 0 else cfg.ess_discharge_limit_value
-
-            if mode_label == cfg.full_export_option:
-                await ha.select_option(cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)
-                await ha.set_number(cfg.grid_export_limit, export_cap)
-                await ha.set_number(cfg.grid_import_limit, block)
-            elif mode_label == cfg.full_import_option:
-                await ha.select_option(cfg.ems_mode_select, MODE_CMD_CHARGE_GRID)
-                await ha.set_number(cfg.grid_export_limit, block)
-                await ha.set_number(cfg.grid_import_limit, import_cap)
-            elif mode_label == cfg.full_import_pv_option:
-                await ha.select_option(cfg.ems_mode_select, MODE_CMD_CHARGE_PV)
-                await ha.set_number(cfg.grid_export_limit, block)
-                await ha.set_number(cfg.grid_import_limit, import_cap)
-            elif mode_label == cfg.block_flow_option:
-                await ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF)
-                await ha.set_number(cfg.grid_export_limit, block)
-                await ha.set_number(cfg.grid_import_limit, block)
-
-            if cfg.ess_max_charging_limit:
-                await ha.set_number(cfg.ess_max_charging_limit, ess_charge)
-            if cfg.ess_max_discharging_limit:
-                await ha.set_number(cfg.ess_max_discharging_limit, ess_discharge)
-            await ha.set_number(cfg.pv_max_power_limit, pv_max)
+            targets = self._manual_mode_targets(mode_label, self._last_state)
+            if targets:
+                await self._apply_manual_mode_targets(targets)
 
     # ------------------------------------------------------------------
     # Notification helpers
