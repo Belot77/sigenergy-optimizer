@@ -1885,11 +1885,19 @@ class SigEnergyOptimizer:
                     and not battery_assist_detected):
                 raw_limit = max(raw_limit, current_export + probe_step)
 
+            # Never allow probe logic to exceed true PV-leftover availability.
+            raw_limit = min(raw_limit, available)
+
             raw_limit = min(raw_limit, s.ess_max_discharge_kw)
             if raw_limit <= 0:
                 return 0.0
             if raw_limit < cfg.min_grid_transfer_kw:
                 raw_limit = cfg.min_grid_transfer_kw
+
+            # If current setpoint is materially above PV-leftover cap, clamp immediately.
+            # This avoids multi-cycle ramp-down while battery is silently supporting export.
+            if current_export > (available + 0.2):
+                return round(raw_limit, 1)
 
             if battery_assist_detected:
                 return round(raw_limit, 1)
