@@ -1131,24 +1131,46 @@ function mateHistoricExtrema(points, nowMs = Date.now()) {
   return { high, low };
 }
 
-function mateExtremaLabels(extrema, xOf, yOf, color, formatter, bounds, highDy = -8, lowDy = 14) {
+function mateValueBadge(x, y, text, color, bounds, options = {}) {
   const m = bounds?.m;
   const width = Number(bounds?.width);
   const plotH = Number(bounds?.plotH);
   if (!m || !Number.isFinite(width) || !Number.isFinite(plotH)) return '';
-  const labelMinY = m.top + 12;
-  const labelMaxY = m.top + plotH - 6;
-  const labelMaxX = width - m.right - 54;
+  const dx = Number(options?.dx ?? 6);
+  const dy = Number(options?.dy ?? -9);
+  const fontSize = Number(options?.fontSize ?? 10.5);
+  const padX = Number(options?.padX ?? 4);
+  const padY = Number(options?.padY ?? 2);
+  const radius = Number(options?.radius ?? 3);
+  const txt = String(text ?? '');
+  if (!txt) return '';
+
+  const estWidth = txt.length * (fontSize * 0.58) + (padX * 2);
+  const estHeight = fontSize + (padY * 2);
+
+  const minTextX = m.left + padX + 2;
+  const maxTextX = width - m.right - estWidth + padX - 2;
+  const minTextY = m.top + fontSize + padY + 1;
+  const maxTextY = m.top + plotH - padY - 2;
+
+  const textX = Math.max(minTextX, Math.min(maxTextX, x + dx));
+  const textY = Math.max(minTextY, Math.min(maxTextY, y + dy));
+  const rectX = textX - padX;
+  const rectY = textY - fontSize - padY + 1;
+
+  return `<rect x="${rectX.toFixed(2)}" y="${rectY.toFixed(2)}" width="${estWidth.toFixed(2)}" height="${estHeight.toFixed(2)}" rx="${radius.toFixed(2)}" ry="${radius.toFixed(2)}" fill="${color}" />`
+    + `<text x="${textX.toFixed(2)}" y="${textY.toFixed(2)}" font-size="${fontSize.toFixed(1)}" fill="#ffffff" font-weight="700">${txt}</text>`;
+}
+
+function mateExtremaLabels(extrema, xOf, yOf, color, formatter, bounds, highDy = -8, lowDy = 14) {
   const parts = [];
 
   const addLabel = (pt, dy) => {
     if (!pt) return;
     const px = xOf(pt[0]);
     const py = yOf(pt[1]);
-    const lx = Math.max(m.left + 4, Math.min(labelMaxX, px + 6));
-    const ly = Math.max(labelMinY, Math.min(labelMaxY, py + dy));
     parts.push(`<circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="3.5" fill="${color}" stroke="#fff" stroke-width="1.1" />`);
-    parts.push(`<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" font-size="10.5" fill="${color}">${formatter(pt[1])}</text>`);
+    parts.push(mateValueBadge(px, py, formatter(pt[1]), color, bounds, { dx: 6, dy }));
   };
 
   const high = extrema?.high || null;
@@ -1393,13 +1415,12 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
   const batteryLabelDy = markerOverlap ? -12 : -8;
   const pvLabelDx = 8;
   const pvLabelDy = markerOverlap ? 22 : 14;
-  const labelMinY = m.top + 12;
-  const labelMaxY = m.top + plotH - 6;
-  const labelMaxX = width - m.right - 56;
-  const batteryLabelX = batteryNow ? Math.max(m.left + 4, Math.min(labelMaxX, batteryNowX + batteryLabelDx)) : NaN;
-  const batteryLabelY = batteryNow ? Math.max(labelMinY, Math.min(labelMaxY, batteryNowY + batteryLabelDy)) : NaN;
-  const pvLabelX = pvNow ? Math.max(m.left + 4, Math.min(labelMaxX, pvNowX + pvLabelDx)) : NaN;
-  const pvLabelY = pvNow ? Math.max(labelMinY, Math.min(labelMaxY, pvNowY + pvLabelDy)) : NaN;
+  const batteryNowBadge = batteryNow
+    ? mateValueBadge(batteryNowX, batteryNowY, `${batteryNow[1].toFixed(1)}%`, MATE_STYLE.power.battery, { m, width, plotH }, { dx: batteryLabelDx - 2, dy: batteryLabelDy })
+    : '';
+  const pvNowBadge = pvNow
+    ? mateValueBadge(pvNowX, pvNowY, `${pvNow[1].toFixed(1)}kW`, MATE_STYLE.power.pv, { m, width, plotH }, { dx: pvLabelDx - 2, dy: pvLabelDy })
+    : '';
   const batteryHistExtrema = mateHistoricExtrema(batterySeries, nowMs);
   const pvHistExtrema = mateHistoricExtrema(pvSeries, nowMs);
   const batteryExtremaLabels = mateExtremaLabels(
@@ -1439,9 +1460,9 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
     <circle id="matePowerHoverDotPv" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.power.pv}" stroke="#fff" stroke-width="1.2" style="display:none" />
     <circle id="matePowerHoverDotLoad" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.power.load}" stroke="#fff" stroke-width="1.2" style="display:none" />
     ${batteryNow ? `<circle cx="${batteryNowX.toFixed(2)}" cy="${batteryNowY.toFixed(2)}" r="4" fill="${MATE_STYLE.power.battery}" stroke="#fff" stroke-width="1.2" />
-      <text x="${batteryLabelX.toFixed(2)}" y="${batteryLabelY.toFixed(2)}" font-size="11" fill="${MATE_STYLE.power.battery}">${batteryNow[1].toFixed(1)}%</text>` : ''}
+      ${batteryNowBadge}` : ''}
     ${pvNow ? `<circle cx="${pvNowX.toFixed(2)}" cy="${pvNowY.toFixed(2)}" r="4" fill="${MATE_STYLE.power.pv}" stroke="#fff" stroke-width="1.2" />
-      <text x="${pvLabelX.toFixed(2)}" y="${pvLabelY.toFixed(2)}" font-size="11" fill="#b45309">${pvNow[1].toFixed(2)}kW</text>` : ''}
+      ${pvNowBadge}` : ''}
   `;
 
   matePowerState = {
@@ -1505,8 +1526,12 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
   const nowX = xOf(nowMs);
   const impNow = mateLastFinite(gridImportSeries);
   const expNow = mateLastFinite(gridExportSeries);
-  const showImpLabel = impNow && Math.abs(impNow[1]) >= 0.10;
-  const showExpLabel = expNow && Math.abs(expNow[1]) >= 0.10;
+  const impNowBadge = impNow
+    ? mateValueBadge(xOf(impNow[0]), yOf(impNow[1]), `${impNow[1].toFixed(1)}kW`, MATE_STYLE.flow.import, { m, width, plotH }, { dx: 5, dy: -8 })
+    : '';
+  const expNowBadge = expNow
+    ? mateValueBadge(xOf(expNow[0]), yOf(expNow[1]), `${expNow[1].toFixed(1)}kW`, MATE_STYLE.flow.export, { m, width, plotH }, { dx: 5, dy: 14 })
+    : '';
   const importHistExtrema = mateHistoricExtrema(gridImportSeries, nowMs);
   const exportHistExtrema = mateHistoricExtrema(gridExportSeries, nowMs);
   const importExtremaLabels = mateExtremaLabels(
@@ -1543,9 +1568,9 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
     <circle id="mateFlowHoverDotExport" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.flow.export}" stroke="#fff" stroke-width="1.2" style="display:none" />
     <circle id="mateFlowHoverDotPvForecast" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.flow.pvForecast}" stroke="#fff" stroke-width="1.2" style="display:none" />
     ${impNow ? `<circle cx="${xOf(impNow[0]).toFixed(2)}" cy="${yOf(impNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.flow.import}" stroke="#fff" stroke-width="1.2" />` : ''}
-    ${showImpLabel ? `<text x="${(xOf(impNow[0]) + 8).toFixed(2)}" y="${(yOf(impNow[1]) - 8).toFixed(2)}" font-size="11" fill="#7f1d1d">${impNow[1].toFixed(2)}kW</text>` : ''}
+    ${impNow ? impNowBadge : ''}
     ${expNow ? `<circle cx="${xOf(expNow[0]).toFixed(2)}" cy="${yOf(expNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.flow.export}" stroke="#fff" stroke-width="1.2" />` : ''}
-    ${showExpLabel ? `<text x="${(xOf(expNow[0]) + 8).toFixed(2)}" y="${(yOf(expNow[1]) + 14).toFixed(2)}" font-size="11" fill="#065f46">${expNow[1].toFixed(2)}kW</text>` : ''}
+    ${expNow ? expNowBadge : ''}
   `;
 
   mateFlowState = {
@@ -1624,6 +1649,12 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
   const nowX = xOf(nowMs);
   const impNow = mateLastFinite(importPriceSeries);
   const fitNow = mateLastFinite(feedinPriceSeries);
+  const impNowBadge = impNow
+    ? mateValueBadge(xOf(impNow[0]), yOf(impNow[1]), `${(impNow[1] * 100).toFixed(1)}c`, MATE_STYLE.price.import, { m, width, plotH }, { dx: 5, dy: -8 })
+    : '';
+  const fitNowBadge = fitNow
+    ? mateValueBadge(xOf(fitNow[0]), yOf(fitNow[1]), `${(fitNow[1] * 100).toFixed(1)}c`, MATE_STYLE.price.feedin, { m, width, plotH }, { dx: 5, dy: 14 })
+    : '';
   const importPriceExtrema = mateHistoricExtrema(importPriceSeries, nowMs);
   const feedinPriceExtrema = mateHistoricExtrema(feedinPriceSeries, nowMs);
   const importPriceExtremaLabels = mateExtremaLabels(
@@ -1662,9 +1693,9 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
     <circle id="matePriceHoverDotImport" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.price.import}" stroke="#fff" stroke-width="1.2" style="display:none" />
     <circle id="matePriceHoverDotFeedin" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.price.feedin}" stroke="#fff" stroke-width="1.2" style="display:none" />
     ${impNow ? `<circle cx="${xOf(impNow[0]).toFixed(2)}" cy="${yOf(impNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.price.import}" stroke="#fff" stroke-width="1.2" />
-      <text x="${(xOf(impNow[0]) + 8).toFixed(2)}" y="${(yOf(impNow[1]) - 8).toFixed(2)}" font-size="11" fill="#7f1d1d">${(impNow[1] * 100).toFixed(1)}c</text>` : ''}
+      ${impNowBadge}` : ''}
     ${fitNow ? `<circle cx="${xOf(fitNow[0]).toFixed(2)}" cy="${yOf(fitNow[1]).toFixed(2)}" r="4" fill="${MATE_STYLE.price.feedin}" stroke="#fff" stroke-width="1.2" />
-      <text x="${(xOf(fitNow[0]) + 8).toFixed(2)}" y="${(yOf(fitNow[1]) + 14).toFixed(2)}" font-size="11" fill="#065f46">${(fitNow[1] * 100).toFixed(1)}c</text>` : ''}
+      ${fitNowBadge}` : ''}
   `;
 
   matePriceState = {
