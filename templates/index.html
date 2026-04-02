@@ -860,17 +860,26 @@ function parseCurvePoints(points) {
 function mergeSeriesByTimestamp(primary, secondary) {
   const merged = new Map();
   for (const [t, v] of (Array.isArray(primary) ? primary : [])) {
-    merged.set(Number(t), [Number(t), v]);
+    const ts = Number(t);
+    const value = Number(v);
+    if (!Number.isFinite(ts) || !Number.isFinite(value)) continue;
+    merged.set(ts, [ts, value]);
   }
   for (const [t, v] of (Array.isArray(secondary) ? secondary : [])) {
-    merged.set(Number(t), [Number(t), v]);
+    const ts = Number(t);
+    const value = Number(v);
+    if (!Number.isFinite(ts) || !Number.isFinite(value)) continue;
+    merged.set(ts, [ts, value]);
   }
   return Array.from(merged.values()).sort((a, b) => a[0] - b[0]);
 }
 
 function buildPvForecastSeries(nowMs) {
-  const pvForecastHistory = trimFuture(histPow.map(x => [x.t, x.pvForecast]), nowMs);
-  const pvForecastFuture = trimPast(parseCurvePoints(S?.solar_forecast_curve), nowMs);
+  const pvForecastHistory = histPow
+    .filter((x) => Number.isFinite(Number(x?.t)) && Number(x.t) <= nowMs && Number.isFinite(Number(x?.pvForecast)))
+    .map((x) => [Number(x.t), Number(x.pvForecast)]);
+  const pvForecastFuture = parseCurvePoints(S?.solar_forecast_curve)
+    .filter(([t, v]) => Number.isFinite(Number(t)) && Number(t) >= nowMs && Number.isFinite(Number(v)));
   return mergeSeriesByTimestamp(pvForecastHistory, pvForecastFuture);
 }
 
