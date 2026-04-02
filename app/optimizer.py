@@ -83,6 +83,7 @@ class SigEnergyOptimizer:
         self._last_cycle_error: str = ""
         self._notif_export_active: Optional[bool] = None
         self._last_export_start_notice_at: Optional[datetime] = None
+        self._manual_mode_override: Optional[str] = None
         tz_name = os.environ.get("TZ", "Australia/Adelaide")
         try:
             self._tz = ZoneInfo(tz_name)
@@ -504,7 +505,8 @@ class SigEnergyOptimizer:
 
     def _record_automation_audit(self, s: SolarState, d: Decision, prev: Optional[Decision]) -> None:
         cfg = self.cfg
-        if s.sigenergy_mode not in {cfg.automated_option, ""}:
+        effective_mode = self._manual_mode_override or s.sigenergy_mode
+        if effective_mode not in {cfg.automated_option, ""}:
             return
         if prev is None:
             return
@@ -771,8 +773,15 @@ class SigEnergyOptimizer:
 
         # ---- Mode select ----------------------------------------------
         last_mode = self._last_state.sigenergy_mode if self._last_state else ""
-        mode_default = last_mode if last_mode else cfg.automated_option
+        mode_default = self._manual_mode_override or last_mode or cfg.automated_option
         s.sigenergy_mode = _sv(cfg.sigenergy_mode_select, mode_default)
+        if self._manual_mode_override and s.sigenergy_mode in {cfg.automated_option, ""}:
+            logger.warning(
+                "Mode selector read as '%s' while manual override '%s' is active; preserving manual mode",
+                s.sigenergy_mode,
+                self._manual_mode_override,
+            )
+            s.sigenergy_mode = self._manual_mode_override
 
         return s
 
@@ -1165,6 +1174,8 @@ class SigEnergyOptimizer:
             "current_import_limit": s.current_import_limit,
             "current_pv_max_power_limit": s.current_pv_max_power_limit,
             "current_ems_mode": s.current_ems_mode,
+            "sigenergy_mode": s.sigenergy_mode,
+            "manual_mode_override": self._manual_mode_override,
             "export_branch": export_branch,
             "import_branch": import_branch,
             "cfg_morning_slow_charge_enabled": cfg.morning_slow_charge_enabled,
@@ -1198,13 +1209,23 @@ class SigEnergyOptimizer:
 
     async def _apply(self, s: SolarState, d: Decision) -> None:
         cfg = self.cfg
+        ha = self.ha
+
+        effective_mode = self._manual_mode_override or s.sigenergy_mode
+        if self._manual_mode_override and s.sigenergy_mode != self._manual_mode_override:
+            logger.warning(
+                "Mode selector drift detected (%s -> %s); restoring manual selection",
+                s.sigenergy_mode,
+                self._manual_mode_override,
+            )
+            await ha.select_option(cfg.sigenergy_mode_select, self._manual_mode_override)
+            s.sigenergy_mode = self._manual_mode_override
+            effective_mode = self._manual_mode_override
 
         # If in a manual mode, skip optimizer actions
-        if s.sigenergy_mode not in {cfg.automated_option, ""}:
-            logger.debug("Manual mode active (%s), skipping apply", s.sigenergy_mode)
+        if effective_mode not in {cfg.automated_option, ""}:
+            logger.debug("Manual mode active (%s), skipping apply", effective_mode)
             return
-
-        ha = self.ha
         effective_ha_control = s.ha_control_enabled or d.needs_ha_control_switch
 
         # Auto-enable HA control switch if needed
@@ -1275,6 +1296,10 @@ class SigEnergyOptimizer:
         async with self._control_lock:
             # Update the input_select in HA
             await ha.select_option(cfg.sigenergy_mode_select, mode_label)
+            if mode_label == cfg.automated_option:
+                self._manual_mode_override = None
+            else:
+                self._manual_mode_override = mode_label
             if self._last_state is not None:
                 self._last_state.sigenergy_mode = mode_label
 
@@ -2203,7 +2228,9 @@ class SigEnergyOptimizer:
         if morning_slow_charge:
             return f"Exporting {export_kw_label}, Slow charge"
         if surplus_bypass:
-            if actual_export <= 0.05:
+            if target_export <= 0.01:
+                if actual_export > 0.05:
+                    return f"Solar bypass active, waiting for surplus ({s.forecast_remaining_kwh:.1f}kWh left){est}; measured export {actual_export:.1f}kW is settling"
                 return f"Solar bypass active, waiting for surplus ({s.forecast_remaining_kwh:.1f}kWh left){est}"
             return f"Exporting {export_kw_label}, Solar bypass ({s.forecast_remaining_kwh:.1f}kWh left){est}"
         if (export_blocked or forecast_guard) and not surplus_bypass:
