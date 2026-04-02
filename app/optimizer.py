@@ -1186,8 +1186,10 @@ class SigEnergyOptimizer:
         if reason:
             await ha.set_input_text(cfg.reason_text_helper, reason)
 
-        # Min SoC to sunrise helper
-        await ha.set_input_number(cfg.min_soc_to_sunrise_helper, d.min_soc_to_sunrise)
+        # Min SoC to sunrise helper — clamp to 100 for HA entity bounds; raw value may
+        # exceed 100 when overnight load exceeds full battery capacity, which is valid
+        # for internal logic but rejected by input_number entities with max: 100.
+        await ha.set_input_number(cfg.min_soc_to_sunrise_helper, min(d.min_soc_to_sunrise, 100.0))
 
         logger.debug(
             "Applied: mode=%s exp=%.1f imp=%.1f pv=%.1f | %s",
