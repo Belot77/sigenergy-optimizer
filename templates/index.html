@@ -921,13 +921,37 @@ function mergeSeriesByTimestamp(primary, secondary) {
   return Array.from(merged.values()).sort((a, b) => a[0] - b[0]);
 }
 
+function forecastPointNear(points, targetMs, toleranceMs = 60 * 60 * 1000) {
+  if (!Array.isArray(points) || !points.length || !Number.isFinite(Number(targetMs))) return null;
+  let best = null;
+  let bestDelta = Infinity;
+  for (const point of points) {
+    const ts = Number(Array.isArray(point) ? point[0] : NaN);
+    const value = Number(Array.isArray(point) ? point[1] : NaN);
+    if (!Number.isFinite(ts) || !Number.isFinite(value)) continue;
+    const delta = Math.abs(ts - targetMs);
+    if (delta < bestDelta) {
+      best = [ts, value];
+      bestDelta = delta;
+    }
+  }
+  return bestDelta <= toleranceMs ? best : null;
+}
+
+function currentPvForecastKw(nowMs = Date.now()) {
+  const forecastCurve = parseCurvePoints(S?.solar_forecast_curve);
+  const point = forecastPointNear(forecastCurve, nowMs);
+  if (point) return Number(point[1]);
+  const liveForecast = Number(S?.solar_power_now_kw);
+  return Number.isFinite(liveForecast) ? liveForecast : null;
+}
+
 function buildPvForecastSeries(nowMs) {
-  const pvForecastHistory = histPow
+  const forecastCurve = parseCurvePoints(S?.solar_forecast_curve);
+  if (forecastCurve.length) return forecastCurve;
+  return histPow
     .filter((x) => Number.isFinite(Number(x?.t)) && Number(x.t) <= nowMs && Number.isFinite(Number(x?.pvForecast)))
     .map((x) => [Number(x.t), Number(x.pvForecast)]);
-  const pvForecastFuture = parseCurvePoints(S?.solar_forecast_curve)
-    .filter(([t, v]) => Number.isFinite(Number(t)) && Number(t) >= nowMs && Number.isFinite(Number(v)));
-  return mergeSeriesByTimestamp(pvForecastHistory, pvForecastFuture);
 }
 
 function buildSeriesAnnotation(points, seriesName, color, formatter, offsetY=0) {
@@ -2278,6 +2302,7 @@ function seriesMinMax(points) {
 
 function updateOverview() {
   const s = S;
+  const forecastNowKw = currentPvForecastKw();
   const staleEl = document.getElementById('staleBanner');
   const age = Number(s?.data_age_seconds);
   const stale = !!s?.stale_data || (Number.isFinite(age) && age > Math.max(45, Math.round(POLL / 1000) * 2));
@@ -2290,7 +2315,7 @@ function updateOverview() {
   // Chart now labels
   document.getElementById('nowPower').textContent = simActive && simPreview
     ? `Simulation: ${PROFILE_META[simPreview.profile]?.label || 'Selected profile'} | Battery ${fc(s.battery_soc,1)}% -> ${fc(simPreview.projectedBattery,1)}%, Load ${fc(s.load_kw,1)}kW, Import ${fc(simPreview.importLimit,1)}kW, Export ${fc(simPreview.exportLimit,1)}kW`
-    : `Now: Battery ${fc(s.battery_soc,1)}%, Min SoC ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Forecast ${fc(s.solar_power_now_kw,1)}kW, Load ${fc(s.load_kw,1)}kW`;
+    : `Now: Battery ${fc(s.battery_soc,1)}%, Min SoC ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Forecast ${fc(forecastNowKw,1)}kW, Load ${fc(s.load_kw,1)}kW`;
   document.getElementById('nowPrice').textContent =
     `Now: Import price ${fcc(s.current_price)}/kWh, Feed-in price ${fcc(s.feedin_price)}/kWh, PV today ${fc(s.forecast_today,1)}kWh`;
   document.getElementById('nowFlow').textContent =
@@ -2593,6 +2618,7 @@ function applySimulationOverlay(profile, options = {}) {
   const exportLimit = selected.exp.limit ?? 0;
   const importLimit = selected.imp.limit ?? 0;
   const projectedBattery = Math.min(100,(S.battery_soc||50)+2);
+  const forecastSeries = buildPvForecastSeries(now);
 
   const simBatterySeries = [...histPow.map(x=>[x.t,x.battery]), [now+1200000, projectedBattery]];
   const simPvSeries = [...histPow.map(x=>[x.t,x.pv]), [now+1200000, S.solar_power_now_kw||0]];
@@ -2602,13 +2628,13 @@ function applySimulationOverlay(profile, options = {}) {
     {name:'Sim Battery %',     data: simBatterySeries},
     {name:'Min SoC %',         data: histPow.map(x=>[x.t,x.minSoc])},
     {name:'Sim PV Output kW',  data: simPvSeries},
-    {name:'PV Forecast kW',    data: histPow.map(x=>[x.t,x.pvForecast])},
+    {name:'PV Forecast kW',    data: forecastSeries},
     {name:'Sim Consumption kW',data: simConsumptionSeries},
   ], {
     batterySeries: simBatterySeries,
     minSocSeries: histPow.map(x=>[x.t,x.minSoc]),
     pvSeries: simPvSeries,
-    pvForecastSeries: histPow.map(x=>[x.t,x.pvForecast]),
+    pvForecastSeries: forecastSeries,
     loadSeries: simConsumptionSeries,
   }, true);
 
@@ -2617,11 +2643,11 @@ function applySimulationOverlay(profile, options = {}) {
       batterySeries: simBatterySeries,
       minSocSeries: histPow.map(x=>[x.t,x.minSoc]),
       pvSeries: simPvSeries,
-      pvForecastSeries: histPow.map(x=>[x.t,x.pvForecast]),
+      pvForecastSeries: forecastSeries,
       loadSeries: simConsumptionSeries,
       gridImportSeries: histPow.map(x=>[x.t,x.imp]),
       gridExportSeries: histPow.map(x=>[x.t,x.exp]),
-      flowPvForecastSeries: histPow.map(x=>[x.t,x.pvForecast]),
+      flowPvForecastSeries: forecastSeries,
       importPriceSeries: trimFuture(histPri.map(x=>[x.t,x.imp]), now),
       feedinPriceSeries: trimFuture(histPri.map(x=>[x.t,x.fit]), now),
       importForecastSeries: trimPast(parseCurvePoints(S?.price_forecast_curve), now),
