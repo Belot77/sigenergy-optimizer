@@ -165,11 +165,11 @@ select:focus,input:focus{border-color:#276749}
 
 /* Chart cards */
 .chart-card{background:linear-gradient(180deg,#ffffff 0%,#f7fbf9 100%);border:1px solid #d7e6dd;border-radius:14px;padding:14px;box-shadow:0 10px 28px rgba(39,103,73,.06)}
-.chart-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:12px}
-.chart-title-wrap{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
+.chart-hdr{display:grid;grid-template-columns:minmax(180px,1fr) minmax(360px,2fr);align-items:flex-start;margin-bottom:10px;gap:12px}
+.chart-title-wrap{display:flex;flex-direction:column;gap:4px;min-width:0}
 .chart-title{font-size:13px;font-weight:700;color:#1f3b2f;letter-spacing:.01em}
 .chart-sub{font-size:11px;color:#6b7f77;line-height:1.45;max-width:520px}
-.chart-now{font-size:10.5px;color:#5d6f67;text-align:right;max-width:64%;line-height:1.35;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:auto;flex-shrink:0}
+.chart-now{font-size:10px;color:#5d6f67;text-align:right;line-height:1.25;font-weight:600;white-space:nowrap;overflow:visible;text-overflow:clip;justify-self:end;max-width:100%}
 .chart-frame{position:relative;border:1px solid #d7e6dd;border-radius:12px;padding:8px;background:linear-gradient(180deg,#f8fcfb 0%,#eff7f3 100%)}
 .mate-svg{display:none;width:100%;border-radius:10px}
 .mate-svg.on{display:block}
@@ -266,7 +266,7 @@ select:focus,input:focus{border-color:#276749}
 .cfg-msg{font-size:12px;color:#276749;min-height:16px}
 @media (max-width: 900px){.cfg-grid{grid-template-columns:1fr}}
 @media (max-width: 1180px){.overview-work{grid-template-columns:1fr}}
-@media (max-width: 900px){.chart-hdr{flex-direction:column}.chart-now{max-width:none;text-align:left;white-space:normal;overflow:visible;text-overflow:clip}.chart-frame{padding:6px}.scenario-grid{grid-template-columns:1fr 1fr}}
+@media (max-width: 900px){.chart-hdr{display:flex;flex-direction:column}.chart-now{max-width:none;text-align:left;white-space:normal;overflow:visible;text-overflow:clip}.chart-frame{padding:6px}.scenario-grid{grid-template-columns:1fr 1fr}}
 @media (max-width: 640px){.scenario-grid{grid-template-columns:1fr}.apx-tooltip{max-width:220px;min-width:150px}.apx-tooltip-label{max-width:120px}}
 
 /* Dark Theme */
@@ -1959,12 +1959,12 @@ function updateOverview() {
   }
   // Chart now labels
   document.getElementById('nowPower').textContent = simActive && simPreview
-    ? `Simulation: ${PROFILE_META[simPreview.profile]?.label || 'Selected profile'} | Battery ${fc(s.battery_soc,1)}% -> ${fc(simPreview.projectedBattery,1)}%, Import ${fc(simPreview.importLimit,1)}kW, Export ${fc(simPreview.exportLimit,1)}kW`
-    : `Now: Battery ${fc(s.battery_soc,1)}%, Min SoC ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Forecast ${fc(s.solar_power_now_kw,1)}kW`;
+    ? `Sim ${PROFILE_META[simPreview.profile]?.label || 'Profile'} | Bat ${fc(s.battery_soc,1)}% -> ${fc(simPreview.projectedBattery,1)}%, Imp ${fc(simPreview.importLimit,1)}kW, Exp ${fc(simPreview.exportLimit,1)}kW`
+    : `Now: Bat ${fc(s.battery_soc,1)}%, Min ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Fcst ${fc(s.solar_power_now_kw,1)}kW`;
   document.getElementById('nowPrice').textContent =
-    `Now: import ${fcc(s.current_price)}/kWh, feed-in ${fcc(s.feedin_price)}/kWh, PV today ${fc(s.forecast_today,1)}kWh`;
+    `Now: Imp ${fcc(s.current_price)}/kWh, FiT ${fcc(s.feedin_price)}/kWh, PV ${fc(s.forecast_today,1)}kWh`;
   document.getElementById('nowFlow').textContent =
-    `Now: import ${fc(s.grid_import_power_kw,1)}kW, export ${fc(s.grid_export_power_kw,1)}kW, load ${fc(s.load_kw,1)}kW`;
+    `Now: Imp ${fc(s.grid_import_power_kw,1)}kW, Exp ${fc(s.grid_export_power_kw,1)}kW, Load ${fc(s.load_kw,1)}kW`;
 
   // Cycle timing
   setTextWithFlash('cycleStart', tsISO(s.last_cycle_started));
