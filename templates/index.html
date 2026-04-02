@@ -1332,10 +1332,11 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
   }
 
   const nowMs = Date.now();
-  const pvHist = pvForecastSeries.filter((p) => Number(p?.[0]) <= nowMs);
-  const pvFc = pvForecastSeries.filter((p) => Number(p?.[0]) >= nowMs);
-  const pvAreasHist = mateSplitPositive(pvHist, 0.01).map((seg) => mateArea(seg, xOf, yKw, m.top + plotH));
-  const pvAreasFc = mateSplitPositive(pvFc, 0.01).map((seg) => mateArea(seg, xOf, yKw, m.top + plotH));
+  const allPvAreas = mateSplitPositive(pvForecastSeries, 0.01).map((seg) => {
+    const midT = (Number(seg[0]?.[0]) + Number(seg[seg.length - 1]?.[0])) / 2;
+    const opacity = midT <= nowMs ? 0.18 : 0.12;
+    return { path: mateArea(seg, xOf, yKw, m.top + plotH), opacity };
+  });
   const nowX = xOf(nowMs);
   const batteryNow = mateLastFinite(batterySeries);
   const pvNow = mateLastFinite(pvSeries);
@@ -1354,8 +1355,7 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
     ${sunBand}
     ${grid}
     <line x1="${nowX.toFixed(2)}" y1="${m.top}" x2="${nowX.toFixed(2)}" y2="${(m.top + plotH).toFixed(2)}" stroke="${MATE_STYLE.nowLine}" stroke-width="1.2" stroke-dasharray="4 4" />
-    ${pvAreasHist.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.18" stroke="none" />`).join('')}
-    ${pvAreasFc.map((d) => `<path d="${d}" fill="#f59e0b" fill-opacity="0.12" stroke="none" />`).join('')}
+    ${allPvAreas.map((a) => `<path d="${a.path}" fill="#f59e0b" fill-opacity="${a.opacity}" stroke="none" />`).join('')}
     ${matePath(batterySeries, xOf, ySoc).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.power.battery}" stroke-width="2.2" />`).join('')}
     ${matePath(minSocSeries, xOf, ySoc).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.power.minSoc}" stroke-width="2.0" />`).join('')}
     ${matePath(pvSeries, xOf, yKw).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.power.pv}" stroke-width="2.1" />`).join('')}
