@@ -373,6 +373,8 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
   <!-- SIDEBAR -->
   <div class="sidebar">
 
+    <div class="reason-bar" id="reasonBar">Waiting for first cycle---</div>
+
     <!-- SigEnergy Mode -->
     <div class="card">
       <div class="card-title">SigEnergy Mode</div>
@@ -478,8 +480,6 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
       <button class="sbtn" onclick="applyThresholds(this)">Apply &amp; Save Thresholds</button>
       <div class="action-msg" id="msgThresholds"></div>
     </div>
-
-    <div class="reason-bar" id="reasonBar">Waiting for first cycle---</div>
 
   </div>
 
@@ -1139,6 +1139,26 @@ function mateHistoricExtrema(points, nowMs = Date.now()) {
   return { high, low };
 }
 
+function mateFutureExtrema(points, nowMs = Date.now()) {
+  if (!Array.isArray(points)) return { high: null, low: null };
+  let high = null;
+  let low = null;
+  for (const p of points) {
+    const ts = Number(p?.[0]);
+    const value = Number(p?.[1]);
+    if (!Number.isFinite(ts) || !Number.isFinite(value) || ts <= nowMs) continue;
+    if (!high || value > high[1]) high = [ts, value];
+    if (!low || value < low[1]) low = [ts, value];
+  }
+  return { high, low };
+}
+
+function mateSamePoint(a, b, timeToleranceMs = 60000, valueTolerance = 0.02) {
+  if (!a || !b) return false;
+  return Math.abs(Number(a[0]) - Number(b[0])) <= timeToleranceMs
+    && Math.abs(Number(a[1]) - Number(b[1])) <= valueTolerance;
+}
+
 function mateValueBadge(x, y, text, color, bounds, options = {}) {
   const m = bounds?.m;
   const width = Number(bounds?.width);
@@ -1170,11 +1190,12 @@ function mateValueBadge(x, y, text, color, bounds, options = {}) {
     + `<text x="${textX.toFixed(2)}" y="${textY.toFixed(2)}" font-size="${fontSize.toFixed(1)}" fill="#ffffff" font-weight="700">${txt}</text>`;
 }
 
-function mateExtremaLabels(extrema, xOf, yOf, color, formatter, bounds, highDy = -8, lowDy = 14) {
+function mateExtremaLabels(extrema, xOf, yOf, color, formatter, bounds, highDy = -8, lowDy = 14, omitPoints = []) {
   const parts = [];
 
   const addLabel = (pt, dy) => {
     if (!pt) return;
+    if ((Array.isArray(omitPoints) ? omitPoints : []).some((other) => mateSamePoint(pt, other))) return;
     const px = xOf(pt[0]);
     const py = yOf(pt[1]);
     parts.push(`<circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="3.5" fill="${color}" stroke="#fff" stroke-width="1.1" />`);
@@ -1534,11 +1555,14 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
   const nowX = xOf(nowMs);
   const impNow = mateLastFinite(gridImportSeries);
   const expNow = mateLastFinite(gridExportSeries);
+  const currentOverlap = impNow && expNow
+    && Math.abs(xOf(impNow[0]) - xOf(expNow[0])) < 28
+    && Math.abs(yOf(impNow[1]) - yOf(expNow[1])) < 26;
   const impNowBadge = impNow
-    ? mateValueBadge(xOf(impNow[0]), yOf(impNow[1]), `${impNow[1].toFixed(1)}kW`, MATE_STYLE.flow.import, { m, width, plotH }, { dx: 5, dy: -8 })
+    ? mateValueBadge(xOf(impNow[0]), yOf(impNow[1]), `${impNow[1].toFixed(1)}kW`, MATE_STYLE.flow.import, { m, width, plotH }, { dx: 4, dy: currentOverlap ? -16 : -8 })
     : '';
   const expNowBadge = expNow
-    ? mateValueBadge(xOf(expNow[0]), yOf(expNow[1]), `${expNow[1].toFixed(1)}kW`, MATE_STYLE.flow.export, { m, width, plotH }, { dx: 5, dy: 14 })
+    ? mateValueBadge(xOf(expNow[0]), yOf(expNow[1]), `${expNow[1].toFixed(1)}kW`, MATE_STYLE.flow.export, { m, width, plotH }, { dx: 4, dy: currentOverlap ? 22 : 12 })
     : '';
   const importHistExtrema = mateHistoricExtrema(gridImportSeries, nowMs);
   const exportHistExtrema = mateHistoricExtrema(gridExportSeries, nowMs);
@@ -1551,6 +1575,7 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
     { m, width, plotH },
     -10,
     16,
+    [impNow],
   );
   const exportExtremaLabels = mateExtremaLabels(
     exportHistExtrema,
@@ -1561,6 +1586,7 @@ function renderMateFlowChart(gridImportSeries, gridExportSeries, flowPvForecastS
     { m, width, plotH },
     -22,
     22,
+    [expNow],
   );
   svg.innerHTML = `
     ${grid}
@@ -1657,14 +1683,19 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
   const nowX = xOf(nowMs);
   const impNow = mateLastFinite(importPriceSeries);
   const fitNow = mateLastFinite(feedinPriceSeries);
+  const priceCurrentOverlap = impNow && fitNow
+    && Math.abs(xOf(impNow[0]) - xOf(fitNow[0])) < 28
+    && Math.abs(yOf(impNow[1]) - yOf(fitNow[1])) < 26;
   const impNowBadge = impNow
-    ? mateValueBadge(xOf(impNow[0]), yOf(impNow[1]), `${(impNow[1] * 100).toFixed(1)}c`, MATE_STYLE.price.import, { m, width, plotH }, { dx: 5, dy: -8 })
+    ? mateValueBadge(xOf(impNow[0]), yOf(impNow[1]), `${(impNow[1] * 100).toFixed(1)}c`, MATE_STYLE.price.import, { m, width, plotH }, { dx: 4, dy: priceCurrentOverlap ? -16 : -8 })
     : '';
   const fitNowBadge = fitNow
-    ? mateValueBadge(xOf(fitNow[0]), yOf(fitNow[1]), `${(fitNow[1] * 100).toFixed(1)}c`, MATE_STYLE.price.feedin, { m, width, plotH }, { dx: 5, dy: 14 })
+    ? mateValueBadge(xOf(fitNow[0]), yOf(fitNow[1]), `${(fitNow[1] * 100).toFixed(1)}c`, MATE_STYLE.price.feedin, { m, width, plotH }, { dx: 4, dy: priceCurrentOverlap ? 22 : 12 })
     : '';
   const importPriceExtrema = mateHistoricExtrema(importPriceSeries, nowMs);
   const feedinPriceExtrema = mateHistoricExtrema(feedinPriceSeries, nowMs);
+  const importForecastExtrema = mateFutureExtrema(importForecastSeries, nowMs);
+  const feedinForecastExtrema = mateFutureExtrema(feedinForecastSeries, nowMs);
   const importPriceExtremaLabels = mateExtremaLabels(
     importPriceExtrema,
     xOf,
@@ -1674,6 +1705,7 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
     { m, width, plotH },
     -10,
     16,
+    [impNow],
   );
   const feedinPriceExtremaLabels = mateExtremaLabels(
     feedinPriceExtrema,
@@ -1684,6 +1716,27 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
     { m, width, plotH },
     -22,
     22,
+    [fitNow],
+  );
+  const importForecastExtremaLabels = mateExtremaLabels(
+    importForecastExtrema,
+    xOf,
+    yOf,
+    MATE_STYLE.price.importForecast,
+    (v) => `${(Number(v) * 100).toFixed(1)}c`,
+    { m, width, plotH },
+    -12,
+    18,
+  );
+  const feedinForecastExtremaLabels = mateExtremaLabels(
+    feedinForecastExtrema,
+    xOf,
+    yOf,
+    MATE_STYLE.price.feedinForecast,
+    (v) => `${(Number(v) * 100).toFixed(1)}c`,
+    { m, width, plotH },
+    -20,
+    20,
   );
 
   svg.innerHTML = `
@@ -1697,6 +1750,8 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
     ${matePath(feedinForecastSeries, xOf, yOf).map((d) => `<path d="${d}" fill="none" stroke="${MATE_STYLE.price.feedinForecast}" stroke-width="2.0" stroke-dasharray="6 4" />`).join('')}
     ${importPriceExtremaLabels}
     ${feedinPriceExtremaLabels}
+    ${importForecastExtremaLabels}
+    ${feedinForecastExtremaLabels}
     <line id="matePriceHoverLine" x1="0" y1="${m.top}" x2="0" y2="${(m.top + plotH).toFixed(2)}" stroke="#0f172a" stroke-opacity="0.45" stroke-width="1" stroke-dasharray="3 4" style="display:none" />
     <circle id="matePriceHoverDotImport" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.price.import}" stroke="#fff" stroke-width="1.2" style="display:none" />
     <circle id="matePriceHoverDotFeedin" cx="0" cy="0" r="4.5" fill="${MATE_STYLE.price.feedin}" stroke="#fff" stroke-width="1.2" style="display:none" />
@@ -2138,10 +2193,8 @@ function updateOverview() {
   document.getElementById('nowPower').textContent = simActive && simPreview
     ? `Simulation: ${PROFILE_META[simPreview.profile]?.label || 'Selected profile'} | Battery ${fc(s.battery_soc,1)}% -> ${fc(simPreview.projectedBattery,1)}%, Load ${fc(s.load_kw,1)}kW, Import ${fc(simPreview.importLimit,1)}kW, Export ${fc(simPreview.exportLimit,1)}kW`
     : `Now: Battery ${fc(s.battery_soc,1)}%, Min SoC ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Forecast ${fc(s.solar_power_now_kw,1)}kW, Load ${fc(s.load_kw,1)}kW`;
-  const importForecastRange = seriesMinMax(parseCurvePoints(S?.price_forecast_curve));
-  const feedinForecastRange = seriesMinMax(parseCurvePoints(S?.feedin_forecast_curve));
   document.getElementById('nowPrice').textContent =
-    `Now: Import price ${fcc(s.current_price)}/kWh, Feed-in price ${fcc(s.feedin_price)}/kWh, Import forecast low/high ${importForecastRange.min != null ? fcc(importForecastRange.min) : '---'}/${importForecastRange.max != null ? fcc(importForecastRange.max) : '---'}, Feed-in forecast low/high ${feedinForecastRange.min != null ? fcc(feedinForecastRange.min) : '---'}/${feedinForecastRange.max != null ? fcc(feedinForecastRange.max) : '---'}`;
+    `Now: Import price ${fcc(s.current_price)}/kWh, Feed-in price ${fcc(s.feedin_price)}/kWh, PV today ${fc(s.forecast_today,1)}kWh`;
   document.getElementById('nowFlow').textContent =
     `Now: Import ${fc(s.grid_import_power_kw,1)}kW, Export ${fc(s.grid_export_power_kw,1)}kW`;
 
@@ -2181,6 +2234,8 @@ function updateOverview() {
   setGlanceFill('card-pvForecastTomorrow', (Number(s.forecast_tomorrow) / Math.max(1, Math.max(Number(s.forecast_today) || 0, Number(s.forecast_tomorrow) || 0, 1))) * 100, 'rgba(37,99,235,.18)');
   setGlanceFill('card-sSunrise', s.sunrise_soc_target, 'rgba(45,212,191,.20)');
   setGlanceFill('card-gExpFloor', Number.isFinite(Number(uiCfg?.min_export_target_soc)) ? Number(uiCfg.min_export_target_soc) : Number(s.min_soc_to_sunrise), 'rgba(74,222,128,.20)');
+  const importForecastRange = seriesMinMax(parseCurvePoints(S?.price_forecast_curve));
+  const feedinForecastRange = seriesMinMax(parseCurvePoints(S?.feedin_forecast_curve));
   setGlanceFill('card-sImpPrice', importForecastRange.max != null && importForecastRange.min != null ? ((Number(s.current_price) - importForecastRange.min) / Math.max(0.001, importForecastRange.max - importForecastRange.min)) * 100 : 0, 'rgba(251,146,60,.20)');
   setGlanceFill('card-sExpLimVal', (Number(s.export_limit) / Math.max(1, getDischargeClampMax())) * 100, 'rgba(74,222,128,.20)');
   setGlanceFill('card-sFIT', feedinForecastRange.max != null && feedinForecastRange.min != null ? ((Number(s.feedin_price) - feedinForecastRange.min) / Math.max(0.001, feedinForecastRange.max - feedinForecastRange.min)) * 100 : 0, 'rgba(74,222,128,.18)');
