@@ -1336,8 +1336,6 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
   const pvFc = pvForecastSeries.filter((p) => Number(p?.[0]) >= nowMs);
   const pvAreasHist = mateSplitPositive(pvHist, 0.01).map((seg) => mateArea(seg, xOf, yKw, m.top + plotH));
   const pvAreasFc = mateSplitPositive(pvFc, 0.01).map((seg) => mateArea(seg, xOf, yKw, m.top + plotH));
-
-  const nowMs = Date.now();
   const nowX = xOf(nowMs);
   const batteryNow = mateLastFinite(batterySeries);
   const pvNow = mateLastFinite(pvSeries);
