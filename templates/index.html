@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -361,7 +361,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
 </nav>
 <div id="staleBanner" class="stale-banner">Live data is stale. Waiting for fresh status from Home Assistant...</div>
 
-<!-- ═══ OVERVIEW ═══ -->
+<!-- â•â•â• OVERVIEW â•â•â• -->
 <div id="tab-overview" class="page active">
 
   <!-- SIDEBAR -->
@@ -495,7 +495,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
               <div class="chart-title">Today Power &amp; SoC</div>
               <div class="chart-sub">Battery, reserve floor, PV output and grid flow in one view. Solid lines show measured history up to now. Dashed lines appear only for explicit forecast or simulation data.</div>
             </div>
-            <div class="chart-now" id="nowPower">—</div>
+            <div class="chart-now" id="nowPower">â€”</div>
           </div>
           <div class="chart-frame">
             <div id="chartPower" style="height:260px"></div>
@@ -516,7 +516,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
               <div class="chart-title">Today Grid Flow &amp; Solar Window</div>
               <div class="chart-sub">Grid import/export through the day window. Future flat carry-forward lines are suppressed so only real measured data is shown.</div>
             </div>
-            <div class="chart-now" id="nowFlow">—</div>
+            <div class="chart-now" id="nowFlow">â€”</div>
           </div>
           <div class="chart-frame">
             <div id="chartFlow" style="height:220px"></div>
@@ -537,7 +537,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
               <div class="chart-title">Today Price Curves (Import vs Feed-In)</div>
               <div class="chart-sub">Import and export price traces share the same day window with a daylight context band so you can see arbitrage windows at a glance.</div>
             </div>
-            <div class="chart-now" id="nowPrice">—</div>
+            <div class="chart-now" id="nowPrice">â€”</div>
           </div>
           <div class="chart-frame">
             <div id="chartPrice" style="height:230px"></div>
@@ -553,53 +553,53 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
       </div>
 
       <aside class="glance-rail">
-        <div class="glance-card"><div class="glance-lbl">Battery SoC</div><div class="glance-val" id="sBat">—</div></div>
-        <div class="glance-card"><div class="glance-lbl">PV Power</div><div class="glance-val" id="gPV">—</div></div>
-        <div class="glance-card"><div class="glance-lbl">Load</div><div class="glance-val" id="gLoad">—</div></div>
-        <div class="glance-card"><div class="glance-lbl">Grid Export</div><div class="glance-val" id="gGridExp">—</div></div>
-        <div class="glance-card"><div class="glance-lbl">Grid Import</div><div class="glance-val" id="gGridImp">—</div></div>
+        <div class="glance-card"><div class="glance-lbl">Battery SoC</div><div class="glance-val" id="sBat">â€”</div></div>
+        <div class="glance-card"><div class="glance-lbl">PV Power</div><div class="glance-val" id="gPV">â€”</div></div>
+        <div class="glance-card"><div class="glance-lbl">Load</div><div class="glance-val" id="gLoad">â€”</div></div>
+        <div class="glance-card"><div class="glance-lbl">Grid Export</div><div class="glance-val" id="gGridExp">â€”</div></div>
+        <div class="glance-card"><div class="glance-lbl">Grid Import</div><div class="glance-val" id="gGridImp">â€”</div></div>
 
         <div class="glance-grid">
-          <div class="glance-card"><div class="glance-lbl">Sunrise SoC Req</div><div class="glance-sub" id="sSunrise">—</div></div>
-          <div class="glance-card"><div class="glance-lbl">Export Floor SoC</div><div class="glance-sub" id="gExpFloor">—</div></div>
-          <div class="glance-card"><div class="glance-lbl">Import Price</div><div class="glance-sub" id="sImpPrice">—</div></div>
-          <div class="glance-card"><div class="glance-lbl">Export Limit</div><div class="glance-sub" id="sExpLimVal">—</div></div>
-          <div class="glance-card"><div class="glance-lbl">Feed-in Price</div><div class="glance-sub" id="sFIT">—</div></div>
-          <div class="glance-card"><div class="glance-lbl">Import Limit</div><div class="glance-sub" id="sImpLimVal">—</div></div>
-          <div class="glance-card"><div class="glance-lbl">PV Max</div><div class="glance-sub" id="sPVMax">—</div></div>
+          <div class="glance-card"><div class="glance-lbl">Sunrise SoC Req</div><div class="glance-sub" id="sSunrise">â€”</div></div>
+          <div class="glance-card"><div class="glance-lbl">Export Floor SoC</div><div class="glance-sub" id="gExpFloor">â€”</div></div>
+          <div class="glance-card"><div class="glance-lbl">Import Price</div><div class="glance-sub" id="sImpPrice">â€”</div></div>
+          <div class="glance-card"><div class="glance-lbl">Export Limit</div><div class="glance-sub" id="sExpLimVal">â€”</div></div>
+          <div class="glance-card"><div class="glance-lbl">Feed-in Price</div><div class="glance-sub" id="sFIT">â€”</div></div>
+          <div class="glance-card"><div class="glance-lbl">Import Limit</div><div class="glance-sub" id="sImpLimVal">â€”</div></div>
+          <div class="glance-card"><div class="glance-lbl">PV Max</div><div class="glance-sub" id="sPVMax">â€”</div></div>
           <div class="glance-card"><div class="glance-lbl">ESS-First PV Thresh</div><div class="glance-sub" id="sESSThresh">1.0 kW</div></div>
         </div>
 
-        <div class="glance-card"><div class="glance-lbl">Cycle Started</div><div class="glance-sub" id="cycleStart">—</div></div>
-        <div class="glance-card"><div class="glance-lbl">Cycle Completed</div><div class="glance-sub" id="cycleDone">—</div></div>
-        <div class="glance-card"><div class="glance-lbl">Control / Mode</div><div class="glance-sub"><span id="sCtrl">—</span> · <span id="sMode">—</span></div></div>
+        <div class="glance-card"><div class="glance-lbl">Cycle Started</div><div class="glance-sub" id="cycleStart">â€”</div></div>
+        <div class="glance-card"><div class="glance-lbl">Cycle Completed</div><div class="glance-sub" id="cycleDone">â€”</div></div>
+        <div class="glance-card"><div class="glance-lbl">Control / Mode</div><div class="glance-sub"><span id="sCtrl">â€”</span> Â· <span id="sMode">â€”</span></div></div>
         <div class="glance-card"><div class="glance-lbl">Poll</div><div class="glance-sub"><span id="pollVal">30</span>s</div></div>
         <div class="glance-card"><div class="glance-lbl">Last Error</div><div class="glance-sub" id="sErr">none</div></div>
       </aside>
     </div>
 
     <!-- Reason bar -->
-    <div class="reason-bar" id="reasonBar">Waiting for first cycle…</div>
+    <div class="reason-bar" id="reasonBar">Waiting for first cycleâ€¦</div>
 
   </div>
 </div>
 
-<!-- ═══ ENTITIES ═══ -->
+<!-- â•â•â• ENTITIES â•â•â• -->
 <div id="tab-earnings" class="page">
-  <div class="card" id="earningsContent"><div style="color:#a0aec0">Loading…</div></div>
+  <div class="card" id="earningsContent"><div style="color:#a0aec0">Loadingâ€¦</div></div>
 </div>
 
-<!-- ═══ ENTITIES ═══ -->
+<!-- â•â•â• ENTITIES â•â•â• -->
 <div id="tab-entities" class="page">
-  <div id="entContent"><div style="color:#a0aec0">Loading…</div></div>
+  <div id="entContent"><div style="color:#a0aec0">Loadingâ€¦</div></div>
 </div>
 
-<!-- ═══ CONFIG ═══ -->
+<!-- â•â•â• CONFIG â•â•â• -->
 <div id="tab-config" class="page">
-  <div id="cfgContent"><div style="color:#a0aec0">Loading…</div></div>
+  <div id="cfgContent"><div style="color:#a0aec0">Loadingâ€¦</div></div>
 </div>
 
-<!-- ═══ LOGS ═══ -->
+<!-- â•â•â• LOGS â•â•â• -->
 <div id="tab-logs" class="page">
   <div class="log-toolbar">
     <button class="hbtn" type="button" onclick="loadLogs()">Refresh Logs</button>
@@ -620,10 +620,10 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
     </select>
     <span class="log-meta" id="logMeta">Loading...</span>
   </div>
-  <div id="logContent"><div class="log-block" style="color:#718096">Loading…</div></div>
+  <div id="logContent"><div class="log-block" style="color:#718096">Loadingâ€¦</div></div>
 </div>
 
-<!-- ═══ AUDIT ═══ -->
+<!-- â•â•â• AUDIT â•â•â• -->
 <div id="tab-audit" class="page">
   <div class="audit-toolbar">
     <button class="hbtn" type="button" onclick="loadAudit()">Refresh Audit</button>
@@ -639,7 +639,7 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
   <div id="auditContent" class="audit-empty">Loading...</div>
 </div>
 <script>
-// ── State ─────────────────────────────────────────────────────────────────────
+// â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let S = {};
 let powerChart = null, flowChart = null, priceChart = null;
 let histPow = [], histPri = [];
@@ -665,7 +665,7 @@ const PROFILE_META = {
   maxProfits: { label: 'Max Profits', help: 'Max Profits pushes stronger import/export limits for higher arbitrage potential.' },
 };
 
-// ── Tab routing ───────────────────────────────────────────────────────────────
+// â”€â”€ Tab routing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showTab(name, btn) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.ntab').forEach(t => t.classList.remove('active'));
@@ -719,7 +719,7 @@ function chartTheme() {
   };
 }
 
-// ── Chart initialisation ──────────────────────────────────────────────────────
+// â”€â”€ Chart initialisation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function mkChart(el, series, colors, yaxis, extra) {
   const t = chartTheme();
   return new ApexCharts(document.getElementById(el), {
@@ -739,10 +739,10 @@ function mkChart(el, series, colors, yaxis, extra) {
   });
 }
 
-function fmtPct(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? '—' : Number(v).toFixed(d)+'%'; }
-function fmtKwLabel(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? '—' : Number(v).toFixed(d)+'kW'; }
-function fmtKwhLabel(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? '—' : Number(v).toFixed(d)+'kWh'; }
-function fmtPriceLabel(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? '—' : (Number(v)*100).toFixed(d)+'c/kWh'; }
+function fmtPct(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? 'â€”' : Number(v).toFixed(d)+'%'; }
+function fmtKwLabel(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? 'â€”' : Number(v).toFixed(d)+'kW'; }
+function fmtKwhLabel(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? 'â€”' : Number(v).toFixed(d)+'kWh'; }
+function fmtPriceLabel(v, d=1){ return (v==null || !Number.isFinite(Number(v))) ? 'â€”' : (Number(v)*100).toFixed(d)+'c/kWh'; }
 
 function fmtKwAxisLabel(v) {
   if (v == null || !Number.isFinite(Number(v))) return '';
@@ -787,7 +787,7 @@ function legendFormatterFor(valueFormatter) {
   return function(seriesName, opts) {
     const value = lastSeriesValue(opts);
     const rendered = valueFormatter(seriesName, value);
-    return rendered === '—' ? seriesName : `${seriesName}: ${rendered}`;
+    return rendered === 'â€”' ? seriesName : `${seriesName}: ${rendered}`;
   };
 }
 
@@ -847,18 +847,18 @@ function buildSeriesAnnotation(points, seriesName, color, formatter, offsetY=0) 
 }
 
 function compactPriceLabel(value) {
-  if (!Number.isFinite(Number(value))) return '—';
+  if (!Number.isFinite(Number(value))) return 'â€”';
   const cents = Number(value) * 100;
   return `${Math.abs(cents) >= 10 ? cents.toFixed(0) : cents.toFixed(1)}`;
 }
 
 function compactKwLabel(value) {
-  if (!Number.isFinite(Number(value))) return '—';
+  if (!Number.isFinite(Number(value))) return 'â€”';
   return `${Math.abs(Number(value)) >= 10 ? Number(value).toFixed(0) : Number(value).toFixed(1)}`;
 }
 
 function compactPctLabel(value) {
-  if (!Number.isFinite(Number(value))) return '—';
+  if (!Number.isFinite(Number(value))) return 'â€”';
   return `${Math.round(Number(value))}`;
 }
 
@@ -888,8 +888,8 @@ function normalizeDayMarker(ts) {
 function buildDaylightAnnotations() {
   const t = chartTheme();
   const items = [];
-  const sunrise = normalizeDayMarker(S?.next_sunrise_ts);
-  const sunset = normalizeDayMarker(S?.next_sunset_ts);
+  const sunrise = normalizeDayMarker(S?.next_sunrise_ts ? new Date(S.next_sunrise_ts).getTime() : null);
+  const sunset = normalizeDayMarker(S?.next_sunset_ts ? new Date(S.next_sunset_ts).getTime() : null);
   if (Number.isFinite(sunrise) && Number.isFinite(sunset) && sunset > sunrise) {
     items.push({
       x: sunrise,
@@ -906,6 +906,78 @@ function buildDaylightAnnotations() {
     label: { text: 'Now', color: t.nowLabelColor, background: t.nowLabelBg },
   });
   return items;
+}
+
+// ── Sun band + PV forecast SVG overlay injected behind ApexCharts series ─────
+function buildSunBandPath(sunriseMs, sunsetMs, xOf, yBase, amplitude, segments) {
+  if (segments === undefined) segments = 40;
+  if (!Number.isFinite(sunriseMs) || !Number.isFinite(sunsetMs) || sunsetMs <= sunriseMs) return '';
+  var d = 'M ' + xOf(sunriseMs).toFixed(2) + ' ' + yBase.toFixed(2);
+  for (var i = 0; i <= segments; i++) {
+    var f = i / segments;
+    var t = sunriseMs + f * (sunsetMs - sunriseMs);
+    var y = yBase - (Math.sin(Math.PI * f) * amplitude);
+    d += ' L ' + xOf(t).toFixed(2) + ' ' + y.toFixed(2);
+  }
+  d += ' L ' + xOf(sunsetMs).toFixed(2) + ' ' + yBase.toFixed(2) + ' Z';
+  return d;
+}
+
+function injectSunBandAll() {
+  var sunriseMs = S && S.next_sunrise_ts ? new Date(S.next_sunrise_ts).getTime() : NaN;
+  var sunsetMs  = S && S.next_sunset_ts  ? new Date(S.next_sunset_ts).getTime()  : NaN;
+  var nowMs   = Date.now();
+  var axisMin = startOfTodayMs();
+  var axisMax = endOfTodayMs();
+  var dark    = isDarkTheme();
+  var pvPts = histPow.filter(function(x){ return x.pvForecast != null && x.pvForecast > 0; }).map(function(x){ return { t: x.t, v: x.pvForecast }; });
+  var pvMax = pvPts.length ? Math.max.apply(null, [0.1].concat(pvPts.map(function(p){ return p.v; }))) : 0;
+  [powerChart, flowChart, priceChart].forEach(function(chart) {
+    if (!chart) return;
+    var g = chart.w && chart.w.globals;
+    if (!g || !g.gridWidth || !g.gridHeight) return;
+    var innerG = chart.el.querySelector('.apexcharts-inner');
+    if (!innerG) return;
+    var old = innerG.querySelectorAll('.sun-inject');
+    for (var i = 0; i < old.length; i++) old[i].remove();
+    var w = g.gridWidth;
+    var h = g.gridHeight;
+    var xOf = function(t) { return ((Math.min(axisMax, Math.max(axisMin, t)) - axisMin) / (axisMax - axisMin)) * w; };
+    if (pvPts.length > 1 && pvMax > 0) {
+      var yPvOf = function(v) { return h - (Math.max(0, Math.min(pvMax, v)) / pvMax) * h; };
+      var pvHist = pvPts.filter(function(p){ return p.t >= axisMin && p.t <= Math.min(axisMax, nowMs); });
+      if (pvHist.length > 1) {
+        var areaD = 'M ' + xOf(pvHist[0].t).toFixed(2) + ' ' + h.toFixed(2);
+        pvHist.forEach(function(p){ areaD += ' L ' + xOf(p.t).toFixed(2) + ' ' + yPvOf(p.v).toFixed(2); });
+        areaD += ' L ' + xOf(pvHist[pvHist.length - 1].t).toFixed(2) + ' ' + h.toFixed(2) + ' Z';
+        var pvPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pvPath.setAttribute('class', 'sun-inject');
+        pvPath.setAttribute('d', areaD);
+        pvPath.setAttribute('fill', '#f59e0b');
+        pvPath.setAttribute('fill-opacity', dark ? '0.18' : '0.15');
+        pvPath.setAttribute('stroke', '#f59e0b');
+        pvPath.setAttribute('stroke-opacity', dark ? '0.50' : '0.40');
+        pvPath.setAttribute('stroke-width', '1.5');
+        innerG.insertBefore(pvPath, innerG.firstChild);
+      }
+    }
+    if (Number.isFinite(sunriseMs) && Number.isFinite(sunsetMs)) {
+      var pathD = buildSunBandPath(
+        Math.max(axisMin, sunriseMs),
+        Math.min(axisMax, sunsetMs),
+        xOf, h, h - 2
+      );
+      if (pathD) {
+        var sunPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        sunPath.setAttribute('class', 'sun-inject');
+        sunPath.setAttribute('d', pathD);
+        sunPath.setAttribute('fill', dark ? '#c99732' : '#c36a1f');
+        sunPath.setAttribute('fill-opacity', dark ? '0.15' : '0.09');
+        sunPath.setAttribute('stroke', 'none');
+        innerG.insertBefore(sunPath, innerG.firstChild);
+      }
+    }
+  });
 }
 
 function buildPowerYAxisConfig(simulation = false) {
@@ -1037,7 +1109,7 @@ function initCharts() {
   priceChart.render();
 }
 
-// ── History backfill from server on load ──────────────────────────────────────
+// â”€â”€ History backfill from server on load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function backfillHistory() {
   try {
     const r = await fetch(addonApiUrl('api/history'), { headers: buildAuthHeaders() });
@@ -1049,7 +1121,7 @@ async function backfillHistory() {
   } catch(e) {}
 }
 
-// ── Polling ───────────────────────────────────────────────────────────────────
+// â”€â”€ Polling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function poll() {
   try {
     const r = await fetch(addonApiUrl('api/status'), { headers: buildAuthHeaders() });
@@ -1199,13 +1271,15 @@ function refreshCharts() {
       ].filter(Boolean),
     },
   }, false, false);
+  // Re-inject sun band + PV overlay after ApexCharts finishes re-rendering
+  requestAnimationFrame(injectSunBandAll);
 }
 
-// ── UI update ─────────────────────────────────────────────────────────────────
-function fc(v,d=2){ return (v==null)?'—':Number(v).toFixed(d); }
-function fcc(v){ if(v==null) return '—'; const c=Number(v)*100; return Math.abs(c)<1 ? c.toFixed(1)+'c' : Math.round(c)+'c'; }
+// â”€â”€ UI update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function fc(v,d=2){ return (v==null)?'â€”':Number(v).toFixed(d); }
+function fcc(v){ if(v==null) return 'â€”'; const c=Number(v)*100; return Math.abs(c)<1 ? c.toFixed(1)+'c' : Math.round(c)+'c'; }
 function ts(){ return new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
-function tsISO(iso){ return iso ? new Date(iso).toLocaleString('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).replace(',','T').replace(' ','') : '—'; }
+function tsISO(iso){ return iso ? new Date(iso).toLocaleString('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).replace(',','T').replace(' ','') : 'â€”'; }
 
 function setPendingBadge(id, on, status='pending', text='Pending...') {
   const el = document.getElementById(id);
@@ -1238,7 +1312,7 @@ function formatFieldErrors(fieldErrors) {
 function setTextWithFlash(id, nextText) {
   const el = document.getElementById(id);
   if (!el) return;
-  const text = String(nextText ?? '—');
+  const text = String(nextText ?? 'â€”');
   if (el.textContent !== text) {
     el.textContent = text;
     el.classList.remove('live-flash');
@@ -1273,9 +1347,9 @@ function updateOverview() {
   setTextWithFlash('pollVal', String(Math.round(POLL / 1000)));
 
   // Status cards
-  setTextWithFlash('sCtrl', s.sigenergy_mode === 'Automated' ? 'automated' : (s.sigenergy_mode||'—'));
+  setTextWithFlash('sCtrl', s.sigenergy_mode === 'Automated' ? 'automated' : (s.sigenergy_mode||'â€”'));
   setTextWithFlash('sErr', s.last_cycle_error || 'none');
-  setTextWithFlash('sMode', s.ems_mode || '—');
+  setTextWithFlash('sMode', s.ems_mode || 'â€”');
   setTextWithFlash('sBat', fc(s.battery_soc,1));
   setTextWithFlash('sSunrise', fc(s.sunrise_soc_target,2));
   setTextWithFlash('sImpPrice', fcc(s.current_price));
@@ -1291,7 +1365,7 @@ function updateOverview() {
   setTextWithFlash('gExpFloor', Number.isFinite(Number(uiCfg?.min_export_target_soc)) ? fc(uiCfg.min_export_target_soc,1) + '%' : fc(s.min_soc_to_sunrise,1) + '%');
 
   // Reason
-  document.getElementById('reasonBar').textContent = s.outcome_reason || '—';
+  document.getElementById('reasonBar').textContent = s.outcome_reason || 'â€”';
 
   // Sync controls
   const focusedId = document.activeElement?.id;
@@ -1320,13 +1394,13 @@ function syncSel(id, val) {
 function setV(id, val) { const el=document.getElementById(id); if(el&&val!=null) el.value=val; }
 
 function getDischargeClampMax() {
-  // Ceiling for export/discharge — exclude sentinel 999 (hardware not yet reported)
+  // Ceiling for export/discharge â€” exclude sentinel 999 (hardware not yet reported)
   const n = Number(S?.ess_max_discharge_kw);
   return (Number.isFinite(n) && n > 0 && n < 999) ? n : 50;
 }
 
 function getChargeClampMax() {
-  // Ceiling for import/charge — exclude sentinel 999
+  // Ceiling for import/charge â€” exclude sentinel 999
   const n = Number(S?.ess_max_charge_kw);
   return (Number.isFinite(n) && n > 0 && n < 999) ? n : 50;
 }
@@ -1406,7 +1480,7 @@ function lerp(a, b, t) { return a + (b - a) * clamp01(t); }
 
 function formatTier(name, limit) {
   if (limit <= 0) return name;
-  return `${name} · ${fc(limit,2)} kW`;
+  return `${name} Â· ${fc(limit,2)} kW`;
 }
 
 function getBaseThresholdConfig() {
@@ -1509,6 +1583,7 @@ function applySimulationOverlay(profile, options = {}) {
 
   simPreview = {
     profile: selected.profile,
+      requestAnimationFrame(injectSunBandAll);
     exportLimit,
     importLimit,
     net: Number(selected.est?.net || 0),
@@ -1571,8 +1646,8 @@ function updateScenarioComparison() {
       <div class="${cls}">
         <div class="scenario-name">${PROFILE_META[p].label}</div>
         <div class="scenario-metric">Rank: <strong>#${idx + 1}</strong>${idx === 0 ? ' (best)' : ''}</div>
-        <div class="scenario-metric">Computed export: <strong>${exp.limit == null ? '—' : fc(exp.limit,2) + ' kW'}</strong></div>
-        <div class="scenario-metric">Computed import: <strong>${imp.limit == null ? '—' : fc(imp.limit,2) + ' kW'}</strong></div>
+        <div class="scenario-metric">Computed export: <strong>${exp.limit == null ? 'â€”' : fc(exp.limit,2) + ' kW'}</strong></div>
+        <div class="scenario-metric">Computed import: <strong>${imp.limit == null ? 'â€”' : fc(imp.limit,2) + ' kW'}</strong></div>
         <div class="scenario-metric">Est. net/h: <strong class="${signCls}">${signedNet}</strong></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
           <button class="scenario-btn" onclick="selectProfile('${p}')">Preview</button>
@@ -1642,17 +1717,17 @@ function updateThresholdPreview() {
   if (S.price_is_estimated) notes.push('current prices are estimated, not actual');
 
   el.innerHTML = `
-    <div class="preview-title">Live Threshold Preview · ${PROFILE_META[p].label}</div>
+    <div class="preview-title">Live Threshold Preview Â· ${PROFILE_META[p].label}</div>
     <div class="preview-grid">
       <div class="preview-cell">
         <div class="preview-lbl">Threshold-Based Export</div>
-        <div class="preview-val">${exp.limit == null ? '—' : fc(exp.limit,2) + ' kW'}</div>
+        <div class="preview-val">${exp.limit == null ? 'â€”' : fc(exp.limit,2) + ' kW'}</div>
         <div class="preview-sub">${formatTier(exp.band, exp.limit || 0)}</div>
         <div class="preview-sub">Actual optimizer now: ${fc(S.export_limit,2)} kW</div>
       </div>
       <div class="preview-cell">
         <div class="preview-lbl">Threshold-Based Import</div>
-        <div class="preview-val">${imp.limit == null ? '—' : fc(imp.limit,2) + ' kW'}</div>
+        <div class="preview-val">${imp.limit == null ? 'â€”' : fc(imp.limit,2) + ' kW'}</div>
         <div class="preview-sub">${formatTier(imp.band, imp.limit || 0)}</div>
         <div class="preview-sub">Actual optimizer now: ${fc(S.import_limit,2)} kW</div>
       </div>
@@ -1671,7 +1746,7 @@ function updateThresholdPreview() {
 }
 </script>
 <script>
-// ── Actions ───────────────────────────────────────────────────────────────────
+// â”€â”€ Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function getUiApiKey() {
   const el = document.getElementById('uiApiKey');
   const fromInput = (el?.value || '').trim();
@@ -1872,12 +1947,12 @@ async function applyMode(btn) {
   const prevMode = S?.sigenergy_mode;
   setActionMessage('msgMode', 'warn', `Sending mode change at ${ts()}...`);
   setPendingBadge('pending-mode', true, 'saving', 'Saving...');
-  btn.disabled=true; btn.textContent='Applying…';
+  btn.disabled=true; btn.textContent='Applyingâ€¦';
   try {
     const targetMode = document.getElementById('modeSelect').value;
     await post('api/set_mode', {mode: targetMode});
     const ok = await waitForStatusMatch((s) => String(s.sigenergy_mode || '') === String(targetMode));
-    btn.textContent = ok ? 'Applied ✓' : 'Applied (pending)';
+    btn.textContent = ok ? 'Applied âœ“' : 'Applied (pending)';
     setPendingBadge('pending-mode', true, ok ? 'saved' : 'saving', ok ? 'Saved' : 'Pending...');
     setActionMessage('msgMode', ok ? 'ok' : 'warn', ok
       ? `Mode updated to ${targetMode} at ${ts()}.`
@@ -1907,7 +1982,7 @@ async function applyESS(btn) {
   };
   setActionMessage('msgEss', 'warn', `Sending ESS update at ${ts()}...`);
   setPendingBadge('pending-ess', true, 'saving', 'Saving...');
-  btn.disabled=true; btn.textContent='Applying…';
+  btn.disabled=true; btn.textContent='Applyingâ€¦';
   try {
     const target = {
       ems_mode: document.getElementById('emsMode').value,
@@ -1929,7 +2004,7 @@ async function applyESS(btn) {
       const samePv = Math.abs(Number(s.pv_max_power_limit || 0) - target.pv_max_power_limit) < 0.11;
       return sameMode && sameExp && sameImp && samePv;
     });
-    btn.textContent = ok ? 'Applied ✓' : 'Applied (pending)';
+    btn.textContent = ok ? 'Applied âœ“' : 'Applied (pending)';
     setPendingBadge('pending-ess', true, ok ? 'saved' : 'saving', ok ? 'Saved' : 'Pending...');
     setActionMessage('msgEss', ok ? 'ok' : 'warn', ok
       ? `ESS controls applied at ${ts()}.`
@@ -1969,7 +2044,7 @@ async function applyThresholds(btn) {
   };
   setActionMessage('msgThresholds', 'warn', `Saving thresholds at ${ts()}...`);
   setPendingBadge('pending-thresholds', true, 'saving', 'Saving...');
-  btn.disabled=true; btn.textContent='Applying…';
+  btn.disabled=true; btn.textContent='Applyingâ€¦';
   const pairs = [
     ['export_threshold_low',   +document.getElementById('tExpLowPrice').value/100],
     ['export_threshold_medium',+document.getElementById('tExpMedPrice').value/100],
@@ -1987,7 +2062,7 @@ async function applyThresholds(btn) {
   try {
     const updates = pairs.map(([key, value]) => ({ key, value }));
     await post('api/config/batch', { updates, persist: true });
-    btn.textContent='Applied + Saved ✓';
+    btn.textContent='Applied + Saved âœ“';
     setPendingBadge('pending-thresholds', true, 'saved', 'Saved');
     setActionMessage('msgThresholds', 'ok', `Thresholds saved at ${ts()}.`);
     await loadConfig();
@@ -2006,8 +2081,8 @@ async function applyThresholds(btn) {
 }
 
 async function runCycle() {
-  const btn = document.getElementById('btnRun'); btn.disabled=true; btn.textContent='Running…';
-  try { await post('api/run_cycle', {}); await poll(); btn.textContent='Done ✓'; }
+  const btn = document.getElementById('btnRun'); btn.disabled=true; btn.textContent='Runningâ€¦';
+  try { await post('api/run_cycle', {}); await poll(); btn.textContent='Done âœ“'; }
   catch(e){ btn.textContent='Error'; btn.title=e.message||String(e); console.error('runCycle:', e.message); }
   setTimeout(()=>{ btn.textContent='Run Cycle Now'; btn.title=''; btn.disabled=false; }, 2000);
 }
@@ -2020,13 +2095,13 @@ function setSimulationPanelVisible(show) {
   panel.classList.toggle('is-hidden', !show);
 }
 
-// ── Simulation ────────────────────────────────────────────────────────────────
+// â”€â”€ Simulation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function runSimulation() {
   setSimulationPanelVisible(true);
-  const btn = document.getElementById('btnSim'); btn.disabled=true; btn.textContent='Simulating…';
+  const btn = document.getElementById('btnSim'); btn.disabled=true; btn.textContent='Simulatingâ€¦';
   const resEl = document.getElementById('simResult');
   if (!S || (!Number.isFinite(Number(S.current_price)) && !Number.isFinite(Number(S.feedin_price)))) {
-    resEl.textContent = 'Waiting for live data from Home Assistant…';
+    resEl.textContent = 'Waiting for live data from Home Assistantâ€¦';
     btn.textContent='Simulate Automated'; btn.disabled=false;
     return;
   }
@@ -2059,7 +2134,7 @@ function clearSim() {
   updateOverview();
 }
 
-// ── Entities tab ──────────────────────────────────────────────────────────────
+// â”€â”€ Entities tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadEntities() {
   const el = document.getElementById('entContent');
   try {
@@ -2086,7 +2161,7 @@ async function loadEntities() {
         <table class="etable">
           <thead><tr><th>Key</th><th>Entity</th><th>State</th></tr></thead>
           <tbody>
-            ${rows.map(([k,e,v])=>`<tr><td>${k}</td><td>${e}</td><td>${v??'—'}</td></tr>`).join('')}
+            ${rows.map(([k,e,v])=>`<tr><td>${k}</td><td>${e}</td><td>${v??'â€”'}</td></tr>`).join('')}
           </tbody>
         </table>
       </div>`;
@@ -2102,7 +2177,7 @@ async function loadEarnings() {
     ]);
     const rows = (hist.days || []).map((d) => `
       <tr>
-        <td>${d.date || '—'}</td>
+        <td>${d.date || 'â€”'}</td>
         <td style="text-align:right">${fc(d.import_kwh,3)}</td>
         <td style="text-align:right">${fc(d.export_kwh,3)}</td>
         <td style="text-align:right">$${fc(d.import_costs,2)}</td>
@@ -2127,7 +2202,7 @@ async function loadEarnings() {
   }
 }
 
-// ── Config tab ────────────────────────────────────────────────────────────────
+// â”€â”€ Config tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const _ENTITY_GROUPS = [
   { title: 'EMS Controls', keys: [
     ['ha_control_switch',         'HA Control Switch'],
@@ -2703,7 +2778,7 @@ async function applyConfigSection(btn, sectionKey) {
   btn.disabled = true;
   const originalText = btn.textContent;
   setPendingBadge(`pending-cfg-${sectionKey}`, true, 'saving', 'Saving...');
-  btn.textContent = 'Saving…';
+  btn.textContent = 'Savingâ€¦';
   const section = _CONFIG_SECTIONS.find(s => s.key === sectionKey);
   const msg = document.getElementById(`msg_${sectionKey}`);
   const prevValues = {};
@@ -2715,7 +2790,7 @@ async function applyConfigSection(btn, sectionKey) {
   try {
     const updates = section.fields.map(field => readConfigFieldValue(sectionKey, field));
     await post('api/config/batch', { updates, persist: true });
-    btn.textContent = 'Saved ✓';
+    btn.textContent = 'Saved âœ“';
     setPendingBadge(`pending-cfg-${sectionKey}`, true, 'saved', 'Saved');
     if (msg) { msg.textContent = `Saved at ${ts()}.`; msg.style.color = '#276749'; }
   } catch(e) {
@@ -2742,7 +2817,7 @@ async function applyConfigSection(btn, sectionKey) {
   }, 3000);
 }
 
-// ── Logs tab ──────────────────────────────────────────────────────────────────
+// â”€â”€ Logs tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadLogs() {
   const el = document.getElementById('logContent');
   const metaEl = document.getElementById('logMeta');
@@ -2955,7 +3030,7 @@ async function loadAudit() {
   }
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const uiApiKeyInput = document.getElementById('uiApiKey');
 if (uiApiKeyInput) {
   uiApiKeyInput.value = sessionStorage.getItem('sigenergy_ui_api_key') || '';
