@@ -764,6 +764,17 @@ function chartTheme() {
   };
 }
 
+function mateDaylightStyle() {
+  const t = chartTheme();
+  const dark = isDarkTheme();
+  return {
+    fill: t.daylightFill,
+    opacity: dark ? Math.max(0.24, Number(t.daylightOpacity || 0.16)) : Math.max(0.12, Number(t.daylightOpacity || 0.10)),
+    stroke: dark ? '#f59e0b' : '#b45309',
+    strokeOpacity: dark ? 0.60 : 0.32,
+  };
+}
+
 // ------ Chart initialisation ------------------------------------------------------------------------------------------------------------------------------------------------------------------
 function mkChart(el, series, colors, yaxis, extra) {
   const t = chartTheme();
@@ -1419,9 +1430,10 @@ function renderMatePowerChart(batterySeries, minSocSeries, pvSeries, pvForecastS
   const sunset = normalizeDayMarker(S?.next_sunset_ts);
   let sunBand = '';
   if (Number.isFinite(sunrise) && Number.isFinite(sunset) && sunset > sunrise) {
+    const band = mateDaylightStyle();
     const x1 = xOf(sunrise);
     const x2 = xOf(sunset);
-    sunBand = `<rect x="${x1.toFixed(2)}" y="${m.top}" width="${Math.max(0, x2 - x1).toFixed(2)}" height="${plotH.toFixed(2)}" fill="${MATE_STYLE.daylightFill}" fill-opacity="${MATE_STYLE.daylightOpacity}" />`;
+    sunBand = `<rect x="${x1.toFixed(2)}" y="${m.top}" width="${Math.max(0, x2 - x1).toFixed(2)}" height="${plotH.toFixed(2)}" fill="${band.fill}" fill-opacity="${band.opacity}" stroke="${band.stroke}" stroke-opacity="${band.strokeOpacity}" stroke-width="1" />`;
   }
 
   const nowMs = Date.now();
@@ -1685,9 +1697,10 @@ function renderMatePriceChart(importPriceSeries, feedinPriceSeries, importForeca
   const sunset = normalizeDayMarker(S?.next_sunset_ts);
   let sunBand = '';
   if (Number.isFinite(sunrise) && Number.isFinite(sunset) && sunset > sunrise) {
+    const band = mateDaylightStyle();
     const x1 = xOf(sunrise);
     const x2 = xOf(sunset);
-    sunBand = `<rect x="${x1.toFixed(2)}" y="${m.top}" width="${Math.max(0, x2 - x1).toFixed(2)}" height="${plotH.toFixed(2)}" fill="${MATE_STYLE.daylightFill}" fill-opacity="${MATE_STYLE.daylightOpacity}" />`;
+    sunBand = `<rect x="${x1.toFixed(2)}" y="${m.top}" width="${Math.max(0, x2 - x1).toFixed(2)}" height="${plotH.toFixed(2)}" fill="${band.fill}" fill-opacity="${band.opacity}" stroke="${band.stroke}" stroke-opacity="${band.strokeOpacity}" stroke-width="1" />`;
   }
   const nowMs = Date.now();
   const nowX = xOf(nowMs);
@@ -2185,17 +2198,18 @@ function toneHueFromScore(score) {
   return Math.round(clamp01(score) * 120);
 }
 
-function toneFillColor(score, alpha = 0.22) {
-  return `hsla(${toneHueFromScore(score)}, 82%, 45%, ${alpha})`;
+function toneFillColor(score, alpha = 0.22, darkTheme = false) {
+  return `hsla(${toneHueFromScore(score)}, ${darkTheme ? 78 : 82}%, ${darkTheme ? 34 : 45}%, ${alpha})`;
 }
 
-function toneBorderColor(score) {
-  return `hsl(${toneHueFromScore(score)}, 76%, 38%)`;
+function toneBorderColor(score, darkTheme = false) {
+  return `hsl(${toneHueFromScore(score)}, ${darkTheme ? 78 : 76}%, ${darkTheme ? 52 : 38}%)`;
 }
 
 function toneTextColor(score, darkTheme = false) {
   if (darkTheme) {
-    return `hsl(${toneHueFromScore(score)}, 90%, 85%)`;
+    // Keep dark-theme numeric text bright for readability, independent of hue.
+    return '#eaf4ff';
   }
   return `hsl(${toneHueFromScore(score)}, 74%, 30%)`;
 }
@@ -2209,9 +2223,10 @@ function applyGlanceTone(cardId, score, alpha = 0.22) {
     return;
   }
   const s = clamp01(score);
-  el.style.setProperty('--fill-color', toneFillColor(s, alpha));
-  el.style.setProperty('--tone-border', toneBorderColor(s));
-  el.style.setProperty('--tone-value', toneTextColor(s, isDarkTheme()));
+  const dark = isDarkTheme();
+  el.style.setProperty('--fill-color', toneFillColor(s, alpha, dark));
+  el.style.setProperty('--tone-border', toneBorderColor(s, dark));
+  el.style.setProperty('--tone-value', toneTextColor(s, dark));
 }
 
 function finiteSeriesValues(points) {
@@ -3886,6 +3901,8 @@ function applyTheme(mode) {
   try { localStorage.setItem('sigenergy_theme', dark ? 'dark' : 'light'); } catch (_) {}
   const btn = document.getElementById('btnTheme');
   if (btn) btn.textContent = dark ? 'Light Mode' : 'Dark Mode';
+  // Recompute card tones immediately so text/fill remain readable after theme toggle.
+  if (S && typeof S === 'object') updateOverview();
   if (powerChart && flowChart && priceChart) {
     if (simActive && simPreview) applySimulationOverlay(simPreview.profile, { silent: true });
     else refreshCharts();
