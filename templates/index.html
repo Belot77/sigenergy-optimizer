@@ -178,6 +178,7 @@ select:focus,input:focus{border-color:#276749}
 .chart-key{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#4a5568;font-weight:600}
 .chart-key::before{content:"";width:18px;height:0;border-top:2px solid currentColor;display:inline-block}
 .chart-key.dashed::before{border-top-style:dashed}
+.chart-legend{display:flex;gap:10px 12px;flex-wrap:wrap}
 .apx-root{position:relative}
 .apx-surface{position:relative;overflow:hidden;border-radius:10px}
 .apx-surface svg{display:block;width:100%;height:100%}
@@ -505,10 +506,12 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
             <div id="matePowerTip" class="apx-tooltip"></div>
           </div>
           <div class="chart-foot">
-            <div class="chart-note" id="powerChartNote">Hover to inspect exact values. The daylight band is aligned to Home Assistant sunrise and sunset.</div>
-            <div style="display:flex;gap:12px;flex-wrap:wrap">
-              <span class="chart-key">Live</span>
-              <span class="chart-key dashed">Forecast / Simulated</span>
+            <div class="chart-legend">
+              <span class="chart-key" style="color:#1e88e5">Battery %</span>
+              <span class="chart-key" style="color:#4fd1c5">Min SoC %</span>
+              <span class="chart-key" style="color:#f59e0b">PV Output kW</span>
+              <span class="chart-key dashed" style="color:#f59e0b">PV Forecast kW</span>
+              <span class="chart-key" style="color:#a855f7">Consumption kW</span>
             </div>
           </div>
         </div>
@@ -528,10 +531,10 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
             <div id="mateFlowTip" class="apx-tooltip"></div>
           </div>
           <div class="chart-foot">
-            <div class="chart-note">Solid lines show measured flow only. Dashed lines are shown only when explicit forecast data is available.</div>
-            <div style="display:flex;gap:12px;flex-wrap:wrap">
-              <span class="chart-key">Measured</span>
-              <span class="chart-key dashed">Forecast</span>
+            <div class="chart-legend">
+              <span class="chart-key" style="color:#ef4444">Grid Import</span>
+              <span class="chart-key" style="color:#22c55e">Grid Export</span>
+              <span class="chart-key dashed" style="color:#f59e0b">PV Forecast kW</span>
             </div>
           </div>
         </div>
@@ -551,10 +554,11 @@ html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
             <div id="matePriceTip" class="apx-tooltip"></div>
           </div>
           <div class="chart-foot">
-            <div class="chart-note">The zero line is emphasised so negative import periods and export spikes stand out immediately.</div>
-            <div style="display:flex;gap:12px;flex-wrap:wrap">
-              <span class="chart-key">Measured</span>
-              <span class="chart-key dashed">Forecast</span>
+            <div class="chart-legend">
+              <span class="chart-key" style="color:#b91c1c">Import Price</span>
+              <span class="chart-key" style="color:#047857">Feed-in Price</span>
+              <span class="chart-key dashed" style="color:#f59e0b">Import Forecast</span>
+              <span class="chart-key dashed" style="color:#22c55e">Feed-in Forecast</span>
             </div>
           </div>
         </div>
