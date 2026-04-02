@@ -179,6 +179,10 @@ class Settings(BaseSettings):
     morning_slow_charge_min_feedin_price: float = Field(0.0, env="MORNING_SLOW_CHARGE_MIN_FEEDIN_PRICE")
     morning_slow_charge_base_load_kw: float = Field(0.5, env="MORNING_SLOW_CHARGE_BASE_LOAD_KW")
     morning_slow_charge_sunset_cutoff: float = Field(1.0, env="MORNING_SLOW_CHARGE_SUNSET_CUTOFF")
+    morning_slow_export_start_margin_kw: float = Field(0.7, env="MORNING_SLOW_EXPORT_START_MARGIN_KW")
+    morning_slow_export_stop_margin_kw: float = Field(0.2, env="MORNING_SLOW_EXPORT_STOP_MARGIN_KW")
+    morning_slow_export_ramp_up_step_kw: float = Field(0.8, env="MORNING_SLOW_EXPORT_RAMP_UP_STEP_KW")
+    morning_slow_export_ramp_down_step_kw: float = Field(1.2, env="MORNING_SLOW_EXPORT_RAMP_DOWN_STEP_KW")
 
     # ------------------------------------------------------------------
     # Morning dump

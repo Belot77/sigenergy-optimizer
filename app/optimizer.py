@@ -1099,6 +1099,10 @@ class SigEnergyOptimizer:
             "import_branch": import_branch,
             "cfg_morning_slow_charge_enabled": cfg.morning_slow_charge_enabled,
             "cfg_morning_slow_charge_rate_kw": cfg.morning_slow_charge_rate_kw,
+            "cfg_morning_slow_export_start_margin_kw": cfg.morning_slow_export_start_margin_kw,
+            "cfg_morning_slow_export_stop_margin_kw": cfg.morning_slow_export_stop_margin_kw,
+            "cfg_morning_slow_export_ramp_up_step_kw": cfg.morning_slow_export_ramp_up_step_kw,
+            "cfg_morning_slow_export_ramp_down_step_kw": cfg.morning_slow_export_ramp_down_step_kw,
             "cfg_target_battery_charge": cfg.target_battery_charge,
             "cfg_max_price_threshold": cfg.max_price_threshold,
             "cfg_export_threshold_low": cfg.export_threshold_low,
@@ -1717,12 +1721,30 @@ class SigEnergyOptimizer:
                 return 0.0
 
         # Morning slow charge with PV surplus
-        if morning_slow_charge_active and pv_surplus >= cfg.morning_slow_charge_rate_kw + 0.5:
+        if morning_slow_charge_active:
+            start_threshold = cfg.morning_slow_charge_rate_kw + cfg.morning_slow_export_start_margin_kw
+            stop_threshold = cfg.morning_slow_charge_rate_kw + cfg.morning_slow_export_stop_margin_kw
+            current_export = s.current_export_limit if s.current_export_limit > 0.05 else 0.0
+            export_is_open = current_export >= cfg.min_grid_transfer_kw
+            has_surplus_window = pv_surplus >= start_threshold or (export_is_open and pv_surplus >= stop_threshold)
+            if not has_surplus_window:
+                return 0.0
+
             available = max(pv_surplus - cfg.morning_slow_charge_rate_kw - cfg.min_grid_transfer_kw, 0.0)
-            limit = min(available, s.ess_max_discharge_kw)
-            if limit < cfg.min_grid_transfer_kw:
-                return 0.0 if limit <= 0 else cfg.min_grid_transfer_kw
-            return round(limit, 1)
+            raw_limit = min(available, s.ess_max_discharge_kw)
+            if raw_limit <= 0:
+                return 0.0
+            if raw_limit < cfg.min_grid_transfer_kw:
+                raw_limit = cfg.min_grid_transfer_kw
+
+            # Smooth morning slow-charge export setpoint changes to reduce oscillation.
+            if current_export <= 0:
+                return round(raw_limit, 1)
+            if raw_limit > current_export:
+                ramped = min(raw_limit, current_export + cfg.morning_slow_export_ramp_up_step_kw)
+            else:
+                ramped = max(raw_limit, current_export - cfg.morning_slow_export_ramp_down_step_kw)
+            return round(max(ramped, 0.0), 1)
 
         if high_price or spike:
             cap_val = min(tier_limit, cfg.export_limit_high)
