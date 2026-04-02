@@ -1730,7 +1730,8 @@ class SigEnergyOptimizer:
             if not has_surplus_window:
                 return 0.0
 
-            available = max(pv_surplus - cfg.morning_slow_charge_rate_kw - cfg.min_grid_transfer_kw, 0.0)
+            # Export can use PV left after honoring slow-charge target; avoid double-subtracting min transfer.
+            available = max(pv_surplus - cfg.morning_slow_charge_rate_kw, 0.0)
             raw_limit = min(available, s.ess_max_discharge_kw)
             if raw_limit <= 0:
                 return 0.0
@@ -1967,11 +1968,7 @@ class SigEnergyOptimizer:
             return min(max_charge, desired_import)
         if morning_slow_charge:
             slow = cfg.morning_slow_charge_rate_kw
-            export_open = desired_export >= cfg.min_grid_transfer_kw
-            avail_solar = max(max(s.pv_kw, s.solar_power_now_kw) - s.load_kw, 0.0)
-            dynamic = min(avail_solar, max_charge)
-            if not export_open and dynamic > slow:
-                return round(dynamic, 1)
+            # Keep true slow-charge behavior; avoid charge spikes that collapse export.
             return round(min(slow, max_charge), 1)
         return max_charge
 
