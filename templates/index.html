@@ -245,6 +245,7 @@ select:focus,input:focus{border-color:#276749}
 .cfg-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px}
 .cfg-field{display:flex;flex-direction:column;gap:4px}
 .cfg-field label{font-size:11px;font-weight:600;color:#718096;text-transform:uppercase;letter-spacing:.05em}
+.cfg-help{font-size:11px;line-height:1.35;color:#64748b;margin-top:1px}
 .cfg-entity-badge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:10px;font-weight:700;letter-spacing:0;text-transform:none}
 .cfg-hint{font-size:11px;color:#475569;margin:0 0 10px 0;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;padding:8px 10px}
 .entity-picker{position:relative}
@@ -360,6 +361,7 @@ html.theme-dark .entity-picker-id{color:#e5edf8}
 html.theme-dark .entity-picker-name,html.theme-dark .entity-picker-empty{color:#c3d2e8}
 html.theme-dark .entity-picker-glyph{background:#1e3a5f;color:#93c5fd}
 html.theme-dark .entity-picker-domain{background:#22314d;color:#dbe7f7}
+html.theme-dark .cfg-help{color:#9fb3cf}
 </style>
 </head>
 <body>
@@ -3598,11 +3600,90 @@ function isEntityKey(key) {
   );
 }
 
+function normalizeFieldLabel(label, key) {
+  return String(label || key || '').replace(/\s+/g, ' ').trim();
+}
+
+function titleFromKey(key) {
+  return String(key || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function configFieldHelp(key, label, type) {
+  const k = String(key || '').toLowerCase();
+  const baseLabel = normalizeFieldLabel(label, key);
+
+  const specific = {
+    evening_boost_forecast_safety: 'Multiplier for required tomorrow PV before Evening Boost discharges harder. Higher value = more conservative boost.',
+    forecast_safety_charging: 'Safety multiplier for refill checks in charging-related logic (e.g. morning features). Higher means more conservative.',
+    forecast_safety_export: 'Safety multiplier for export guards that decide if there is enough forecast energy to allow discharge.',
+    productive_solar_threshold_kw: 'Minimum Solcast PV (kW) treated as productive generation when building solar windows.',
+    solcast_forecast_period_hours: 'Hours represented by each Solcast detailed interval, used when summing interval energy.',
+    morning_slow_charge_base_load_kw: 'Assumed house load (kW) used in morning slow-charge feasibility checks.',
+    morning_slow_charge_rate_kw: 'Target ESS charge rate (kW) when morning slow-charge mode is active.',
+    morning_slow_charge_sunset_cutoff: 'Stops morning slow-charge this many hours before sunset.',
+    morning_dump_hours_before_sunrise: 'How many hours before sunrise the morning dump window opens.',
+    battery_full_forecast_multiplier: 'Forecast multiplier used by battery-full safeguard to decide if export should be blocked.',
+    solar_surplus_start_multiplier: 'Start threshold multiplier for enabling solar-surplus bypass (relative to battery capacity).',
+    solar_surplus_stop_multiplier: 'Lower stop threshold multiplier used to keep solar-surplus bypass active with hysteresis.',
+    solar_surplus_min_pv_margin: 'Minimum PV surplus over load (kW) required before solar-surplus bypass can activate.',
+    export_hysteresis_percent: 'Hysteresis around export decisions to reduce mode flapping.',
+    price_hysteresis: 'Minimum price movement needed before price-tier decisions change state.',
+    min_change_threshold: 'Small-change deadband for command updates; lower values update more often.',
+    poll_interval_seconds: 'How often the optimizer reads sensors and recomputes decisions.',
+    allow_loopback_without_api_key: 'Allows localhost UI/API mutation calls without API key.',
+    require_api_key_for_all_mutations: 'If enabled, all write/mutation endpoints require API key even on local network.',
+    require_api_key_for_config_read: 'If enabled, config read endpoints require API key.',
+  };
+
+  if (specific[k]) return specific[k];
+
+  if (k.endsWith('_enabled') || (type === 'bool' && (k.startsWith('allow_') || k.startsWith('notify_')))) {
+    return `Enable or disable ${baseLabel.toLowerCase()}.`;
+  }
+  if (k.endsWith('_sensor') || k.endsWith('_entity') || k.includes('_select') || k.includes('_switch') || k.includes('_helper')) {
+    return `Home Assistant entity used for ${baseLabel.toLowerCase()}.`;
+  }
+  if (k.includes('_threshold')) {
+    return `Threshold value used to trigger ${baseLabel.toLowerCase()} behaviour.`;
+  }
+  if (k.includes('_limit')) {
+    return `Cap applied when ${baseLabel.toLowerCase()} is selected.`;
+  }
+  if (k.includes('_soc')) {
+    return `Battery SoC percentage target used by ${baseLabel.toLowerCase()} logic.`;
+  }
+  if (k.endsWith('_hours') || k.includes('_hours_') || k.endsWith('_time') || k.includes('_time_') || k.includes('_until') || k.includes('_cutoff')) {
+    return `Timing control for ${baseLabel.toLowerCase()}.`;
+  }
+  if (k.includes('_multiplier') || k.includes('_safety_factor') || k.includes('_safety')) {
+    return `Safety multiplier for ${baseLabel.toLowerCase()}; higher values make decisions more conservative.`;
+  }
+  if (k.includes('_hysteresis')) {
+    return `Hysteresis buffer to prevent rapid toggling in ${baseLabel.toLowerCase()} decisions.`;
+  }
+  if (k.endsWith('_kw')) {
+    return `Power setting in kW for ${baseLabel.toLowerCase()}.`;
+  }
+  if (k.endsWith('_kwh')) {
+    return `Energy setting in kWh for ${baseLabel.toLowerCase()}.`;
+  }
+  if (k.endsWith('_option')) {
+    return `Label text shown in the UI for ${baseLabel.toLowerCase()}.`;
+  }
+  if (k.endsWith('_value')) {
+    return `Default numeric value used for ${baseLabel.toLowerCase()}.`;
+  }
+
+  return `Configuration value for ${titleFromKey(key).toLowerCase()}.`;
+}
+
 function renderConfigField(sectionKey, cfg, field) {
   const [key, label, type, step] = field;
   const value = cfg[key];
   const entityKey = isEntityKey(key);
   const labelHtml = entityKey ? `${label} <span class="cfg-entity-badge">searchable</span>` : label;
+  const helpText = configFieldHelp(key, label, type);
+  const helpHtml = helpText ? `<div class="cfg-help">${escH(helpText)}</div>` : '';
   let input = '';
   if (type === 'bool') {
     input = `<select id="${cfgFieldId(sectionKey, key)}"><option value="true" ${value ? 'selected' : ''}>True</option><option value="false" ${!value ? 'selected' : ''}>False</option></select>`;
@@ -3624,7 +3705,7 @@ function renderConfigField(sectionKey, cfg, field) {
       input = `<input type="text" id="${cfgFieldId(sectionKey, key)}" value="${escH(String(value ?? ''))}">`;
     }
   }
-  return `<div class="cfg-field"><label for="${cfgFieldId(sectionKey, key)}">${labelHtml}</label>${input}</div>`;
+  return `<div class="cfg-field"><label for="${cfgFieldId(sectionKey, key)}">${labelHtml}</label>${helpHtml}${input}</div>`;
 }
 
 function preferredDomainsForKey(key) {
