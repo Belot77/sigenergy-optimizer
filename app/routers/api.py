@@ -642,6 +642,10 @@ async def get_status(request: Request) -> dict[str, Any]:
     display_ess_charge = float(manual_targets.get("ess_charge_limit")) if manual_targets else (s.current_ess_charge_limit if s else (d.ess_charge_limit if d else None))
     display_ess_discharge = float(manual_targets.get("ess_discharge_limit")) if manual_targets else (s.current_ess_discharge_limit if s else (d.ess_discharge_limit if d else None))
     return {
+        "runtime_signature": getattr(opt, "runtime_signature", "unknown"),
+        "morning_slow_charge_runtime_disabled": bool(
+            getattr(opt, "_morning_slow_charge_runtime_disabled", False)
+        ),
         "connected": connected,
         "ws_connected": opt.ws_connected,
         "stale_data": stale_data,
@@ -904,7 +908,8 @@ async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
                 await ha.turn_on(cfg.ha_control_switch)
             else:
                 await ha.turn_off(cfg.ha_control_switch)
-        current_mode = _effective_mode_label(opt, opt.last_state, cfg)
+        mode_from_entity = str(await ha.get_state_value(cfg.sigenergy_mode_select, "") or "")
+        current_mode = mode_from_entity or _effective_mode_label(opt, opt.last_state, cfg)
         if current_mode == str(getattr(cfg, "block_flow_option", "Prevent Import & Export")):
             set_overrides = getattr(opt, "set_manual_ess_overrides", None)
             if callable(set_overrides):

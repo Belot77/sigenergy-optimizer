@@ -60,6 +60,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
+_RUNTIME_SIGNATURE = "2.2.01-haos21-msc-hardoff"
 
 
 class SigEnergyOptimizer:
@@ -86,6 +87,8 @@ class SigEnergyOptimizer:
         self._manual_mode_override: Optional[str] = None
         self._manual_ess_charge_override_kw: Optional[float] = None
         self._manual_ess_discharge_override_kw: Optional[float] = None
+        self._morning_slow_charge_runtime_disabled: bool = True
+        self._morning_slow_disable_logged: bool = False
         tz_name = os.environ.get("TZ", "Australia/Adelaide")
         try:
             self._tz = ZoneInfo(tz_name)
@@ -138,6 +141,10 @@ class SigEnergyOptimizer:
     @property
     def config_time_warnings(self) -> list[str]:
         return self._config_time_warnings
+
+    @property
+    def runtime_signature(self) -> str:
+        return _RUNTIME_SIGNATURE
 
     def refresh_config_time_warnings(self) -> None:
         self._config_time_warnings = self._validate_time_config()
@@ -1528,6 +1535,15 @@ class SigEnergyOptimizer:
         cfg = self.cfg
         ha = self.ha
 
+        async def _wait_for_mode(entity_id: str, expected: str, timeout_s: float = 4.0) -> bool:
+            deadline = asyncio.get_event_loop().time() + timeout_s
+            while asyncio.get_event_loop().time() < deadline:
+                current = str(await ha.get_state_value(entity_id, "") or "")
+                if current == expected:
+                    return True
+                await asyncio.sleep(0.3)
+            return False
+
         async def _set_number_with_retry(entity_id: str, value: float, retries: int = 3) -> bool:
             ok = await ha.set_number(entity_id, value)
             if ok:
@@ -1545,7 +1561,17 @@ class SigEnergyOptimizer:
                     return True
             return False
 
-        ok_mode = await ha.select_option(cfg.ems_mode_select, str(targets["ems_mode"]))
+        target_mode = str(targets["ems_mode"])
+        ok_mode = await ha.select_option(cfg.ems_mode_select, target_mode)
+        if ok_mode:
+            # The inverter can take a short time to commit mode changes. Waiting
+            # here prevents ESS writes being evaluated under the previous mode.
+            mode_settled = await _wait_for_mode(cfg.ems_mode_select, target_mode)
+            if not mode_settled:
+                logger.warning(
+                    "Manual mode target apply: EMS mode did not settle to '%s' before ESS writes",
+                    target_mode,
+                )
         ok_exp = await ha.set_number(cfg.grid_export_limit, float(targets["grid_export_limit"]))
         ok_imp = await ha.set_number(cfg.grid_import_limit, float(targets["grid_import_limit"]))
         ok_pv = await ha.set_number(cfg.pv_max_power_limit, float(targets["pv_max_power_limit"]))
@@ -1947,6 +1973,11 @@ class SigEnergyOptimizer:
 
     def _morning_slow_charge_active(self, s: SolarState, now: datetime,
                                      now_ts: float, slow_end_ts: float) -> bool:
+        if self._morning_slow_charge_runtime_disabled:
+            if not self._morning_slow_disable_logged:
+                logger.warning("Morning slow charge is runtime-disabled in this build")
+                self._morning_slow_disable_logged = True
+            return False
         cfg = self.cfg
         if not cfg.morning_slow_charge_enabled:
             return False
