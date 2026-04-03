@@ -237,6 +237,40 @@ def _state_power_caps_kw(opt: Any) -> tuple[float, float]:
     return charge_cap, discharge_cap
 
 
+def _live_battery_power_kw(s: Any, d: Any) -> float | None:
+    if not s:
+        return d.battery_power_kw if d else None
+
+    direct = getattr(s, "battery_power_sensor_kw", None)
+    grid_import = getattr(s, "grid_import_power_kw", None)
+    grid_export = getattr(s, "grid_export_power_kw", None)
+
+    if grid_import is not None and grid_export is not None:
+        measured_balance = max(float(getattr(s, "pv_kw", 0.0) or 0.0), 0.0)
+        measured_balance += max(float(grid_import or 0.0), 0.0)
+        measured_balance -= max(float(grid_export or 0.0), 0.0)
+        measured_balance -= max(float(getattr(s, "load_kw", 0.0) or 0.0), 0.0)
+
+        if direct is not None:
+            direct_val = float(direct)
+            if abs(measured_balance - direct_val) > 1.5:
+                return measured_balance
+            return direct_val
+        return measured_balance
+
+    if direct is not None:
+        return float(direct)
+
+    return d.battery_power_kw if d else None
+
+
+def _live_outcome_reason(s: Any, d: Any, cfg: Any) -> str | None:
+    mode = str(getattr(s, "sigenergy_mode", "") or "") if s else ""
+    if mode and mode not in {str(getattr(cfg, "automated_option", "Automated")), ""}:
+        return f"Manual mode active ({mode}); optimizer writes paused"
+    return d.outcome_reason if d else None
+
+
 def _coerce_config_value(cfg: Any, key: str, raw: Any) -> Any:
     current = getattr(cfg, key)
     current_type = type(current)
@@ -557,6 +591,8 @@ async def get_status(request: Request) -> dict[str, Any]:
     if s:
         data_age_seconds = (datetime.now(timezone.utc) - s.timestamp.astimezone(timezone.utc)).total_seconds()
         stale_data = data_age_seconds > max(45, int(settings.poll_interval_seconds) * 2)
+    battery_power_kw = _live_battery_power_kw(s, d)
+    outcome_reason = _live_outcome_reason(s, d, cfg)
     return {
         "connected": connected,
         "ws_connected": opt.ws_connected,
@@ -589,10 +625,8 @@ async def get_status(request: Request) -> dict[str, Any]:
         "ess_charge_limit": s.current_ess_charge_limit if s else (d.ess_charge_limit if d else None),
         "ess_discharge_limit": s.current_ess_discharge_limit if s else (d.ess_discharge_limit if d else None),
         "battery_eta": d.battery_eta_formatted if d else None,
-        "battery_power_kw": d.battery_power_kw if d else None,
-        "battery_power_source": (d.trace_values.get("battery_power_source") if d and isinstance(d.trace_values, dict) else None),
-        "battery_power_sensor_entity": cfg.battery_power_sensor,
-        "outcome_reason": d.outcome_reason if d else None,
+        "battery_power_kw": battery_power_kw,
+        "outcome_reason": outcome_reason,
         "is_evening_or_night": d.is_evening_or_night if d else None,
         "morning_dump_active": d.morning_dump_active if d else None,
         "standby_holdoff_active": d.standby_holdoff_active if d else None,
@@ -869,6 +903,8 @@ async def ws_status(websocket: WebSocket) -> None:
             opt = websocket.app.state.optimizer
             s = opt.last_state
             d = opt.last_decision
+            battery_power_kw = _live_battery_power_kw(s, d)
+            outcome_reason = _live_outcome_reason(s, d, opt.cfg)
             await websocket.send_json(
                 {
                     "ws_connected": opt.ws_connected,
@@ -903,11 +939,9 @@ async def ws_status(websocket: WebSocket) -> None:
                     "ess_discharge_limit": s.current_ess_discharge_limit if s else (d.ess_discharge_limit if d else None),
                     "ess_max_charge_kw": s.ess_max_charge_kw if s else None,
                     "ess_max_discharge_kw": s.ess_max_discharge_kw if s else None,
-                    "battery_power_kw": d.battery_power_kw if d else None,
-                    "battery_power_source": (d.trace_values.get("battery_power_source") if d and isinstance(d.trace_values, dict) else None),
-                    "battery_power_sensor_entity": opt.cfg.battery_power_sensor,
+                    "battery_power_kw": battery_power_kw,
                     "sunrise_soc_target": d.sunrise_soc_target if d else None,
-                    "outcome_reason": d.outcome_reason if d else None,
+                    "outcome_reason": outcome_reason,
                     "last_cycle_started": opt.last_cycle_started.isoformat() if getattr(opt, "last_cycle_started", None) else None,
                     "last_cycle_completed": opt.last_cycle_completed.isoformat() if getattr(opt, "last_cycle_completed", None) else None,
                     "last_cycle_error": getattr(opt, "last_cycle_error", ""),
