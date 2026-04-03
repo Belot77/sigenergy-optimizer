@@ -168,16 +168,28 @@ class SigEnergyOptimizer:
         charge_cap = fallback
         discharge_cap = fallback
 
-        if state and self._valid_hw_cap_kw(state.ess_max_charge_kw):
+        configured_charge_baseline = max(0.1, float(self.cfg.ess_charge_limit_value))
+        configured_discharge_baseline = max(0.1, float(self.cfg.ess_discharge_limit_value))
+
+        # Prefer number-entity max attributes as authoritative hardware/UI bounds.
+        # Some dynamic sensors can temporarily report throttled operating limits
+        # (e.g. 3kW during special modes), which must not become global cap sources.
+        if state and self._valid_hw_cap_kw(state.ess_charge_limit_entity_max_kw):
+            charge_cap = float(state.ess_charge_limit_entity_max_kw)
+        elif state and self._valid_hw_cap_kw(state.ess_max_charge_kw):
             charge_cap = float(state.ess_max_charge_kw)
         elif self._valid_hw_cap_kw(self._last_hw_charge_cap_kw):
             charge_cap = float(self._last_hw_charge_cap_kw)
 
-        if state and self._valid_hw_cap_kw(state.ess_max_discharge_kw):
+        if state and self._valid_hw_cap_kw(state.ess_discharge_limit_entity_max_kw):
+            discharge_cap = float(state.ess_discharge_limit_entity_max_kw)
+        elif state and self._valid_hw_cap_kw(state.ess_max_discharge_kw):
             discharge_cap = float(state.ess_max_discharge_kw)
         elif self._valid_hw_cap_kw(self._last_hw_discharge_cap_kw):
             discharge_cap = float(self._last_hw_discharge_cap_kw)
 
+        charge_cap = max(charge_cap, configured_charge_baseline)
+        discharge_cap = max(discharge_cap, configured_discharge_baseline)
         return charge_cap, discharge_cap
 
     def _validate_time_config(self) -> list[str]:
