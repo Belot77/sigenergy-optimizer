@@ -1421,8 +1421,6 @@ class SigEnergyOptimizer:
                 "grid_export_limit": block,
                 "grid_import_limit": block,
                 "pv_max_power_limit": pv_max,
-                "ess_charge_limit": ess_charge,
-                "ess_discharge_limit": ess_discharge,
             }
         return None
 
@@ -1454,11 +1452,11 @@ class SigEnergyOptimizer:
         ok_pv = await ha.set_number(cfg.pv_max_power_limit, float(targets["pv_max_power_limit"]))
 
         ok_chg = True
-        if cfg.ess_max_charging_limit:
+        if cfg.ess_max_charging_limit and "ess_charge_limit" in targets:
             ok_chg = await ha.set_number(cfg.ess_max_charging_limit, float(targets["ess_charge_limit"]))
 
         ok_dis = True
-        if cfg.ess_max_discharging_limit:
+        if cfg.ess_max_discharging_limit and "ess_discharge_limit" in targets:
             ok_dis = await ha.set_number(cfg.ess_max_discharging_limit, float(targets["ess_discharge_limit"]))
 
         if not all([ok_mode, ok_exp, ok_imp, ok_pv, ok_chg, ok_dis]):
