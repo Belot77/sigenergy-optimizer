@@ -2006,23 +2006,14 @@ class SigEnergyOptimizer:
         if s.feedin_price <= cfg.morning_slow_charge_min_feedin_price:
             return False
 
-        # Forecast check
-        target_ts = target_dt.timestamp()
-        ns_total = 0.0
-        for f in s.solcast_detailed:
-            if not isinstance(f, dict):
-                continue
-            try:
-                f_ts = self._parse_ts(f.get("period_start", ""))
-                pv_kw = float(f.get("pv_estimate", 0))
-                if f_ts and target_ts <= f_ts < slow_end_ts:
-                    ns_total += pv_kw * cfg.solcast_forecast_period_hours
-            except Exception:
-                pass
+        # Use remaining-forecast energy from now; this is more robust than requiring
+        # fine-grained detailed forecast bins in a narrow post-target slice.
         cap = s.battery_capacity_kwh
         bat_fill_need = max(0.0, cap - s.available_discharge_energy_kwh)
-        load_need = ((slow_end_ts - target_ts) / 3600) * cfg.morning_slow_charge_base_load_kw
-        return ns_total >= (bat_fill_need + load_need) * cfg.forecast_safety_charging
+        hours_left = max((slow_end_ts - now_ts) / 3600, 0.0)
+        load_need = hours_left * cfg.morning_slow_charge_base_load_kw
+        required_kwh = (bat_fill_need + load_need) * cfg.forecast_safety_charging
+        return s.forecast_remaining_kwh >= required_kwh
 
     def _evening_export_boost_active(self, s: SolarState, now_ts: float,
                                       productive_solar_end_ts, sunrise_soc_target, bat_fill_need_kwh) -> bool:
