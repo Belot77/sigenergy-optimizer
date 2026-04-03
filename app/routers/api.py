@@ -237,6 +237,15 @@ def _state_power_caps_kw(opt: Any) -> tuple[float, float]:
     return charge_cap, discharge_cap
 
 
+def _effective_mode_label(opt: Any, s: Any, cfg: Any) -> str:
+    override = str(getattr(opt, "_manual_mode_override", "") or "")
+    if override:
+        return override
+    if s:
+        return str(getattr(s, "sigenergy_mode", "") or "")
+    return str(getattr(cfg, "automated_option", "Automated"))
+
+
 def _live_battery_power_kw(s: Any, d: Any) -> float | None:
     if not s:
         return d.battery_power_kw if d else None
@@ -245,11 +254,16 @@ def _live_battery_power_kw(s: Any, d: Any) -> float | None:
     grid_import = getattr(s, "grid_import_power_kw", None)
     grid_export = getattr(s, "grid_export_power_kw", None)
 
+    pv_kw = float(getattr(s, "pv_kw", 0.0) or 0.0)
+    load_kw = float(getattr(s, "load_kw", 0.0) or 0.0)
+    current_import_limit = float(getattr(s, "current_import_limit", 0.0) or 0.0)
+    current_export_limit = float(getattr(s, "current_export_limit", 0.0) or 0.0)
+
     if grid_import is not None and grid_export is not None:
         measured_balance = max(float(getattr(s, "pv_kw", 0.0) or 0.0), 0.0)
         measured_balance += max(float(grid_import or 0.0), 0.0)
         measured_balance -= max(float(grid_export or 0.0), 0.0)
-        measured_balance -= max(float(getattr(s, "load_kw", 0.0) or 0.0), 0.0)
+        measured_balance -= max(load_kw, 0.0)
 
         if direct is not None:
             direct_val = float(direct)
@@ -258,14 +272,24 @@ def _live_battery_power_kw(s: Any, d: Any) -> float | None:
             return direct_val
         return measured_balance
 
+    # When grid power telemetry is unavailable, approximate battery flow from
+    # local power balance only in near-blocked grid mode to avoid large drift.
+    if current_import_limit <= 0.11 and current_export_limit <= 0.11:
+        fallback_balance = pv_kw - load_kw
+        if direct is not None:
+            direct_val = float(direct)
+            if abs(fallback_balance - direct_val) > 1.5:
+                return fallback_balance
+            return direct_val
+        return fallback_balance
+
     if direct is not None:
         return float(direct)
 
     return d.battery_power_kw if d else None
 
 
-def _live_outcome_reason(s: Any, d: Any, cfg: Any) -> str | None:
-    mode = str(getattr(s, "sigenergy_mode", "") or "") if s else ""
+def _live_outcome_reason(mode: str, d: Any, cfg: Any) -> str | None:
     if mode and mode not in {str(getattr(cfg, "automated_option", "Automated")), ""}:
         return f"Manual mode active ({mode}); optimizer writes paused"
     return d.outcome_reason if d else None
@@ -591,8 +615,10 @@ async def get_status(request: Request) -> dict[str, Any]:
     if s:
         data_age_seconds = (datetime.now(timezone.utc) - s.timestamp.astimezone(timezone.utc)).total_seconds()
         stale_data = data_age_seconds > max(45, int(settings.poll_interval_seconds) * 2)
+    effective_mode = _effective_mode_label(opt, s, cfg)
+    manual_active = effective_mode not in {str(getattr(cfg, "automated_option", "Automated")), ""}
     battery_power_kw = _live_battery_power_kw(s, d)
-    outcome_reason = _live_outcome_reason(s, d, cfg)
+    outcome_reason = _live_outcome_reason(effective_mode, d, cfg)
     return {
         "connected": connected,
         "ws_connected": opt.ws_connected,
@@ -627,10 +653,10 @@ async def get_status(request: Request) -> dict[str, Any]:
         "battery_eta": d.battery_eta_formatted if d else None,
         "battery_power_kw": battery_power_kw,
         "outcome_reason": outcome_reason,
-        "is_evening_or_night": d.is_evening_or_night if d else None,
-        "morning_dump_active": d.morning_dump_active if d else None,
-        "standby_holdoff_active": d.standby_holdoff_active if d else None,
-        "morning_slow_charge_active": d.morning_slow_charge_active if d else None,
+        "is_evening_or_night": (d.is_evening_or_night if d else None) if not manual_active else False,
+        "morning_dump_active": (d.morning_dump_active if d else None) if not manual_active else False,
+        "standby_holdoff_active": (d.standby_holdoff_active if d else None) if not manual_active else False,
+        "morning_slow_charge_active": (d.morning_slow_charge_active if d else None) if not manual_active else False,
         "evening_export_boost_active": d.evening_export_boost_active if d else None,
         "solar_surplus_bypass": d.solar_surplus_bypass if d else None,
         "pv_safeguard_active": d.pv_safeguard_active if d else None,
@@ -666,7 +692,7 @@ async def get_status(request: Request) -> dict[str, Any]:
         "daily_load_kwh": s.daily_load_kwh if s else None,
         "daily_battery_charge_kwh": s.daily_battery_charge_kwh if s else None,
         "daily_battery_discharge_kwh": s.daily_battery_discharge_kwh if s else None,
-        "sigenergy_mode": s.sigenergy_mode if s else None,
+        "sigenergy_mode": effective_mode,
         "next_sunrise_ts": datetime.fromtimestamp(s.next_sunrise_ts, tz=timezone.utc).isoformat() if s and s.next_sunrise_ts else None,
         "next_sunset_ts": datetime.fromtimestamp(s.next_sunset_ts, tz=timezone.utc).isoformat() if s and s.next_sunset_ts else None,
         "export_reason": d.export_reason if d else None,
@@ -903,8 +929,10 @@ async def ws_status(websocket: WebSocket) -> None:
             opt = websocket.app.state.optimizer
             s = opt.last_state
             d = opt.last_decision
+            effective_mode = _effective_mode_label(opt, s, opt.cfg)
+            manual_active = effective_mode not in {str(getattr(opt.cfg, "automated_option", "Automated")), ""}
             battery_power_kw = _live_battery_power_kw(s, d)
-            outcome_reason = _live_outcome_reason(s, d, opt.cfg)
+            outcome_reason = _live_outcome_reason(effective_mode, d, opt.cfg)
             await websocket.send_json(
                 {
                     "ws_connected": opt.ws_connected,
@@ -929,7 +957,7 @@ async def ws_status(websocket: WebSocket) -> None:
                     "daily_battery_discharge_kwh": s.daily_battery_discharge_kwh if s else None,
                     "next_sunrise_ts": datetime.fromtimestamp(s.next_sunrise_ts, tz=timezone.utc).isoformat() if s and s.next_sunrise_ts else None,
                     "next_sunset_ts": datetime.fromtimestamp(s.next_sunset_ts, tz=timezone.utc).isoformat() if s and s.next_sunset_ts else None,
-                    "sigenergy_mode": s.sigenergy_mode if s else None,
+                    "sigenergy_mode": effective_mode,
                     "ha_control_enabled": s.ha_control_enabled if s else None,
                     "ems_mode": s.current_ems_mode if s else (d.ems_mode if d else None),
                     "export_limit": s.current_export_limit if s else (d.export_limit if d else None),
@@ -940,7 +968,8 @@ async def ws_status(websocket: WebSocket) -> None:
                     "ess_max_charge_kw": s.ess_max_charge_kw if s else None,
                     "ess_max_discharge_kw": s.ess_max_discharge_kw if s else None,
                     "battery_power_kw": battery_power_kw,
-                    "sunrise_soc_target": d.sunrise_soc_target if d else None,
+                    "sunrise_soc_target": (d.sunrise_soc_target if d else None) if not manual_active else None,
+                    "morning_slow_charge_active": (d.morning_slow_charge_active if d else None) if not manual_active else False,
                     "outcome_reason": outcome_reason,
                     "last_cycle_started": opt.last_cycle_started.isoformat() if getattr(opt, "last_cycle_started", None) else None,
                     "last_cycle_completed": opt.last_cycle_completed.isoformat() if getattr(opt, "last_cycle_completed", None) else None,
