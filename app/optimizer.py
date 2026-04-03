@@ -1583,17 +1583,40 @@ class SigEnergyOptimizer:
                     return True
             return False
 
+        async def _select_mode_with_retry(entity_id: str, expected: str, retries: int = 4) -> bool:
+            for attempt in range(retries):
+                ok = await ha.select_option(entity_id, expected)
+                if not ok:
+                    await asyncio.sleep(0.5)
+                    continue
+                settled = await _wait_for_mode(entity_id, expected, timeout_s=3.0)
+                if settled:
+                    if attempt > 0:
+                        logger.info(
+                            "Manual mode settle succeeded for %s on attempt %d",
+                            expected,
+                            attempt + 1,
+                        )
+                    return True
+                await asyncio.sleep(0.6)
+            return False
+
         target_mode = str(targets["ems_mode"])
-        ok_mode = await ha.select_option(cfg.ems_mode_select, target_mode)
-        if ok_mode:
-            # The inverter can take a short time to commit mode changes. Waiting
-            # here prevents ESS writes being evaluated under the previous mode.
-            mode_settled = await _wait_for_mode(cfg.ems_mode_select, target_mode)
-            if not mode_settled:
-                logger.warning(
-                    "Manual mode target apply: EMS mode did not settle to '%s' before ESS writes",
-                    target_mode,
-                )
+        ok_mode = await _select_mode_with_retry(cfg.ems_mode_select, target_mode)
+        if not ok_mode:
+            logger.warning(
+                "Manual mode target apply: EMS mode did not settle to '%s'; deferring limit writes",
+                target_mode,
+            )
+            return {
+                "ems_mode": False,
+                "grid_export_limit": False,
+                "grid_import_limit": False,
+                "pv_max_power_limit": False,
+                "ess_charge_limit": False,
+                "ess_discharge_limit": False,
+            }
+
         ok_exp = await ha.set_number(cfg.grid_export_limit, float(targets["grid_export_limit"]))
         ok_imp = await ha.set_number(cfg.grid_import_limit, float(targets["grid_import_limit"]))
         ok_pv = await ha.set_number(cfg.pv_max_power_limit, float(targets["pv_max_power_limit"]))
