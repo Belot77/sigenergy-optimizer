@@ -1284,9 +1284,64 @@ class SigEnergyOptimizer:
             s.sigenergy_mode = self._manual_mode_override
             effective_mode = self._manual_mode_override
 
-        # If in a manual mode, skip optimizer actions
+        # If in a manual mode, keep manual targets pinned when external writers drift
+        # them (e.g. morning slow-charge branch in other automations).
         if effective_mode not in {cfg.automated_option, ""}:
-            logger.debug("Manual mode active (%s), skipping apply", effective_mode)
+            manual_targets = self._manual_mode_targets(
+                effective_mode,
+                s,
+                include_block_flow_ess_limits=False,
+            )
+            if manual_targets:
+                threshold = max(0.05, float(cfg.min_change_threshold))
+                drifted_keys: list[str] = []
+                if s.current_ems_mode != str(manual_targets["ems_mode"]):
+                    drifted_keys.append("ems_mode")
+                if abs(float(manual_targets["grid_export_limit"]) - s.current_export_limit) >= threshold:
+                    drifted_keys.append("grid_export_limit")
+                if abs(float(manual_targets["grid_import_limit"]) - s.current_import_limit) >= threshold:
+                    drifted_keys.append("grid_import_limit")
+                if abs(float(manual_targets["pv_max_power_limit"]) - s.current_pv_max_power_limit) >= threshold:
+                    drifted_keys.append("pv_max_power_limit")
+                if "ess_charge_limit" in manual_targets and s.current_ess_charge_limit is not None:
+                    if abs(float(manual_targets["ess_charge_limit"]) - float(s.current_ess_charge_limit)) >= threshold:
+                        drifted_keys.append("ess_charge_limit")
+                if "ess_discharge_limit" in manual_targets and s.current_ess_discharge_limit is not None:
+                    if abs(float(manual_targets["ess_discharge_limit"]) - float(s.current_ess_discharge_limit)) >= threshold:
+                        drifted_keys.append("ess_discharge_limit")
+
+                if drifted_keys:
+                    logger.warning(
+                        "Manual mode drift detected (%s): %s; reapplying manual targets",
+                        effective_mode,
+                        ", ".join(drifted_keys),
+                    )
+                    write_results = await self._apply_manual_mode_targets(manual_targets)
+                    failed = [name for name, ok in write_results.items() if not ok]
+                    self.record_audit_event(
+                        action="manual_enforce",
+                        source="optimizer_cycle",
+                        actor="system:optimizer",
+                        result="partial" if failed else "ok",
+                        old_value={
+                            "ems_mode": s.current_ems_mode,
+                            "grid_export_limit": s.current_export_limit,
+                            "grid_import_limit": s.current_import_limit,
+                            "pv_max_power_limit": s.current_pv_max_power_limit,
+                            "ess_charge_limit": s.current_ess_charge_limit,
+                            "ess_discharge_limit": s.current_ess_discharge_limit,
+                        },
+                        new_value=manual_targets,
+                        details={
+                            "mode": effective_mode,
+                            "drifted_keys": drifted_keys,
+                            "failed": failed,
+                        },
+                    )
+                    if failed:
+                        logger.error("Manual mode drift correction had failures: %s", ", ".join(failed))
+
+            logger.debug("Manual mode active (%s); optimizer decisions paused", effective_mode)
             return
         effective_ha_control = s.ha_control_enabled or d.needs_ha_control_switch
 
