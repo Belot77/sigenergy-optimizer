@@ -1374,7 +1374,12 @@ class SigEnergyOptimizer:
             d.outcome_reason[:80]
         )
 
-    def _manual_mode_targets(self, mode_label: str, state: Optional[SolarState] = None) -> Optional[dict[str, float | str]]:
+    def _manual_mode_targets(
+        self,
+        mode_label: str,
+        state: Optional[SolarState] = None,
+        include_block_flow_ess_limits: bool = False,
+    ) -> Optional[dict[str, float | str]]:
         cfg = self.cfg
         if mode_label in {cfg.automated_option, cfg.manual_option, ""}:
             return None
@@ -1416,12 +1421,16 @@ class SigEnergyOptimizer:
                 "ess_discharge_limit": ess_discharge,
             }
         if mode_label == cfg.block_flow_option:
-            return {
+            targets = {
                 "ems_mode": MODE_MAX_SELF,
                 "grid_export_limit": block,
                 "grid_import_limit": block,
                 "pv_max_power_limit": pv_max,
             }
+            if include_block_flow_ess_limits:
+                targets["ess_charge_limit"] = ess_charge
+                targets["ess_discharge_limit"] = ess_discharge
+            return targets
         return None
 
     def _freeze_decision_to_live_mode(self, state: SolarState, decision: Decision, mode_label: str) -> None:
@@ -1518,7 +1527,11 @@ class SigEnergyOptimizer:
                 self._freeze_decision_to_live_mode(refreshed_state, decision, mode_label)
                 self._last_decision = decision
                 return  # just disables optimizer, no limit changes
-            targets = self._manual_mode_targets(mode_label, self._last_state)
+            targets = self._manual_mode_targets(
+                mode_label,
+                self._last_state,
+                include_block_flow_ess_limits=(mode_label == cfg.block_flow_option),
+            )
             if targets:
                 write_results = await self._apply_manual_mode_targets(targets)
                 failed = [name for name, ok in write_results.items() if not ok]

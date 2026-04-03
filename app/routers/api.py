@@ -252,7 +252,7 @@ def _manual_display_targets(opt: Any, s: Any, mode: str, cfg: Any) -> dict[str, 
     target_builder = getattr(opt, "_manual_mode_targets", None)
     if callable(target_builder):
         try:
-            return target_builder(mode, s)
+            return target_builder(mode, s, include_block_flow_ess_limits=False)
         except Exception:
             return None
     return None
