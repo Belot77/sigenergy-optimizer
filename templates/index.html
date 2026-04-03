@@ -3613,6 +3613,15 @@ function configFieldHelp(key, label, type) {
   const baseLabel = normalizeFieldLabel(label, key);
 
   const specific = {
+    min_export_target_soc: 'Affects: evening and night export guard floor when Evening Boost is off. Lower -> allows deeper evening discharge and more export. Higher -> holds more battery for overnight use and can reduce export.',
+    min_soc_floor: 'Affects: daytime minimum SoC floor used by export decisions. Lower -> allows deeper daytime discharge. Higher -> preserves SoC during the day and limits export/discharge.',
+    night_reserve_soc: 'Affects: fallback overnight reserve target when sunrise forecast timing is unavailable. Lower -> less overnight reserve. Higher -> stronger overnight protection and less discharge freedom.',
+    night_reserve_buffer: 'Affects: extra margin added on top of Night Reserve SoC in fallback sunrise logic. Lower -> tighter planning with less cushion. Higher -> more contingency for forecast/load error.',
+    max_battery_soc: 'Affects: daytime allow-full and export-guard relax paths when battery is considered sufficiently full. Lower -> reaches full-state logic earlier. Higher -> requires higher SoC before those paths activate.',
+    sunrise_reserve_soc: 'Affects: hard minimum sunrise SoC target and evening relaxed floor clamp. Lower -> allows deeper overnight drawdown. Higher -> keeps more battery for pre-sunrise reliability.',
+    sunrise_safety_factor: 'Affects: overnight load estimate multiplier for sunrise target calculations. Lower -> less conservative reserve target. Higher -> more conservative target to protect against under-forecasting.',
+    sunrise_buffer_percent: 'Affects: direct percentage buffer added to computed sunrise target. Lower -> smaller spare margin. Higher -> larger spare margin and earlier charge retention.',
+    sunrise_export_relax_percent: 'Affects: how much evening export floor is relaxed before sunrise reserve clamp. Lower -> stricter evening floor, less export. Higher -> looser evening floor, more evening export.',
     evening_boost_forecast_safety: 'Multiplier for required tomorrow PV before Evening Boost discharges harder. Higher value = more conservative boost.',
     forecast_safety_charging: 'Safety multiplier for refill checks in charging-related logic (e.g. morning features). Higher means more conservative.',
     forecast_safety_export: 'Safety multiplier for export guards that decide if there is enough forecast energy to allow discharge.',
