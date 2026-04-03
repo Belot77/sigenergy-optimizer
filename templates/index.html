@@ -2027,9 +2027,17 @@ async function poll() {
     if (!r.ok) throw new Error(r.status);
     S = await r.json();
     ingestStatusSample(S);
-    if (simActive && simPreview) applySimulationOverlay(simPreview.profile, { silent: true });
-    else refreshCharts();
-    updateOverview();
+    try {
+      if (simActive && simPreview) applySimulationOverlay(simPreview.profile, { silent: true });
+      else refreshCharts();
+    } catch (chartErr) {
+      console.warn('chart refresh failed', chartErr);
+    }
+    try {
+      updateOverview();
+    } catch (uiErr) {
+      console.warn('overview update failed', uiErr);
+    }
   } catch(e) { console.warn('poll failed', e); }
 }
 
@@ -2071,9 +2079,17 @@ function connectLiveWs() {
       if (!payload || typeof payload !== 'object') return;
       S = { ...S, ...payload };
       ingestStatusSample(S);
-      if (simActive && simPreview) applySimulationOverlay(simPreview.profile, { silent: true });
-      else refreshCharts();
-      updateOverview();
+      try {
+        if (simActive && simPreview) applySimulationOverlay(simPreview.profile, { silent: true });
+        else refreshCharts();
+      } catch (chartErr) {
+        console.warn('ws chart refresh failed', chartErr);
+      }
+      try {
+        updateOverview();
+      } catch (uiErr) {
+        console.warn('ws overview update failed', uiErr);
+      }
     } catch (err) {
       console.warn('ws parse failed', err);
     }
@@ -3239,26 +3255,36 @@ function clearSim() {
 async function loadEntities() {
   const el = document.getElementById('entContent');
   try {
-    const [s, cfg] = await Promise.all([
-      getJson('api/status'),
-      getJson('api/config'),
-    ]);
+    const s = await getJson('api/status');
+    let cfg = null;
+    let cfgError = '';
+    try {
+      cfg = await getJson('api/config');
+    } catch (e) {
+      cfgError = e?.message || 'config unavailable';
+    }
+
+    const ce = (key) => cfg?.[key] ?? '---';
     const rows = [
-      ['battery_soc',       cfg.battery_soc_sensor,          s.battery_soc],
-      ['pv_power',          cfg.pv_power_sensor,             s.pv_kw],
-      ['load_power',        cfg.consumed_power_sensor,       s.load_kw],
-      ['price',             cfg.price_sensor,                s.current_price],
-      ['feedin',            cfg.feedin_sensor,               s.feedin_price],
-      ['mode',              cfg.ems_mode_select,             s.ems_mode],
-      ['grid_export_limit', cfg.grid_export_limit,           s.export_limit],
-      ['grid_import_limit', cfg.grid_import_limit,           s.import_limit],
-      ['pv_max_power_limit',cfg.pv_max_power_limit,          s.pv_max_power_limit],
-      ['forecast_today',    cfg.forecast_today_sensor,       s.forecast_today],
-      ['forecast_tomorrow', cfg.forecast_tomorrow_sensor,    s.forecast_tomorrow],
-      ['forecast_remaining',cfg.forecast_remaining_sensor,   s.forecast_remaining],
+      ['battery_soc',       ce('battery_soc_sensor'),        s.battery_soc],
+      ['pv_power',          ce('pv_power_sensor'),           s.pv_kw],
+      ['load_power',        ce('consumed_power_sensor'),     s.load_kw],
+      ['price',             ce('price_sensor'),              s.current_price],
+      ['feedin',            ce('feedin_sensor'),             s.feedin_price],
+      ['mode',              ce('ems_mode_select'),           s.ems_mode],
+      ['grid_export_limit', ce('grid_export_limit'),         s.export_limit],
+      ['grid_import_limit', ce('grid_import_limit'),         s.import_limit],
+      ['pv_max_power_limit',ce('pv_max_power_limit'),        s.pv_max_power_limit],
+      ['forecast_today',    ce('forecast_today_sensor'),     s.forecast_today],
+      ['forecast_tomorrow', ce('forecast_tomorrow_sensor'),  s.forecast_tomorrow],
+      ['forecast_remaining',ce('forecast_remaining_sensor'), s.forecast_remaining],
     ];
+    const cfgWarn = cfgError
+      ? `<div style="padding:10px 12px;color:#fbbf24;background:rgba(251,191,36,.08);border-bottom:1px solid rgba(251,191,36,.25)">Config lookup warning: ${cfgError}. Showing live status values.</div>`
+      : '';
     el.innerHTML = `
       <div class="card" style="padding:0;overflow:hidden">
+        ${cfgWarn}
         <table class="etable">
           <thead><tr><th>Key</th><th>Entity</th><th>State</th></tr></thead>
           <tbody>
