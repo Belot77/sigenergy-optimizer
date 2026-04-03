@@ -1318,7 +1318,10 @@ class SigEnergyOptimizer:
                         effective_mode,
                         ", ".join(drifted_keys),
                     )
-                    write_results = await self._apply_manual_mode_targets(manual_targets)
+                    write_results = await self._apply_manual_mode_targets(
+                        manual_targets,
+                        mode_label=effective_mode,
+                    )
                     failed = [name for name, ok in write_results.items() if not ok]
                     self.record_audit_event(
                         action="manual_enforce",
@@ -1463,6 +1466,13 @@ class SigEnergyOptimizer:
         ess_charge = max(import_cap, cfg.ess_charge_limit_value)
         ess_discharge = max(export_cap, cfg.ess_discharge_limit_value)
 
+        # Prefer explicit number-entity max attributes when available; these are
+        # closer to what HA will actually accept for set_value.
+        if state and self._valid_hw_cap_kw(state.ess_charge_limit_entity_max_kw):
+            ess_charge = max(ess_charge, float(state.ess_charge_limit_entity_max_kw))
+        if state and self._valid_hw_cap_kw(state.ess_discharge_limit_entity_max_kw):
+            ess_discharge = max(ess_discharge, float(state.ess_discharge_limit_entity_max_kw))
+
         if mode_label == cfg.block_flow_option:
             if self._manual_ess_charge_override_kw is not None:
                 ess_charge = float(self._manual_ess_charge_override_kw)
@@ -1538,9 +1548,31 @@ class SigEnergyOptimizer:
         if discharge_kw is not None:
             self._manual_ess_discharge_override_kw = max(0.0, float(discharge_kw))
 
-    async def _apply_manual_mode_targets(self, targets: dict[str, float | str]) -> dict[str, bool]:
+    async def _apply_manual_mode_targets(
+        self,
+        targets: dict[str, float | str],
+        mode_label: Optional[str] = None,
+    ) -> dict[str, bool]:
         cfg = self.cfg
         ha = self.ha
+
+        async def _set_number_with_retry(entity_id: str, value: float, retries: int = 3) -> bool:
+            ok = await ha.set_number(entity_id, value)
+            if ok:
+                return True
+            for attempt in range(1, retries):
+                # Allow EMS mode transition and HA integration state to settle.
+                await asyncio.sleep(0.7)
+                ok = await ha.set_number(entity_id, value)
+                if ok:
+                    logger.info(
+                        "Manual set_number retry succeeded for %s on attempt %d",
+                        entity_id,
+                        attempt + 1,
+                    )
+                    return True
+            return False
+
         ok_mode = await ha.select_option(cfg.ems_mode_select, str(targets["ems_mode"]))
         ok_exp = await ha.set_number(cfg.grid_export_limit, float(targets["grid_export_limit"]))
         ok_imp = await ha.set_number(cfg.grid_import_limit, float(targets["grid_import_limit"]))
@@ -1548,11 +1580,21 @@ class SigEnergyOptimizer:
 
         ok_chg = True
         if cfg.ess_max_charging_limit and "ess_charge_limit" in targets:
-            ok_chg = await ha.set_number(cfg.ess_max_charging_limit, float(targets["ess_charge_limit"]))
+            retries = 4 if mode_label == cfg.block_flow_option else 2
+            ok_chg = await _set_number_with_retry(
+                cfg.ess_max_charging_limit,
+                float(targets["ess_charge_limit"]),
+                retries=retries,
+            )
 
         ok_dis = True
         if cfg.ess_max_discharging_limit and "ess_discharge_limit" in targets:
-            ok_dis = await ha.set_number(cfg.ess_max_discharging_limit, float(targets["ess_discharge_limit"]))
+            retries = 4 if mode_label == cfg.block_flow_option else 2
+            ok_dis = await _set_number_with_retry(
+                cfg.ess_max_discharging_limit,
+                float(targets["ess_discharge_limit"]),
+                retries=retries,
+            )
 
         if not all([ok_mode, ok_exp, ok_imp, ok_pv, ok_chg, ok_dis]):
             logger.error(
@@ -1626,7 +1668,10 @@ class SigEnergyOptimizer:
                 include_block_flow_ess_limits=(mode_label == cfg.block_flow_option),
             )
             if targets:
-                write_results = await self._apply_manual_mode_targets(targets)
+                write_results = await self._apply_manual_mode_targets(
+                    targets,
+                    mode_label=mode_label,
+                )
                 failed = [name for name, ok in write_results.items() if not ok]
                 if mode_label == cfg.block_flow_option:
                     self.set_manual_ess_overrides(
