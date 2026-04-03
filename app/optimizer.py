@@ -1605,17 +1605,9 @@ class SigEnergyOptimizer:
         ok_mode = await _select_mode_with_retry(cfg.ems_mode_select, target_mode)
         if not ok_mode:
             logger.warning(
-                "Manual mode target apply: EMS mode did not settle to '%s'; deferring limit writes",
+                "Manual mode target apply: EMS mode did not settle to '%s'; applying non-mode limits anyway",
                 target_mode,
             )
-            return {
-                "ems_mode": False,
-                "grid_export_limit": False,
-                "grid_import_limit": False,
-                "pv_max_power_limit": False,
-                "ess_charge_limit": False,
-                "ess_discharge_limit": False,
-            }
 
         ok_exp = await ha.set_number(cfg.grid_export_limit, float(targets["grid_export_limit"]))
         ok_imp = await ha.set_number(cfg.grid_import_limit, float(targets["grid_import_limit"]))
