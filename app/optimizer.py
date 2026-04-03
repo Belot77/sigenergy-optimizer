@@ -89,6 +89,11 @@ class SigEnergyOptimizer:
         self._manual_ess_discharge_override_kw: Optional[float] = None
         self._morning_slow_charge_runtime_disabled: bool = True
         self._morning_slow_disable_logged: bool = False
+        logger.warning(
+            "Runtime signature=%s morning_slow_charge_runtime_disabled=%s",
+            _RUNTIME_SIGNATURE,
+            self._morning_slow_charge_runtime_disabled,
+        )
         tz_name = os.environ.get("TZ", "Australia/Adelaide")
         try:
             self._tz = ZoneInfo(tz_name)
