@@ -84,6 +84,10 @@ class SigEnergyOptimizer:
         self._last_cycle_error: str = ""
         self._notif_export_active: Optional[bool] = None
         self._last_export_start_notice_at: Optional[datetime] = None
+        self._battery_full_alert_armed: bool = True
+        self._battery_empty_alert_armed: bool = True
+        self._last_battery_full_notice_at: Optional[datetime] = None
+        self._last_battery_empty_notice_at: Optional[datetime] = None
         self._manual_mode_override: Optional[str] = None
         self._manual_ess_charge_override_kw: Optional[float] = None
         self._manual_ess_discharge_override_kw: Optional[float] = None
@@ -1755,6 +1759,8 @@ class SigEnergyOptimizer:
         if prev is None:
             self._notif_export_active = d.export_limit > 0.011
             self._prev_demand_window = s.demand_window_active
+            self._battery_full_alert_armed = s.battery_soc < 98.0
+            self._battery_empty_alert_armed = s.battery_soc > 2.0
             return
 
         export_session_kwh = max(0.0, s.daily_export_kwh - s.export_session_start_kwh)
@@ -1841,11 +1847,35 @@ class SigEnergyOptimizer:
             await notify("⚠️ Battery below reserve SoC",
                 f"Battery below reserve ({d.battery_soc_required_to_sunrise:.0f}%): {s.battery_soc:.0f}%")
 
-        if cfg.notify_battery_alerts and s.battery_soc <= 1 and (prev_state is None or prev_state.battery_soc > 1):
-            await notify("🪫 Battery Empty!", f"Battery SoC: {s.battery_soc:.0f}%")
+        # Battery full/empty anti-spam:
+        # - Hysteresis arming avoids repeated alerts when SoC hovers around thresholds.
+        # - Cooldown avoids notification floods from noisy sensors or restart loops.
+        if s.battery_soc <= 97.0:
+            self._battery_full_alert_armed = True
+        if s.battery_soc >= 3.0:
+            self._battery_empty_alert_armed = True
 
-        if cfg.notify_battery_alerts and s.battery_soc >= 99 and (prev_state is None or prev_state.battery_soc < 99):
+        now_utc = datetime.now(timezone.utc)
+        alert_cooldown = timedelta(minutes=180)
+
+        full_cooldown_ok = (
+            self._last_battery_full_notice_at is None
+            or (now_utc - self._last_battery_full_notice_at) >= alert_cooldown
+        )
+        empty_cooldown_ok = (
+            self._last_battery_empty_notice_at is None
+            or (now_utc - self._last_battery_empty_notice_at) >= alert_cooldown
+        )
+
+        if cfg.notify_battery_alerts and self._battery_empty_alert_armed and s.battery_soc <= 1.0 and empty_cooldown_ok:
+            await notify("🪫 Battery Empty!", f"Battery SoC: {s.battery_soc:.0f}%")
+            self._battery_empty_alert_armed = False
+            self._last_battery_empty_notice_at = now_utc
+
+        if cfg.notify_battery_alerts and self._battery_full_alert_armed and s.battery_soc >= 99.0 and full_cooldown_ok:
             await notify("🔋 Battery Full!", f"Battery SoC: {s.battery_soc:.0f}%")
+            self._battery_full_alert_armed = False
+            self._last_battery_full_notice_at = now_utc
 
         if cfg.notify_price_spike_alert and s.price_spike_active and (not prev or not prev.export_spike_active):
             await notify("📈 Price Spike Active",
