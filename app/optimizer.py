@@ -702,7 +702,12 @@ class SigEnergyOptimizer:
         else:
             s.battery_capacity_kwh = cap_raw if cap_raw > 0 else 10.0
 
-        s.available_discharge_energy_kwh = _fv(cfg.available_discharge_sensor)
+        avail_raw = _fv(cfg.available_discharge_sensor)
+        avail_uom = (_attr(cfg.available_discharge_sensor, "unit_of_measurement") or "kwh").lower()
+        if avail_uom == "wh":
+            s.available_discharge_energy_kwh = avail_raw / 1000
+        else:
+            s.available_discharge_energy_kwh = avail_raw
 
         def _kw_from_sensor(raw: float) -> float:
             if raw <= 0:

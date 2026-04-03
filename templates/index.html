@@ -2319,7 +2319,7 @@ function updateOverview() {
   document.getElementById('nowPrice').textContent =
     `Now: Import price ${fcc(s.current_price)}/kWh, Feed-in price ${fcc(s.feedin_price)}/kWh, PV today ${fc(s.forecast_today,1)}kWh`;
   document.getElementById('nowFlow').textContent =
-    `Now: Import ${fc(s.grid_import_power_kw,1)}kW, Export ${fc(s.grid_export_power_kw,1)}kW`;
+    `Now (live sensors): Import ${fc(s.grid_import_power_kw,1)}kW, Export ${fc(s.grid_export_power_kw,1)}kW`;
 
   // Cycle timing
   setTextWithFlash('cycleStart', tsISO(s.last_cycle_started));
@@ -2340,20 +2340,30 @@ function updateOverview() {
   setTextWithFlash('sESSThresh', '1.0 kW');
   const chargeKwh = Number(s.daily_battery_charge_kwh);
   const dischargeKwh = Number(s.daily_battery_discharge_kwh);
-  const chargeStr = Number.isFinite(chargeKwh) ? `+${fc(chargeKwh,1)}` : '+---';
-  const dischargeStr = Number.isFinite(dischargeKwh) ? `-${fc(dischargeKwh,1)}` : '----';
+  const chargeStr = Number.isFinite(chargeKwh) ? `-${fc(chargeKwh,0)}` : '---';
+  const dischargeStr = Number.isFinite(dischargeKwh) ? `+${fc(dischargeKwh,0)}` : '---';
   const battFlowTotal = Number.isFinite(chargeKwh) && Number.isFinite(dischargeKwh)
-    ? `${fc(chargeKwh + dischargeKwh,1)}`
+    ? `${fc(chargeKwh + dischargeKwh,0)}`
     : '---';
 
-  setTextWithFlash('lbl-sBat', `Battery SoC (Remaining: ${fc(s.available_discharge_energy_kwh,1)} kWh)`);
-  const flowSourceRaw = String(s.battery_power_source || '').trim();
-  const flowSourceLabel = flowSourceRaw === 'direct_battery_sensor'
-    ? 'Direct battery sensor'
-    : (flowSourceRaw === 'measured_grid_flow'
-      ? 'Derived from grid flow'
-      : (flowSourceRaw === 'setpoint_balance_fallback' ? 'Setpoint fallback' : 'Unknown source'));
-  setTextWithFlash('lbl-gBattFlow', `Discharge/Charge (${dischargeStr}/${chargeStr}, Total ${battFlowTotal} kWh) [${flowSourceLabel}]`);
+  const socPct = Number(s.battery_soc);
+  const capKwh = Number(s.battery_capacity_kwh);
+  const batterySensorKw = Number(s.battery_power_sensor_kw);
+  const batteryNowKw = Number.isFinite(batterySensorKw) ? batterySensorKw : Number(s.battery_power_kw);
+  const currentKwh = Number.isFinite(socPct) && Number.isFinite(capKwh)
+    ? (capKwh * socPct / 100)
+    : null;
+  const reqKwh = currentKwh != null && Number.isFinite(capKwh)
+    ? Math.max(0, capKwh - currentKwh)
+    : null;
+  const socSuffix = currentKwh == null
+    ? 'Remaining: --- kWh'
+    : (batteryNowKw >= 0
+      ? `Avail: ${fc(currentKwh,1)} / Req: ${fc(reqKwh,1)} kWh`
+      : `Remaining: ${fc(currentKwh,1)} kWh`);
+  setTextWithFlash('lbl-sBat', `Battery SoC (${socSuffix})`);
+
+  setTextWithFlash('lbl-gBattFlow', `Discharge/Charge (${chargeStr}/${dischargeStr}, Total ${battFlowTotal} kWh)`);
   setTextWithFlash('lbl-gLoad', `Power Consumption (Total: ${fc(s.daily_load_kwh,1)} kWh)`);
   setTextWithFlash('lbl-gPV', `Solar Output (Remaining: ${fc(s.forecast_remaining,1)} kWh)`);
   setTextWithFlash('lbl-gGridImp', `Grid Import (Total: ${fc(s.daily_import_kwh,1)} kWh)`);
