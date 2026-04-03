@@ -40,6 +40,11 @@ async def lifespan(app: FastAPI):
 
     ha = HAClient(settings.ha_url, settings.ha_token)
     optimizer = SigEnergyOptimizer(ha, settings)
+    logger.info(
+        "Runtime signature=%s morning_slow_charge_runtime_disabled=%s",
+        getattr(optimizer, "runtime_signature", "unknown"),
+        bool(getattr(optimizer, "_morning_slow_charge_runtime_disabled", False)),
+    )
 
     # Wire the WebSocket client so it feeds the optimizer's trigger queue
     ws_client = HAWebSocketClient(
