@@ -84,6 +84,8 @@ class SigEnergyOptimizer:
         self._notif_export_active: Optional[bool] = None
         self._last_export_start_notice_at: Optional[datetime] = None
         self._manual_mode_override: Optional[str] = None
+        self._manual_ess_charge_override_kw: Optional[float] = None
+        self._manual_ess_discharge_override_kw: Optional[float] = None
         tz_name = os.environ.get("TZ", "Australia/Adelaide")
         try:
             self._tz = ZoneInfo(tz_name)
@@ -1290,7 +1292,7 @@ class SigEnergyOptimizer:
             manual_targets = self._manual_mode_targets(
                 effective_mode,
                 s,
-                include_block_flow_ess_limits=False,
+                include_block_flow_ess_limits=(effective_mode == cfg.block_flow_option),
             )
             if manual_targets:
                 threshold = max(0.05, float(cfg.min_change_threshold))
@@ -1461,6 +1463,12 @@ class SigEnergyOptimizer:
         ess_charge = max(import_cap, cfg.ess_charge_limit_value)
         ess_discharge = max(export_cap, cfg.ess_discharge_limit_value)
 
+        if mode_label == cfg.block_flow_option:
+            if self._manual_ess_charge_override_kw is not None:
+                ess_charge = float(self._manual_ess_charge_override_kw)
+            if self._manual_ess_discharge_override_kw is not None:
+                ess_discharge = float(self._manual_ess_discharge_override_kw)
+
         if mode_label == cfg.full_export_option:
             return {
                 "ems_mode": MODE_CMD_DISCHARGE_PV,
@@ -1520,6 +1528,16 @@ class SigEnergyOptimizer:
         decision.import_reason = "manual"
         decision.outcome_reason = f"Manual mode active ({mode_label}); optimizer writes paused"
 
+    def set_manual_ess_overrides(
+        self,
+        charge_kw: Optional[float] = None,
+        discharge_kw: Optional[float] = None,
+    ) -> None:
+        if charge_kw is not None:
+            self._manual_ess_charge_override_kw = max(0.0, float(charge_kw))
+        if discharge_kw is not None:
+            self._manual_ess_discharge_override_kw = max(0.0, float(discharge_kw))
+
     async def _apply_manual_mode_targets(self, targets: dict[str, float | str]) -> dict[str, bool]:
         cfg = self.cfg
         ha = self.ha
@@ -1573,6 +1591,8 @@ class SigEnergyOptimizer:
                 )
             if mode_label == cfg.automated_option:
                 self._manual_mode_override = None
+                self._manual_ess_charge_override_kw = None
+                self._manual_ess_discharge_override_kw = None
             else:
                 self._manual_mode_override = mode_label
             if self._last_state is not None:
@@ -1591,6 +1611,8 @@ class SigEnergyOptimizer:
                 refreshed_state = await self._read_state()
                 refreshed_state.sigenergy_mode = mode_label
                 self._last_state = refreshed_state
+                self._manual_ess_charge_override_kw = None
+                self._manual_ess_discharge_override_kw = None
                 decision = self._decide(refreshed_state)
                 self._freeze_decision_to_live_mode(refreshed_state, decision, mode_label)
                 self._last_decision = decision
@@ -1606,6 +1628,14 @@ class SigEnergyOptimizer:
             if targets:
                 write_results = await self._apply_manual_mode_targets(targets)
                 failed = [name for name, ok in write_results.items() if not ok]
+                if mode_label == cfg.block_flow_option:
+                    self.set_manual_ess_overrides(
+                        charge_kw=float(targets.get("ess_charge_limit")) if "ess_charge_limit" in targets else None,
+                        discharge_kw=float(targets.get("ess_discharge_limit")) if "ess_discharge_limit" in targets else None,
+                    )
+                else:
+                    self._manual_ess_charge_override_kw = None
+                    self._manual_ess_discharge_override_kw = None
                 refreshed_state = await self._read_state()
                 refreshed_state.sigenergy_mode = mode_label
                 self._last_state = refreshed_state

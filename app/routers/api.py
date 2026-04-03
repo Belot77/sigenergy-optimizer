@@ -904,6 +904,14 @@ async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
                 await ha.turn_on(cfg.ha_control_switch)
             else:
                 await ha.turn_off(cfg.ha_control_switch)
+        current_mode = _effective_mode_label(opt, opt.last_state, cfg)
+        if current_mode == str(getattr(cfg, "block_flow_option", "Prevent Import & Export")):
+            set_overrides = getattr(opt, "set_manual_ess_overrides", None)
+            if callable(set_overrides):
+                set_overrides(
+                    charge_kw=body.ess_charge_limit,
+                    discharge_kw=body.ess_discharge_limit,
+                )
         _record_audit(
             request,
             action="set_ess",
