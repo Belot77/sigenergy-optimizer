@@ -157,6 +157,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     evening_boost_enabled: bool = Field(True, env="EVENING_BOOST_ENABLED")
     evening_aggressive_floor: float = Field(35.0, env="EVENING_AGGRESSIVE_FLOOR")
+    evening_boost_forecast_safety: float = Field(1.1, env="EVENING_BOOST_FORECAST_SAFETY")
 
     # ------------------------------------------------------------------
     # Cheap import top-up

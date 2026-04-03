@@ -2063,7 +2063,7 @@ class SigEnergyOptimizer:
 
         overnight_covered = s.battery_soc > (sunrise_soc_target + 10)
         tomorrow_will_refill = (
-            s.forecast_tomorrow_kwh >= bat_fill_need_kwh * cfg.forecast_safety_export
+            s.forecast_tomorrow_kwh >= bat_fill_need_kwh * cfg.evening_boost_forecast_safety
         )
         # Check no high FIT forecast overnight
         tomorrow_6am = (datetime.now() + timedelta(days=1)).replace(hour=6, minute=0, second=0).timestamp()

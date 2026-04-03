@@ -1,5 +1,5 @@
 name: SigEnergy Optimizer
-version: "2.2.14-haos21"
+version: "2.2.15-haos21"
 slug: sigenergy_optimizer
 description: Event-driven SigEnergy optimizer for Home Assistant OS
 author: Belot77
