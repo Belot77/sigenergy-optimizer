@@ -358,23 +358,7 @@ class SigEnergyOptimizer:
             decision = self._decide(state)
             effective_mode = self._manual_mode_override or state.sigenergy_mode
             if effective_mode not in {self.cfg.automated_option, ""}:
-                decision.ems_mode = state.current_ems_mode
-                decision.export_limit = state.current_export_limit
-                decision.import_limit = state.current_import_limit
-                decision.pv_max_power_limit = state.current_pv_max_power_limit
-                decision.ess_charge_limit = (
-                    state.current_ess_charge_limit
-                    if state.current_ess_charge_limit is not None
-                    else decision.ess_charge_limit
-                )
-                decision.ess_discharge_limit = (
-                    state.current_ess_discharge_limit
-                    if state.current_ess_discharge_limit is not None
-                    else decision.ess_discharge_limit
-                )
-                decision.export_reason = f"Manual mode active ({effective_mode})"
-                decision.import_reason = "manual"
-                decision.outcome_reason = f"Manual mode active ({effective_mode}); optimizer writes paused"
+                self._freeze_decision_to_live_mode(state, decision, effective_mode)
             self._last_decision = decision
             await self._apply(state, decision)
             self._record_automation_audit(state, decision, prev_decision)
@@ -1093,28 +1077,14 @@ class SigEnergyOptimizer:
         # ---- Battery ETA -------------------------------------------
         # Prefer measured grid flow for battery power estimation; setpoint-based math
         # can diverge from actual inverter behavior and misreport charge/discharge.
-        measured_import = max(float(s.grid_import_power_kw or 0.0), 0.0)
-        measured_export = max(float(s.grid_export_power_kw or 0.0), 0.0)
-        measured_balance_kw = s.pv_kw + measured_import - measured_export - s.load_kw
-
         if s.battery_power_sensor_kw is not None:
             battery_power_kw = float(s.battery_power_sensor_kw)
             battery_power_source = "direct_battery_sensor"
             effective_import_for_math = 0.0
-
-            # Some SigEnergy installs appear to under-report the direct battery sensor
-            # during morning slow-charge even while plant-level power balance shows the
-            # battery absorbing substantially more. In that case, prefer measured plant
-            # balance so the UI and ETA do not report an obviously low charge rate.
-            if (
-                morning_slow_charge_active
-                and battery_power_kw > 0.0
-                and measured_balance_kw > battery_power_kw + 1.0
-            ):
-                battery_power_kw = measured_balance_kw
-                battery_power_source = "morning_slow_charge_balance_override"
         elif s.grid_import_power_kw is not None and s.grid_export_power_kw is not None:
-            battery_power_kw = measured_balance_kw
+            measured_import = max(float(s.grid_import_power_kw), 0.0)
+            measured_export = max(float(s.grid_export_power_kw), 0.0)
+            battery_power_kw = s.pv_kw + measured_import - measured_export - s.load_kw
             battery_power_source = "measured_grid_flow"
             effective_import_for_math = measured_import
         else:
@@ -1456,7 +1426,26 @@ class SigEnergyOptimizer:
             }
         return None
 
-    async def _apply_manual_mode_targets(self, targets: dict[str, float | str]) -> None:
+    def _freeze_decision_to_live_mode(self, state: SolarState, decision: Decision, mode_label: str) -> None:
+        decision.ems_mode = state.current_ems_mode
+        decision.export_limit = state.current_export_limit
+        decision.import_limit = state.current_import_limit
+        decision.pv_max_power_limit = state.current_pv_max_power_limit
+        decision.ess_charge_limit = (
+            state.current_ess_charge_limit
+            if state.current_ess_charge_limit is not None
+            else decision.ess_charge_limit
+        )
+        decision.ess_discharge_limit = (
+            state.current_ess_discharge_limit
+            if state.current_ess_discharge_limit is not None
+            else decision.ess_discharge_limit
+        )
+        decision.export_reason = f"Manual mode active ({mode_label})"
+        decision.import_reason = "manual"
+        decision.outcome_reason = f"Manual mode active ({mode_label}); optimizer writes paused"
+
+    async def _apply_manual_mode_targets(self, targets: dict[str, float | str]) -> dict[str, bool]:
         cfg = self.cfg
         ha = self.ha
         ok_mode = await ha.select_option(cfg.ems_mode_select, str(targets["ems_mode"]))
@@ -1482,6 +1471,14 @@ class SigEnergyOptimizer:
                 ok_chg,
                 ok_dis,
             )
+        return {
+            "ems_mode": ok_mode,
+            "grid_export_limit": ok_exp,
+            "grid_import_limit": ok_imp,
+            "pv_max_power_limit": ok_pv,
+            "ess_charge_limit": ok_chg,
+            "ess_discharge_limit": ok_dis,
+        }
 
     # ------------------------------------------------------------------
     # 4. Manual mode application (mirrors sigenergy_manual_control.yaml)
@@ -1516,10 +1513,27 @@ class SigEnergyOptimizer:
             logger.info("Manual mode → %s", mode_label)
 
             if mode_label == cfg.manual_option:
+                refreshed_state = await self._read_state()
+                refreshed_state.sigenergy_mode = mode_label
+                self._last_state = refreshed_state
+                decision = self._decide(refreshed_state)
+                self._freeze_decision_to_live_mode(refreshed_state, decision, mode_label)
+                self._last_decision = decision
                 return  # just disables optimizer, no limit changes
             targets = self._manual_mode_targets(mode_label, self._last_state)
             if targets:
-                await self._apply_manual_mode_targets(targets)
+                write_results = await self._apply_manual_mode_targets(targets)
+                failed = [name for name, ok in write_results.items() if not ok]
+                refreshed_state = await self._read_state()
+                refreshed_state.sigenergy_mode = mode_label
+                self._last_state = refreshed_state
+                decision = self._decide(refreshed_state)
+                self._freeze_decision_to_live_mode(refreshed_state, decision, mode_label)
+                self._last_decision = decision
+                if failed:
+                    raise RuntimeError(
+                        f"Manual mode target writes failed for: {', '.join(failed)}"
+                    )
 
     # ------------------------------------------------------------------
     # Notification helpers
