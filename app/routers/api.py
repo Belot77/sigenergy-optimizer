@@ -252,7 +252,11 @@ def _manual_display_targets(opt: Any, s: Any, mode: str, cfg: Any) -> dict[str, 
     target_builder = getattr(opt, "_manual_mode_targets", None)
     if callable(target_builder):
         try:
-            return target_builder(mode, s, include_block_flow_ess_limits=False)
+            return target_builder(
+                mode,
+                s,
+                include_block_flow_ess_limits=(mode == str(getattr(cfg, "block_flow_option", "Prevent Import & Export"))),
+            )
         except Exception:
             return None
     return None
@@ -635,12 +639,23 @@ async def get_status(request: Request) -> dict[str, Any]:
     manual_targets = _manual_display_targets(opt, s, effective_mode, cfg) if manual_active else None
     battery_power_kw = _live_battery_power_kw(s, d, manual_targets)
     outcome_reason = _live_outcome_reason(effective_mode, d, cfg)
+    def _manual_float(key: str, fallback: Any) -> Any:
+        if not manual_targets:
+            return fallback
+        raw = manual_targets.get(key)
+        if raw is None:
+            return fallback
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return fallback
+
     display_ems_mode = manual_targets.get("ems_mode") if manual_targets else (s.current_ems_mode if s else (d.ems_mode if d else None))
-    display_export_limit = float(manual_targets.get("grid_export_limit")) if manual_targets else (s.current_export_limit if s else (d.export_limit if d else None))
-    display_import_limit = float(manual_targets.get("grid_import_limit")) if manual_targets else (s.current_import_limit if s else (d.import_limit if d else None))
-    display_pv_max = float(manual_targets.get("pv_max_power_limit")) if manual_targets else (s.current_pv_max_power_limit if s else (d.pv_max_power_limit if d else None))
-    display_ess_charge = float(manual_targets.get("ess_charge_limit")) if manual_targets else (s.current_ess_charge_limit if s else (d.ess_charge_limit if d else None))
-    display_ess_discharge = float(manual_targets.get("ess_discharge_limit")) if manual_targets else (s.current_ess_discharge_limit if s else (d.ess_discharge_limit if d else None))
+    display_export_limit = _manual_float("grid_export_limit", s.current_export_limit if s else (d.export_limit if d else None))
+    display_import_limit = _manual_float("grid_import_limit", s.current_import_limit if s else (d.import_limit if d else None))
+    display_pv_max = _manual_float("pv_max_power_limit", s.current_pv_max_power_limit if s else (d.pv_max_power_limit if d else None))
+    display_ess_charge = _manual_float("ess_charge_limit", s.current_ess_charge_limit if s else (d.ess_charge_limit if d else None))
+    display_ess_discharge = _manual_float("ess_discharge_limit", s.current_ess_discharge_limit if s else (d.ess_discharge_limit if d else None))
     return {
         "runtime_signature": getattr(opt, "runtime_signature", "unknown"),
         "morning_slow_charge_runtime_disabled": bool(

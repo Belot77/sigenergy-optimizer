@@ -1677,6 +1677,16 @@ class SigEnergyOptimizer:
                 self._manual_ess_discharge_override_kw = None
             else:
                 self._manual_mode_override = mode_label
+                if mode_label in {
+                    cfg.block_flow_option,
+                    cfg.full_export_option,
+                    cfg.full_import_option,
+                    cfg.full_import_pv_option,
+                }:
+                    # Preset modes should start from current capability defaults,
+                    # not stale ESS overrides from prior manual edits.
+                    self._manual_ess_charge_override_kw = None
+                    self._manual_ess_discharge_override_kw = None
             if self._last_state is not None:
                 self._last_state.sigenergy_mode = mode_label
 
