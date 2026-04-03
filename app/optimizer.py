@@ -909,8 +909,13 @@ class SigEnergyOptimizer:
         d.morning_dump_active = morning_dump_active
 
         # ---- Morning slow charge ------------------------------------
-        # Temporarily disabled: this branch is being rebuilt from scratch.
-        morning_slow_charge_active = False
+        morning_slow_charge_end_ts = (
+            (sunset_ts - cfg.morning_slow_charge_sunset_cutoff * 3600)
+            if sunset_ts else now_ts
+        )
+        morning_slow_charge_active = self._morning_slow_charge_active(
+            s, now, now_ts, morning_slow_charge_end_ts
+        )
         d.morning_slow_charge_active = morning_slow_charge_active
 
         # ---- Standby holdoff ----------------------------------------
