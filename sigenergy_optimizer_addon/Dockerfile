@@ -10,11 +10,15 @@ WORKDIR /app
 
 RUN apk add --no-cache bash ca-certificates git
 
+COPY buildstamp.txt /tmp/buildstamp.txt
+
 SHELL ["/bin/sh", "-o", "pipefail", "-c"]
 
 RUN echo "Building source ref: ${SOURCE_REF}" \
+    && echo "Build stamp: $(cat /tmp/buildstamp.txt)" \
     && git clone --depth 1 https://github.com/Belot77/sigenergy-optimizer /tmp/src \
     && if [ "${SOURCE_REF}" != "main" ]; then cd /tmp/src && git fetch --depth 1 origin "${SOURCE_REF}" && git checkout -q FETCH_HEAD; fi \
+    && cd /tmp/src && git rev-parse --short HEAD > /app/.source_commit \
     && cp /tmp/src/requirements.txt /app/requirements.txt \
     && cp -r /tmp/src/app /app/app \
     && cp -r /tmp/src/templates /app/templates \
@@ -23,7 +27,7 @@ RUN echo "Building source ref: ${SOURCE_REF}" \
     && sed -i 's/^uvicorn\[standard\]/uvicorn/' /app/requirements.txt \
     && python3 -m pip install --upgrade pip \
     && python3 -m pip install --no-cache-dir -r /app/requirements.txt \
-    && rm -rf /tmp/src
+    && rm -rf /tmp/src /tmp/buildstamp.txt
 
 COPY run.sh /run.sh
 RUN chmod +x /run.sh

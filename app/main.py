@@ -11,6 +11,7 @@ Starts two background tasks:
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -34,9 +35,20 @@ def _parse_csv_list(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _read_source_commit() -> str:
+    p = Path("/app/.source_commit")
+    try:
+        if p.exists():
+            return p.read_text(encoding="utf-8").strip() or "unknown"
+    except Exception:
+        pass
+    return "unknown"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting SigEnergy Optimizer")
+    logger.info("Container source commit=%s", _read_source_commit())
 
     ha = HAClient(settings.ha_url, settings.ha_token)
     optimizer = SigEnergyOptimizer(ha, settings)
