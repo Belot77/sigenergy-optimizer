@@ -696,8 +696,20 @@ class SigEnergyOptimizer:
         s.current_pv_max_power_limit = _fv(cfg.pv_max_power_limit)
         if cfg.ess_max_charging_limit:
             s.current_ess_charge_limit = _fv(cfg.ess_max_charging_limit)
+            try:
+                max_attr = _attr(cfg.ess_max_charging_limit, "max")
+                if max_attr is not None:
+                    s.ess_charge_limit_entity_max_kw = float(max_attr)
+            except (TypeError, ValueError):
+                s.ess_charge_limit_entity_max_kw = None
         if cfg.ess_max_discharging_limit:
             s.current_ess_discharge_limit = _fv(cfg.ess_max_discharging_limit)
+            try:
+                max_attr = _attr(cfg.ess_max_discharging_limit, "max")
+                if max_attr is not None:
+                    s.ess_discharge_limit_entity_max_kw = float(max_attr)
+            except (TypeError, ValueError):
+                s.ess_discharge_limit_entity_max_kw = None
         s.current_ems_mode = _sv(cfg.ems_mode_select, MODE_MAX_SELF)
         s.ha_control_enabled = _bv(cfg.ha_control_switch)
 
@@ -1390,8 +1402,18 @@ class SigEnergyOptimizer:
 
         # Prevent temporary low control limits (e.g. 3kW slow-charge caps) from being
         # treated as restored manual caps.
-        ess_charge = max(import_cap, cfg.ess_charge_limit_value)
-        ess_discharge = max(export_cap, cfg.ess_discharge_limit_value)
+        ess_charge_max_entity = (
+            float(state.ess_charge_limit_entity_max_kw)
+            if state and self._valid_hw_cap_kw(state.ess_charge_limit_entity_max_kw)
+            else None
+        )
+        ess_discharge_max_entity = (
+            float(state.ess_discharge_limit_entity_max_kw)
+            if state and self._valid_hw_cap_kw(state.ess_discharge_limit_entity_max_kw)
+            else None
+        )
+        ess_charge = ess_charge_max_entity if ess_charge_max_entity is not None else max(import_cap, cfg.ess_charge_limit_value)
+        ess_discharge = ess_discharge_max_entity if ess_discharge_max_entity is not None else max(export_cap, cfg.ess_discharge_limit_value)
 
         if mode_label == cfg.full_export_option:
             return {

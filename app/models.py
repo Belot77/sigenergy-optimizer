@@ -29,6 +29,8 @@ class SolarState:
     current_pv_max_power_limit: float = 25.0
     current_ess_charge_limit: Optional[float] = None
     current_ess_discharge_limit: Optional[float] = None
+    ess_charge_limit_entity_max_kw: Optional[float] = None
+    ess_discharge_limit_entity_max_kw: Optional[float] = None
     current_ems_mode: str = "Maximum Self Consumption"
     ha_control_enabled: bool = False
 
