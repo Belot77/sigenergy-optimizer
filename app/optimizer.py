@@ -885,13 +885,8 @@ class SigEnergyOptimizer:
         d.morning_dump_active = morning_dump_active
 
         # ---- Morning slow charge ------------------------------------
-        morning_slow_charge_end_ts = (
-            (sunset_ts - cfg.morning_slow_charge_sunset_cutoff * 3600)
-            if sunset_ts else now_ts
-        )
-        morning_slow_charge_active = self._morning_slow_charge_active(
-            s, now, now_ts, morning_slow_charge_end_ts
-        )
+        # Temporarily disabled: this branch is being rebuilt from scratch.
+        morning_slow_charge_active = False
         d.morning_slow_charge_active = morning_slow_charge_active
 
         # ---- Standby holdoff ----------------------------------------
@@ -1358,7 +1353,7 @@ class SigEnergyOptimizer:
         if not effective_ha_control:
             return
 
-        ems_mode_to_apply = MODE_MAX_SELF if d.morning_slow_charge_active else d.ems_mode
+        ems_mode_to_apply = d.ems_mode
 
         # EMS mode
         if s.current_ems_mode != ems_mode_to_apply:
@@ -1371,20 +1366,6 @@ class SigEnergyOptimizer:
         # Export limit
         near_zero = 0.011
         export_val = d.export_limit if d.export_limit > 0 else 0.01
-        if d.morning_slow_charge_active:
-            pv_leftover_cap = max(s.pv_kw - s.load_kw - cfg.morning_slow_charge_rate_kw, 0.0)
-            if export_val > pv_leftover_cap + 0.2:
-                logger.warning(
-                    "Clamping morning slow-charge export %.2fkW -> %.2fkW (pv=%.2f load=%.2f slow=%.2f)",
-                    export_val,
-                    pv_leftover_cap,
-                    s.pv_kw,
-                    s.load_kw,
-                    cfg.morning_slow_charge_rate_kw,
-                )
-                export_val = pv_leftover_cap
-            if export_val <= near_zero:
-                export_val = 0.01
         export_turning_on = s.current_export_limit <= near_zero and export_val > near_zero
         export_turning_off = s.current_export_limit > near_zero and export_val <= near_zero
         if abs(export_val - s.current_export_limit) >= cfg.min_change_threshold or export_turning_on or export_turning_off:
@@ -1411,18 +1392,9 @@ class SigEnergyOptimizer:
             if not ok_chg:
                 logger.error("Failed setting ESS charge limit to %.2fkW", d.ess_charge_limit)
         if cfg.ess_max_discharging_limit:
-            if d.morning_slow_charge_active:
-                measured_export = max(0.0, float(s.grid_export_power_kw or 0.0))
-                pv_surplus_now = max(s.pv_kw - s.load_kw, 0.0)
-                if measured_export > (pv_surplus_now + 0.3):
-                    logger.warning(
-                        "Battery-backed export detected during slow charge: export=%.2fkW surplus=%.2fkW; forcing discharge limit to 0.01kW",
-                        measured_export,
-                        pv_surplus_now,
-                    )
-            discharge_limit = 0.01 if d.morning_slow_charge_active else d.ess_discharge_limit
+            discharge_limit = d.ess_discharge_limit
             ok_dis = await ha.set_number(cfg.ess_max_discharging_limit, discharge_limit)
-            if not ok_dis and d.morning_slow_charge_active:
+            if not ok_dis:
                 await _safe_fallback(f"failed setting ESS discharge limit to {discharge_limit:.2f}kW")
                 return
 
