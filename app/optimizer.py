@@ -60,7 +60,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.2.01-haos21-msc-hardoff"
+_RUNTIME_SIGNATURE = "2.2.06-haos21-msc-enabled"
 
 
 class SigEnergyOptimizer:
@@ -87,7 +87,7 @@ class SigEnergyOptimizer:
         self._manual_mode_override: Optional[str] = None
         self._manual_ess_charge_override_kw: Optional[float] = None
         self._manual_ess_discharge_override_kw: Optional[float] = None
-        self._morning_slow_charge_runtime_disabled: bool = True
+        self._morning_slow_charge_runtime_disabled: bool = False
         self._morning_slow_disable_logged: bool = False
         logger.warning(
             "Runtime signature=%s morning_slow_charge_runtime_disabled=%s",
