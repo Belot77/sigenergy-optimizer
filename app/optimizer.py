@@ -1400,20 +1400,11 @@ class SigEnergyOptimizer:
         block = cfg.block_flow_limit_value
         pv_max = cfg.pv_max_power_value
 
-        # Prevent temporary low control limits (e.g. 3kW slow-charge caps) from being
-        # treated as restored manual caps.
-        ess_charge_max_entity = (
-            float(state.ess_charge_limit_entity_max_kw)
-            if state and self._valid_hw_cap_kw(state.ess_charge_limit_entity_max_kw)
-            else None
-        )
-        ess_discharge_max_entity = (
-            float(state.ess_discharge_limit_entity_max_kw)
-            if state and self._valid_hw_cap_kw(state.ess_discharge_limit_entity_max_kw)
-            else None
-        )
-        ess_charge = ess_charge_max_entity if ess_charge_max_entity is not None else max(import_cap, cfg.ess_charge_limit_value)
-        ess_discharge = ess_discharge_max_entity if ess_discharge_max_entity is not None else max(export_cap, cfg.ess_discharge_limit_value)
+        # Use hardware caps/config baselines here; number-entity max attributes can be
+        # temporarily reduced during slow-charge windows and must not leak into manual
+        # mode reset targets.
+        ess_charge = max(import_cap, cfg.ess_charge_limit_value)
+        ess_discharge = max(export_cap, cfg.ess_discharge_limit_value)
 
         if mode_label == cfg.full_export_option:
             return {
@@ -1549,9 +1540,12 @@ class SigEnergyOptimizer:
                 self._freeze_decision_to_live_mode(refreshed_state, decision, mode_label)
                 self._last_decision = decision
                 return  # just disables optimizer, no limit changes
+            # Re-read live state right before computing manual targets so stale
+            # per-cycle values cannot contaminate one-shot manual writes.
+            current_state = await self._read_state()
             targets = self._manual_mode_targets(
                 mode_label,
-                self._last_state,
+                current_state,
                 include_block_flow_ess_limits=(mode_label == cfg.block_flow_option),
             )
             if targets:
