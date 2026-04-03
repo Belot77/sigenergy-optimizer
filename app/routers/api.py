@@ -246,7 +246,19 @@ def _effective_mode_label(opt: Any, s: Any, cfg: Any) -> str:
     return str(getattr(cfg, "automated_option", "Automated"))
 
 
-def _live_battery_power_kw(s: Any, d: Any) -> float | None:
+def _manual_display_targets(opt: Any, s: Any, mode: str, cfg: Any) -> dict[str, Any] | None:
+    if mode in {str(getattr(cfg, "automated_option", "Automated")), str(getattr(cfg, "manual_option", "Manual")), ""}:
+        return None
+    target_builder = getattr(opt, "_manual_mode_targets", None)
+    if callable(target_builder):
+        try:
+            return target_builder(mode, s)
+        except Exception:
+            return None
+    return None
+
+
+def _live_battery_power_kw(s: Any, d: Any, manual_targets: dict[str, Any] | None = None) -> float | None:
     if not s:
         return d.battery_power_kw if d else None
 
@@ -258,6 +270,9 @@ def _live_battery_power_kw(s: Any, d: Any) -> float | None:
     load_kw = float(getattr(s, "load_kw", 0.0) or 0.0)
     current_import_limit = float(getattr(s, "current_import_limit", 0.0) or 0.0)
     current_export_limit = float(getattr(s, "current_export_limit", 0.0) or 0.0)
+    if manual_targets:
+        current_import_limit = float(manual_targets.get("grid_import_limit", current_import_limit) or 0.0)
+        current_export_limit = float(manual_targets.get("grid_export_limit", current_export_limit) or 0.0)
 
     if grid_import is not None and grid_export is not None:
         measured_balance = max(float(getattr(s, "pv_kw", 0.0) or 0.0), 0.0)
@@ -617,8 +632,15 @@ async def get_status(request: Request) -> dict[str, Any]:
         stale_data = data_age_seconds > max(45, int(settings.poll_interval_seconds) * 2)
     effective_mode = _effective_mode_label(opt, s, cfg)
     manual_active = effective_mode not in {str(getattr(cfg, "automated_option", "Automated")), ""}
-    battery_power_kw = _live_battery_power_kw(s, d)
+    manual_targets = _manual_display_targets(opt, s, effective_mode, cfg) if manual_active else None
+    battery_power_kw = _live_battery_power_kw(s, d, manual_targets)
     outcome_reason = _live_outcome_reason(effective_mode, d, cfg)
+    display_ems_mode = manual_targets.get("ems_mode") if manual_targets else (s.current_ems_mode if s else (d.ems_mode if d else None))
+    display_export_limit = float(manual_targets.get("grid_export_limit")) if manual_targets else (s.current_export_limit if s else (d.export_limit if d else None))
+    display_import_limit = float(manual_targets.get("grid_import_limit")) if manual_targets else (s.current_import_limit if s else (d.import_limit if d else None))
+    display_pv_max = float(manual_targets.get("pv_max_power_limit")) if manual_targets else (s.current_pv_max_power_limit if s else (d.pv_max_power_limit if d else None))
+    display_ess_charge = float(manual_targets.get("ess_charge_limit")) if manual_targets else (s.current_ess_charge_limit if s else (d.ess_charge_limit if d else None))
+    display_ess_discharge = float(manual_targets.get("ess_discharge_limit")) if manual_targets else (s.current_ess_discharge_limit if s else (d.ess_discharge_limit if d else None))
     return {
         "connected": connected,
         "ws_connected": opt.ws_connected,
@@ -638,18 +660,18 @@ async def get_status(request: Request) -> dict[str, Any]:
         "feedin_price_cents": s.feedin_price_cents if s else None,
         "current_price_cents": s.current_price_cents if s else None,
         "solar_power_now_kw": s.solar_power_now_kw if s else None,
-        "ems_mode": s.current_ems_mode if s else (d.ems_mode if d else None),
-        "export_limit": s.current_export_limit if s else (d.export_limit if d else None),
-        "import_limit": s.current_import_limit if s else (d.import_limit if d else None),
+        "ems_mode": display_ems_mode,
+        "export_limit": display_export_limit,
+        "import_limit": display_import_limit,
         "effective_export_setpoint": (
-            0.01 if s and s.current_export_limit <= 0 else (s.current_export_limit if s else (d.export_limit if d else None))
+            0.01 if display_export_limit is not None and float(display_export_limit) <= 0 else display_export_limit
         ),
         "effective_import_setpoint": (
-            0.01 if s and s.current_import_limit <= 0 else (s.current_import_limit if s else (d.import_limit if d else None))
+            0.01 if display_import_limit is not None and float(display_import_limit) <= 0 else display_import_limit
         ),
-        "pv_max_power_limit": s.current_pv_max_power_limit if s else (d.pv_max_power_limit if d else None),
-        "ess_charge_limit": s.current_ess_charge_limit if s else (d.ess_charge_limit if d else None),
-        "ess_discharge_limit": s.current_ess_discharge_limit if s else (d.ess_discharge_limit if d else None),
+        "pv_max_power_limit": display_pv_max,
+        "ess_charge_limit": display_ess_charge,
+        "ess_discharge_limit": display_ess_discharge,
         "battery_eta": d.battery_eta_formatted if d else None,
         "battery_power_kw": battery_power_kw,
         "outcome_reason": outcome_reason,
@@ -931,8 +953,15 @@ async def ws_status(websocket: WebSocket) -> None:
             d = opt.last_decision
             effective_mode = _effective_mode_label(opt, s, opt.cfg)
             manual_active = effective_mode not in {str(getattr(opt.cfg, "automated_option", "Automated")), ""}
-            battery_power_kw = _live_battery_power_kw(s, d)
+            manual_targets = _manual_display_targets(opt, s, effective_mode, opt.cfg) if manual_active else None
+            battery_power_kw = _live_battery_power_kw(s, d, manual_targets)
             outcome_reason = _live_outcome_reason(effective_mode, d, opt.cfg)
+            display_ems_mode = manual_targets.get("ems_mode") if manual_targets else (s.current_ems_mode if s else (d.ems_mode if d else None))
+            display_export_limit = float(manual_targets.get("grid_export_limit")) if manual_targets else (s.current_export_limit if s else (d.export_limit if d else None))
+            display_import_limit = float(manual_targets.get("grid_import_limit")) if manual_targets else (s.current_import_limit if s else (d.import_limit if d else None))
+            display_pv_max = float(manual_targets.get("pv_max_power_limit")) if manual_targets else (s.current_pv_max_power_limit if s else (d.pv_max_power_limit if d else None))
+            display_ess_charge = float(manual_targets.get("ess_charge_limit")) if manual_targets else (s.current_ess_charge_limit if s else (d.ess_charge_limit if d else None))
+            display_ess_discharge = float(manual_targets.get("ess_discharge_limit")) if manual_targets else (s.current_ess_discharge_limit if s else (d.ess_discharge_limit if d else None))
             await websocket.send_json(
                 {
                     "ws_connected": opt.ws_connected,
@@ -959,12 +988,12 @@ async def ws_status(websocket: WebSocket) -> None:
                     "next_sunset_ts": datetime.fromtimestamp(s.next_sunset_ts, tz=timezone.utc).isoformat() if s and s.next_sunset_ts else None,
                     "sigenergy_mode": effective_mode,
                     "ha_control_enabled": s.ha_control_enabled if s else None,
-                    "ems_mode": s.current_ems_mode if s else (d.ems_mode if d else None),
-                    "export_limit": s.current_export_limit if s else (d.export_limit if d else None),
-                    "import_limit": s.current_import_limit if s else (d.import_limit if d else None),
-                    "pv_max_power_limit": s.current_pv_max_power_limit if s else (d.pv_max_power_limit if d else None),
-                    "ess_charge_limit": s.current_ess_charge_limit if s else (d.ess_charge_limit if d else None),
-                    "ess_discharge_limit": s.current_ess_discharge_limit if s else (d.ess_discharge_limit if d else None),
+                    "ems_mode": display_ems_mode,
+                    "export_limit": display_export_limit,
+                    "import_limit": display_import_limit,
+                    "pv_max_power_limit": display_pv_max,
+                    "ess_charge_limit": display_ess_charge,
+                    "ess_discharge_limit": display_ess_discharge,
                     "ess_max_charge_kw": s.ess_max_charge_kw if s else None,
                     "ess_max_discharge_kw": s.ess_max_discharge_kw if s else None,
                     "battery_power_kw": battery_power_kw,
