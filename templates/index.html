@@ -170,15 +170,16 @@ select:focus,input:focus{border-color:#276749}
 
 /* Chart cards */
 .chart-card{background:linear-gradient(180deg,#ffffff 0%,#f7fbf9 100%);border:1px solid #d7e6dd;border-radius:14px;padding:14px;box-shadow:0 10px 28px rgba(39,103,73,.06)}
-.chart-hdr{display:grid;grid-template-columns:minmax(155px,.7fr) minmax(660px,3.4fr);align-items:flex-start;margin-bottom:12px;gap:14px}
+.chart-hdr{display:grid;grid-template-columns:minmax(170px,.85fr) minmax(0,2.85fr);align-items:center;margin-bottom:12px;gap:12px}
 .chart-title-wrap{display:flex;flex-direction:column;gap:4px;min-width:0}
 .chart-title{font-size:13px;font-weight:700;color:#1f3b2f;letter-spacing:.01em}
 .chart-sub{font-size:11px;color:#6b7f77;line-height:1.45;max-width:520px}
-.chart-now{display:flex;justify-content:center;align-items:center;gap:10px 12px;flex-wrap:wrap;justify-self:stretch;align-self:start;min-width:0;padding-top:2px}
-.chart-now-lead{font-size:13px;font-weight:900;letter-spacing:.01em;color:#214036}
-.chart-now-metric{display:inline-flex;align-items:center;gap:8px;min-width:0;padding:8px 14px;border-radius:999px;background:rgba(241,245,249,.92);border:1px solid rgba(203,213,225,.95);box-shadow:inset 0 1px 0 rgba(255,255,255,.72)}
-.chart-now-label{font-size:11.5px;font-weight:900;color:#43574f;white-space:nowrap}
-.chart-now-value{font-size:13.5px;font-weight:900;letter-spacing:.01em;white-space:nowrap}
+.chart-now{display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-wrap:nowrap;justify-self:stretch;align-self:center;min-width:0;overflow-x:auto;overflow-y:hidden;padding:2px 0 4px;scrollbar-width:none;-ms-overflow-style:none}
+.chart-now::-webkit-scrollbar{display:none}
+.chart-now-lead{font-size:12px;font-weight:900;letter-spacing:.01em;color:#214036;flex:0 0 auto}
+.chart-now-metric{display:inline-flex;align-items:center;gap:7px;min-width:0;padding:7px 12px;border-radius:999px;background:rgba(241,245,249,.92);border:1px solid rgba(203,213,225,.95);box-shadow:inset 0 1px 0 rgba(255,255,255,.72);flex:0 0 auto}
+.chart-now-label{font-size:11px;font-weight:900;color:#43574f;white-space:nowrap}
+.chart-now-value{font-size:12.5px;font-weight:900;letter-spacing:.01em;white-space:nowrap}
 .chart-now-series-battery{background:rgba(30,136,229,.12);border-color:rgba(30,136,229,.28)}
 .chart-now-series-battery .chart-now-value{color:#1e88e5}
 .chart-now-series-minsoc{background:rgba(79,209,197,.12);border-color:rgba(79,209,197,.28)}
