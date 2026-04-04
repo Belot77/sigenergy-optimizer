@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import unittest
-from datetime import date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from app.earnings import EarningsSource, preferred_auto_source_keys, summarize_cumulative_source, summarize_daily_source, summarize_lagged_daily_source
+from app.earnings import EarningsSource, _cumulative_delta, _is_plausible_summary, preferred_auto_source_keys, summarize_cumulative_source, summarize_daily_source, summarize_lagged_daily_source, summarize_shifted_cumulative_source
 
 
 TZ = timezone(timedelta(hours=10, minutes=30))
@@ -22,6 +22,55 @@ class EarningsTests(unittest.TestCase):
             preferred_auto_source_keys(date(2026, 4, 3), date(2026, 4, 4)),
             ["amber_balance", "sigenergy_daily", "estimated"],
         )
+
+    def test_cumulative_delta_handles_counter_reset(self) -> None:
+        series = [
+            {"state": "111.73", "last_updated": "2026-04-02T09:22:55+10:30"},
+            {"state": "0.00", "last_updated": "2026-04-03T09:22:55+10:30"},
+        ]
+        start = datetime.fromisoformat("2026-04-02T00:00:00+10:30")
+        end = datetime.fromisoformat("2026-04-03T23:59:59+10:30")
+        self.assertEqual(_cumulative_delta(series, start, end), 0.0)
+
+    def test_shifted_cumulative_amber_source_shifts_values_forward_one_day(self) -> None:
+        source = EarningsSource(
+            key="amber_balance",
+            label="Amber Balance",
+            mode="cumulative_shifted",
+            import_energy_entity="sensor.import_kwh",
+            export_energy_entity="sensor.export_kwh",
+            import_value_entity="sensor.import",
+            export_value_entity="sensor.export",
+        )
+        by_entity = {
+            "sensor.import_kwh": [
+                {"entity_id": "sensor.import_kwh", "state": "0.00", "last_updated": "2026-04-03T09:22:55+10:30"},
+                {"entity_id": "sensor.import_kwh", "state": "1.63", "last_updated": "2026-04-04T09:22:55+10:30"},
+            ],
+            "sensor.export_kwh": [
+                {"entity_id": "sensor.export_kwh", "state": "111.73", "last_updated": "2026-04-03T09:22:55+10:30"},
+                {"entity_id": "sensor.export_kwh", "state": "171.96", "last_updated": "2026-04-04T09:22:55+10:30"},
+            ],
+            "sensor.import": [
+                {"entity_id": "sensor.import", "state": "0.00", "last_updated": "2026-04-03T09:22:55+10:30"},
+                {"entity_id": "sensor.import", "state": "0.32", "last_updated": "2026-04-04T09:22:55+10:30"},
+            ],
+            "sensor.export": [
+                {"entity_id": "sensor.export", "state": "-7.55", "last_updated": "2026-04-03T09:22:55+10:30"},
+                {"entity_id": "sensor.export", "state": "-10.38", "last_updated": "2026-04-04T09:22:55+10:30"},
+            ],
+        }
+        summary = summarize_shifted_cumulative_source(source, "2026-04-03", by_entity, TZ)
+        self.assertIsNotNone(summary)
+        self.assertAlmostEqual(summary["total_import_kwh"], 1.63, places=3)
+        self.assertAlmostEqual(summary["total_export_kwh"], 60.23, places=3)
+        self.assertAlmostEqual(summary["import_costs"], 0.32, places=4)
+        self.assertAlmostEqual(summary["export_earnings"], 2.83, places=4)
+
+    def test_plausibility_rejects_large_or_negative_values(self) -> None:
+        self.assertFalse(_is_plausible_summary({"total_import_kwh": -1, "total_export_kwh": 1, "import_costs": 1, "export_earnings": 1}))
+        self.assertFalse(_is_plausible_summary({"total_import_kwh": 1, "total_export_kwh": 500, "import_costs": 1, "export_earnings": 1}))
+        self.assertTrue(_is_plausible_summary({"total_import_kwh": 1, "total_export_kwh": 50, "import_costs": 1, "export_earnings": 1}))
 
     def test_cumulative_amber_source_uses_daily_deltas(self) -> None:
         source = EarningsSource(

@@ -134,8 +134,30 @@ def _cumulative_delta(series: list[dict[str, Any]], start: datetime, end: dateti
         end_value = _latest_numeric_in_window(series, start, end)
     if start_value is None and end_value is not None:
         start_value = _latest_numeric_in_window(series, start - timedelta(days=2), start)
+    if start_value is None and end_value is not None:
+        return end_value if end_value >= 0 else abs(end_value)
     if start_value is None or end_value is None:
         return None
+    if end_value < start_value:
+        return end_value if end_value >= 0 else None
+    return end_value - start_value
+
+
+def _cumulative_credit_delta(series: list[dict[str, Any]], start: datetime, end: datetime) -> float | None:
+    start_value = _last_numeric_before(series, start)
+    end_value = _last_numeric_before(series, end)
+    if end_value is None:
+        end_value = _latest_numeric_in_window(series, start, end)
+    if start_value is None and end_value is not None:
+        start_value = _latest_numeric_in_window(series, start - timedelta(days=2), start)
+    if start_value is None and end_value is not None:
+        return abs(end_value)
+    if start_value is None or end_value is None:
+        return None
+    if start_value <= 0 and end_value <= 0:
+        return abs(end_value - start_value)
+    if end_value < start_value:
+        return abs(end_value) if end_value <= 0 else end_value
     return end_value - start_value
 
 
@@ -188,6 +210,38 @@ def summarize_lagged_daily_source(
     return summary
 
 
+def summarize_shifted_cumulative_source(
+    source: EarningsSource,
+    day: str,
+    by_entity: dict[str, list[dict[str, Any]]],
+    tzinfo,
+) -> dict[str, Any] | None:
+    target_day = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+    summary = summarize_cumulative_source(source, target_day, by_entity, tzinfo)
+    if summary is None:
+        return None
+    summary["date"] = day
+    return summary
+
+
+def _is_plausible_summary(summary: dict[str, Any] | None) -> bool:
+    if summary is None:
+        return False
+    numeric_fields = [
+        "total_import_kwh",
+        "total_export_kwh",
+        "import_costs",
+        "export_earnings",
+    ]
+    for key in numeric_fields:
+        value = _to_float(summary.get(key))
+        if value is None or value < 0:
+            return False
+    import_kwh = float(summary.get("total_import_kwh", 0.0) or 0.0)
+    export_kwh = float(summary.get("total_export_kwh", 0.0) or 0.0)
+    return import_kwh <= 200 and export_kwh <= 200
+
+
 def summarize_cumulative_source(
     source: EarningsSource,
     day: str,
@@ -201,7 +255,7 @@ def summarize_cumulative_source(
     import_kwh_delta = _cumulative_delta(by_entity.get(source.import_energy_entity, []), day_start, day_end)
     export_kwh_delta = _cumulative_delta(by_entity.get(source.export_energy_entity, []), day_start, day_end)
     import_value_delta = _cumulative_delta(by_entity.get(source.import_value_entity, []), day_start, day_end)
-    export_value_delta = _cumulative_delta(by_entity.get(source.export_value_entity, []), day_start, day_end)
+    export_value_delta = _cumulative_credit_delta(by_entity.get(source.export_value_entity, []), day_start, day_end)
 
     if all(v is None for v in (import_kwh_delta, export_kwh_delta, import_value_delta, export_value_delta)):
         return None
@@ -212,7 +266,7 @@ def summarize_cumulative_source(
         import_kwh=import_kwh_delta or 0.0,
         export_kwh=export_kwh_delta or 0.0,
         import_costs=import_value_delta or 0.0,
-        export_earnings=-(export_value_delta or 0.0),
+        export_earnings=export_value_delta or 0.0,
     )
 
 
@@ -271,7 +325,7 @@ class EarningsService:
             EarningsSource(
                 key="amber_balance",
                 label="Amber Balance",
-                mode="daily_lagged",
+                mode="cumulative_shifted",
                 import_energy_entity=self._cfg.amber_balance_import_kwh_entity,
                 export_energy_entity=self._cfg.amber_balance_export_kwh_entity,
                 import_value_entity=self._cfg.amber_balance_import_value_entity,
@@ -349,30 +403,72 @@ class EarningsService:
             source.import_value_entity,
             source.export_value_entity,
         ]
-        lookback = timedelta(days=2) if source.mode == "cumulative" else timedelta(minutes=1)
-        extra_end = timedelta(days=1) if source.mode == "daily_lagged" else timedelta()
+        lookback = timedelta(days=2) if source.mode in {"cumulative", "cumulative_shifted"} else timedelta(minutes=1)
+        extra_end = timedelta(days=1) if source.mode in {"daily_lagged", "cumulative_shifted"} else timedelta()
         rows = await self._ha.get_history_period(start - lookback, end + extra_end, entity_ids)
         return _series_by_entity(rows, entity_ids)
 
+    async def _summary_from_current_daily_state(self, source: EarningsSource, day: str) -> dict[str, Any] | None:
+        entity_ids = [
+            source.import_energy_entity,
+            source.export_energy_entity,
+            source.import_value_entity,
+            source.export_value_entity,
+        ]
+        states = await self._ha.bulk_states(entity_ids)
+        if not all(_is_available_state(states.get(entity_id)) for entity_id in entity_ids):
+            return None
+        return _normalize_daily_summary(
+            day=day,
+            source=source,
+            import_kwh=_to_float(states[source.import_energy_entity].get("state")) or 0.0,
+            export_kwh=_to_float(states[source.export_energy_entity].get("state")) or 0.0,
+            import_costs=_to_float(states[source.import_value_entity].get("state")) or 0.0,
+            export_earnings=_to_float(states[source.export_value_entity].get("state")) or 0.0,
+        )
+
+    def _summarize_cached(
+        self,
+        source: EarningsSource,
+        day: str,
+        history_cache: dict[str, dict[str, list[dict[str, Any]]]],
+    ) -> dict[str, Any] | None:
+        by_entity = history_cache.get(source.key, {})
+        if source.mode == "daily":
+            return summarize_daily_source(source, day, by_entity, self._tz)
+        if source.mode == "daily_lagged":
+            return summarize_lagged_daily_source(source, day, by_entity, self._tz)
+        if source.mode == "cumulative_shifted":
+            return summarize_shifted_cumulative_source(source, day, by_entity, self._tz)
+        return summarize_cumulative_source(source, day, by_entity, self._tz)
+
     async def daily_summary(self, day: str) -> dict[str, Any]:
         available_sources = await self._available_sources()
-        source = self._select_source_for_day(day, available_sources)
-        if source.mode == "estimated":
-            return self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
-
         day_date = date.fromisoformat(day)
+        today = datetime.now(self._tz).date()
+        preferred_keys = preferred_auto_source_keys(day_date, today)
+        source_pref = str(self._cfg.earnings_source or "auto").strip().lower()
+        if source_pref != "auto":
+            preferred_keys = [source_pref, "estimated"]
+
         start = datetime.combine(day_date, time.min, tzinfo=self._tz)
         end = start + timedelta(days=1)
-        by_entity = await self._fetch_history(source, start, end)
-        if source.mode == "daily":
-            summary = summarize_daily_source(source, day, by_entity, self._tz)
-        elif source.mode == "daily_lagged":
-            summary = summarize_lagged_daily_source(source, day, by_entity, self._tz)
-        else:
-            summary = summarize_cumulative_source(source, day, by_entity, self._tz)
-        if summary is None:
-            return self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
-        return summary
+        history_cache: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        for key in preferred_keys:
+            source = available_sources.get(key)
+            if not source:
+                continue
+            if source.mode == "estimated":
+                continue
+            if source.mode == "daily" and day_date == today:
+                summary = await self._summary_from_current_daily_state(source, day)
+            else:
+                if key not in history_cache:
+                    history_cache[key] = await self._fetch_history(source, start, end)
+                summary = self._summarize_cached(source, day, history_cache)
+            if _is_plausible_summary(summary):
+                return summary
+        return self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
 
     async def history(self, days: int) -> dict[str, Any]:
         days = max(1, min(days, 30))
@@ -390,19 +486,26 @@ class EarningsService:
         out = []
         for i in range(days):
             day = (today - timedelta(days=i)).isoformat()
-            source = self._select_source_for_day(day, available_sources)
-            if source.mode == "estimated":
-                summary = self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
-            else:
-                by_entity = history_cache.get(source.key, {})
-                if source.mode == "daily":
-                    summary = summarize_daily_source(source, day, by_entity, self._tz)
-                elif source.mode == "daily_lagged":
-                    summary = summarize_lagged_daily_source(source, day, by_entity, self._tz)
+            day_date = date.fromisoformat(day)
+            preferred_keys = preferred_auto_source_keys(day_date, today)
+            source_pref = str(self._cfg.earnings_source or "auto").strip().lower()
+            if source_pref != "auto":
+                preferred_keys = [source_pref, "estimated"]
+            summary = None
+            for key in preferred_keys:
+                source = available_sources.get(key)
+                if not source:
+                    continue
+                if source.mode == "estimated":
+                    continue
+                if source.mode == "daily" and day_date == today:
+                    summary = await self._summary_from_current_daily_state(source, day)
                 else:
-                    summary = summarize_cumulative_source(source, day, by_entity, self._tz)
-                if summary is None:
-                    summary = self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
+                    summary = self._summarize_cached(source, day, history_cache)
+                if _is_plausible_summary(summary):
+                    break
+            if not _is_plausible_summary(summary):
+                summary = self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
             out.append(
                 {
                     "date": day,
@@ -415,5 +518,9 @@ class EarningsService:
                     "net": summary.get("net", 0.0),
                 }
             )
-        today_source = self._select_source_for_day(today.isoformat(), available_sources)
-        return {"source_key": today_source.key, "source_label": today_source.label, "days": out}
+        today_summary = next((row for row in out if row.get("date") == today.isoformat()), None)
+        return {
+            "source_key": today_summary.get("source_key", "estimated") if today_summary else "estimated",
+            "source_label": today_summary.get("source_label", "Estimated From Sampled Power") if today_summary else "Estimated From Sampled Power",
+            "days": out,
+        }
