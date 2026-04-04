@@ -170,11 +170,35 @@ select:focus,input:focus{border-color:#276749}
 
 /* Chart cards */
 .chart-card{background:linear-gradient(180deg,#ffffff 0%,#f7fbf9 100%);border:1px solid #d7e6dd;border-radius:14px;padding:14px;box-shadow:0 10px 28px rgba(39,103,73,.06)}
-.chart-hdr{display:grid;grid-template-columns:minmax(180px,1fr) minmax(360px,2fr);align-items:flex-start;margin-bottom:10px;gap:12px}
+.chart-hdr{display:grid;grid-template-columns:minmax(155px,.7fr) minmax(660px,3.4fr);align-items:flex-start;margin-bottom:12px;gap:14px}
 .chart-title-wrap{display:flex;flex-direction:column;gap:4px;min-width:0}
 .chart-title{font-size:13px;font-weight:700;color:#1f3b2f;letter-spacing:.01em}
 .chart-sub{font-size:11px;color:#6b7f77;line-height:1.45;max-width:520px}
-.chart-now{font-size:10.5px;color:#5d6f67;text-align:right;line-height:1.35;font-weight:600;white-space:normal;overflow-wrap:anywhere;justify-self:end;max-width:100%}
+.chart-now{display:flex;justify-content:center;align-items:center;gap:10px 12px;flex-wrap:wrap;justify-self:stretch;align-self:start;min-width:0;padding-top:2px}
+.chart-now-lead{font-size:13px;font-weight:900;letter-spacing:.01em;color:#214036}
+.chart-now-metric{display:inline-flex;align-items:center;gap:8px;min-width:0;padding:8px 14px;border-radius:999px;background:rgba(241,245,249,.92);border:1px solid rgba(203,213,225,.95);box-shadow:inset 0 1px 0 rgba(255,255,255,.72)}
+.chart-now-label{font-size:11.5px;font-weight:900;color:#43574f;white-space:nowrap}
+.chart-now-value{font-size:13.5px;font-weight:900;letter-spacing:.01em;white-space:nowrap}
+.chart-now-series-battery{background:rgba(30,136,229,.12);border-color:rgba(30,136,229,.28)}
+.chart-now-series-battery .chart-now-value{color:#1e88e5}
+.chart-now-series-minsoc{background:rgba(79,209,197,.12);border-color:rgba(79,209,197,.28)}
+.chart-now-series-minsoc .chart-now-value{color:#4fd1c5}
+.chart-now-series-pv{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.28)}
+.chart-now-series-pv .chart-now-value{color:#f59e0b}
+.chart-now-series-pvforecast{background:rgba(220,38,38,.10);border-color:rgba(220,38,38,.25)}
+.chart-now-series-pvforecast .chart-now-value{color:#dc2626}
+.chart-now-series-load{background:rgba(168,85,247,.12);border-color:rgba(168,85,247,.28)}
+.chart-now-series-load .chart-now-value{color:#a855f7}
+.chart-now-series-import{background:rgba(239,68,68,.10);border-color:rgba(239,68,68,.25)}
+.chart-now-series-import .chart-now-value{color:#ef4444}
+.chart-now-series-export{background:rgba(34,197,94,.11);border-color:rgba(34,197,94,.25)}
+.chart-now-series-export .chart-now-value{color:#22c55e}
+.chart-now-series-importprice{background:rgba(185,28,28,.10);border-color:rgba(185,28,28,.24)}
+.chart-now-series-importprice .chart-now-value{color:#b91c1c}
+.chart-now-series-feedin{background:rgba(4,120,87,.11);border-color:rgba(4,120,87,.24)}
+.chart-now-series-feedin .chart-now-value{color:#047857}
+.chart-now-series-pvtoday{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.28)}
+.chart-now-series-pvtoday .chart-now-value{color:#f59e0b}
 .chart-frame{position:relative;border:1px solid #d7e6dd;border-radius:12px;padding:8px;background:linear-gradient(180deg,#f8fcfb 0%,#eff7f3 100%)}
 .mate-svg{display:none;width:100%;border-radius:10px}
 .mate-svg.on{display:block}
@@ -272,7 +296,7 @@ select:focus,input:focus{border-color:#276749}
 .cfg-msg{font-size:12px;color:#276749;min-height:16px}
 @media (max-width: 900px){.cfg-grid{grid-template-columns:1fr}}
 @media (max-width: 1180px){.overview-work{grid-template-columns:1fr}}
-@media (max-width: 900px){.chart-hdr{display:flex;flex-direction:column}.chart-now{max-width:none;text-align:left;white-space:normal;overflow:visible;text-overflow:clip}.chart-frame{padding:6px}.scenario-grid{grid-template-columns:1fr 1fr}}
+@media (max-width: 900px){.chart-hdr{display:flex;flex-direction:column}.chart-now{justify-content:flex-start;max-width:none;white-space:normal;overflow:visible;text-overflow:clip}.chart-frame{padding:6px}.scenario-grid{grid-template-columns:1fr 1fr}}
 @media (max-width: 640px){.scenario-grid{grid-template-columns:1fr}.apx-tooltip{max-width:220px;min-width:150px}.apx-tooltip-label{max-width:120px}}
 @media (max-width: 1080px){
   .app-header{height:auto;align-items:flex-start;flex-wrap:wrap;padding:10px 14px;gap:10px}
@@ -321,6 +345,19 @@ html.theme-dark .scenario-card{background:#121b2d;border-color:#354966}
 html.theme-dark .scenario-card.active{border-color:#7dd3fc;box-shadow:0 0 0 2px rgba(125,211,252,.22)}
 html.theme-dark .card-title,html.theme-dark .sval,html.theme-dark .reason-bar,html.theme-dark .cfg-section summary,html.theme-dark .audit-table td,html.theme-dark .chart-title,html.theme-dark .scenario-title,html.theme-dark .scenario-name,html.theme-dark .chart-now{color:#eaf2ff}
 html.theme-dark .flabel,html.theme-dark .slbl,html.theme-dark .cfg-field label,html.theme-dark .cfg-summary-note,html.theme-dark .audit-table th,html.theme-dark .chart-sub,html.theme-dark .chart-note,html.theme-dark .preview-note,html.theme-dark .scenario-note,html.theme-dark .preview-sub{color:#b8c6db}
+html.theme-dark .chart-now-lead{color:#f8fbff}
+html.theme-dark .chart-now-metric{background:rgba(15,23,42,.88);border-color:#31435f;box-shadow:none}
+html.theme-dark .chart-now-label{color:#d7e4f7}
+html.theme-dark .chart-now-series-battery{background:rgba(30,136,229,.18);border-color:rgba(30,136,229,.34)}
+html.theme-dark .chart-now-series-minsoc{background:rgba(79,209,197,.18);border-color:rgba(79,209,197,.34)}
+html.theme-dark .chart-now-series-pv{background:rgba(245,158,11,.18);border-color:rgba(245,158,11,.34)}
+html.theme-dark .chart-now-series-pvforecast{background:rgba(220,38,38,.16);border-color:rgba(220,38,38,.32)}
+html.theme-dark .chart-now-series-load{background:rgba(168,85,247,.18);border-color:rgba(168,85,247,.34)}
+html.theme-dark .chart-now-series-import{background:rgba(239,68,68,.16);border-color:rgba(239,68,68,.32)}
+html.theme-dark .chart-now-series-export{background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.32)}
+html.theme-dark .chart-now-series-importprice{background:rgba(185,28,28,.16);border-color:rgba(185,28,28,.32)}
+html.theme-dark .chart-now-series-feedin{background:rgba(4,120,87,.16);border-color:rgba(4,120,87,.32)}
+html.theme-dark .chart-now-series-pvtoday{background:rgba(245,158,11,.18);border-color:rgba(245,158,11,.34)}
 html.theme-dark .glance-lbl{color:#9fb3cf}
 html.theme-dark .glance-val{color:var(--tone-value,#f1f7ff)}
 html.theme-dark .glance-sub{color:var(--tone-value,#c8d8ef)}
@@ -2354,6 +2391,18 @@ function seriesMinMax(points) {
   return vals.length ? { min: Math.min(...vals), max: Math.max(...vals) } : { min: null, max: null };
 }
 
+function renderChartNow(elId, lead, metrics) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const items = Array.isArray(metrics) ? metrics : [];
+  el.innerHTML = [`<span class="chart-now-lead">${lead}</span>`]
+    .concat(items.map((item) => {
+      const tone = item?.tone ? ` chart-now-series-${item.tone}` : '';
+      return `<span class="chart-now-metric${tone}"><span class="chart-now-label">${item.label}</span><span class="chart-now-value">${item.value}</span></span>`;
+    }))
+    .join('');
+}
+
 function updateOverview() {
   const s = S;
   const forecastNowKw = currentPvForecastKw();
@@ -2367,13 +2416,31 @@ function updateOverview() {
     }
   }
   // Chart now labels
-  document.getElementById('nowPower').textContent = simActive && simPreview
-    ? `Simulation: ${PROFILE_META[simPreview.profile]?.label || 'Selected profile'} | Battery ${fc(s.battery_soc,1)}% -> ${fc(simPreview.projectedBattery,1)}%, Load ${fc(s.load_kw,1)}kW, Import ${fc(simPreview.importLimit,1)}kW, Export ${fc(simPreview.exportLimit,1)}kW`
-    : `Now: Battery ${fc(s.battery_soc,1)}%, Min SoC ${fc(s.min_soc_to_sunrise,1)}%, PV ${fc(s.pv_kw,1)}kW, Forecast ${fc(forecastNowKw,1)}kW, Load ${fc(s.load_kw,1)}kW`;
-  document.getElementById('nowPrice').textContent =
-    `Now: Import price ${fcc(s.current_price)}/kWh, Feed-in price ${fcc(s.feedin_price)}/kWh, PV today ${fc(s.forecast_today,1)}kWh`;
-  document.getElementById('nowFlow').textContent =
-    `Now (live sensors): Import ${fc(s.grid_import_power_kw,1)}kW, Export ${fc(s.grid_export_power_kw,1)}kW`;
+  if (simActive && simPreview) {
+    renderChartNow('nowPower', `Simulation: ${PROFILE_META[simPreview.profile]?.label || 'Selected profile'}`, [
+      { label: 'Battery', value: `${fc(s.battery_soc,1)}% -> ${fc(simPreview.projectedBattery,1)}%`, tone: 'battery' },
+      { label: 'Load', value: `${fc(s.load_kw,1)}kW`, tone: 'load' },
+      { label: 'Import', value: `${fc(simPreview.importLimit,1)}kW`, tone: 'import' },
+      { label: 'Export', value: `${fc(simPreview.exportLimit,1)}kW`, tone: 'export' },
+    ]);
+  } else {
+    renderChartNow('nowPower', 'Now', [
+      { label: 'Battery', value: `${fc(s.battery_soc,1)}%`, tone: 'battery' },
+      { label: 'Min SoC', value: `${fc(s.min_soc_to_sunrise,1)}%`, tone: 'minsoc' },
+      { label: 'PV', value: `${fc(s.pv_kw,1)}kW`, tone: 'pv' },
+      { label: 'Forecast', value: `${fc(forecastNowKw,1)}kW`, tone: 'pvforecast' },
+      { label: 'Load', value: `${fc(s.load_kw,1)}kW`, tone: 'load' },
+    ]);
+  }
+  renderChartNow('nowPrice', 'Now', [
+    { label: 'Import price', value: `${fcc(s.current_price)}/kWh`, tone: 'importprice' },
+    { label: 'Feed-in price', value: `${fcc(s.feedin_price)}/kWh`, tone: 'feedin' },
+    { label: 'PV today', value: `${fc(s.forecast_today,1)}kWh`, tone: 'pvtoday' },
+  ]);
+  renderChartNow('nowFlow', 'Now (live sensors)', [
+    { label: 'Import', value: `${fc(s.grid_import_power_kw,1)}kW`, tone: 'import' },
+    { label: 'Export', value: `${fc(s.grid_export_power_kw,1)}kW`, tone: 'export' },
+  ]);
 
   // Cycle timing
   setTextWithFlash('cycleStart', tsISO(s.last_cycle_started));
