@@ -2078,6 +2078,9 @@ class SigEnergyOptimizer:
             return False
 
         overnight_covered = s.battery_soc > (sunrise_soc_target + 10)
+        tomorrow_forecast_meets_minimum = (
+            s.forecast_tomorrow_kwh >= cfg.evening_boost_min_tomorrow_forecast_kwh
+        )
         tomorrow_will_refill = (
             s.forecast_tomorrow_kwh >= bat_fill_need_kwh * cfg.evening_boost_forecast_safety
         )
@@ -2095,7 +2098,7 @@ class SigEnergyOptimizer:
                     break
             except Exception:
                 pass
-        return no_high_fit and overnight_covered and tomorrow_will_refill
+        return no_high_fit and overnight_covered and tomorrow_forecast_meets_minimum and tomorrow_will_refill
 
     def _solar_surplus_bypass(self, s: SolarState, morning_slow_charge_active: bool,
                                cap: float, pv_surplus: float, prev_desired_mode: str = "") -> bool:
