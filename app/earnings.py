@@ -250,17 +250,6 @@ class EarningsService:
 
         out.append(
             EarningsSource(
-                key="amber_balance",
-                label="Amber Balance",
-                mode="daily_lagged",
-                import_energy_entity=self._cfg.amber_balance_import_kwh_entity,
-                export_energy_entity=self._cfg.amber_balance_export_kwh_entity,
-                import_value_entity=self._cfg.amber_balance_import_value_entity,
-                export_value_entity=self._cfg.amber_balance_export_value_entity,
-            )
-        )
-        out.append(
-            EarningsSource(
                 key="sigenergy_daily",
                 label="Sigenergy Daily Totals",
                 mode="daily",
@@ -268,6 +257,17 @@ class EarningsService:
                 export_energy_entity=self._cfg.daily_export_energy,
                 import_value_entity=self._cfg.daily_import_cost_entity,
                 export_value_entity=self._cfg.daily_export_compensation_entity,
+            )
+        )
+        out.append(
+            EarningsSource(
+                key="amber_balance",
+                label="Amber Balance",
+                mode="daily_lagged",
+                import_energy_entity=self._cfg.amber_balance_import_kwh_entity,
+                export_energy_entity=self._cfg.amber_balance_export_kwh_entity,
+                import_value_entity=self._cfg.amber_balance_import_value_entity,
+                export_value_entity=self._cfg.amber_balance_export_value_entity,
             )
         )
         return out
