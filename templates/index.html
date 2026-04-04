@@ -3314,8 +3314,10 @@ async function loadEarnings() {
         <td style="text-align:right" class="${Number(d.net||0) >= 0 ? 'pos' : 'neg'}">$${fc(d.net,2)}</td>
       </tr>
     `).join('');
+    const sourceLabel = today.source_label || hist.source_label || 'Estimated From Sampled Power';
     el.innerHTML = `
       <div class="card-title">Earnings (Today)</div>
+      <div style="margin:-4px 0 10px;color:#718096;font-size:12px">Source: ${sourceLabel}</div>
       <div class="status-grid" style="margin-bottom:10px">
         <div class="scell"><div class="slbl">Import kWh</div><div class="sval">${fc(today.total_import_kwh,3)}</div></div>
         <div class="scell"><div class="slbl">Export kWh</div><div class="sval">${fc(today.total_export_kwh,3)}</div></div>

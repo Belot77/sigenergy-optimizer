@@ -22,6 +22,7 @@ from typing import Any, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings
+from .earnings import EarningsService
 from .ha_client import HAClient
 from .models import Decision, SolarState
 from .state_store import StateStore
@@ -111,6 +112,7 @@ class SigEnergyOptimizer:
         self._last_tracked_feedin_price: Optional[float] = None
         db_path = os.environ.get("STATE_DB_PATH", "/data/optimizer_state.db")
         self._state_store = StateStore(db_path)
+        self._earnings = EarningsService(self.ha, self.cfg, self._state_store, self._tz)
         self._decision_trace: deque[dict[str, Any]] = deque(maxlen=1000)
         # Serialize cycle apply and manual mode writes to avoid race-driven reverts.
         self._control_lock = asyncio.Lock()
@@ -439,28 +441,12 @@ class SigEnergyOptimizer:
     def price_tracking_events(self, date: str | None = None, limit: int = 2000) -> list[dict[str, Any]]:
         return self._state_store.get_price_events(date=date, limit=limit)
 
-    def daily_earnings_summary(self, date: str | None = None) -> dict[str, Any]:
+    async def daily_earnings_summary(self, date: str | None = None) -> dict[str, Any]:
         target_date = date or datetime.now(self._tz).date().isoformat()
-        return self._state_store.daily_earnings_summary(target_date)
+        return await self._earnings.daily_summary(target_date)
 
-    def earnings_history(self, days: int = 7) -> dict[str, Any]:
-        days = max(1, min(days, 30))
-        today = datetime.now(self._tz).date()
-        out = []
-        for i in range(days):
-            d = (today - timedelta(days=i)).isoformat()
-            s = self._state_store.daily_earnings_summary(d)
-            out.append(
-                {
-                    "date": d,
-                    "import_kwh": s.get("total_import_kwh", 0.0),
-                    "export_kwh": s.get("total_export_kwh", 0.0),
-                    "import_costs": s.get("import_costs", 0.0),
-                    "export_earnings": s.get("export_earnings", 0.0),
-                    "net": s.get("net", 0.0),
-                }
-            )
-        return {"days": out}
+    async def earnings_history(self, days: int = 7) -> dict[str, Any]:
+        return await self._earnings.history(days)
 
     def audit_events(self, limit: int = 200) -> list[dict[str, Any]]:
         return self._state_store.get_audit_events(limit=limit)

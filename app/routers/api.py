@@ -783,13 +783,13 @@ async def price_tracking(request: Request, date: Optional[str] = None, limit: in
 @router.get("/daily_earnings")
 async def daily_earnings(request: Request, date: Optional[str] = None) -> dict[str, Any]:
     _require_config_read_auth(request)
-    return _opt(request).daily_earnings_summary(date=date)
+    return await _opt(request).daily_earnings_summary(date=date)
 
 
 @router.get("/earnings_history")
 async def earnings_history(request: Request, days: int = 7) -> dict[str, Any]:
     _require_config_read_auth(request)
-    return _opt(request).earnings_history(days=days)
+    return await _opt(request).earnings_history(days=days)
 
 
 @router.post("/run_cycle")

@@ -71,10 +71,26 @@ class Settings(BaseSettings):
     sun_entity: str = Field("sun.sun", env="SUN_ENTITY")
     daily_export_energy: str = Field("sensor.sigen_plant_daily_grid_export_energy", env="DAILY_EXPORT_ENERGY")
     daily_import_energy: str = Field("sensor.sigen_plant_daily_grid_import_energy", env="DAILY_IMPORT_ENERGY")
+    daily_import_cost_entity: str = Field("sensor.sigen_plant_daily_grid_import_energy_cost", env="DAILY_IMPORT_COST_ENTITY")
+    daily_export_compensation_entity: str = Field("sensor.sigen_plant_daily_grid_export_energy_compensation", env="DAILY_EXPORT_COMPENSATION_ENTITY")
     daily_load_energy: str = Field("sensor.sigen_plant_daily_load_consumption", env="DAILY_LOAD_ENERGY")
     daily_battery_charge_energy: str = Field("sensor.sigen_plant_daily_battery_charge_energy", env="DAILY_BATTERY_CHARGE_ENERGY")
     daily_battery_discharge_energy: str = Field("sensor.sigen_plant_daily_battery_discharge_energy", env="DAILY_BATTERY_DISCHARGE_ENERGY")
     daily_pv_energy: str = Field("sensor.sigen_plant_daily_pv_generation", env="DAILY_PV_ENERGY")
+
+    # ------------------------------------------------------------------
+    # Earnings sources
+    # ------------------------------------------------------------------
+    earnings_source: str = Field("auto", env="EARNINGS_SOURCE")
+    earnings_import_energy_entity: str = Field("", env="EARNINGS_IMPORT_ENERGY_ENTITY")
+    earnings_export_energy_entity: str = Field("", env="EARNINGS_EXPORT_ENERGY_ENTITY")
+    earnings_import_value_entity: str = Field("", env="EARNINGS_IMPORT_VALUE_ENTITY")
+    earnings_export_value_entity: str = Field("", env="EARNINGS_EXPORT_VALUE_ENTITY")
+    earnings_custom_mode: str = Field("daily", env="EARNINGS_CUSTOM_MODE")
+    amber_balance_import_kwh_entity: str = Field("sensor.import_kwh", env="AMBER_BALANCE_IMPORT_KWH_ENTITY")
+    amber_balance_export_kwh_entity: str = Field("sensor.export_kwh", env="AMBER_BALANCE_EXPORT_KWH_ENTITY")
+    amber_balance_import_value_entity: str = Field("sensor.import", env="AMBER_BALANCE_IMPORT_VALUE_ENTITY")
+    amber_balance_export_value_entity: str = Field("sensor.export", env="AMBER_BALANCE_EXPORT_VALUE_ENTITY")
 
     # ------------------------------------------------------------------
     # Amber / price sensors
