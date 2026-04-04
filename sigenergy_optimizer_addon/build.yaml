@@ -5,4 +5,4 @@ labels:
   io.hass.name: "SigEnergy Optimizer"
   io.hass.description: "SigEnergy optimizer with dashboard and HA control"
   io.hass.type: "addon"
-  io.hass.version: "2.2.27-haos21"
+  io.hass.version: "2.2.28-haos21"

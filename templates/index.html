@@ -3577,6 +3577,7 @@ const _CONFIG_SECTIONS = [
     ['evening_boost_enabled', 'Evening Boost Enabled', 'bool'],
     ['evening_aggressive_floor', 'Evening Aggressive Floor', 'number', '0.1'],
     ['evening_boost_forecast_safety', 'Evening Boost Forecast Safety', 'number', '0.01'],
+    ['evening_boost_min_tomorrow_forecast_kwh', 'Evening Boost Min Tomorrow Forecast kWh', 'number', '0.1'],
   ]},
   { key:'cheap_import_topup', title:'Cheap Import Top Up', fields:[
     ['max_price_threshold', 'Max Price Threshold', 'number', '0.001'],
@@ -3704,6 +3705,7 @@ function configFieldHelp(key, label, type) {
     sunrise_buffer_percent: 'Affects: direct percentage buffer added to computed sunrise target. Lower -> smaller spare margin. Higher -> larger spare margin and earlier charge retention.',
     sunrise_export_relax_percent: 'Affects: how much evening export floor is relaxed before sunrise reserve clamp. Lower -> stricter evening floor, less export. Higher -> looser evening floor, more evening export.',
     evening_boost_forecast_safety: 'Affects: Evening Boost activation check for tomorrow refill confidence. Lower -> boost can activate more easily and discharge harder at night. Higher -> requires stronger tomorrow forecast before boosting.',
+    evening_boost_min_tomorrow_forecast_kwh: 'Affects: hard minimum tomorrow solar forecast required before Evening Boost can activate at all. Lower -> boost becomes available on weaker forecast days. Higher -> boost only activates on very strong solar days.',
     forecast_safety_charging: 'Affects: forecast feasibility checks for charging-side automation (morning dump and morning slow-charge logic). Lower -> easier to pass refill checks. Higher -> more conservative, features trigger less often.',
     forecast_safety_export: 'Affects: export forecast guards that protect battery for later needs. Lower -> export/discharge allowed more often. Higher -> export blocked sooner to keep reserve energy.',
     morning_slow_charge_enabled: 'Affects: Morning Slow Charge automation branch. Off -> branch never activates. On -> optimizer can enforce slow charge behavior when other conditions pass.',
