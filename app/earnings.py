@@ -478,7 +478,7 @@ class EarningsService:
         return self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
 
     async def history(self, days: int) -> dict[str, Any]:
-        days = max(1, min(days, 30))
+        days = max(1, min(days, 120))
         today = datetime.now(self._tz).date()
         available_sources = await self._available_sources()
         earliest = today - timedelta(days=days - 1)

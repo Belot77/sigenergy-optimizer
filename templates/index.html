@@ -2224,6 +2224,35 @@ function fdateau(v){
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('en-AU');
 }
+function parseIsoDateLocal(v){
+  const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+function isoDateLocal(d){
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function sumBy(rows, key){
+  return (Array.isArray(rows) ? rows : []).reduce((acc, row) => acc + (Number(row?.[key]) || 0), 0);
+}
+function monthDaysFor(dateIso){
+  const d = parseIsoDateLocal(dateIso) || new Date();
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const days = [];
+  for (let day = 1; day <= lastDay; day++) {
+    days.push(isoDateLocal(new Date(year, month, day)));
+  }
+  return days;
+}
+function renderMoney(v){
+  return `$${fc(v,2)}`;
+}
 function ts(){ return new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
 function tsISO(iso){ return iso ? new Date(iso).toLocaleString('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).replace(',','T').replace(' ','') : '---'; }
 
@@ -3309,30 +3338,73 @@ async function loadEarnings() {
   try {
     const [today, hist] = await Promise.all([
       getJson('api/daily_earnings'),
-      getJson('api/earnings_history?days=7'),
+      getJson('api/earnings_history?days=120'),
     ]);
-    const rows = (hist.days || []).map((d) => `
+    const historyDays = Array.isArray(hist.days) ? hist.days : [];
+    const byDate = Object.fromEntries(historyDays.map((d) => [d.date, d]));
+    const rolling30 = historyDays.slice(0, 30);
+    const rolling30SourceLabel = rolling30[0]?.source_label || hist.source_label || 'Estimated From Sampled Power';
+    const rolling30ImportKwh = sumBy(rolling30, 'import_kwh');
+    const rolling30ExportKwh = sumBy(rolling30, 'export_kwh');
+    const rolling30ImportCosts = sumBy(rolling30, 'import_costs');
+    const rolling30ExportEarnings = sumBy(rolling30, 'export_earnings');
+    const rolling30Net = sumBy(rolling30, 'net');
+
+    const monthDates = monthDaysFor(today.date || (historyDays[0]?.date) || isoDateLocal(new Date()));
+    const monthRowsData = monthDates.map((iso) => ({
+      date: iso,
+      import_kwh: Number(byDate[iso]?.import_kwh),
+      export_kwh: Number(byDate[iso]?.export_kwh),
+      import_costs: Number(byDate[iso]?.import_costs),
+      export_earnings: Number(byDate[iso]?.export_earnings),
+      net: Number(byDate[iso]?.net),
+    }));
+    const monthRows = monthRowsData.map((d) => `
       <tr>
         <td>${fdateau(d.date)}</td>
-        <td style="text-align:right">${fc(d.import_kwh,3)}</td>
-        <td style="text-align:right">${fc(d.export_kwh,3)}</td>
-        <td style="text-align:right">$${fc(d.import_costs,2)}</td>
-        <td style="text-align:right">$${fc(d.export_earnings,2)}</td>
-        <td style="text-align:right" class="${Number(d.net||0) >= 0 ? 'pos' : 'neg'}">$${fc(d.net,2)}</td>
+        <td style="text-align:right">${Number.isFinite(d.import_kwh) ? fc(d.import_kwh,3) : '---'}</td>
+        <td style="text-align:right">${Number.isFinite(d.export_kwh) ? fc(d.export_kwh,3) : '---'}</td>
+        <td style="text-align:right">${Number.isFinite(d.import_costs) ? renderMoney(d.import_costs) : '---'}</td>
+        <td style="text-align:right">${Number.isFinite(d.export_earnings) ? renderMoney(d.export_earnings) : '---'}</td>
+        <td style="text-align:right" class="${Number(d.net||0) >= 0 ? 'pos' : 'neg'}">${Number.isFinite(d.net) ? renderMoney(d.net) : '---'}</td>
       </tr>
     `).join('');
+    const monthActualRows = monthRowsData.filter((d) => Number.isFinite(d.import_kwh) || Number.isFinite(d.export_kwh) || Number.isFinite(d.import_costs) || Number.isFinite(d.export_earnings) || Number.isFinite(d.net));
+    const monthImportKwh = sumBy(monthActualRows, 'import_kwh');
+    const monthExportKwh = sumBy(monthActualRows, 'export_kwh');
+    const monthImportCosts = sumBy(monthActualRows, 'import_costs');
+    const monthExportEarnings = sumBy(monthActualRows, 'export_earnings');
+    const monthNet = sumBy(monthActualRows, 'net');
     const sourceLabel = today.source_label || hist.source_label || 'Estimated From Sampled Power';
     el.innerHTML = `
+      <div class="card-title">Rolling Usage (Last 30 Days)</div>
+      <div style="margin:-4px 0 10px;color:#718096;font-size:12px">Source: ${rolling30SourceLabel}</div>
+      <div class="status-grid" style="margin-bottom:14px">
+        <div class="scell"><div class="slbl">Import kWh</div><div class="sval">${fc(rolling30ImportKwh,3)}</div></div>
+        <div class="scell"><div class="slbl">Export kWh</div><div class="sval">${fc(rolling30ExportKwh,3)}</div></div>
+        <div class="scell"><div class="slbl">Net</div><div class="sval ${Number(rolling30Net||0) >= 0 ? 'pos' : 'neg'}">${renderMoney(rolling30Net)}</div></div>
+      </div>
       <div class="card-title">Earnings (Today)</div>
       <div style="margin:-4px 0 10px;color:#718096;font-size:12px">Source: ${sourceLabel}</div>
       <div class="status-grid" style="margin-bottom:10px">
         <div class="scell"><div class="slbl">Import kWh</div><div class="sval">${fc(today.total_import_kwh,3)}</div></div>
         <div class="scell"><div class="slbl">Export kWh</div><div class="sval">${fc(today.total_export_kwh,3)}</div></div>
-        <div class="scell"><div class="slbl">Net</div><div class="sval ${Number(today.net||0) >= 0 ? 'pos' : 'neg'}">$${fc(today.net,2)}</div></div>
+        <div class="scell"><div class="slbl">Net</div><div class="sval ${Number(today.net||0) >= 0 ? 'pos' : 'neg'}">${renderMoney(today.net)}</div></div>
       </div>
+      <div class="card-title">This Month</div>
       <table class="etable">
         <thead><tr><th>Date</th><th style="text-align:right">Import</th><th style="text-align:right">Export</th><th style="text-align:right">Import $</th><th style="text-align:right">Export $</th><th style="text-align:right">Net</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="6">No data</td></tr>'}</tbody>
+        <tbody>
+          <tr>
+            <td>Total</td>
+            <td style="text-align:right">${fc(monthImportKwh,3)}</td>
+            <td style="text-align:right">${fc(monthExportKwh,3)}</td>
+            <td style="text-align:right">${renderMoney(monthImportCosts)}</td>
+            <td style="text-align:right">${renderMoney(monthExportEarnings)}</td>
+            <td style="text-align:right" class="${Number(monthNet||0) >= 0 ? 'pos' : 'neg'}">${renderMoney(monthNet)}</td>
+          </tr>
+          ${monthRows || '<tr><td colspan="6">No data</td></tr>'}
+        </tbody>
       </table>
     `;
   } catch (e) {
