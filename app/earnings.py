@@ -28,6 +28,11 @@ def preferred_auto_source_keys(day_date: date, today: date) -> list[str]:
     return ["amber_balance", "sigenergy_daily", "estimated"]
 
 
+def amber_requires_month_boundary_fallback(day_date: date) -> bool:
+    next_day = day_date + timedelta(days=1)
+    return day_date.day == 1 or next_day.day == 1
+
+
 def _parse_iso_timestamp(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -439,6 +444,8 @@ class EarningsService:
         if source.mode == "daily_lagged":
             return summarize_lagged_daily_source(source, day, by_entity, self._tz)
         if source.mode == "cumulative_shifted":
+            if amber_requires_month_boundary_fallback(date.fromisoformat(day)):
+                return summarize_lagged_daily_source(source, day, by_entity, self._tz)
             return summarize_shifted_cumulative_source(source, day, by_entity, self._tz)
         return summarize_cumulative_source(source, day, by_entity, self._tz)
 

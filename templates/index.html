@@ -2217,6 +2217,13 @@ function fcs(v,d=2){
   const n = Number(v);
   return `${n >= 0 ? '+' : ''}${n.toFixed(d)}`;
 }
+function fdateau(v){
+  if(!v) return '---';
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('en-AU');
+}
 function ts(){ return new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
 function tsISO(iso){ return iso ? new Date(iso).toLocaleString('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).replace(',','T').replace(' ','') : '---'; }
 
@@ -3306,7 +3313,7 @@ async function loadEarnings() {
     ]);
     const rows = (hist.days || []).map((d) => `
       <tr>
-        <td>${d.date || '---'}</td>
+        <td>${fdateau(d.date)}</td>
         <td style="text-align:right">${fc(d.import_kwh,3)}</td>
         <td style="text-align:right">${fc(d.export_kwh,3)}</td>
         <td style="text-align:right">$${fc(d.import_costs,2)}</td>

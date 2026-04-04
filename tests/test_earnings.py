@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import date, datetime, timedelta, timezone
 
-from app.earnings import EarningsSource, _cumulative_delta, _is_plausible_summary, preferred_auto_source_keys, summarize_cumulative_source, summarize_daily_source, summarize_lagged_daily_source, summarize_shifted_cumulative_source
+from app.earnings import EarningsSource, _cumulative_delta, _is_plausible_summary, amber_requires_month_boundary_fallback, preferred_auto_source_keys, summarize_cumulative_source, summarize_daily_source, summarize_lagged_daily_source, summarize_shifted_cumulative_source
 
 
 TZ = timezone(timedelta(hours=10, minutes=30))
@@ -22,6 +22,11 @@ class EarningsTests(unittest.TestCase):
             preferred_auto_source_keys(date(2026, 4, 3), date(2026, 4, 4)),
             ["amber_balance", "sigenergy_daily", "estimated"],
         )
+
+    def test_amber_month_boundary_fallback_detects_first_and_last_day(self) -> None:
+        self.assertTrue(amber_requires_month_boundary_fallback(date(2026, 3, 31)))
+        self.assertTrue(amber_requires_month_boundary_fallback(date(2026, 4, 1)))
+        self.assertFalse(amber_requires_month_boundary_fallback(date(2026, 4, 2)))
 
     def test_cumulative_delta_handles_counter_reset(self) -> None:
         series = [
