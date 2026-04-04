@@ -1,15 +1,28 @@
 from __future__ import annotations
 
 import unittest
-from datetime import timedelta, timezone
+from datetime import date, timedelta, timezone
 
-from app.earnings import EarningsSource, summarize_cumulative_source, summarize_daily_source, summarize_lagged_daily_source
+from app.earnings import EarningsSource, preferred_auto_source_keys, summarize_cumulative_source, summarize_daily_source, summarize_lagged_daily_source
 
 
 TZ = timezone(timedelta(hours=10, minutes=30))
 
 
 class EarningsTests(unittest.TestCase):
+    def test_auto_source_prefers_sigenergy_for_today(self) -> None:
+        today = date(2026, 4, 4)
+        self.assertEqual(
+            preferred_auto_source_keys(today, today),
+            ["sigenergy_daily", "estimated", "amber_balance"],
+        )
+
+    def test_auto_source_prefers_amber_for_history(self) -> None:
+        self.assertEqual(
+            preferred_auto_source_keys(date(2026, 4, 3), date(2026, 4, 4)),
+            ["amber_balance", "sigenergy_daily", "estimated"],
+        )
+
     def test_cumulative_amber_source_uses_daily_deltas(self) -> None:
         source = EarningsSource(
             key="amber_balance",

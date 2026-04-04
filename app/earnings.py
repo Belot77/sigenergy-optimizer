@@ -20,6 +20,14 @@ class EarningsSource:
     export_value_entity: str
 
 
+def preferred_auto_source_keys(day_date: date, today: date) -> list[str]:
+    if day_date > today:
+        return ["estimated"]
+    if day_date == today:
+        return ["sigenergy_daily", "estimated", "amber_balance"]
+    return ["amber_balance", "sigenergy_daily", "estimated"]
+
+
 def _parse_iso_timestamp(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -272,10 +280,13 @@ class EarningsService:
         )
         return out
 
-    async def _resolve_source(self) -> EarningsSource:
+    def _source_map(self) -> dict[str, EarningsSource]:
+        return {source.key: source for source in self._source_definitions()}
+
+    async def _available_sources(self) -> dict[str, EarningsSource]:
         source_pref = str(self._cfg.earnings_source or "auto").strip().lower()
         if source_pref == "estimated":
-            return self._estimated_source()
+            return {"estimated": self._estimated_source()}
 
         defs = self._source_definitions()
         if source_pref != "auto":
@@ -292,6 +303,7 @@ class EarningsService:
             )
         entity_ids = [entity_id for entity_id in entity_ids if entity_id]
         current = await self._ha.bulk_states(entity_ids) if entity_ids else {}
+        available: dict[str, EarningsSource] = {}
         for src in defs:
             if all(
                 _is_available_state(current.get(entity_id))
@@ -302,7 +314,24 @@ class EarningsService:
                     src.export_value_entity,
                 ]
             ):
-                return src
+                available[src.key] = src
+        available["estimated"] = self._estimated_source()
+        return available
+
+    def _select_source_for_day(
+        self,
+        day: str,
+        available_sources: dict[str, EarningsSource],
+    ) -> EarningsSource:
+        source_pref = str(self._cfg.earnings_source or "auto").strip().lower()
+        if source_pref != "auto":
+            return available_sources.get(source_pref, self._estimated_source())
+
+        day_date = date.fromisoformat(day)
+        today = datetime.now(self._tz).date()
+        for key in preferred_auto_source_keys(day_date, today):
+            if key in available_sources:
+                return available_sources[key]
         return self._estimated_source()
 
     def _annotate_estimated(self, summary: dict[str, Any], day: str) -> dict[str, Any]:
@@ -326,7 +355,8 @@ class EarningsService:
         return _series_by_entity(rows, entity_ids)
 
     async def daily_summary(self, day: str) -> dict[str, Any]:
-        source = await self._resolve_source()
+        available_sources = await self._available_sources()
+        source = self._select_source_for_day(day, available_sources)
         if source.mode == "estimated":
             return self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
 
@@ -347,42 +377,32 @@ class EarningsService:
     async def history(self, days: int) -> dict[str, Any]:
         days = max(1, min(days, 30))
         today = datetime.now(self._tz).date()
-        source = await self._resolve_source()
-        if source.mode == "estimated":
-            out = []
-            for i in range(days):
-                day = (today - timedelta(days=i)).isoformat()
-                summary = self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
-                out.append(
-                    {
-                        "date": day,
-                        "source_key": summary["source_key"],
-                        "source_label": summary["source_label"],
-                        "import_kwh": summary.get("total_import_kwh", 0.0),
-                        "export_kwh": summary.get("total_export_kwh", 0.0),
-                        "import_costs": summary.get("import_costs", 0.0),
-                        "export_earnings": summary.get("export_earnings", 0.0),
-                        "net": summary.get("net", 0.0),
-                    }
-                )
-            return {"source_key": "estimated", "source_label": "Estimated From Sampled Power", "days": out}
-
+        available_sources = await self._available_sources()
         earliest = today - timedelta(days=days - 1)
         start = datetime.combine(earliest, time.min, tzinfo=self._tz)
         end = datetime.combine(today + timedelta(days=1), time.min, tzinfo=self._tz)
-        by_entity = await self._fetch_history(source, start, end)
+        history_cache: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        for source in available_sources.values():
+            if source.mode == "estimated":
+                continue
+            history_cache[source.key] = await self._fetch_history(source, start, end)
 
         out = []
         for i in range(days):
             day = (today - timedelta(days=i)).isoformat()
-            if source.mode == "daily":
-                summary = summarize_daily_source(source, day, by_entity, self._tz)
-            elif source.mode == "daily_lagged":
-                summary = summarize_lagged_daily_source(source, day, by_entity, self._tz)
-            else:
-                summary = summarize_cumulative_source(source, day, by_entity, self._tz)
-            if summary is None:
+            source = self._select_source_for_day(day, available_sources)
+            if source.mode == "estimated":
                 summary = self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
+            else:
+                by_entity = history_cache.get(source.key, {})
+                if source.mode == "daily":
+                    summary = summarize_daily_source(source, day, by_entity, self._tz)
+                elif source.mode == "daily_lagged":
+                    summary = summarize_lagged_daily_source(source, day, by_entity, self._tz)
+                else:
+                    summary = summarize_cumulative_source(source, day, by_entity, self._tz)
+                if summary is None:
+                    summary = self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
             out.append(
                 {
                     "date": day,
@@ -395,4 +415,5 @@ class EarningsService:
                     "net": summary.get("net", 0.0),
                 }
             )
-        return {"source_key": source.key, "source_label": source.label, "days": out}
+        today_source = self._select_source_for_day(today.isoformat(), available_sources)
+        return {"source_key": today_source.key, "source_label": today_source.label, "days": out}
