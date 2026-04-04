@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import timedelta, timezone
 
-from app.earnings import EarningsSource, summarize_cumulative_source, summarize_daily_source
+from app.earnings import EarningsSource, summarize_cumulative_source, summarize_daily_source, summarize_lagged_daily_source
 
 
 TZ = timezone(timedelta(hours=10, minutes=30))
@@ -81,6 +81,43 @@ class EarningsTests(unittest.TestCase):
         self.assertAlmostEqual(summary["total_export_kwh"], 0.4, places=3)
         self.assertAlmostEqual(summary["import_costs"], 2.6147, places=4)
         self.assertAlmostEqual(summary["export_earnings"], 0.0147, places=4)
+
+    def test_lagged_daily_amber_source_shifts_to_prior_day(self) -> None:
+        source = EarningsSource(
+            key="amber_balance",
+            label="Amber Balance",
+            mode="daily_lagged",
+            import_energy_entity="sensor.import_kwh",
+            export_energy_entity="sensor.export_kwh",
+            import_value_entity="sensor.import",
+            export_value_entity="sensor.export",
+        )
+        by_entity = {
+            "sensor.import_kwh": [
+                {"entity_id": "sensor.import_kwh", "state": "0.00", "last_updated": "2026-04-03T09:22:55+10:30"},
+                {"entity_id": "sensor.import_kwh", "state": "1.63", "last_updated": "2026-04-04T09:22:55+10:30"},
+            ],
+            "sensor.export_kwh": [
+                {"entity_id": "sensor.export_kwh", "state": "47.96", "last_updated": "2026-04-03T09:22:55+10:30"},
+                {"entity_id": "sensor.export_kwh", "state": "60.23", "last_updated": "2026-04-04T09:22:55+10:30"},
+            ],
+            "sensor.import": [
+                {"entity_id": "sensor.import", "state": "0.00", "last_updated": "2026-04-03T09:22:55+10:30"},
+                {"entity_id": "sensor.import", "state": "0.32", "last_updated": "2026-04-04T09:22:55+10:30"},
+            ],
+            "sensor.export": [
+                {"entity_id": "sensor.export", "state": "-2.75", "last_updated": "2026-04-03T09:22:55+10:30"},
+                {"entity_id": "sensor.export", "state": "-2.83", "last_updated": "2026-04-04T09:22:55+10:30"},
+            ],
+        }
+
+        summary = summarize_lagged_daily_source(source, "2026-04-03", by_entity, TZ)
+        self.assertIsNotNone(summary)
+        self.assertEqual(summary["date"], "2026-04-03")
+        self.assertAlmostEqual(summary["total_import_kwh"], 1.63, places=3)
+        self.assertAlmostEqual(summary["total_export_kwh"], 60.23, places=3)
+        self.assertAlmostEqual(summary["import_costs"], 0.32, places=4)
+        self.assertAlmostEqual(summary["export_earnings"], 2.83, places=4)
 
 
 if __name__ == "__main__":

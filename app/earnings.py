@@ -164,6 +164,22 @@ def summarize_daily_source(
     )
 
 
+def summarize_lagged_daily_source(
+    source: EarningsSource,
+    day: str,
+    by_entity: dict[str, list[dict[str, Any]]],
+    tzinfo,
+) -> dict[str, Any] | None:
+    target_day = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+    summary = summarize_daily_source(source, target_day, by_entity, tzinfo)
+    if summary is None:
+        return None
+    summary["date"] = day
+    summary["export_earnings"] = round(abs(float(summary.get("export_earnings", 0.0))), 4)
+    summary["net"] = round(float(summary.get("export_earnings", 0.0)) - float(summary.get("import_costs", 0.0)), 4)
+    return summary
+
+
 def summarize_cumulative_source(
     source: EarningsSource,
     day: str,
@@ -236,7 +252,7 @@ class EarningsService:
             EarningsSource(
                 key="amber_balance",
                 label="Amber Balance",
-                mode="cumulative",
+                mode="daily_lagged",
                 import_energy_entity=self._cfg.amber_balance_import_kwh_entity,
                 export_energy_entity=self._cfg.amber_balance_export_kwh_entity,
                 import_value_entity=self._cfg.amber_balance_import_value_entity,
@@ -305,7 +321,8 @@ class EarningsService:
             source.export_value_entity,
         ]
         lookback = timedelta(days=2) if source.mode == "cumulative" else timedelta(minutes=1)
-        rows = await self._ha.get_history_period(start - lookback, end, entity_ids)
+        extra_end = timedelta(days=1) if source.mode == "daily_lagged" else timedelta()
+        rows = await self._ha.get_history_period(start - lookback, end + extra_end, entity_ids)
         return _series_by_entity(rows, entity_ids)
 
     async def daily_summary(self, day: str) -> dict[str, Any]:
@@ -317,11 +334,12 @@ class EarningsService:
         start = datetime.combine(day_date, time.min, tzinfo=self._tz)
         end = start + timedelta(days=1)
         by_entity = await self._fetch_history(source, start, end)
-        summary = (
-            summarize_daily_source(source, day, by_entity, self._tz)
-            if source.mode == "daily"
-            else summarize_cumulative_source(source, day, by_entity, self._tz)
-        )
+        if source.mode == "daily":
+            summary = summarize_daily_source(source, day, by_entity, self._tz)
+        elif source.mode == "daily_lagged":
+            summary = summarize_lagged_daily_source(source, day, by_entity, self._tz)
+        else:
+            summary = summarize_cumulative_source(source, day, by_entity, self._tz)
         if summary is None:
             return self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
         return summary
@@ -357,11 +375,12 @@ class EarningsService:
         out = []
         for i in range(days):
             day = (today - timedelta(days=i)).isoformat()
-            summary = (
-                summarize_daily_source(source, day, by_entity, self._tz)
-                if source.mode == "daily"
-                else summarize_cumulative_source(source, day, by_entity, self._tz)
-            )
+            if source.mode == "daily":
+                summary = summarize_daily_source(source, day, by_entity, self._tz)
+            elif source.mode == "daily_lagged":
+                summary = summarize_lagged_daily_source(source, day, by_entity, self._tz)
+            else:
+                summary = summarize_cumulative_source(source, day, by_entity, self._tz)
             if summary is None:
                 summary = self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
             out.append(
