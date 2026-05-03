@@ -48,6 +48,16 @@ from .time_forecast_service import (
     negative_price_before_cutoff,
     productive_solar_end_ts,
 )
+from .decision_guards import (
+    morning_dump_window,
+    morning_dump_active,
+    morning_slow_charge_active,
+    evening_export_boost_active,
+    solar_surplus_bypass,
+    battery_full_safeguard_block,
+    export_blocked_for_forecast,
+    export_forecast_guard,
+)
 from .state_store import StateStore
 
 logger = logging.getLogger(__name__)
@@ -182,6 +192,10 @@ class SigEnergyOptimizer:
 
     def refresh_config_time_warnings(self) -> None:
         self._config_time_warnings = self._validate_time_config()
+
+    def _now(self) -> datetime:
+        """Return current datetime; override via patch('app.optimizer.datetime') in tests."""
+        return datetime.now()
 
     @staticmethod
     def _valid_hw_cap_kw(v: Any) -> bool:
@@ -646,9 +660,8 @@ class SigEnergyOptimizer:
     # Private calculation helpers (pure functions; no I/O)
     # ==================================================================
 
-    @staticmethod
-    def _today_at(time_str: str) -> datetime:
-        return today_at(time_str)
+    def _today_at(self, time_str: str) -> datetime:
+        return today_at(self, time_str)
 
     def _day_window(self, s: SolarState):
         return day_window(self, s)
@@ -666,173 +679,38 @@ class SigEnergyOptimizer:
         return productive_solar_end_ts(self, s, sunset_ts, now_ts)
 
     def _morning_dump_window(self, s: SolarState, actual_sunrise_ts: float):
-        cfg = self.cfg
-        day_start = actual_sunrise_ts + 3600
-        hours_before = cfg.morning_dump_hours_before_sunrise
-        dump_start = day_start - hours_before * 3600
-        dump_end = actual_sunrise_ts + 3600
-        return dump_start, dump_end
+        return morning_dump_window(self, s, actual_sunrise_ts)
 
     def _morning_dump_active(self, s: SolarState, dump_start, dump_end,
                               productive_solar_end_ts, bat_fill_need_kwh, now_ts) -> bool:
-        cfg = self.cfg
-        if not cfg.morning_dump_enabled:
-            return False
-        if dump_start is None or dump_end is None:
-            return False
-        if not (dump_start <= now_ts <= dump_end):
-            return False
-
-        # Check forecast can refill
-        ns_total = 0.0
-        for f in s.solcast_detailed:
-            if not isinstance(f, dict):
-                continue
-            try:
-                f_ts = self._parse_ts(f.get("period_start", ""))
-                pv_kw = float(f.get("pv_estimate", 0))
-                if f_ts and dump_end <= f_ts < (productive_solar_end_ts or now_ts + 86400):
-                    ns_total += pv_kw * cfg.solcast_forecast_period_hours
-            except Exception:
-                pass
-        load_need = ((productive_solar_end_ts or now_ts + 86400) - dump_end) / 3600 * s.load_kw
-        return ns_total >= (bat_fill_need_kwh + load_need) * cfg.forecast_safety_charging
+        return morning_dump_active(self, s, dump_start, dump_end, productive_solar_end_ts, bat_fill_need_kwh, now_ts)
 
     def _morning_slow_charge_active(self, s: SolarState, now: datetime,
                                      now_ts: float, slow_end_ts: float) -> bool:
-        if self._morning_slow_charge_runtime_disabled:
-            if not self._morning_slow_disable_logged:
-                logger.warning("Morning slow charge is runtime-disabled in this build")
-                self._morning_slow_disable_logged = True
-            return False
-        cfg = self.cfg
-        if not cfg.morning_slow_charge_enabled:
-            return False
-        target_dt = self._today_at(cfg.morning_slow_charge_until)
-        if now >= target_dt or now.hour < 5:
-            return False
-        if not s.sun_above_horizon and now.hour < 7:
-            return False
-        if s.feedin_price <= cfg.morning_slow_charge_min_feedin_price:
-            return False
-
-        # Use remaining-forecast energy from now; this is more robust than requiring
-        # fine-grained detailed forecast bins in a narrow post-target slice.
-        cap = s.battery_capacity_kwh
-        bat_fill_need = max(0.0, cap - s.available_discharge_energy_kwh)
-        hours_left = max((slow_end_ts - now_ts) / 3600, 0.0)
-        load_need = hours_left * cfg.morning_slow_charge_base_load_kw
-        required_kwh = (bat_fill_need + load_need) * cfg.forecast_safety_charging
-        return s.forecast_remaining_kwh >= required_kwh
+        return morning_slow_charge_active(self, s, now, now_ts, slow_end_ts)
 
     def _evening_export_boost_active(self, s: SolarState, now_ts: float,
                                       productive_solar_end_ts, sunrise_soc_target, bat_fill_need_kwh) -> bool:
-        cfg = self.cfg
-        if not cfg.evening_boost_enabled:
-            return False
-        if productive_solar_end_ts is None or now_ts < productive_solar_end_ts:
-            return False
-        midnight = (datetime.now() + timedelta(days=1)).replace(hour=0, minute=0, second=0).timestamp()
-        if now_ts >= midnight:
-            return False
-
-        overnight_covered = s.battery_soc > (sunrise_soc_target + 10)
-        tomorrow_forecast_meets_minimum = (
-            s.forecast_tomorrow_kwh >= cfg.evening_boost_min_tomorrow_forecast_kwh
-        )
-        tomorrow_will_refill = (
-            s.forecast_tomorrow_kwh >= bat_fill_need_kwh * cfg.evening_boost_forecast_safety
-        )
-        # Check no high FIT forecast overnight
-        tomorrow_6am = (datetime.now() + timedelta(days=1)).replace(hour=6, minute=0, second=0).timestamp()
-        no_high_fit = True
-        for f in s.feedin_forecast_entries:
-            if not isinstance(f, dict):
-                continue
-            try:
-                ts = self._parse_ts(f.get(cfg.price_forecast_time_key, ""))
-                price = float(f.get(cfg.feedin_forecast_value_key, 0))
-                if ts and now_ts <= ts <= tomorrow_6am and price >= cfg.export_threshold_medium:
-                    no_high_fit = False
-                    break
-            except Exception:
-                pass
-        return no_high_fit and overnight_covered and tomorrow_forecast_meets_minimum and tomorrow_will_refill
+        return evening_export_boost_active(self, s, now_ts, productive_solar_end_ts, sunrise_soc_target, bat_fill_need_kwh)
 
     def _solar_surplus_bypass(self, s: SolarState, morning_slow_charge_active: bool,
                                cap: float, pv_surplus: float, prev_desired_mode: str = "") -> bool:
-        cfg = self.cfg
-        if not cfg.solar_surplus_bypass_enabled or morning_slow_charge_active:
-            return False
-        start_thresh = cap * cfg.solar_surplus_start_multiplier
-        stop_thresh = cap * cfg.solar_surplus_stop_multiplier
-        pv_over_load = pv_surplus > cfg.solar_surplus_min_pv_margin
-        start_ok = s.forecast_remaining_kwh >= start_thresh
-        continue_ok = (
-            s.forecast_remaining_kwh >= stop_thresh
-            and (s.current_ems_mode in DISCHARGE_MODES or prev_desired_mode in DISCHARGE_MODES)
-        )
-        return pv_over_load and (start_ok or continue_ok)
+        return solar_surplus_bypass(self, s, morning_slow_charge_active, cap, pv_surplus, prev_desired_mode)
 
     def _battery_full_safeguard_block(self, s: SolarState, now_ts: float,
                                        sunset_ts: float, bat_fill_need_kwh: float,
                                        is_evening_or_night: bool) -> bool:
-        cfg = self.cfg
-        if not cfg.battery_full_safeguard_enabled or is_evening_or_night:
-            return False
-        if bat_fill_need_kwh <= 0:
-            return False
-        target_ts = sunset_ts - cfg.battery_full_hours_before_sunset * 3600
-        if now_ts >= target_ts:
-            return True
-
-        # Forecast check
-        ns_total = 0.0
-        max_charge_kw = s.ess_max_charge_kw if 0 < s.ess_max_charge_kw < 999 else cfg.ess_charge_limit_value
-        for f in s.solcast_detailed:
-            if not isinstance(f, dict):
-                continue
-            try:
-                f_ts = self._parse_ts(f.get("period_start", ""))
-                pv_kw = float(f.get("pv_estimate", 0))
-                if f_ts and now_ts <= f_ts < target_ts:
-                    net = max(pv_kw - s.load_kw, 0.0)
-                    usable = min(net, max_charge_kw) * cfg.solcast_forecast_period_hours
-                    ns_total += usable
-            except Exception:
-                pass
-        return (ns_total * cfg.battery_full_forecast_multiplier) < bat_fill_need_kwh
+        return battery_full_safeguard_block(self, s, now_ts, sunset_ts, bat_fill_need_kwh, is_evening_or_night)
 
     def _export_blocked_for_forecast(self, s: SolarState, pv_surplus: float,
                                       is_evening_or_night: bool, bat_fill_need_kwh: float,
                                       hours_to_sunset: float, close_to_sunset: bool) -> bool:
-        cfg = self.cfg
-        if s.battery_soc >= cfg.export_guard_relax_soc or close_to_sunset:
-            return False
-        allow_full = (
-            s.battery_soc >= cfg.max_battery_soc
-            and not is_evening_or_night
-            and pv_surplus > cfg.min_grid_transfer_kw
-        )
-        if is_evening_or_night or allow_full or s.forecast_remaining_kwh == 0:
-            return False
-        est_load = s.load_kw * hours_to_sunset
-        net_fc = s.forecast_remaining_kwh - est_load
-        return net_fc < bat_fill_need_kwh * cfg.forecast_safety_export
+        return export_blocked_for_forecast(self, s, pv_surplus, is_evening_or_night, bat_fill_need_kwh, hours_to_sunset, close_to_sunset)
 
     def _export_forecast_guard(self, s: SolarState, sunrise_fill_need_kwh: float,
                                 is_evening_or_night: bool, evening_boost: bool,
                                 close_to_sunset: bool) -> bool:
-        cfg = self.cfg
-        if s.battery_soc >= cfg.export_guard_relax_soc or close_to_sunset:
-            return False
-        if is_evening_or_night:
-            floor = cfg.evening_aggressive_floor if evening_boost else cfg.min_export_target_soc
-            return s.battery_soc < floor
-        if sunrise_fill_need_kwh <= 0:
-            return False
-        required = sunrise_fill_need_kwh * cfg.forecast_safety_export
-        return s.forecast_remaining_kwh < required
+        return export_forecast_guard(self, s, sunrise_fill_need_kwh, is_evening_or_night, evening_boost, close_to_sunset)
 
     def _export_tier_limit(self, s: SolarState, spike: bool, solar_override: bool,
                             pv_safeguard: bool, boost: bool, surplus_bypass: bool) -> float:

@@ -10,7 +10,7 @@ def build_decision(self, s: SolarState, mode_max_self: str) -> Decision:
     MODE_MAX_SELF = mode_max_self
     cfg = self.cfg
     d = Decision()
-    now = datetime.now()
+    now = self._now()
     now_ts = now.timestamp()
 
     # ---- Time windows -------------------------------------------

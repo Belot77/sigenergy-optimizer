@@ -9,21 +9,23 @@ from .models import SolarState
 logger = logging.getLogger(__name__)
 
 
-def today_at(time_str: str) -> datetime:
+def today_at(optimizer, time_str: str) -> datetime:
     """Return today's date combined with a HH:MM or HH:MM:SS string."""
     try:
         parts = time_str.split(":")
         h, m = int(parts[0]), int(parts[1])
         s = int(parts[2]) if len(parts) > 2 else 0
-        return datetime.now().replace(hour=h, minute=m, second=s, microsecond=0)
+        now = optimizer._now()
+        return now.replace(hour=h, minute=m, second=s, microsecond=0)
     except (ValueError, IndexError, AttributeError):
         logger.warning("Invalid time string in config: %r - using end of day", time_str)
-        return datetime.now().replace(hour=23, minute=59, second=59, microsecond=0)
+        now = optimizer._now()
+        return now.replace(hour=23, minute=59, second=59, microsecond=0)
 
 
 def day_window(optimizer, s: SolarState) -> tuple[float, float]:
     """Return (day_start_ts, day_end_ts) in Unix seconds."""
-    now_ts = datetime.now().timestamp()
+    now_ts = optimizer._now().timestamp()
     sunrise_ts = s.next_sunrise_ts or now_ts
     if s.sun_above_horizon:
         actual_sunrise = sunrise_ts - 86400
@@ -44,7 +46,7 @@ def battery_soc_required_to_sunrise(optimizer, s: SolarState) -> float:
     if not sunrise_ts:
         return cfg.night_reserve_soc + cfg.night_reserve_buffer
 
-    now_ts = datetime.now().timestamp()
+    now_ts = optimizer._now().timestamp()
     sunset_ts = s.next_sunset_ts or now_ts
     if s.sun_above_horizon:
         start_ts = sunset_ts
@@ -77,9 +79,9 @@ def negative_price_forecast_ahead(optimizer, s: SolarState, now_ts: float) -> bo
 
 def negative_price_before_cutoff(optimizer, s: SolarState, now_ts: float) -> bool:
     cutoff_dt = optimizer._today_at(optimizer.cfg.standby_holdoff_end_time)
-    if datetime.now() >= cutoff_dt:
-        return False
     cutoff_ts = cutoff_dt.timestamp()
+    if now_ts >= cutoff_ts:
+        return False
     for f in s.price_forecast_entries:
         if not isinstance(f, dict):
             continue
