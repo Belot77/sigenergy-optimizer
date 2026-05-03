@@ -1275,7 +1275,7 @@ class _UILogHandler(_logging.Handler):
 
 _handler = _UILogHandler()
 _handler.setFormatter(_logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s", datefmt="%Y-%m-%dT%H:%M:%S"))
-_handler._sigenergy_ui_log_handler = True
+_handler._sigenergy_ui_log_handler = True  # type: ignore[attr-defined]
 _root_logger = _logging.getLogger()
 if not any(getattr(h, "_sigenergy_ui_log_handler", False) for h in _root_logger.handlers):
     _root_logger.addHandler(_handler)

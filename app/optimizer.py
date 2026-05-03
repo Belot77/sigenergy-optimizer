@@ -23,7 +23,7 @@ from collections import deque
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings
@@ -157,6 +157,7 @@ class SigEnergyOptimizer:
             self._morning_slow_charge_runtime_disabled,
         )
         tz_name = os.environ.get("TZ", "Australia/Adelaide")
+        self._tz: Union[ZoneInfo, timezone]
         try:
             self._tz = ZoneInfo(tz_name)
         except ZoneInfoNotFoundError:
