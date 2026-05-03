@@ -80,6 +80,7 @@ from .runtime_utils import (
     warn_parse_issue,
     parse_ts,
 )
+from .event_loop_service import run_event_loop, drain_queue, safe_tick
 from .state_store import StateStore
 
 logger = logging.getLogger(__name__)
@@ -97,11 +98,7 @@ CHARGE_MODES = {MODE_CMD_CHARGE_PV, MODE_CMD_CHARGE_GRID}
 # Manual mode labels for the mode select entity
 AUTOMATED_MODES = {"Automated"}
 
-# Maximum time between full cycles even when WebSocket is quiet (safety net)
-_HEARTBEAT_INTERVAL = 60  # seconds
 
-# Minimum gap between back-to-back rapid triggers (debounce)
-_DEBOUNCE_SECONDS = 3.0
 
 # Config attribute names whose entity IDs should trigger immediate cycles
 _TRIGGER_ENTITY_ATTRS = [
@@ -259,97 +256,13 @@ class SigEnergyOptimizer:
     # ------------------------------------------------------------------
 
     async def run_forever(self) -> None:
-        """
-        Event-driven main loop.
-
-        Waits on trigger_queue for entity_ids pushed by HAWebSocketClient.
-        Rapid bursts are debounced so we don't thrash when a sensor updates
-        every second. A heartbeat fires every _HEARTBEAT_INTERVAL seconds
-        regardless, so we always converge even if WS events are missed.
-
-        Falls back gracefully to pure heartbeat polling when the WebSocket
-        is disconnected — no separate code path needed.
-        """
-        self._running = True
-        last_tick_ts = 0.0
-        last_heartbeat_ts = 0.0
-
-        logger.info(
-            "Optimizer event loop started (debounce=%.0fs, heartbeat=%ds)",
-            _DEBOUNCE_SECONDS, _HEARTBEAT_INTERVAL,
-        )
-
-        # One immediate startup tick
-        try:
-            await self._tick()
-            last_tick_ts = datetime.now().timestamp()
-            last_heartbeat_ts = last_tick_ts
-        except Exception as exc:
-            logger.exception("Startup tick failed: %s", exc)
-
-        while self._running:
-            now = datetime.now().timestamp()
-            time_since_heartbeat = now - last_heartbeat_ts
-            wait_max = max(0.01, _HEARTBEAT_INTERVAL - time_since_heartbeat)
-
-            try:
-                entity_id = await asyncio.wait_for(
-                    self.trigger_queue.get(),
-                    timeout=wait_max,
-                )
-                self.trigger_queue.task_done()
-
-                # Minute tick from WS time_changed event
-                if entity_id == "__time_changed__":
-                    if datetime.now().timestamp() - last_tick_ts >= _HEARTBEAT_INTERVAL - 1:
-                        logger.debug("Heartbeat tick (WS time_changed)")
-                        await self._safe_tick()
-                        last_tick_ts = last_heartbeat_ts = datetime.now().timestamp()
-                    continue
-
-                # Real entity state change — drain burst then run
-                logger.debug("Event-driven tick triggered by: %s", entity_id)
-                await self._drain_queue(_DEBOUNCE_SECONDS)
-                await self._safe_tick()
-                last_tick_ts = last_heartbeat_ts = datetime.now().timestamp()
-
-            except asyncio.TimeoutError:
-                # No WS events — heartbeat tick
-                logger.debug("Heartbeat tick (timeout, ws=%s)", self._ws_connected)
-                await self._safe_tick()
-                last_tick_ts = last_heartbeat_ts = datetime.now().timestamp()
-
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.exception("Event loop error: %s", exc)
-                await asyncio.sleep(5)
+        await run_event_loop(self)
 
     async def _drain_queue(self, window: float) -> None:
-        """Consume all queued items within `window` seconds to collapse a burst into one tick."""
-        deadline = asyncio.get_event_loop().time() + window
-        while True:
-            remaining = deadline - asyncio.get_event_loop().time()
-            if remaining <= 0:
-                break
-            try:
-                item = await asyncio.wait_for(self.trigger_queue.get(), timeout=remaining)
-                self.trigger_queue.task_done()
-            except asyncio.TimeoutError:
-                break
+        await drain_queue(self, window)
 
     async def _safe_tick(self) -> None:
-        self._last_cycle_started = datetime.now(timezone.utc)
-        try:
-            await self._tick()
-            self._last_cycle_error = ""
-            self._last_cycle_completed = datetime.now(timezone.utc)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            self._last_cycle_error = str(exc)
-            self._last_cycle_completed = datetime.now(timezone.utc)
-            logger.exception("Optimizer tick failed: %s", exc)
+        await safe_tick(self)
 
     async def run_once(self) -> Decision:
         """Run a single optimisation cycle and return the decision (for manual trigger)."""
