@@ -71,6 +71,14 @@ from .limit_calculator import (
     battery_eta,
 )
 from .reason_formatter import export_reason, import_reason
+from .runtime_utils import (
+    valid_hw_cap_kw,
+    get_power_caps_kw as get_power_caps_kw_util,
+    validate_time_config,
+    is_valid_time,
+    warn_parse_issue,
+    parse_ts,
+)
 from .state_store import StateStore
 
 logger = logging.getLogger(__name__)
@@ -212,104 +220,20 @@ class SigEnergyOptimizer:
 
     @staticmethod
     def _valid_hw_cap_kw(v: Any) -> bool:
-        return isinstance(v, (int, float)) and 0 < float(v) < 999
+        return valid_hw_cap_kw(v)
 
     def get_power_caps_kw(self, s: Optional[SolarState] = None) -> tuple[float, float]:
-        fallback = float(self.cfg.ess_limit_fallback_kw)
-        if not (0 < fallback <= _POWER_LIMIT_MAX_KW):
-            fallback = min(max(fallback, 1.0), _POWER_LIMIT_MAX_KW)
-
-        state = s if s is not None else self._last_state
-
-        charge_cap = fallback
-        discharge_cap = fallback
-
-        configured_charge_baseline = max(0.1, float(self.cfg.ess_charge_limit_value))
-        configured_discharge_baseline = max(0.1, float(self.cfg.ess_discharge_limit_value))
-
-        # Prefer number-entity max attributes as authoritative hardware/UI bounds.
-        # Some dynamic sensors can temporarily report throttled operating limits
-        # (e.g. 3kW during special modes), which must not become global cap sources.
-        if state and self._valid_hw_cap_kw(state.ess_charge_limit_entity_max_kw):
-            charge_cap = float(state.ess_charge_limit_entity_max_kw)
-        elif state and self._valid_hw_cap_kw(state.ess_max_charge_kw):
-            charge_cap = float(state.ess_max_charge_kw)
-        elif self._valid_hw_cap_kw(self._last_hw_charge_cap_kw):
-            charge_cap = float(self._last_hw_charge_cap_kw)
-
-        if state and self._valid_hw_cap_kw(state.ess_discharge_limit_entity_max_kw):
-            discharge_cap = float(state.ess_discharge_limit_entity_max_kw)
-        elif state and self._valid_hw_cap_kw(state.ess_max_discharge_kw):
-            discharge_cap = float(state.ess_max_discharge_kw)
-        elif self._valid_hw_cap_kw(self._last_hw_discharge_cap_kw):
-            discharge_cap = float(self._last_hw_discharge_cap_kw)
-
-        charge_cap = max(charge_cap, configured_charge_baseline)
-        discharge_cap = max(discharge_cap, configured_discharge_baseline)
-        return charge_cap, discharge_cap
+        return get_power_caps_kw_util(self, _POWER_LIMIT_MAX_KW, s)
 
     def _validate_time_config(self) -> list[str]:
-        warnings: list[str] = []
-        for field in (
-            "daily_summary_time",
-            "morning_summary_time",
-            "standby_holdoff_end_time",
-            "morning_slow_charge_until",
-        ):
-            value = getattr(self.cfg, field, "")
-            if not self._is_valid_time(value):
-                warnings.append(f"{field}={value!r} is invalid (expected HH:MM or HH:MM:SS)")
-        if warnings:
-            for msg in warnings:
-                logger.warning("Config time validation: %s", msg)
-        return warnings
+        return validate_time_config(self)
 
     @staticmethod
     def _is_valid_time(value: str) -> bool:
-        try:
-            parts = str(value).split(":")
-            if len(parts) not in (2, 3):
-                return False
-            h, m = int(parts[0]), int(parts[1])
-            s = int(parts[2]) if len(parts) == 3 else 0
-            return 0 <= h <= 23 and 0 <= m <= 59 and 0 <= s <= 59
-        except (ValueError, TypeError):
-            return False
+        return is_valid_time(value)
 
     def _warn_parse_issue(self, entity_id: str, raw_value: str, label: str) -> None:
-        now_ts = datetime.now().timestamp()
-        cache_key = (entity_id, raw_value)
-        last_ts = self._sensor_parse_warning_cache.get(cache_key)
-        # Rate-limit repeated malformed payload logs to keep signal useful.
-        if last_ts is not None and now_ts - last_ts < 300:
-            return
-
-        # Prune stale entries and cap memory growth for long-lived processes.
-        cutoff = now_ts - 1800  # keep last 30 minutes
-        if len(self._sensor_parse_warning_cache) > 512:
-            self._sensor_parse_warning_cache = {
-                k: ts for k, ts in self._sensor_parse_warning_cache.items() if ts >= cutoff
-            }
-
-        if len(self._sensor_parse_warning_cache) > 512:
-            newest = sorted(
-                self._sensor_parse_warning_cache.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )[:512]
-            self._sensor_parse_warning_cache = dict(newest)
-
-        self._sensor_parse_warning_cache[cache_key] = now_ts
-
-        if len(self._sensor_parse_warning_cache) > 512:
-            newest = sorted(
-                self._sensor_parse_warning_cache.items(),
-                key=lambda item: item[1],
-                reverse=True,
-            )[:512]
-            self._sensor_parse_warning_cache = dict(newest)
-
-        logger.warning("%s sensor %s returned non-numeric state %r; using safe defaults", label, entity_id, raw_value)
+        warn_parse_issue(self, entity_id, raw_value, label)
 
     def get_watch_entities(self) -> set[str]:
         """Return the set of entity IDs the WS client should subscribe to."""
@@ -855,14 +779,4 @@ class SigEnergyOptimizer:
 
     @staticmethod
     def _parse_ts(value) -> Optional[float]:
-        if not value:
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            pass
-        try:
-            s = str(value).replace("Z", "+00:00")
-            return datetime.fromisoformat(s).timestamp()
-        except Exception:
-            return None
+        return parse_ts(value)
