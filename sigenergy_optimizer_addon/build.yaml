@@ -1,6 +1,8 @@
 build_from:
   amd64: docker.io/library/python:3.12-alpine
   aarch64: docker.io/library/python:3.12-alpine
+args:
+  SOURCE_REF: feature/modular-refactor
 labels:
   io.hass.name: "SigEnergy Optimizer"
   io.hass.description: "SigEnergy optimizer with dashboard and HA control"
