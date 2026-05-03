@@ -211,3 +211,82 @@ async def apply_manual_mode_targets(
         "ess_charge_limit": ok_chg,
         "ess_discharge_limit": ok_dis,
     }
+
+
+async def apply_manual_mode_selection(optimizer, mode_label: str) -> None:
+    """Push EMS settings for a manual mode selection."""
+    cfg = optimizer.cfg
+    ha = optimizer.ha
+
+    async with optimizer._control_lock:
+        ok_mode_select = await ha.select_option(cfg.sigenergy_mode_select, mode_label)
+        if not ok_mode_select:
+            raise RuntimeError(
+                f"Failed to set mode selector {cfg.sigenergy_mode_select} to '{mode_label}'"
+            )
+        if mode_label == cfg.automated_option:
+            optimizer._manual_mode_override = None
+            optimizer._manual_ess_charge_override_kw = None
+            optimizer._manual_ess_discharge_override_kw = None
+        else:
+            optimizer._manual_mode_override = mode_label
+            if mode_label in {
+                cfg.block_flow_option,
+                cfg.full_export_option,
+                cfg.full_import_option,
+                cfg.full_import_pv_option,
+            }:
+                # Preset modes should start from current capability defaults,
+                # not stale ESS overrides from prior manual edits.
+                optimizer._manual_ess_charge_override_kw = None
+                optimizer._manual_ess_discharge_override_kw = None
+        if optimizer._last_state is not None:
+            optimizer._last_state.sigenergy_mode = mode_label
+
+        if mode_label == cfg.automated_option:
+            logger.info("Mode -> Automated")
+            return
+
+        logger.info("Manual mode -> %s", mode_label)
+
+        if mode_label == cfg.manual_option:
+            refreshed_state = await optimizer._read_state()
+            refreshed_state.sigenergy_mode = mode_label
+            optimizer._last_state = refreshed_state
+            optimizer._manual_ess_charge_override_kw = None
+            optimizer._manual_ess_discharge_override_kw = None
+            decision = optimizer._decide(refreshed_state)
+            optimizer._freeze_decision_to_live_mode(refreshed_state, decision, mode_label)
+            optimizer._last_decision = decision
+            return
+
+        current_state = await optimizer._read_state()
+        targets = optimizer._manual_mode_targets(
+            mode_label,
+            current_state,
+            include_block_flow_ess_limits=(mode_label == cfg.block_flow_option),
+        )
+        if targets:
+            write_results = await optimizer._apply_manual_mode_targets(
+                targets,
+                mode_label=mode_label,
+            )
+            failed = [name for name, ok in write_results.items() if not ok]
+            if mode_label == cfg.block_flow_option:
+                optimizer.set_manual_ess_overrides(
+                    charge_kw=float(targets.get("ess_charge_limit")) if "ess_charge_limit" in targets else None,
+                    discharge_kw=float(targets.get("ess_discharge_limit")) if "ess_discharge_limit" in targets else None,
+                )
+            else:
+                optimizer._manual_ess_charge_override_kw = None
+                optimizer._manual_ess_discharge_override_kw = None
+            refreshed_state = await optimizer._read_state()
+            refreshed_state.sigenergy_mode = mode_label
+            optimizer._last_state = refreshed_state
+            decision = optimizer._decide(refreshed_state)
+            optimizer._freeze_decision_to_live_mode(refreshed_state, decision, mode_label)
+            optimizer._last_decision = decision
+            if failed:
+                raise RuntimeError(
+                    f"Manual mode target writes failed for: {', '.join(failed)}"
+                )

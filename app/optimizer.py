@@ -33,6 +33,7 @@ from .manual_mode_service import (
     manual_mode_targets,
     freeze_decision_to_live_mode,
     apply_manual_mode_targets,
+    apply_manual_mode_selection,
 )
 from .telemetry_service import (
     record_price_tracking,
@@ -502,86 +503,7 @@ class SigEnergyOptimizer:
 
     async def apply_manual_mode(self, mode_label: str) -> None:
         """Push EMS settings for a manual mode selection."""
-        cfg = self.cfg
-        ha = self.ha
-
-        async with self._control_lock:
-            # Update the input_select in HA
-            ok_mode_select = await ha.select_option(cfg.sigenergy_mode_select, mode_label)
-            if not ok_mode_select:
-                raise RuntimeError(
-                    f"Failed to set mode selector {cfg.sigenergy_mode_select} to '{mode_label}'"
-                )
-            if mode_label == cfg.automated_option:
-                self._manual_mode_override = None
-                self._manual_ess_charge_override_kw = None
-                self._manual_ess_discharge_override_kw = None
-            else:
-                self._manual_mode_override = mode_label
-                if mode_label in {
-                    cfg.block_flow_option,
-                    cfg.full_export_option,
-                    cfg.full_import_option,
-                    cfg.full_import_pv_option,
-                }:
-                    # Preset modes should start from current capability defaults,
-                    # not stale ESS overrides from prior manual edits.
-                    self._manual_ess_charge_override_kw = None
-                    self._manual_ess_discharge_override_kw = None
-            if self._last_state is not None:
-                self._last_state.sigenergy_mode = mode_label
-
-            if mode_label == cfg.automated_option:
-                # Re-enable the optimiser (nothing else needed — next tick applies)
-                logger.info("Mode → Automated")
-                return
-
-            # All manual modes disable the optimizer for one cycle
-            # (the next _apply will skip because sigenergy_mode != "Automated")
-            logger.info("Manual mode → %s", mode_label)
-
-            if mode_label == cfg.manual_option:
-                refreshed_state = await self._read_state()
-                refreshed_state.sigenergy_mode = mode_label
-                self._last_state = refreshed_state
-                self._manual_ess_charge_override_kw = None
-                self._manual_ess_discharge_override_kw = None
-                decision = self._decide(refreshed_state)
-                self._freeze_decision_to_live_mode(refreshed_state, decision, mode_label)
-                self._last_decision = decision
-                return  # just disables optimizer, no limit changes
-            # Re-read live state right before computing manual targets so stale
-            # per-cycle values cannot contaminate one-shot manual writes.
-            current_state = await self._read_state()
-            targets = self._manual_mode_targets(
-                mode_label,
-                current_state,
-                include_block_flow_ess_limits=(mode_label == cfg.block_flow_option),
-            )
-            if targets:
-                write_results = await self._apply_manual_mode_targets(
-                    targets,
-                    mode_label=mode_label,
-                )
-                failed = [name for name, ok in write_results.items() if not ok]
-                if mode_label == cfg.block_flow_option:
-                    self.set_manual_ess_overrides(
-                        charge_kw=float(targets.get("ess_charge_limit")) if "ess_charge_limit" in targets else None,
-                        discharge_kw=float(targets.get("ess_discharge_limit")) if "ess_discharge_limit" in targets else None,
-                    )
-                else:
-                    self._manual_ess_charge_override_kw = None
-                    self._manual_ess_discharge_override_kw = None
-                refreshed_state = await self._read_state()
-                refreshed_state.sigenergy_mode = mode_label
-                self._last_state = refreshed_state
-                decision = self._decide(refreshed_state)
-                self._freeze_decision_to_live_mode(refreshed_state, decision, mode_label)
-                self._last_decision = decision
-                if failed:
-                    raise RuntimeError(
-                        f"Manual mode target writes failed for: {', '.join(failed)}"
-                    )
+        await apply_manual_mode_selection(self, mode_label)
 
     # ------------------------------------------------------------------
     # Notification helpers
