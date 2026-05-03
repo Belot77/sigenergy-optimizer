@@ -1,15 +1,20 @@
 """
-SigEnergy Optimizer — core decision engine.
+SigEnergy Optimizer — orchestrator and context object.
 
-This module is a faithful Python translation of the ~3400-line YAML blueprint
-automation (sigenergy_optimiser.yaml).  Every decision variable from the
-original Jinja2 template block is now a typed Python method or property.
-
-Architecture:
-  - SigEnergyOptimizer.run_forever()  — polling loop
-  - SigEnergyOptimizer._read_state()  — bulk-read all HA entities
-  - SigEnergyOptimizer._decide()      — pure decision logic, no side effects
-  - SigEnergyOptimizer._apply()       — push decisions to HA via REST
+Architecture (post-modular refactor):
+  - SigEnergyOptimizer         — constructor, public API, thin method wrappers
+  - event_loop_service         — run_forever / drain_queue / safe_tick
+  - state_reader               — read_state_snapshot (HA entity polling)
+  - decision_engine            — build_decision (pure logic, no side effects)
+  - action_applier             — apply_decision (push to HA via REST)
+  - manual_mode_service        — manual mode targets and application
+  - notification_service       — HA push notifications and daily summaries
+  - telemetry_service          — price tracking, decision trace, audit log, history
+  - time_forecast_service      — today_at, day_window, sunrise/solar forecasts
+  - decision_guards            — boolean guard predicates (morning/evening/export)
+  - limit_calculator           — export/import/EMS/PV/ESS limit calculations
+  - reason_formatter           — human-readable export/import reason strings
+  - runtime_utils              — config validation, parse helpers, power caps
 """
 from __future__ import annotations
 
@@ -17,7 +22,7 @@ import asyncio
 from collections import deque
 import logging
 import os
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
