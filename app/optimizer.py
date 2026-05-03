@@ -86,6 +86,7 @@ from .runtime_utils import (
     parse_ts,
 )
 from .event_loop_service import run_event_loop, drain_queue, safe_tick
+from .tick_service import run_tick
 from .state_store import StateStore
 
 logger = logging.getLogger(__name__)
@@ -276,23 +277,7 @@ class SigEnergyOptimizer:
         return self._last_decision
 
     async def _tick(self) -> None:
-        async with self._control_lock:
-            prev_decision = self._last_decision
-            prev_state = self._last_state
-            state = await self._read_state()
-            self._last_state = state
-            decision = self._decide(state)
-            effective_mode = self._manual_mode_override or state.sigenergy_mode
-            if effective_mode not in {self.cfg.automated_option, ""}:
-                self._freeze_decision_to_live_mode(state, decision, effective_mode)
-            self._last_decision = decision
-            await self._apply(state, decision)
-            self._record_automation_audit(state, decision, prev_decision)
-            self._record_decision_trace(state, decision)
-            await self._handle_notifications(state, decision, prev_decision, prev_state)
-            await self._handle_daily_summaries(state, decision)
-            self._accumulate_history(state, decision)
-            self._record_price_tracking(state)
+        await run_tick(self)
 
     def _record_price_tracking(self, s: SolarState) -> None:
         record_price_tracking(self, s)
