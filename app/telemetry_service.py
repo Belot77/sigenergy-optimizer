@@ -42,7 +42,7 @@ def record_price_tracking(optimizer, s: SolarState) -> None:
     optimizer._last_tracked_import_price = import_price
     optimizer._last_tracked_feedin_price = feedin_price
     if now.hour == 0 and now.minute < 10:
-        optimizer._state_store.purge_old_price_tracking(retain_days=14)
+        optimizer._state_store.purge_old_price_tracking(retain_days=60)
 
 
 def record_decision_trace(optimizer, s: SolarState, d: Decision) -> None:
