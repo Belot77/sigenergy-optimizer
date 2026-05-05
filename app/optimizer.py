@@ -436,7 +436,7 @@ class SigEnergyOptimizer:
         self._last_tracked_import_price = import_price
         self._last_tracked_feedin_price = feedin_price
         if now.hour == 0 and now.minute < 10:
-            self._state_store.purge_old_price_tracking(retain_days=14)
+            self._state_store.purge_old_price_tracking(retain_days=60)
 
     def price_tracking_events(self, date: str | None = None, limit: int = 2000) -> list[dict[str, Any]]:
         return self._state_store.get_price_events(date=date, limit=limit)
