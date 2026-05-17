@@ -1,8 +1,8 @@
 """
 Unit tests for the modules extracted during the modular refactor:
-  - runtime_utils (pure functions)
+    - optimizer_runtime (pure functions)
   - reason_formatter (export_reason / import_reason)
-  - limit_calculator (export_tier_limit / desired_export_limit)
+    - decision_limits (export_tier_limit / desired_export_limit)
   - time_forecast_service (today_at, day_window, battery_soc_required_to_sunrise, parse_ts)
 """
 from __future__ import annotations
@@ -17,9 +17,9 @@ from unittest.mock import patch
 from app.config import Settings
 from app.models import SolarState
 from app.optimizer import SigEnergyOptimizer
-from app.runtime_utils import is_valid_time, parse_ts, valid_hw_cap_kw
+from app.optimizer_runtime import is_valid_time, parse_ts, valid_hw_cap_kw
 from app.reason_formatter import export_reason, import_reason
-from app.limit_calculator import export_tier_limit
+from app.decision_limits import export_tier_limit
 from app.time_forecast_service import today_at, day_window, battery_soc_required_to_sunrise
 
 
@@ -57,7 +57,7 @@ class _OptimizerFixture(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# runtime_utils — pure functions, no optimizer needed
+# optimizer_runtime — pure functions, no optimizer needed
 # ---------------------------------------------------------------------------
 
 class TestIsValidTime(unittest.TestCase):
@@ -260,7 +260,7 @@ class TestImportReason(_OptimizerFixture):
 
 
 # ---------------------------------------------------------------------------
-# limit_calculator — export_tier_limit
+# decision_limits — export_tier_limit
 # ---------------------------------------------------------------------------
 
 class TestExportTierLimit(_OptimizerFixture):

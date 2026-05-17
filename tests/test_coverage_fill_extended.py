@@ -1,6 +1,6 @@
 """
-Additional coverage tests for telemetry_service, reason_formatter, and
-runtime_utils to push toward 55%+ total coverage.
+Additional coverage tests for telemetry_api, reason_formatter, and
+optimizer_runtime to push toward 55%+ total coverage.
 """
 from __future__ import annotations
 
@@ -13,13 +13,13 @@ from unittest.mock import patch, MagicMock
 from app.config import Settings
 from app.models import Decision, SolarState
 from app.optimizer import SigEnergyOptimizer
-from app.telemetry_service import (
+from app.telemetry_api import (
     record_price_tracking,
     record_decision_trace,
     record_automation_audit,
 )
 from app.reason_formatter import export_reason, import_reason
-from app.runtime_utils import (
+from app.optimizer_runtime import (
     warn_parse_issue,
     is_valid_time,
     valid_hw_cap_kw,
@@ -55,7 +55,7 @@ class _OptimizerFixture(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# telemetry_service — record_price_tracking, record_decision_trace, record_automation_audit
+# telemetry_api — record_price_tracking, record_decision_trace, record_automation_audit
 # ---------------------------------------------------------------------------
 
 class TestRecordPriceTracking(_OptimizerFixture):
@@ -112,7 +112,7 @@ class TestRecordPriceTracking(_OptimizerFixture):
     def test_purge_old_at_midnight(self):
         opt = self._make_optimizer()
         s = SolarState(grid_import_power_kw=1.0, feedin_price=0.15)
-        with patch("app.telemetry_service.datetime") as mock_dt:
+        with patch("app.telemetry_recording.datetime") as mock_dt:
             fixed = datetime(2026, 5, 5, 0, 5, 0, tzinfo=timezone.utc)
             mock_dt.now.return_value = fixed
             mock_dt.fromtimestamp.side_effect = lambda ts, tz=None: datetime.fromtimestamp(ts, tz=tz)
@@ -120,7 +120,7 @@ class TestRecordPriceTracking(_OptimizerFixture):
             opt._state_store.purge_old_price_tracking = MagicMock()
             record_price_tracking(opt, s)
             # Verify purge_old_price_tracking was called
-            opt._state_store.purge_old_price_tracking.assert_called_once_with(retain_days=14)
+            opt._state_store.purge_old_price_tracking.assert_called_once_with(retain_days=60)
 
 
 class TestRecordDecisionTrace(_OptimizerFixture):
@@ -551,7 +551,7 @@ class TestImportReason(_OptimizerFixture):
 class TestWarnParseIssue(_OptimizerFixture):
     def test_logs_warning_on_first_call(self):
         opt = self._make_optimizer()
-        with patch("app.runtime_utils.logger") as mock_logger:
+        with patch("app.optimizer_runtime.logger") as mock_logger:
             warn_parse_issue(opt, "sensor.foo", "bad_value", "Test")
             mock_logger.warning.assert_called_once()
 

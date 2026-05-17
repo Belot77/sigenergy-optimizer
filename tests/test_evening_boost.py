@@ -78,6 +78,30 @@ class EveningBoostGateTests(unittest.TestCase):
 
         self.assertTrue(active)
 
+    def test_evening_boost_stays_off_when_high_overnight_fi_t_is_forecast(self) -> None:
+        optimizer = self._optimizer(minimum_tomorrow_forecast_kwh=100.0)
+        now = datetime.now()
+        state = SolarState(
+            battery_soc=85.0,
+            forecast_tomorrow_kwh=120.0,
+            feedin_forecast_entries=[
+                {
+                    "start_time": now.timestamp() + 2 * 3600,
+                    "per_kwh": 0.25,
+                }
+            ],
+        )
+
+        active = optimizer._evening_export_boost_active(
+            state,
+            now.timestamp(),
+            (now - timedelta(minutes=30)).timestamp(),
+            sunrise_soc_target=60.0,
+            bat_fill_need_kwh=20.0,
+        )
+
+        self.assertFalse(active)
+
 
 if __name__ == "__main__":
     unittest.main()

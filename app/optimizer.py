@@ -7,14 +7,23 @@ Architecture (post-modular refactor):
   - state_reader               — read_state_snapshot (HA entity polling)
   - decision_engine            — build_decision (pure logic, no side effects)
   - action_applier             — apply_decision (push to HA via REST)
-  - manual_mode_service        — manual mode targets and application
-  - notification_service       — HA push notifications and daily summaries
-  - telemetry_service          — price tracking, decision trace, audit log, history
-  - time_forecast_service      — today_at, day_window, sunrise/solar forecasts
-  - decision_guards            — boolean guard predicates (morning/evening/export)
-  - limit_calculator           — export/import/EMS/PV/ESS limit calculations
+    - manual_mode_service        — manual mode targets and application
+    - notification_service       — HA push notifications and daily summaries
+    - telemetry_api              — telemetry wrapper surface
+    - telemetry_recording        — telemetry persistence and recording
+    - state_api                  — state, history, and preset accessors
+    - state_store                — local persistence store
+    - time_forecast_service      — time and forecast compatibility wrappers
+    - sunrise_window_service     — day-window and sunrise SoC target logic
+    - forecast_policy_service    — forecast-driven decision checks
+    - decision_guards            — boolean guard compatibility wrappers
+    - forecast_guard_service     — forecast-driven guard policy
+    - decision_limits            — limit-policy compatibility wrappers
+    - ems_mode_service           — EMS mode selection policy
+    - import_policy_service      — import/grid charging policy
+    - power_limit_policy         — PV/ESS output limit policy
   - reason_formatter           — human-readable export/import reason strings
-  - runtime_utils              — config validation, parse helpers, power caps
+    - optimizer_runtime          — config validation, parse helpers, power caps
 """
 from __future__ import annotations
 
@@ -40,11 +49,29 @@ from .manual_mode_service import (
     apply_manual_mode_targets,
     apply_manual_mode_selection,
 )
-from .telemetry_service import (
+from .telemetry_api import (
     record_price_tracking,
     record_decision_trace,
     record_automation_audit,
     accumulate_history,
+)
+from .state_api import (
+    price_tracking_events as price_tracking_events_util,
+    daily_earnings_summary as daily_earnings_summary_util,
+    earnings_history as earnings_history_util,
+    audit_events as audit_events_util,
+    record_audit_event as record_audit_event_util,
+    list_threshold_presets as list_threshold_presets_util,
+    get_threshold_preset as get_threshold_preset_util,
+    save_threshold_preset as save_threshold_preset_util,
+    delete_threshold_preset as delete_threshold_preset_util,
+    decision_trace as decision_trace_util,
+)
+from .optimizer_bootstrap import initialize_runtime_state
+from .lifecycle_service import (
+    get_watch_entities as get_watch_entities_util,
+    on_ws_connect as on_ws_connect_util,
+    on_ws_disconnect as on_ws_disconnect_util,
 )
 from .time_forecast_service import (
     today_at,
@@ -55,16 +82,18 @@ from .time_forecast_service import (
     productive_solar_end_ts,
 )
 from .decision_guards import (
+    solar_surplus_bypass,
+)
+from .forecast_guard_service import (
     morning_dump_window,
     morning_dump_active,
     morning_slow_charge_active,
     evening_export_boost_active,
-    solar_surplus_bypass,
     battery_full_safeguard_block,
     export_blocked_for_forecast,
     export_forecast_guard,
 )
-from .limit_calculator import (
+from .decision_limits import (
     export_tier_limit,
     desired_export_limit,
     desired_import_limit,
@@ -77,7 +106,7 @@ from .limit_calculator import (
     battery_eta,
 )
 from .reason_formatter import export_reason, import_reason
-from .runtime_utils import (
+from .optimizer_runtime import (
     valid_hw_cap_kw,
     get_power_caps_kw as get_power_caps_kw_util,
     validate_time_config,
@@ -106,18 +135,6 @@ AUTOMATED_MODES = {"Automated"}
 
 
 
-# Config attribute names whose entity IDs should trigger immediate cycles
-_TRIGGER_ENTITY_ATTRS = [
-    "pv_power_sensor",
-    "consumed_power_sensor",
-    "battery_soc_sensor",
-    "price_sensor",
-    "feedin_sensor",
-    "demand_window_sensor",
-    "price_spike_sensor",
-    "sigenergy_mode_select",
-]
-
 _POWER_LIMIT_MAX_KW = 100.0
 _RUNTIME_SIGNATURE = "2.3.0-haos21"
 
@@ -126,59 +143,7 @@ class SigEnergyOptimizer:
     def __init__(self, ha: HAClient, cfg: Settings) -> None:
         self.ha = ha
         self.cfg = cfg
-        self._last_state: Optional[SolarState] = None
-        self._last_decision: Optional[Decision] = None
-        self._last_daily_summary_date: Optional[datetime] = None
-        self._last_morning_summary_date: Optional[datetime] = None
-        self._running = False
-        self._ws_connected = False
-        self._prev_demand_window: bool = False
-        self._config_time_warnings: list[str] = self._validate_time_config()
-        self._sensor_parse_warning_cache: dict[tuple[str, str], float] = {}
-        self._holdoff_entry_floor: Optional[float] = None  # Stable SoC floor for holdoff window
-        self._last_hw_charge_cap_kw: Optional[float] = None
-        self._last_hw_discharge_cap_kw: Optional[float] = None
-        self._last_cycle_started: Optional[datetime] = None
-        self._last_cycle_completed: Optional[datetime] = None
-        self._last_cycle_error: str = ""
-        self._notif_export_active: Optional[bool] = None
-        self._last_export_start_notice_at: Optional[datetime] = None
-        self._battery_full_alert_armed: bool = True
-        self._battery_empty_alert_armed: bool = True
-        self._last_battery_full_notice_at: Optional[datetime] = None
-        self._last_battery_empty_notice_at: Optional[datetime] = None
-        self._manual_mode_override: Optional[str] = None
-        self._manual_ess_charge_override_kw: Optional[float] = None
-        self._manual_ess_discharge_override_kw: Optional[float] = None
-        self._morning_slow_charge_runtime_disabled: bool = False
-        self._morning_slow_disable_logged: bool = False
-        logger.warning(
-            "Runtime signature=%s morning_slow_charge_runtime_disabled=%s",
-            _RUNTIME_SIGNATURE,
-            self._morning_slow_charge_runtime_disabled,
-        )
-        tz_name = os.environ.get("TZ", "Australia/Adelaide")
-        self._tz: Union[ZoneInfo, timezone]
-        try:
-            self._tz = ZoneInfo(tz_name)
-        except ZoneInfoNotFoundError:
-            logger.warning("Timezone '%s' not found; falling back to UTC", tz_name)
-            self._tz = timezone.utc
-        self._last_tracked_block: Optional[int] = None
-        self._last_tracked_import_kw: float = -999.0
-        self._last_tracked_export_kw: float = -999.0
-        self._last_tracked_import_price: Optional[float] = None
-        self._last_tracked_feedin_price: Optional[float] = None
-        db_path = os.environ.get("STATE_DB_PATH", "/data/optimizer_state.db")
-        self._state_store = StateStore(db_path)
-        self._earnings = EarningsService(self.ha, self.cfg, self._state_store, self._tz)
-        self._decision_trace: deque[dict[str, Any]] = deque(maxlen=1000)
-        # Serialize cycle apply and manual mode writes to avoid race-driven reverts.
-        self._control_lock = asyncio.Lock()
-
-        # Shared queue — HAWebSocketClient puts entity_ids here; we consume them
-        self.trigger_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
-        self._watch_entities: set[str] = set()
+        initialize_runtime_state(self)
 
     # ------------------------------------------------------------------
     # Public accessors for the web UI
@@ -241,22 +206,13 @@ class SigEnergyOptimizer:
         warn_parse_issue(self, entity_id, raw_value, label)
 
     def get_watch_entities(self) -> set[str]:
-        """Return the set of entity IDs the WS client should subscribe to."""
-        if not self._watch_entities:
-            self._watch_entities = {
-                getattr(self.cfg, attr)
-                for attr in _TRIGGER_ENTITY_ATTRS
-                if getattr(self.cfg, attr, "")
-            }
-        return self._watch_entities
+        return get_watch_entities_util(self)
 
     def on_ws_connect(self) -> None:
-        self._ws_connected = True
-        logger.info("WebSocket connected — event-driven mode active")
+        on_ws_connect_util(self)
 
     def on_ws_disconnect(self) -> None:
-        self._ws_connected = False
-        logger.warning("WebSocket disconnected — heartbeat fallback active")
+        on_ws_disconnect_util(self)
 
     # ------------------------------------------------------------------
     # Background loop (event-driven + heartbeat fallback)
@@ -283,17 +239,16 @@ class SigEnergyOptimizer:
         record_price_tracking(self, s)
 
     def price_tracking_events(self, date: str | None = None, limit: int = 2000) -> list[dict[str, Any]]:
-        return self._state_store.get_price_events(date=date, limit=limit)
+        return price_tracking_events_util(self, date=date, limit=limit)
 
     async def daily_earnings_summary(self, date: str | None = None) -> dict[str, Any]:
-        target_date = date or datetime.now(self._tz).date().isoformat()
-        return await self._earnings.daily_summary(target_date)
+        return await daily_earnings_summary_util(self, date=date)
 
     async def earnings_history(self, days: int = 7) -> dict[str, Any]:
-        return await self._earnings.history(days)
+        return await earnings_history_util(self, days)
 
     def audit_events(self, limit: int = 200) -> list[dict[str, Any]]:
-        return self._state_store.get_audit_events(limit=limit)
+        return audit_events_util(self, limit=limit)
 
     def record_audit_event(
         self,
@@ -307,7 +262,8 @@ class SigEnergyOptimizer:
         new_value: Any = None,
         details: Any = None,
     ) -> None:
-        self._state_store.record_audit_event(
+        record_audit_event_util(
+            self,
             action=action,
             source=source,
             actor=actor,
@@ -319,20 +275,19 @@ class SigEnergyOptimizer:
         )
 
     def list_threshold_presets(self) -> list[dict[str, Any]]:
-        return self._state_store.list_threshold_presets()
+        return list_threshold_presets_util(self)
 
     def get_threshold_preset(self, name: str) -> dict[str, Any] | None:
-        return self._state_store.get_threshold_preset(name)
+        return get_threshold_preset_util(self, name)
 
     def save_threshold_preset(self, name: str, payload: dict[str, Any]) -> None:
-        self._state_store.save_threshold_preset(name, payload)
+        save_threshold_preset_util(self, name, payload)
 
     def delete_threshold_preset(self, name: str) -> bool:
-        return self._state_store.delete_threshold_preset(name)
+        return delete_threshold_preset_util(self, name)
 
     def decision_trace(self, limit: int = 200) -> list[dict[str, Any]]:
-        n = max(1, min(int(limit), 2000))
-        return list(self._decision_trace)[:n]
+        return decision_trace_util(self, limit=limit)
 
     def _record_decision_trace(self, s: SolarState, d: Decision) -> None:
         record_decision_trace(self, s, d)

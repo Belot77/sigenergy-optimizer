@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from .battery_power_service import measure_battery_power
 from .models import Decision, SolarState
+from .decision_reporting import build_decision_report, build_trace_context
 
 
 def build_decision(self, s: SolarState, mode_max_self: str) -> Decision:
@@ -274,21 +276,11 @@ def build_decision(self, s: SolarState, mode_max_self: str) -> Decision:
     # ---- Battery ETA -------------------------------------------
     # Prefer measured grid flow for battery power estimation; setpoint-based math
     # can diverge from actual inverter behavior and misreport charge/discharge.
-    if s.battery_power_sensor_kw is not None:
-        battery_power_kw = float(s.battery_power_sensor_kw)
-        battery_power_source = "direct_battery_sensor"
-        effective_import_for_math = 0.0
-    elif s.grid_import_power_kw is not None and s.grid_export_power_kw is not None:
-        measured_import = max(float(s.grid_import_power_kw), 0.0)
-        measured_export = max(float(s.grid_export_power_kw), 0.0)
-        battery_power_kw = s.pv_kw + measured_import - measured_export - s.load_kw
-        battery_power_source = "measured_grid_flow"
-        effective_import_for_math = measured_import
-    else:
-        # Keep holdoff sentinel (0.01 kW) out of analytical flow/ETA math.
-        effective_import_for_math = 0.0 if desired_import_limit <= 0.011 else desired_import_limit
-        battery_power_kw = s.pv_kw + (effective_import_for_math - desired_export_limit) - s.load_kw
-        battery_power_source = "setpoint_balance_fallback"
+    battery_power_kw, battery_power_source, effective_import_for_math = measure_battery_power(
+        s,
+        desired_import_limit,
+        desired_export_limit,
+    )
     d.battery_power_kw = battery_power_kw
     d.battery_eta_formatted = self._battery_eta(s, battery_power_kw)
 
@@ -304,134 +296,69 @@ def build_decision(self, s: SolarState, mode_max_self: str) -> Decision:
         s, morning_dump_active, standby_holdoff_active,
         sunrise_soc_target, desired_import_limit, pv_surplus_actual
     )
-    eta_label = ""
-    if d.battery_eta_formatted not in ("idle", "Full", "Empty"):
-        if battery_power_kw > 0.1:
-            eta_label = f"Bat→Full:{d.battery_eta_formatted}"
-        elif battery_power_kw < -0.1:
-            eta_label = f"Bat→Empty:{d.battery_eta_formatted}"
-    parts = [d.export_reason, d.import_reason]
-    if eta_label:
-        parts.append(eta_label)
-    if s.price_is_estimated:
-        parts.append("*est")
-    d.outcome_reason = "; ".join(p for p in parts if p and p != "n/a")
-
-    export_branch = "normal_tier"
-    if morning_dump_active:
-        export_branch = "morning_dump"
-    elif morning_slow_charge_active:
-        export_branch = "morning_slow_charge"
-    elif export_spike_active:
-        export_branch = "export_spike"
-    elif export_solar_override:
-        export_branch = "solar_override"
-    elif solar_surplus_bypass:
-        export_branch = "solar_surplus_bypass"
-    elif battery_full_safeguard_block:
-        export_branch = "battery_full_safeguard_block"
-    elif export_blocked_effective or export_forecast_guard:
-        export_branch = "forecast_guard_block"
-    elif desired_export_limit <= 0:
-        export_branch = "blocked_or_zero"
-
-    import_branch = "blocked"
-    if morning_dump_active:
-        import_branch = "morning_dump_block"
-    elif s.demand_window_active:
-        import_branch = "demand_window_block"
-    elif standby_holdoff_active:
-        import_branch = "standby_holdoff_block"
-    elif desired_import_limit > 0 and s.price_is_negative:
-        import_branch = "negative_price_import"
-    elif desired_import_limit > 0:
-        import_branch = "cheap_topup_import"
-
-    d.trace_gates = {
-        "is_evening_or_night": is_evening_or_night,
-        "close_to_sunset": close_to_sunset,
-        "within_morning_grace": within_morning_grace,
-        "morning_dump_active": morning_dump_active,
-        "morning_slow_charge_active": morning_slow_charge_active,
-        "standby_holdoff_active": standby_holdoff_active,
-        "negative_price_before_cutoff": negative_price_before_cutoff,
-        "battery_can_reach_from_pv": battery_can_reach_from_pv,
-        "evening_export_boost_active": evening_export_boost_active,
-        "export_spike_active": export_spike_active,
-        "positive_fit_override": positive_fit_override,
-        "export_solar_override": export_solar_override,
-        "pv_safeguard_active": pv_safeguard_active,
-        "solar_surplus_bypass": solar_surplus_bypass,
-        "battery_full_safeguard_block": battery_full_safeguard_block,
-        "export_blocked_for_forecast": export_blocked_for_forecast,
-        "export_forecast_guard": export_forecast_guard,
-        "export_blocked_effective": export_blocked_effective,
-        "battery_only_mode": battery_only_mode,
-        "needs_ha_control_switch": d.needs_ha_control_switch,
-        "demand_window_active": s.demand_window_active,
-        "price_is_negative": s.price_is_negative,
-        "feedin_is_negative": s.feedin_is_negative,
-    }
-    d.trace_values = {
-        "battery_soc": s.battery_soc,
-        "current_price": s.current_price,
-        "feedin_price": s.feedin_price,
-        "pv_kw": s.pv_kw,
-        "load_kw": s.load_kw,
-        "grid_import_power_kw": s.grid_import_power_kw,
-        "grid_export_power_kw": s.grid_export_power_kw,
-        "pv_surplus_actual": pv_surplus_actual,
-        "pv_surplus_estimated": pv_surplus,
-        "cap_kwh": cap,
-        "bat_fill_need_kwh": bat_fill_need_kwh,
-        "soc_required": soc_required,
-        "sunrise_soc_target": sunrise_soc_target,
-        "sunrise_fill_need_kwh": sunrise_fill_need_kwh,
-        "hours_to_sunrise": hours_to_sunrise,
-        "hours_to_sunset": hours_to_sunset,
-        "export_min_soc": export_min_soc,
-        "export_tier_limit": export_tier_limit,
-        "morning_dump_limit": morning_dump_limit,
-        "desired_export_limit": desired_export_limit,
-        "desired_import_limit": desired_import_limit,
-        "desired_ems_mode": desired_ems_mode,
-        "desired_pv_max": desired_pv_max,
-        "effective_import_for_math": effective_import_for_math,
-        "battery_power_kw": battery_power_kw,
-        "battery_power_source": battery_power_source,
-        "battery_power_sensor_kw": s.battery_power_sensor_kw,
-        "ess_charge_limit": d.ess_charge_limit,
-        "ess_discharge_limit": d.ess_discharge_limit,
-        "holdoff_entry_floor": self._holdoff_entry_floor,
-        "current_export_limit": s.current_export_limit,
-        "current_import_limit": s.current_import_limit,
-        "current_pv_max_power_limit": s.current_pv_max_power_limit,
-        "current_ems_mode": s.current_ems_mode,
-        "sigenergy_mode": s.sigenergy_mode,
-        "manual_mode_override": self._manual_mode_override,
-        "export_branch": export_branch,
-        "import_branch": import_branch,
-        "cfg_morning_slow_charge_enabled": cfg.morning_slow_charge_enabled,
-        "cfg_morning_slow_charge_rate_kw": cfg.morning_slow_charge_rate_kw,
-        "cfg_morning_slow_export_start_margin_kw": cfg.morning_slow_export_start_margin_kw,
-        "cfg_morning_slow_export_stop_margin_kw": cfg.morning_slow_export_stop_margin_kw,
-        "cfg_morning_slow_export_ramp_up_step_kw": cfg.morning_slow_export_ramp_up_step_kw,
-        "cfg_morning_slow_export_ramp_down_step_kw": cfg.morning_slow_export_ramp_down_step_kw,
-        "cfg_morning_slow_export_probe_enabled": cfg.morning_slow_export_probe_enabled,
-        "cfg_morning_slow_export_probe_step_kw": cfg.morning_slow_export_probe_step_kw,
-        "cfg_morning_slow_export_probe_saturation_margin_kw": cfg.morning_slow_export_probe_saturation_margin_kw,
-        "cfg_target_battery_charge": cfg.target_battery_charge,
-        "cfg_max_price_threshold": cfg.max_price_threshold,
-        "cfg_export_threshold_low": cfg.export_threshold_low,
-        "cfg_export_threshold_medium": cfg.export_threshold_medium,
-        "cfg_export_threshold_high": cfg.export_threshold_high,
-        "cfg_export_limit_low": cfg.export_limit_low,
-        "cfg_export_limit_medium": cfg.export_limit_medium,
-        "cfg_export_limit_high": cfg.export_limit_high,
-        "cfg_min_export_target_soc": cfg.min_export_target_soc,
-        "cfg_min_soc_floor": cfg.min_soc_floor,
-        "cfg_sunrise_export_relax_percent": cfg.sunrise_export_relax_percent,
-        "cfg_pv_max_power_normal": cfg.pv_max_power_normal,
-    }
+    report = build_decision_report(
+        self,
+        s,
+        d,
+        battery_eta_formatted=d.battery_eta_formatted,
+        battery_power_kw=battery_power_kw,
+        battery_power_source=battery_power_source,
+        effective_import_for_math=effective_import_for_math,
+        trace_context=build_trace_context(
+            s=s,
+            d=d,
+            is_evening_or_night=is_evening_or_night,
+            close_to_sunset=close_to_sunset,
+            within_morning_grace=within_morning_grace,
+            morning_dump_active=morning_dump_active,
+            morning_slow_charge_active=morning_slow_charge_active,
+            standby_holdoff_active=standby_holdoff_active,
+            negative_price_before_cutoff=negative_price_before_cutoff,
+            battery_can_reach_from_pv=battery_can_reach_from_pv,
+            evening_export_boost_active=evening_export_boost_active,
+            export_spike_active=export_spike_active,
+            positive_fit_override=positive_fit_override,
+            export_solar_override=export_solar_override,
+            pv_safeguard_active=pv_safeguard_active,
+            solar_surplus_bypass=solar_surplus_bypass,
+            battery_full_safeguard_block=battery_full_safeguard_block,
+            export_blocked_for_forecast=export_blocked_for_forecast,
+            export_forecast_guard=export_forecast_guard,
+            export_blocked_effective=export_blocked_effective,
+            battery_only_mode=battery_only_mode,
+            pv_surplus_actual=pv_surplus_actual,
+            pv_surplus_estimated=pv_surplus,
+            cap_kwh=cap,
+            bat_fill_need_kwh=bat_fill_need_kwh,
+            soc_required=soc_required,
+            sunrise_soc_target=sunrise_soc_target,
+            sunrise_fill_need_kwh=sunrise_fill_need_kwh,
+            hours_to_sunrise=hours_to_sunrise,
+            hours_to_sunset=hours_to_sunset,
+            export_min_soc=export_min_soc,
+            export_tier_limit=export_tier_limit,
+            morning_dump_limit=morning_dump_limit,
+            desired_export_limit=desired_export_limit,
+            desired_import_limit=desired_import_limit,
+            desired_ems_mode=desired_ems_mode,
+            desired_pv_max=desired_pv_max,
+            effective_import_for_math=effective_import_for_math,
+            battery_power_kw=battery_power_kw,
+            battery_power_source=battery_power_source,
+            battery_power_sensor_kw=s.battery_power_sensor_kw,
+            ess_charge_limit=d.ess_charge_limit,
+            ess_discharge_limit=d.ess_discharge_limit,
+            holdoff_entry_floor=self._holdoff_entry_floor,
+            current_export_limit=s.current_export_limit,
+            current_import_limit=s.current_import_limit,
+            current_pv_max_power_limit=s.current_pv_max_power_limit,
+            current_ems_mode=s.current_ems_mode,
+            sigenergy_mode=s.sigenergy_mode,
+            manual_mode_override=self._manual_mode_override,
+        ),
+    )
+    d.outcome_reason = report.outcome_reason
+    d.trace_gates = report.trace_gates
+    d.trace_values = report.trace_values
 
     return d

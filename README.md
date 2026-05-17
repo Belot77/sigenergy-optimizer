@@ -133,54 +133,86 @@ These buttons are easy to confuse at first. Here is what each one does in everyd
 
 ### Simulate Automated
 
-- Think of this as a practice run.
-- It tries different strategy styles and shows which one looks best right now.
-- The simulation comparison panel is hidden by default and appears after you press this button.
-- It only changes what you see on the screen.
-- It does not change your real inverter settings.
 
 ### Run Cycle Now
 
-- Think of this as "do the real check now".
-- It makes the optimizer run immediately instead of waiting for the next normal cycle.
-- This can apply real control changes (mode/limits) if the optimizer decides they are needed.
-- Use this when you want an immediate live refresh/action.
 
 ### Preview (inside Simulation cards)
 
-- Preview means "select this option and inspect it".
-- It updates the comparison view and details so you can review that strategy.
-- It does not draw the full simulation overlay on the chart.
-- It does not change live settings.
 
 ### Overlay This (inside Simulation cards)
 
-- Overlay means "draw this scenario over the live chart".
-- It visually places the simulated path on top of your normal chart so you can compare easier.
-- It is still a visual what-if tool only.
-- It does not change live settings.
 
 Quick rule of thumb:
-- Preview = pick and inspect.
-- Overlay = show it on the chart.
-- Simulate Automated = run a what-if comparison.
-- Run Cycle Now = run the real optimizer immediately.
 
 ### Clear Simulation
 
-- After running simulation, the Simulate Automated button changes to Clear Simulation.
-- Clear Simulation removes the visual simulation overlay and hides the simulation comparison panel again.
-- It does not change live inverter settings.
 
 ## Step 5 - Verify Correct Operation
 
-- Add-on logs: Settings -> Add-ons -> SigEnergy Optimizer -> Logs
-- Optional CLI: ha addons logs local_sigenergy_optimizer
 
 Quick check:
 1. Use a manual override in the UI.
 2. Confirm expected EMS mode and limits are written.
 3. Return to Automated mode.
+
+## Module Map
+
+The codebase is now split into modules that match their responsibility:
+
+- [app/optimizer.py](app/optimizer.py): coordinator and thin wrappers
+- [app/decision_engine.py](app/decision_engine.py): decision assembly
+- [app/decision_reporting.py](app/decision_reporting.py): trace and outcome formatting
+- [app/decision_limits.py](app/decision_limits.py): compatibility wrapper for limit-policy modules
+- [app/decision_guards.py](app/decision_guards.py): compatibility wrapper for guard-policy modules
+- [app/battery_power_service.py](app/battery_power_service.py): battery power source selection
+- [app/battery_eta_service.py](app/battery_eta_service.py): battery ETA formatting
+- [app/telemetry_api.py](app/telemetry_api.py): telemetry wrapper surface
+- [app/telemetry_recording.py](app/telemetry_recording.py): telemetry persistence and recording
+- [app/state_api.py](app/state_api.py): state, history, and preset accessors
+- [app/state_reader.py](app/state_reader.py): Home Assistant state snapshot reads
+- [app/state_store.py](app/state_store.py): local persistence store
+- [app/optimizer_runtime.py](app/optimizer_runtime.py): runtime validation and parsing helpers
+- [app/optimizer_bootstrap.py](app/optimizer_bootstrap.py): constructor and runtime state initialization
+- [app/lifecycle_service.py](app/lifecycle_service.py): WebSocket lifecycle helpers
+- [app/manual_mode_service.py](app/manual_mode_service.py): manual mode target logic
+- [app/action_applier.py](app/action_applier.py): write decisions back to Home Assistant
+- [app/notification_service.py](app/notification_service.py): notifications and summaries
+- [app/time_forecast_service.py](app/time_forecast_service.py): compatibility wrapper for time and forecast helpers
+- [app/sunrise_window_service.py](app/sunrise_window_service.py): day-window and sunrise SoC target logic
+- [app/forecast_policy_service.py](app/forecast_policy_service.py): forecast-driven decision checks
+- [app/forecast_guard_service.py](app/forecast_guard_service.py): forecast-driven guard policy
+- [app/import_policy_service.py](app/import_policy_service.py): import/grid charging policy
+- [app/power_limit_policy.py](app/power_limit_policy.py): PV/ESS output limit policy
+- [app/ems_mode_service.py](app/ems_mode_service.py): EMS mode selection policy
+- [app/event_loop_service.py](app/event_loop_service.py): optimizer loop and queue draining
+- [app/tick_service.py](app/tick_service.py): single optimizer cycle execution
+
+## Plug-In Surface
+
+If you want to test this in another checkout, the smallest useful runtime surface is:
+
+- `Settings` from [app/config.py](app/config.py)
+- `HAClient` from [app/ha_client.py](app/ha_client.py)
+- `SigEnergyOptimizer` from [app/optimizer.py](app/optimizer.py)
+- `create_app()` from [app/main.py](app/main.py) if you want the FastAPI app
+
+Minimal wiring looks like this:
+
+```python
+from app.config import Settings
+from app.ha_client import HAClient
+from app.optimizer import SigEnergyOptimizer
+
+cfg = Settings(
+  ha_url="http://homeassistant.local:8123",
+  ha_token="YOUR_TOKEN",
+)
+ha = HAClient(cfg.ha_url, cfg.ha_token)
+optimizer = SigEnergyOptimizer(ha, cfg)
+```
+
+For a separate repo, copy the package, keep the config contract the same, and point your test harness at the same `SigEnergyOptimizer` constructor.
 
 ## Configuration Tuning
 

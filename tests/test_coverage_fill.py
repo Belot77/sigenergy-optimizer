@@ -1,6 +1,6 @@
 """
 Coverage-filling tests for manual_mode_service, decision_guards, and
-limit_calculator uncovered paths.
+decision_limits uncovered paths.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from app.decision_guards import (
     export_blocked_for_forecast,
     export_forecast_guard,
 )
-from app.limit_calculator import (
+from app.decision_limits import (
     desired_export_limit,
     desired_import_limit,
     desired_ems_mode,
@@ -358,7 +358,7 @@ class TestExportForecastGuard(_OptimizerFixture):
 
 
 # ---------------------------------------------------------------------------
-# limit_calculator — desired_export_limit / desired_import_limit / desired_ems_mode
+# decision_limits — desired_export_limit / desired_import_limit / desired_ems_mode
 # ---------------------------------------------------------------------------
 
 def _default_state(**kwargs) -> SolarState:

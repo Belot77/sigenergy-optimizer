@@ -1,4 +1,4 @@
-"""Runtime utility helpers extracted from optimizer.py."""
+"""Optimizer runtime helper functions."""
 from __future__ import annotations
 
 import logging
