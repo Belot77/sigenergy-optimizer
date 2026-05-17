@@ -133,28 +133,52 @@ These buttons are easy to confuse at first. Here is what each one does in everyd
 
 ### Simulate Automated
 
+Runs a what-if comparison using the live Home Assistant state and current prices.
+It ranks the built-in profiles, opens the simulation panel, and overlays the best simulated result on the charts without writing anything back to your inverter.
+
 
 ### Run Cycle Now
+
+Forces the optimizer to perform one real decision cycle immediately instead of waiting for the next background tick.
+Use this after changing settings or helpers when you want the add-on to recalculate and write a fresh decision straight away.
 
 
 ### Preview (inside Simulation cards)
 
+Highlights a profile so you can inspect its computed import and export limits and estimated net result.
+This changes the preview focus inside the simulation panel, but it does not change the live optimizer output.
+
 
 ### Overlay This (inside Simulation cards)
+
+Draws that simulated profile onto the charts and summary widgets so you can compare it against the current live state.
+This is still simulation only. It does not save thresholds and it does not send commands to Home Assistant.
 
 
 Quick rule of thumb:
 
+- Preview lets you inspect a scenario.
+- Overlay This paints that scenario onto the dashboard.
+- Simulate Automated picks the current best scenario and turns the overlay on.
+- Run Cycle Now executes the real optimizer.
+
 ### Clear Simulation
+
+Turns the simulation overlay off, hides the simulation panel, and returns the dashboard to the live optimizer view.
 
 
 ## Step 5 - Verify Correct Operation
+
+Watch one full cycle after startup before you trust the current state.
+The UI should populate, the reason bar should update, and the logs should show normal status reads instead of repeated connection or entity errors.
 
 
 Quick check:
 1. Use a manual override in the UI.
 2. Confirm expected EMS mode and limits are written.
 3. Return to Automated mode.
+4. Press Run Cycle Now and confirm the reason text and limits refresh cleanly.
+5. If you use simulation, confirm Clear Simulation returns the charts to the live view.
 
 ## Module Map
 
