@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
+from .forecast_utils import forecast_entry_time, forecast_entry_value
 from .models import SolarState
 
 logger = logging.getLogger(__name__)
@@ -112,8 +113,8 @@ def evening_export_boost_active(
         if not isinstance(f, dict):
             continue
         try:
-            ts = optimizer._parse_ts(f.get(cfg.price_forecast_time_key, ""))
-            price = float(f.get(cfg.feedin_forecast_value_key, 0))
+            ts = optimizer._parse_ts(forecast_entry_time(f, cfg.price_forecast_time_key))
+            price = forecast_entry_value(f, cfg.feedin_forecast_value_key)
             if ts and now_ts <= ts <= tomorrow_6am and price >= cfg.export_threshold_medium:
                 no_high_fit = False
                 break

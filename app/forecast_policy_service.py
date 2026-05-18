@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from .forecast_utils import forecast_entry_time, forecast_entry_value
 from .models import SolarState
 
 
@@ -11,8 +12,8 @@ def negative_price_forecast_ahead(optimizer, s: SolarState, now_ts: float) -> bo
         if not isinstance(f, dict):
             continue
         try:
-            ts = optimizer._parse_ts(f.get(optimizer.cfg.price_forecast_time_key, ""))
-            price = float(f.get(optimizer.cfg.price_forecast_value_key, 0))
+            ts = optimizer._parse_ts(forecast_entry_time(f, optimizer.cfg.price_forecast_time_key))
+            price = forecast_entry_value(f, optimizer.cfg.price_forecast_value_key)
             if ts and ts <= cutoff and price < 0:
                 return True
         except Exception:
@@ -29,8 +30,8 @@ def negative_price_before_cutoff(optimizer, s: SolarState, now_ts: float) -> boo
         if not isinstance(f, dict):
             continue
         try:
-            ts = optimizer._parse_ts(f.get(optimizer.cfg.price_forecast_time_key, ""))
-            price = float(f.get(optimizer.cfg.price_forecast_value_key, 0))
+            ts = optimizer._parse_ts(forecast_entry_time(f, optimizer.cfg.price_forecast_time_key))
+            price = forecast_entry_value(f, optimizer.cfg.price_forecast_value_key)
             if ts and ts <= cutoff_ts and price < 0:
                 return True
         except Exception:

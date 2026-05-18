@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
+from .forecast_utils import extract_forecast_entries
 from .models import SolarState
 
 logger = logging.getLogger(__name__)
@@ -191,8 +192,22 @@ async def read_state_snapshot(optimizer, mode_max_self: str) -> SolarState:
 	s.solar_power_now_kw = solar_raw / 1000 if solar_raw > 100 else solar_raw
 
 	s.solcast_detailed = _attr(cfg.forecast_today_sensor, "detailedForecast") or []
-	s.price_forecast_entries = _attr(cfg.price_forecast_sensor, cfg.price_forecast_attribute) or []
-	s.feedin_forecast_entries = _attr(cfg.feedin_forecast_sensor, cfg.feedin_forecast_attribute) or []
+	s.price_forecast_entries = extract_forecast_entries(
+		bulk,
+		primary_entity=cfg.price_sensor,
+		explicit_entity=cfg.price_forecast_sensor,
+		preferred_attr=cfg.price_forecast_attribute,
+		preferred_time_key=cfg.price_forecast_time_key,
+		preferred_value_key=cfg.price_forecast_value_key,
+	)
+	s.feedin_forecast_entries = extract_forecast_entries(
+		bulk,
+		primary_entity=cfg.feedin_sensor,
+		explicit_entity=cfg.feedin_forecast_sensor,
+		preferred_attr=cfg.feedin_forecast_attribute,
+		preferred_time_key=cfg.price_forecast_time_key,
+		preferred_value_key=cfg.feedin_forecast_value_key,
+	)
 
 	# ---- Sun ------------------------------------------------------
 	s.sun_elevation = float(_attr(cfg.sun_entity, "elevation") or 0)
