@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ..config import settings
+from ..forecast_utils import forecast_entry_time, forecast_entry_value
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -390,12 +391,11 @@ def _serialize_forecast_curve(entries: Any, time_key: str, value_key: str) -> li
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        ts = entry.get(time_key)
+        ts = forecast_entry_time(entry, time_key)
         if not ts:
             continue
-        try:
-            value = float(entry.get(value_key, 0))
-        except Exception:
+        value = forecast_entry_value(entry, value_key)
+        if value is None:
             continue
         curve.append({"t": ts, "value": value})
 

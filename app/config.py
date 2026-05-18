@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     feedin_forecast_sensor: str = Field("sensor.amber_feed_in_price_detailed", env="FEEDIN_FORECAST_SENSOR")
     demand_window_sensor: str = Field("binary_sensor.amber_demand_window", env="DEMAND_WINDOW_SENSOR")
     price_spike_sensor: str = Field("binary_sensor.amber_price_spike", env="PRICE_SPIKE_SENSOR")
-    price_forecast_sensor: str = Field("sensor.amber_general_forecast", env="PRICE_FORECAST_SENSOR")
+    price_forecast_sensor: str = Field("sensor.amber_general_price_detailed", env="PRICE_FORECAST_SENSOR")
     price_forecast_attribute: str = Field("forecasts", env="PRICE_FORECAST_ATTRIBUTE")
     price_forecast_value_key: str = Field("per_kwh", env="PRICE_FORECAST_VALUE_KEY")
     price_forecast_time_key: str = Field("start_time", env="PRICE_FORECAST_TIME_KEY")

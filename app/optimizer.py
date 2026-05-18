@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings
 from .earnings import EarningsService
+from .forecast_utils import extract_forecast_entries, forecast_entry_time, forecast_entry_value
 from .ha_client import HAClient
 from .models import Decision, SolarState
 from .state_store import StateStore
@@ -786,8 +787,22 @@ class SigEnergyOptimizer:
         s.solar_power_now_kw = solar_raw / 1000 if solar_raw > 100 else solar_raw
 
         s.solcast_detailed = _attr(cfg.forecast_today_sensor, "detailedForecast") or []
-        s.price_forecast_entries = _attr(cfg.price_forecast_sensor, cfg.price_forecast_attribute) or []
-        s.feedin_forecast_entries = _attr(cfg.feedin_forecast_sensor, cfg.feedin_forecast_attribute) or []
+        s.price_forecast_entries = extract_forecast_entries(
+            bulk,
+            primary_entity=cfg.price_sensor,
+            explicit_entity=cfg.price_forecast_sensor,
+            preferred_attr=cfg.price_forecast_attribute,
+            preferred_time_key=cfg.price_forecast_time_key,
+            preferred_value_key=cfg.price_forecast_value_key,
+        )
+        s.feedin_forecast_entries = extract_forecast_entries(
+            bulk,
+            primary_entity=cfg.feedin_sensor,
+            explicit_entity=cfg.feedin_forecast_sensor,
+            preferred_attr=cfg.feedin_forecast_attribute,
+            preferred_time_key=cfg.price_forecast_time_key,
+            preferred_value_key=cfg.feedin_forecast_value_key,
+        )
 
         # ---- Sun ------------------------------------------------------
         s.sun_elevation = float(_attr(cfg.sun_entity, "elevation") or 0)
@@ -1961,8 +1976,8 @@ class SigEnergyOptimizer:
             if not isinstance(f, dict):
                 continue
             try:
-                ts = self._parse_ts(f.get(self.cfg.price_forecast_time_key, ""))
-                price = float(f.get(self.cfg.price_forecast_value_key, 0))
+                ts = self._parse_ts(forecast_entry_time(f, self.cfg.price_forecast_time_key))
+                price = forecast_entry_value(f, self.cfg.price_forecast_value_key)
                 if ts and ts <= cutoff and price < 0:
                     return True
             except Exception:
@@ -1978,8 +1993,8 @@ class SigEnergyOptimizer:
             if not isinstance(f, dict):
                 continue
             try:
-                ts = self._parse_ts(f.get(self.cfg.price_forecast_time_key, ""))
-                price = float(f.get(self.cfg.price_forecast_value_key, 0))
+                ts = self._parse_ts(forecast_entry_time(f, self.cfg.price_forecast_time_key))
+                price = forecast_entry_value(f, self.cfg.price_forecast_value_key)
                 if ts and ts <= cutoff_ts and price < 0:
                     return True
             except Exception:
