@@ -13,10 +13,10 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Tests: tests/
 - Source of truth is this project folder, not ZIPs, generated outputs, local env files, caches, or test artifacts.
 
-## 3. Current version, if clearly discoverable
-- sigenergy_optimizer_addon/config.yaml version: 2.2.34-haos21
-- README version section: 2.1.64 (April 2026)
-- Needs confirmation: authoritative current release version, because README and add-on config do not match.
+## 3. Current version
+- **Authoritative source**: sigenergy_optimizer_addon/config.yaml (version field)
+- **Current version**: 2.2.34-haos21
+- **Note**: release.sh updates config.yaml but not README.md. README.md has been updated to match current config version.
 
 ## 4. Main features
 - Event-driven optimizer with 60-second heartbeat fallback.
@@ -85,13 +85,12 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - tests/
 
 ## 10. Known issues or watch items
-- README version and add-on config version are inconsistent.
 - Old blueprint automation coexistence is explicitly unsafe.
 - Control-path regressions can come from wrong entity assumptions, wrong tariff interpretation, or mistaken import/export sign handling.
+- Note: release.sh updates config.yaml version but not README.md, so ensure README.md is manually updated when releasing new versions.
 - Local env/test artifact files exist in the repo root but are not source of truth.
 
 ## 11. Next likely work
-- Resolve version/documentation drift between README and add-on config.
 - Continue targeted control-path hardening with explicit test coverage.
 - Keep entity assumptions and operator docs aligned with current UI and add-on behaviour.
 - Maintain clear separation between simulation/inspection tools and live control actions.

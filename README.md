@@ -236,7 +236,7 @@ Uninstall:
 
 ## Version
 
-2.1.64 (April 2026)
+2.2.34-haos21
 
 ## Maintainer Release Flow
 
