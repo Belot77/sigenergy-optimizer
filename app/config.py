@@ -94,18 +94,18 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Amber / price sensors
     # ------------------------------------------------------------------
-    price_sensor: str = Field("sensor.amber_general_price")
-    feedin_sensor: str = Field("sensor.amber_feed_in_price")
-    feedin_forecast_sensor: str = Field("sensor.amber_feed_in_price_detailed")
-    demand_window_sensor: str = Field("binary_sensor.amber_demand_window")
-    price_spike_sensor: str = Field("binary_sensor.amber_price_spike")
-    price_forecast_sensor: str = Field("sensor.amber_general_price_detailed")
-    price_forecast_attribute: str = Field("forecasts")
-    price_forecast_value_key: str = Field("per_kwh")
-    price_forecast_time_key: str = Field("start_time")
-    price_multiplier: float = Field(100.0)  # $/kWh â†’ cents
-    feedin_forecast_attribute: str = Field("forecasts")
-    feedin_forecast_value_key: str = Field("per_kwh")
+    price_sensor: str = Field("sensor.amber_general_price", env="PRICE_SENSOR")
+    feedin_sensor: str = Field("sensor.amber_feed_in_price", env="FEEDIN_SENSOR")
+    feedin_forecast_sensor: str = Field("sensor.amber_feed_in_price_detailed", env="FEEDIN_FORECAST_SENSOR")
+    demand_window_sensor: str = Field("binary_sensor.amber_demand_window", env="DEMAND_WINDOW_SENSOR")
+    price_spike_sensor: str = Field("binary_sensor.amber_price_spike", env="PRICE_SPIKE_SENSOR")
+    price_forecast_sensor: str = Field("sensor.amber_general_price_detailed", env="PRICE_FORECAST_SENSOR")
+    price_forecast_attribute: str = Field("forecasts", env="PRICE_FORECAST_ATTRIBUTE")
+    price_forecast_value_key: str = Field("per_kwh", env="PRICE_FORECAST_VALUE_KEY")
+    price_forecast_time_key: str = Field("start_time", env="PRICE_FORECAST_TIME_KEY")
+    price_multiplier: float = Field(100.0, env="PRICE_MULTIPLIER")  # $/kWh → cents
+    feedin_forecast_attribute: str = Field("forecasts", env="FEEDIN_FORECAST_ATTRIBUTE")
+    feedin_forecast_value_key: str = Field("per_kwh", env="FEEDIN_FORECAST_VALUE_KEY")
 
     # ------------------------------------------------------------------
     # Solcast / forecast sensors

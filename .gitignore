@@ -1,9 +1,35 @@
-# Local environment overrides
-.env
-
-# Python bytecode/cache
+# Common ignores
+.venv/
 __pycache__/
-*.py[cod]
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+*.log
+*.tmp
+*.bak
+*.backup
+.DS_Store
+Thumbs.db
+*.zip
+*_release/
+release_zips/
 
-# Local editor settings
+# Python/runtime
+instance/
+
+# Local/dev database files (confirm if any DB file is intentionally versioned)
+*.sqlite
+*.sqlite3
+*.db
+
+# Local tooling/editor and test artifacts
 .vscode/
+.idea/
+*.swp
+.coverage
+test_results.txt
+tests.zip

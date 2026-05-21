@@ -37,6 +37,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings
 from .earnings import EarningsService
+from .forecast_utils import extract_forecast_entries, forecast_entry_time, forecast_entry_value
 from .ha_client import HAClient
 from .models import Decision, SolarState
 from .state_reader import read_state_snapshot
@@ -136,7 +137,7 @@ AUTOMATED_MODES = {"Automated"}
 
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.0-haos21"
+_RUNTIME_SIGNATURE = "2.3.3-haos22"
 
 
 class SigEnergyOptimizer:
