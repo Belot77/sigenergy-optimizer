@@ -15,7 +15,7 @@ from .state_store import StateStore
 logger = logging.getLogger(__name__)
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.0-haos21"
+_RUNTIME_SIGNATURE = "2.3.3-haos22"
 
 
 def initialize_runtime_state(optimizer) -> None:
