@@ -247,6 +247,54 @@ def _is_plausible_summary(summary: dict[str, Any] | None) -> bool:
     return import_kwh <= 200 and export_kwh <= 200
 
 
+def _is_estimated_summary(summary: dict[str, Any] | None) -> bool:
+    if summary is None:
+        return False
+    if bool(summary.get("is_estimated")):
+        return True
+    return str(summary.get("source_key", "")).strip().lower() == "estimated"
+
+
+def _implied_rate_in_bounds(amount: Any, kwh: Any, *, max_abs_rate: float = 5.0, min_kwh: float = 0.05) -> bool:
+    amount_value = _to_float(amount)
+    kwh_value = _to_float(kwh)
+    if amount_value is None or kwh_value is None:
+        return False
+    if kwh_value < 0:
+        return False
+    if kwh_value < min_kwh:
+        return True
+    return abs(amount_value / kwh_value) <= max_abs_rate
+
+
+def _is_estimated_unit_price_sane(summary: dict[str, Any] | None) -> bool:
+    if summary is None:
+        return False
+    if not _is_estimated_summary(summary):
+        return True
+    return _implied_rate_in_bounds(summary.get("import_costs"), summary.get("total_import_kwh")) and _implied_rate_in_bounds(
+        summary.get("export_earnings"), summary.get("total_export_kwh")
+    )
+
+
+def _is_relaxed_ha_summary(summary: dict[str, Any] | None) -> bool:
+    if summary is None or _is_estimated_summary(summary):
+        return False
+    import_kwh = _to_float(summary.get("total_import_kwh"))
+    export_kwh = _to_float(summary.get("total_export_kwh"))
+    import_costs = _to_float(summary.get("import_costs"))
+    export_earnings = _to_float(summary.get("export_earnings"))
+    if any(v is None for v in [import_kwh, export_kwh, import_costs, export_earnings]):
+        return False
+    if import_kwh < 0 or export_kwh < 0 or import_costs < 0 or export_earnings < 0:
+        return False
+    return _implied_rate_in_bounds(import_costs, import_kwh) and _implied_rate_in_bounds(export_earnings, export_kwh)
+
+
+def _is_acceptable_summary(summary: dict[str, Any] | None) -> bool:
+    return _is_plausible_summary(summary) and _is_estimated_unit_price_sane(summary)
+
+
 def summarize_cumulative_source(
     source: EarningsSource,
     day: str,
@@ -401,6 +449,20 @@ class EarningsService:
         out["is_estimated"] = True
         return out
 
+    def _zero_estimated(self, day: str) -> dict[str, Any]:
+        return self._annotate_estimated(
+            {
+                "date": day,
+                "total_import_kwh": 0.0,
+                "total_export_kwh": 0.0,
+                "import_costs": 0.0,
+                "export_earnings": 0.0,
+                "net": 0.0,
+                "blocks": [],
+            },
+            day,
+        )
+
     async def _fetch_history(self, source: EarningsSource, start: datetime, end: datetime) -> dict[str, list[dict[str, Any]]]:
         entity_ids = [
             source.import_energy_entity,
@@ -449,6 +511,35 @@ class EarningsService:
             return summarize_shifted_cumulative_source(source, day, by_entity, self._tz)
         return summarize_cumulative_source(source, day, by_entity, self._tz)
 
+    async def _best_relaxed_ha_fallback(
+        self,
+        day: str,
+        day_date: date,
+        today: date,
+        available_sources: dict[str, EarningsSource],
+        preferred_keys: list[str],
+        history_cache: dict[str, dict[str, list[dict[str, Any]]]],
+        start: datetime,
+        end: datetime,
+    ) -> dict[str, Any] | None:
+        source_keys = [k for k in preferred_keys if k != "estimated"]
+        for key in available_sources.keys():
+            if key != "estimated" and key not in source_keys:
+                source_keys.append(key)
+        for key in source_keys:
+            source = available_sources.get(key)
+            if not source or source.mode == "estimated":
+                continue
+            if source.mode == "daily" and day_date == today:
+                summary = await self._summary_from_current_daily_state(source, day)
+            else:
+                if key not in history_cache:
+                    history_cache[key] = await self._fetch_history(source, start, end)
+                summary = self._summarize_cached(source, day, history_cache)
+            if _is_relaxed_ha_summary(summary):
+                return summary
+        return None
+
     async def daily_summary(self, day: str) -> dict[str, Any]:
         available_sources = await self._available_sources()
         day_date = date.fromisoformat(day)
@@ -473,9 +564,24 @@ class EarningsService:
                 if key not in history_cache:
                     history_cache[key] = await self._fetch_history(source, start, end)
                 summary = self._summarize_cached(source, day, history_cache)
-            if _is_plausible_summary(summary):
+            if _is_acceptable_summary(summary):
                 return summary
-        return self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
+        estimated = self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
+        if _is_acceptable_summary(estimated):
+            return estimated
+        fallback = await self._best_relaxed_ha_fallback(
+            day,
+            day_date,
+            today,
+            available_sources,
+            preferred_keys,
+            history_cache,
+            start,
+            end,
+        )
+        if fallback is not None:
+            return fallback
+        return self._zero_estimated(day)
 
     async def history(self, days: int) -> dict[str, Any]:
         days = max(1, min(days, 120))
@@ -509,10 +615,24 @@ class EarningsService:
                     summary = await self._summary_from_current_daily_state(source, day)
                 else:
                     summary = self._summarize_cached(source, day, history_cache)
-                if _is_plausible_summary(summary):
+                if _is_acceptable_summary(summary):
                     break
-            if not _is_plausible_summary(summary):
-                summary = self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
+            if not _is_acceptable_summary(summary):
+                estimated = self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
+                if _is_acceptable_summary(estimated):
+                    summary = estimated
+                else:
+                    fallback = await self._best_relaxed_ha_fallback(
+                        day,
+                        day_date,
+                        today,
+                        available_sources,
+                        preferred_keys,
+                        history_cache,
+                        start,
+                        end,
+                    )
+                    summary = fallback if fallback is not None else self._zero_estimated(day)
             out.append(
                 {
                     "date": day,
