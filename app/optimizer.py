@@ -2265,6 +2265,11 @@ class SigEnergyOptimizer:
         if (export_blocked or forecast_guard) and not surplus_bypass:
             return 0.0
 
+        poor_tomorrow_forecast = (
+            not is_evening_or_night
+            and s.forecast_tomorrow_kwh < cap * cfg.forecast_safety_charging
+        )
+
         bypass_min_soc = high_price or spike or surplus_bypass or positive_fit_override
         if not bypass_min_soc and bsoc <= export_min_soc:
             if not (morning_slow_charge_active and pv_surplus >= cfg.morning_slow_charge_rate_kw + cfg.min_grid_transfer_kw):
@@ -2278,6 +2283,14 @@ class SigEnergyOptimizer:
             if bypass_min_soc and bsoc <= (export_min_soc + 0.05):
                 excess_solar_kw = max(s.pv_kw - s.load_kw, 0.0)
                 return min(limit_value, excess_solar_kw)
+            return limit_value
+
+        def cap_full_battery_poor_tomorrow(limit_value: float) -> float:
+            if limit_value <= 0:
+                return 0.0
+            if bsoc >= 99 and poor_tomorrow_forecast:
+                measured_surplus_kw = max(s.pv_kw - s.load_kw, 0.0)
+                return min(limit_value, measured_surplus_kw)
             return limit_value
 
         # Morning slow charge with PV surplus
@@ -2343,12 +2356,14 @@ class SigEnergyOptimizer:
                 cap_val = max(tier_limit, cfg.cap_total_import)
             limit = min(cap_val, s.ess_max_discharge_kw)
             limit = cap_near_floor_to_pv(limit)
+            limit = cap_full_battery_poor_tomorrow(limit)
             return max(cfg.min_grid_transfer_kw, round(limit, 1)) if limit > 0 else 0.0
 
         if positive_fit_override:
             eff_tier = tier_limit if tier_limit > 0 else cfg.export_limit_low
             limit = min(eff_tier, s.ess_max_discharge_kw)
             limit = cap_near_floor_to_pv(limit)
+            limit = cap_full_battery_poor_tomorrow(limit)
             return max(cfg.min_grid_transfer_kw, round(limit, 1)) if limit > 0 else 0.0
 
         # Solar-surplus bypass should allow exporting real PV excess even when SoC is low.
@@ -2357,6 +2372,7 @@ class SigEnergyOptimizer:
             raw_surplus = max(s.pv_kw - s.load_kw, 0.0)
             limit = min(tier_limit, s.ess_max_discharge_kw, raw_surplus)
             limit = cap_near_floor_to_pv(limit)
+            limit = cap_full_battery_poor_tomorrow(limit)
             if limit <= 0:
                 return 0.0
             if limit < cfg.min_grid_transfer_kw:
@@ -2402,6 +2418,7 @@ class SigEnergyOptimizer:
                 limit = min(limit, pv_surplus_net)
 
         limit = cap_near_floor_to_pv(limit)
+        limit = cap_full_battery_poor_tomorrow(limit)
 
         if limit <= 0:
             return 0.0
@@ -2679,6 +2696,14 @@ class SigEnergyOptimizer:
         effective_floor = cfg.evening_aggressive_floor if evening_boost else cfg.min_export_target_soc
         if s.battery_soc < effective_floor:
             return f"Export blocked, below {effective_floor:.0f}% target"
+        poor_tomorrow_forecast = (
+            s.sun_above_horizon
+            and s.forecast_tomorrow_kwh < s.battery_capacity_kwh * cfg.forecast_safety_charging
+        )
+        if poor_tomorrow_forecast and target_export <= 0.01:
+            return "Export blocked, low tomorrow forecast"
+        if poor_tomorrow_forecast and target_export > 0.01:
+            return f"Exporting {export_kw_label}, PV-only (low tomorrow forecast){est}"
         if s.battery_soc >= 99 and s.feedin_price >= 0.01:
             return f"Exporting {export_kw_label}, Full battery @ {fit_d}¢{est}"
         if tier_limit <= 0:

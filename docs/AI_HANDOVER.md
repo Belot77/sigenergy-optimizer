@@ -15,7 +15,7 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 
 ## 3. Current version
 - **Authoritative source**: sigenergy_optimizer_addon/config.yaml (version field)
-- **Current version**: 2.2.34-haos21
+- **Current version**: 2.2.36-haos21
 - **Note**: release.sh updates config.yaml but not README.md. README.md has been updated to match current config version.
 
 ## 4. Main features
@@ -89,6 +89,7 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Control-path regressions can come from wrong entity assumptions, wrong tariff interpretation, or mistaken import/export sign handling.
 - Note: release.sh updates config.yaml version but not README.md, so ensure README.md is manually updated when releasing new versions.
 - Local env/test artifact files exist in the repo root but are not source of truth.
+- Daytime full-battery export now clamps to measured PV surplus (not optimistic solar-power-now headroom) when tomorrow forecast is below forecast_safety_charging × battery_capacity_kwh.
 
 ## 11. Next likely work
 - Continue targeted control-path hardening with explicit test coverage.
