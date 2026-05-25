@@ -66,6 +66,14 @@ def export_reason(
     effective_floor = cfg.evening_aggressive_floor if evening_boost else cfg.min_export_target_soc
     if s.battery_soc < effective_floor:
         return f"Export blocked, below {effective_floor:.0f}% target"
+    poor_tomorrow_forecast = (
+        s.sun_above_horizon
+        and s.forecast_tomorrow_kwh < s.battery_capacity_kwh * cfg.forecast_safety_charging
+    )
+    if poor_tomorrow_forecast and target_export <= 0.01:
+        return "Export blocked, low tomorrow forecast"
+    if poor_tomorrow_forecast and target_export > 0.01:
+        return f"Exporting {export_kw_label}, PV-only (low tomorrow forecast){est}"
     if s.battery_soc >= 99 and s.feedin_price >= 0.01:
         return f"Exporting {export_kw_label}, Full battery @ {fit_d}¢{est}"
     if tier_limit <= 0:
