@@ -15,7 +15,7 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 
 ## 3. Current version
 - **Authoritative source**: sigenergy_optimizer_addon/config.yaml (version field)
-- **Current version**: 2.2.36-haos21
+- **Current version**: 2.3.6-haos22
 - **Note**: release.sh updates config.yaml but not README.md. README.md has been updated to match current config version.
 
 ## 4. Main features
