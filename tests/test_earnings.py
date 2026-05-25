@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import date, datetime, timedelta, timezone
 
-from app.earnings import EarningsSource, _cumulative_delta, _is_plausible_summary, amber_requires_month_boundary_fallback, preferred_auto_source_keys, summarize_cumulative_source, summarize_daily_source, summarize_lagged_daily_source, summarize_shifted_cumulative_source
+from app.earnings import EarningsSource, _cumulative_delta, _is_estimated_unit_price_sane, _is_plausible_summary, amber_requires_month_boundary_fallback, preferred_auto_source_keys, summarize_cumulative_source, summarize_daily_source, summarize_lagged_daily_source, summarize_shifted_cumulative_source
 
 
 TZ = timezone(timedelta(hours=10, minutes=30))
@@ -76,6 +76,34 @@ class EarningsTests(unittest.TestCase):
         self.assertFalse(_is_plausible_summary({"total_import_kwh": -1, "total_export_kwh": 1, "import_costs": 1, "export_earnings": 1}))
         self.assertFalse(_is_plausible_summary({"total_import_kwh": 1, "total_export_kwh": 500, "import_costs": 1, "export_earnings": 1}))
         self.assertTrue(_is_plausible_summary({"total_import_kwh": 1, "total_export_kwh": 50, "import_costs": 1, "export_earnings": 1}))
+
+    def test_estimated_unit_price_sanity_rejects_absurd_rates(self) -> None:
+        self.assertFalse(
+            _is_estimated_unit_price_sane(
+                {
+                    "source_key": "estimated",
+                    "is_estimated": True,
+                    "total_import_kwh": 0.186,
+                    "total_export_kwh": 6.556,
+                    "import_costs": 0.03,
+                    "export_earnings": -141.50,
+                }
+            )
+        )
+
+    def test_estimated_unit_price_sanity_accepts_normal_rates(self) -> None:
+        self.assertTrue(
+            _is_estimated_unit_price_sane(
+                {
+                    "source_key": "estimated",
+                    "is_estimated": True,
+                    "total_import_kwh": 2.0,
+                    "total_export_kwh": 3.0,
+                    "import_costs": 0.8,
+                    "export_earnings": 1.2,
+                }
+            )
+        )
 
     def test_cumulative_amber_source_uses_daily_deltas(self) -> None:
         source = EarningsSource(
