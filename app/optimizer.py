@@ -1068,6 +1068,22 @@ class SigEnergyOptimizer:
         )
         d.export_limit = desired_export_limit
 
+        export_value_gate = self._export_value_gate_advisory(
+            s,
+            desired_export_limit=desired_export_limit,
+            sunrise_soc_target=sunrise_soc_target,
+            soc_required=soc_required,
+            productive_solar_end_ts=productive_solar_end_ts,
+            now_ts=now_ts,
+            export_spike_active=export_spike_active,
+        )
+        d.protected_reserve_soc = float(export_value_gate["protected_reserve_soc"])
+        d.export_surplus_soc = float(export_value_gate["export_surplus_soc"])
+        d.stored_energy_value_floor = float(export_value_gate["stored_energy_value_floor"])
+        d.export_value_gate_would_allow = bool(export_value_gate["export_value_gate_would_allow"])
+        d.export_value_gate_would_block = bool(export_value_gate["export_value_gate_would_block"])
+        d.export_value_gate_reason = str(export_value_gate["export_value_gate_reason"])
+
         # ---- Import limit (grid_limit_base → desired_import_limit) --
         desired_import_limit = self._desired_import_limit(
             s, morning_dump_active, demand_window_active=s.demand_window_active,
@@ -1222,6 +1238,11 @@ class SigEnergyOptimizer:
             "demand_window_active": s.demand_window_active,
             "price_is_negative": s.price_is_negative,
             "feedin_is_negative": s.feedin_is_negative,
+            "export_value_gate_enabled": bool(cfg.export_value_gate_enabled),
+            "export_value_gate_dry_run": bool(cfg.export_value_gate_dry_run),
+            "export_value_gate_enforce": bool(cfg.export_value_gate_enforce),
+            "export_value_gate_would_allow": d.export_value_gate_would_allow,
+            "export_value_gate_would_block": d.export_value_gate_would_block,
         }
         d.trace_values = {
             "battery_soc": s.battery_soc,
@@ -1240,6 +1261,10 @@ class SigEnergyOptimizer:
             "sunrise_fill_need_kwh": sunrise_fill_need_kwh,
             "hours_to_sunrise": hours_to_sunrise,
             "hours_to_sunset": hours_to_sunset,
+            "protected_reserve_soc": d.protected_reserve_soc,
+            "export_surplus_soc": d.export_surplus_soc,
+            "stored_energy_value_floor": d.stored_energy_value_floor,
+            "export_value_gate_reason": d.export_value_gate_reason,
             "export_min_soc": export_min_soc,
             "export_tier_limit": export_tier_limit,
             "morning_dump_limit": morning_dump_limit,
@@ -1279,6 +1304,13 @@ class SigEnergyOptimizer:
             "cfg_export_limit_low": cfg.export_limit_low,
             "cfg_export_limit_medium": cfg.export_limit_medium,
             "cfg_export_limit_high": cfg.export_limit_high,
+            "cfg_export_value_gate_min_floor": cfg.export_value_gate_min_floor,
+            "cfg_export_value_gate_manual_import_premium": cfg.export_value_gate_manual_import_premium,
+            "cfg_export_value_gate_winter_premium": cfg.export_value_gate_winter_premium,
+            "cfg_export_value_gate_cooling_premium": cfg.export_value_gate_cooling_premium,
+            "cfg_export_value_gate_safety_margin": cfg.export_value_gate_safety_margin,
+            "cfg_export_value_gate_spike_override_threshold": cfg.export_value_gate_spike_override_threshold,
+            "cfg_export_value_gate_useful_solar_offset_hours": cfg.export_value_gate_useful_solar_offset_hours,
             "cfg_min_export_target_soc": cfg.min_export_target_soc,
             "cfg_min_soc_floor": cfg.min_soc_floor,
             "cfg_sunrise_export_relax_percent": cfg.sunrise_export_relax_percent,
@@ -1969,6 +2001,153 @@ class SigEnergyOptimizer:
         need_pct = (energy_need_kwh / cap) * 100 if cap > 0 else 0
         target = need_pct + cfg.sunrise_buffer_percent
         return max(target, cfg.sunrise_reserve_soc)
+
+    def _manual_import_recent_for_value_gate(self) -> bool:
+        # TODO: wire this to an explicit manual import or force-import audit signal when one exists.
+        return False
+
+    def _export_value_gate_advisory(
+        self,
+        s: SolarState,
+        *,
+        desired_export_limit: float,
+        sunrise_soc_target: float,
+        soc_required: float,
+        productive_solar_end_ts: Optional[float],
+        now_ts: float,
+        export_spike_active: bool,
+    ) -> dict[str, float | bool | str]:
+        cfg = self.cfg
+        gate_active = bool(cfg.export_value_gate_enabled or cfg.export_value_gate_dry_run)
+        if not gate_active:
+            return {
+                "protected_reserve_soc": 0.0,
+                "export_surplus_soc": 0.0,
+                "stored_energy_value_floor": 0.0,
+                "export_value_gate_would_allow": False,
+                "export_value_gate_would_block": False,
+                "export_value_gate_reason": "Advisory gate disabled.",
+            }
+
+        cap = max(float(s.battery_capacity_kwh or 0.0), 0.1)
+        useful_solar_ts = None
+        if s.next_sunrise_ts:
+            useful_solar_ts = s.next_sunrise_ts + max(cfg.export_value_gate_useful_solar_offset_hours, 0.0) * 3600
+
+        start_ts = now_ts
+        if productive_solar_end_ts is not None:
+            start_ts = max(now_ts, productive_solar_end_ts)
+        elif s.sun_above_horizon and s.next_sunset_ts:
+            start_ts = max(now_ts, s.next_sunset_ts)
+
+        if useful_solar_ts is None:
+            useful_solar_hours = max(float(s.hours_to_sunrise or 0.0), 0.0) + max(
+                cfg.export_value_gate_useful_solar_offset_hours,
+                0.0,
+            )
+        else:
+            useful_solar_hours = max(0.0, (useful_solar_ts - start_ts) / 3600)
+
+        expected_load_until_useful_solar_kwh = (
+            max(float(s.load_kw or 0.0), 0.0)
+            * useful_solar_hours
+            * max(float(cfg.sunrise_safety_factor or 0.0), 0.1)
+        )
+        useful_solar_soc = ((expected_load_until_useful_solar_kwh / cap) * 100.0) + cfg.sunrise_buffer_percent
+        protected_reserve_soc = max(
+            float(cfg.export_value_gate_min_floor),
+            float(cfg.sunrise_reserve_soc),
+            float(sunrise_soc_target),
+            float(soc_required),
+            useful_solar_soc,
+        )
+        export_surplus_soc = max(0.0, float(s.battery_soc) - protected_reserve_soc)
+
+        manual_import_recent = self._manual_import_recent_for_value_gate()
+        avoided_import_price = max(float(s.current_price or 0.0), float(cfg.export_threshold_low), 0.0)
+        manual_import_premium = cfg.export_value_gate_manual_import_premium if manual_import_recent else 0.0
+        forecast_modifier = min(
+            float(cfg.export_value_gate_safety_margin),
+            max(0.0, float(s.forecast_tomorrow_kwh or 0.0) - expected_load_until_useful_solar_kwh) / cap * 0.01,
+        )
+        stored_energy_value_floor = max(
+            float(cfg.export_threshold_low),
+            avoided_import_price
+            + float(cfg.export_value_gate_safety_margin)
+            + float(cfg.export_value_gate_winter_premium)
+            + float(cfg.export_value_gate_cooling_premium)
+            + manual_import_premium
+            - forecast_modifier,
+        )
+
+        desired_export_active = desired_export_limit > 0.01
+        spike_override_threshold = float(cfg.export_value_gate_spike_override_threshold)
+        if spike_override_threshold <= 0:
+            spike_override_threshold = float(cfg.export_spike_threshold)
+
+        if not desired_export_active:
+            return {
+                "protected_reserve_soc": protected_reserve_soc,
+                "export_surplus_soc": export_surplus_soc,
+                "stored_energy_value_floor": stored_energy_value_floor,
+                "export_value_gate_would_allow": False,
+                "export_value_gate_would_block": False,
+                "export_value_gate_reason": "Advisory only: live export is not active.",
+            }
+
+        if export_surplus_soc <= 0.05:
+            return {
+                "protected_reserve_soc": protected_reserve_soc,
+                "export_surplus_soc": export_surplus_soc,
+                "stored_energy_value_floor": stored_energy_value_floor,
+                "export_value_gate_would_allow": False,
+                "export_value_gate_would_block": True,
+                "export_value_gate_reason": (
+                    "Advisory only: would block export because battery is at or below protected reserve "
+                    f"{protected_reserve_soc:.1f}% for evening/load until useful solar."
+                ),
+            }
+
+        if export_spike_active and spike_override_threshold > 0 and float(s.feedin_price or 0.0) >= spike_override_threshold:
+            return {
+                "protected_reserve_soc": protected_reserve_soc,
+                "export_surplus_soc": export_surplus_soc,
+                "stored_energy_value_floor": stored_energy_value_floor,
+                "export_value_gate_would_allow": True,
+                "export_value_gate_would_block": False,
+                "export_value_gate_reason": (
+                    "Advisory only: would allow export because spike FIT "
+                    f"{float(s.feedin_price or 0.0):.2f} exceeds override {spike_override_threshold:.2f} "
+                    f"with {export_surplus_soc:.1f}% above protected reserve."
+                ),
+            }
+
+        if float(s.feedin_price or 0.0) >= stored_energy_value_floor:
+            return {
+                "protected_reserve_soc": protected_reserve_soc,
+                "export_surplus_soc": export_surplus_soc,
+                "stored_energy_value_floor": stored_energy_value_floor,
+                "export_value_gate_would_allow": True,
+                "export_value_gate_would_block": False,
+                "export_value_gate_reason": (
+                    "Advisory only: would allow export because FIT "
+                    f"{float(s.feedin_price or 0.0):.2f} meets stored energy value {stored_energy_value_floor:.2f} "
+                    f"with {export_surplus_soc:.1f}% above protected reserve."
+                ),
+            }
+
+        return {
+            "protected_reserve_soc": protected_reserve_soc,
+            "export_surplus_soc": export_surplus_soc,
+            "stored_energy_value_floor": stored_energy_value_floor,
+            "export_value_gate_would_allow": False,
+            "export_value_gate_would_block": True,
+            "export_value_gate_reason": (
+                "Advisory only: would block export because FIT "
+                f"{float(s.feedin_price or 0.0):.2f} is below stored energy value {stored_energy_value_floor:.2f} "
+                "and battery is protected for evening/load until useful solar."
+            ),
+        }
 
     def _negative_price_forecast_ahead(self, s: SolarState, now_ts: float) -> bool:
         cutoff = now_ts + self.cfg.negative_price_forecast_lookahead_hours * 3600

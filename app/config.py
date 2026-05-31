@@ -144,6 +144,16 @@ class Settings(BaseSettings):
     export_spike_full_power: bool = Field(False, env="EXPORT_SPIKE_FULL_POWER")
     allow_low_medium_export_positive_fit: bool = Field(False, env="ALLOW_LOW_MEDIUM_EXPORT_POSITIVE_FIT")
     allow_positive_fit_battery_discharging: bool = Field(False, env="ALLOW_POSITIVE_FIT_BATTERY_DISCHARGING")
+    export_value_gate_enabled: bool = Field(False, env="EXPORT_VALUE_GATE_ENABLED")
+    export_value_gate_dry_run: bool = Field(True, env="EXPORT_VALUE_GATE_DRY_RUN")
+    export_value_gate_enforce: bool = Field(False, env="EXPORT_VALUE_GATE_ENFORCE")
+    export_value_gate_min_floor: float = Field(35.0, env="EXPORT_VALUE_GATE_MIN_FLOOR")
+    export_value_gate_manual_import_premium: float = Field(0.08, env="EXPORT_VALUE_GATE_MANUAL_IMPORT_PREMIUM")
+    export_value_gate_winter_premium: float = Field(0.03, env="EXPORT_VALUE_GATE_WINTER_PREMIUM")
+    export_value_gate_cooling_premium: float = Field(0.0, env="EXPORT_VALUE_GATE_COOLING_PREMIUM")
+    export_value_gate_safety_margin: float = Field(0.02, env="EXPORT_VALUE_GATE_SAFETY_MARGIN")
+    export_value_gate_spike_override_threshold: float = Field(0.0, env="EXPORT_VALUE_GATE_SPIKE_OVERRIDE_THRESHOLD")
+    export_value_gate_useful_solar_offset_hours: float = Field(1.75, env="EXPORT_VALUE_GATE_USEFUL_SOLAR_OFFSET_HOURS")
 
     # ------------------------------------------------------------------
     # Import pricing thresholds and caps
