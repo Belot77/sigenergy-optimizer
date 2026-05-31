@@ -22,6 +22,7 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Event-driven optimizer with 60-second heartbeat fallback.
 - Home Assistant add-on with ingress web UI and REST/WebSocket integration.
 - Amber price and feed-in driven import/export decisions.
+- Advisory-only export value gate on `main` that dry-runs a protected-reserve/value-floor check without changing live export limits by default.
 - Solar forecast-aware battery/export planning.
 - Earnings/session tracking and reporting.
 - Manual override controls via HA helper mode select and UI.
@@ -90,9 +91,11 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Note: release.sh updates config.yaml version but not README.md, so ensure README.md is manually updated when releasing new versions.
 - Local env/test artifact files exist in the repo root but are not source of truth.
 - Daytime full-battery export now clamps to measured PV surplus (not optimistic solar-power-now headroom) when tomorrow forecast is below forecast_safety_charging × battery_capacity_kwh.
+- Advisory export value gate is calculation/status only on `main` for now: `export_value_gate_enabled=false`, `export_value_gate_dry_run=true`, and `export_value_gate_enforce=false` keep live export behavior unchanged unless a future task explicitly wires enforcement.
 
 ## 11. Next likely work
 - Continue targeted control-path hardening with explicit test coverage.
+- If approved, carry the advisory export value gate from `main` into `feature/modular-refactor` as a separate follow-up task.
 - Keep entity assumptions and operator docs aligned with current UI and add-on behaviour.
 - Maintain clear separation between simulation/inspection tools and live control actions.
 

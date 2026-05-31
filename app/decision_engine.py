@@ -219,6 +219,22 @@ def build_decision(self, s: SolarState, mode_max_self: str) -> Decision:
     )
     d.export_limit = desired_export_limit
 
+    export_value_gate = self._export_value_gate_advisory(
+        s,
+        desired_export_limit=desired_export_limit,
+        sunrise_soc_target=sunrise_soc_target,
+        soc_required=soc_required,
+        productive_solar_end_ts=productive_solar_end_ts,
+        now_ts=now_ts,
+        export_spike_active=export_spike_active,
+    )
+    d.protected_reserve_soc = float(export_value_gate["protected_reserve_soc"])
+    d.export_surplus_soc = float(export_value_gate["export_surplus_soc"])
+    d.stored_energy_value_floor = float(export_value_gate["stored_energy_value_floor"])
+    d.export_value_gate_would_allow = bool(export_value_gate["export_value_gate_would_allow"])
+    d.export_value_gate_would_block = bool(export_value_gate["export_value_gate_would_block"])
+    d.export_value_gate_reason = str(export_value_gate["export_value_gate_reason"])
+
     # ---- Import limit (grid_limit_base → desired_import_limit) --
     desired_import_limit = self._desired_import_limit(
         s, morning_dump_active, demand_window_active=s.demand_window_active,
@@ -360,5 +376,29 @@ def build_decision(self, s: SolarState, mode_max_self: str) -> Decision:
     d.outcome_reason = report.outcome_reason
     d.trace_gates = report.trace_gates
     d.trace_values = report.trace_values
+    d.trace_gates.update(
+        {
+            "export_value_gate_enabled": bool(cfg.export_value_gate_enabled),
+            "export_value_gate_dry_run": bool(cfg.export_value_gate_dry_run),
+            "export_value_gate_enforce": bool(cfg.export_value_gate_enforce),
+            "export_value_gate_would_allow": d.export_value_gate_would_allow,
+            "export_value_gate_would_block": d.export_value_gate_would_block,
+        }
+    )
+    d.trace_values.update(
+        {
+            "protected_reserve_soc": d.protected_reserve_soc,
+            "export_surplus_soc": d.export_surplus_soc,
+            "stored_energy_value_floor": d.stored_energy_value_floor,
+            "export_value_gate_reason": d.export_value_gate_reason,
+            "cfg_export_value_gate_min_floor": cfg.export_value_gate_min_floor,
+            "cfg_export_value_gate_manual_import_premium": cfg.export_value_gate_manual_import_premium,
+            "cfg_export_value_gate_winter_premium": cfg.export_value_gate_winter_premium,
+            "cfg_export_value_gate_cooling_premium": cfg.export_value_gate_cooling_premium,
+            "cfg_export_value_gate_safety_margin": cfg.export_value_gate_safety_margin,
+            "cfg_export_value_gate_spike_override_threshold": cfg.export_value_gate_spike_override_threshold,
+            "cfg_export_value_gate_useful_solar_offset_hours": cfg.export_value_gate_useful_solar_offset_hours,
+        }
+    )
 
     return d

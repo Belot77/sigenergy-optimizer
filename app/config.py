@@ -143,6 +143,16 @@ class Settings(BaseSettings):
     export_spike_full_power: bool = Field(False)
     allow_low_medium_export_positive_fit: bool = Field(False)
     allow_positive_fit_battery_discharging: bool = Field(False)
+    export_value_gate_enabled: bool = Field(False)
+    export_value_gate_dry_run: bool = Field(True)
+    export_value_gate_enforce: bool = Field(False)
+    export_value_gate_min_floor: float = Field(35.0)
+    export_value_gate_manual_import_premium: float = Field(0.08)
+    export_value_gate_winter_premium: float = Field(0.03)
+    export_value_gate_cooling_premium: float = Field(0.0)
+    export_value_gate_safety_margin: float = Field(0.02)
+    export_value_gate_spike_override_threshold: float = Field(0.0)
+    export_value_gate_useful_solar_offset_hours: float = Field(1.75)
 
     # ------------------------------------------------------------------
     # Import pricing thresholds and caps

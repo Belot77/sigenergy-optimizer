@@ -115,6 +115,12 @@ class Decision:
     battery_full_safeguard: bool = False
     hours_to_sunrise: float = 6.0
     battery_soc_required_to_sunrise: float = 0.0
+    protected_reserve_soc: float = 0.0
+    export_surplus_soc: float = 0.0
+    stored_energy_value_floor: float = 0.0
+    export_value_gate_would_allow: bool = False
+    export_value_gate_would_block: bool = False
+    export_value_gate_reason: str = ""
     needs_ha_control_switch: bool = False
     trace_gates: dict[str, bool] = field(default_factory=dict)
     trace_values: dict[str, float | str | bool | None] = field(default_factory=dict)
