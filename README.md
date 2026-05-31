@@ -236,7 +236,7 @@ Uninstall:
 
 ## Version
 
-2.2.34-haos21
+2.3.7-haos22
 
 ## Maintainer Release Flow
 
