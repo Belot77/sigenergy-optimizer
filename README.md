@@ -1,4 +1,4 @@
-﻿# SigEnergy Optimizer for Home Assistant OS
+# SigEnergy Optimizer for Home Assistant OS
 
 This guide is for Home Assistant OS users running the SigEnergy Optimizer as a Home Assistant Add-on.
 
@@ -292,7 +292,7 @@ Uninstall:
 
 ## Version
 
-2.3.8-haos22
+2.3.9-haos22
 
 ## Maintainer Release Flow
 
