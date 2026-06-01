@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 import unittest
@@ -12,6 +13,35 @@ from app.optimizer import SigEnergyOptimizer
 
 class _DummyHA:
     pass
+
+
+class _RecordingHA:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, object]] = []
+
+    async def select_option(self, entity_id: str, value: str) -> bool:
+        self.calls.append(("select_option", entity_id, value))
+        return True
+
+    async def set_number(self, entity_id: str, value: float) -> bool:
+        self.calls.append(("set_number", entity_id, value))
+        return True
+
+    async def turn_on(self, entity_id: str) -> bool:
+        self.calls.append(("turn_on", entity_id, True))
+        return True
+
+    async def set_input_text(self, entity_id: str, value: str) -> bool:
+        self.calls.append(("set_input_text", entity_id, value))
+        return True
+
+    async def set_input_number(self, entity_id: str, value: float) -> bool:
+        self.calls.append(("set_input_number", entity_id, value))
+        return True
+
+    async def get_state_value(self, entity_id: str, default: object = "") -> object:
+        self.calls.append(("get_state_value", entity_id, default))
+        return default
 
 
 class ExportValueGateAdvisoryTests(unittest.TestCase):
@@ -259,6 +289,162 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertFalse(cfg.export_value_gate_enabled)
         self.assertTrue(cfg.export_value_gate_dry_run)
         self.assertFalse(cfg.export_value_gate_enforce)
+
+    def test_dry_run_only_would_block_keeps_actuator_outputs_unchanged(self) -> None:
+        now_ts = datetime.now().timestamp()
+        baseline_optimizer = self._optimizer(
+            export_value_gate_enabled=False,
+            export_value_gate_dry_run=False,
+            export_value_gate_enforce=False,
+        )
+        dry_run_optimizer = self._optimizer(
+            export_value_gate_enabled=False,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=False,
+        )
+        state = self._state(
+            battery_soc=100.0,
+            battery_capacity_kwh=40.3,
+            available_discharge_energy_kwh=40.3,
+            forecast_tomorrow_kwh=80.0,
+            feedin_price=0.09,
+            feedin_price_cents=9.0,
+            pv_kw=2.1,
+            solar_power_now_kw=4.4,
+            load_kw=0.9,
+            ess_max_discharge_kw=100.0,
+            price_is_actual=True,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+            sun_above_horizon=True,
+            current_ems_mode="Maximum Self Consumption",
+            current_export_limit=0.0,
+            current_import_limit=0.0,
+            current_pv_max_power_limit=25.0,
+        )
+
+        baseline = baseline_optimizer._decide(state)
+        dry_run = dry_run_optimizer._decide(state)
+
+        self.assertTrue(dry_run.export_value_gate_would_block)
+        self.assertEqual(baseline.export_limit, dry_run.export_limit)
+        self.assertEqual(baseline.ems_mode, dry_run.ems_mode)
+
+    def test_enforcement_true_and_would_block_vetoes_export_and_sets_safe_ems(self) -> None:
+        now_ts = datetime.now().timestamp()
+        non_enforcing_optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=False,
+        )
+        enforcing_optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        state = self._state(
+            battery_soc=100.0,
+            battery_capacity_kwh=40.3,
+            available_discharge_energy_kwh=40.3,
+            forecast_tomorrow_kwh=80.0,
+            feedin_price=0.09,
+            feedin_price_cents=9.0,
+            pv_kw=2.1,
+            solar_power_now_kw=4.4,
+            load_kw=0.9,
+            ess_max_discharge_kw=100.0,
+            price_is_actual=True,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+            sun_above_horizon=True,
+            current_ems_mode="Maximum Self Consumption",
+            current_export_limit=0.0,
+            current_import_limit=0.0,
+            current_pv_max_power_limit=25.0,
+        )
+
+        baseline = non_enforcing_optimizer._decide(state)
+        enforced = enforcing_optimizer._decide(state)
+
+        self.assertGreater(baseline.export_limit, 0.0)
+        self.assertTrue(enforced.export_value_gate_would_block)
+        self.assertEqual(enforced.export_limit, 0.0)
+        self.assertNotIn("Discharging", enforced.ems_mode)
+        self.assertIn("vetoed", enforced.export_reason.lower())
+        self.assertIn("enforced veto", enforced.export_value_gate_reason.lower())
+        self.assertTrue(bool(enforced.trace_gates.get("export_value_gate_vetoed")))
+
+    def test_enforcement_true_and_would_allow_preserves_export_behaviour(self) -> None:
+        now_ts = datetime.now().timestamp()
+        advisory_optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=False,
+            export_spike_threshold=0.60,
+        )
+        enforcing_optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+            export_spike_threshold=0.60,
+        )
+        state = self._state(
+            battery_soc=80.0,
+            battery_capacity_kwh=30.0,
+            available_discharge_energy_kwh=24.0,
+            feedin_price=0.85,
+            feedin_price_cents=85.0,
+            price_spike_active=True,
+            price_is_actual=True,
+            pv_kw=2.5,
+            solar_power_now_kw=3.5,
+            load_kw=0.8,
+            ess_max_discharge_kw=25.0,
+            next_sunrise_ts=now_ts + (8.0 * 3600),
+            next_sunset_ts=now_ts + (5.0 * 3600),
+            hours_to_sunrise=8.0,
+            hours_to_sunset=5.0,
+            sun_above_horizon=True,
+            current_ems_mode="Maximum Self Consumption",
+            current_export_limit=0.0,
+            current_import_limit=0.0,
+            current_pv_max_power_limit=25.0,
+        )
+
+        advisory = advisory_optimizer._decide(state)
+        enforced = enforcing_optimizer._decide(state)
+
+        self.assertTrue(advisory.export_value_gate_would_allow)
+        self.assertTrue(enforced.export_value_gate_would_allow)
+        self.assertEqual(advisory.export_limit, enforced.export_limit)
+        self.assertEqual(advisory.ems_mode, enforced.ems_mode)
+        self.assertFalse(bool(enforced.trace_gates.get("export_value_gate_vetoed")))
+
+    def test_manual_mode_still_pauses_optimizer_writes_when_enforcement_enabled(self) -> None:
+        cfg = Settings(export_value_gate_enabled=True, export_value_gate_enforce=True)
+        ha = _RecordingHA()
+        optimizer = SigEnergyOptimizer(ha, cfg)
+        self._optimizers.append(optimizer)
+        state = self._state(
+            sigenergy_mode=cfg.manual_option,
+            current_ems_mode="Maximum Self Consumption",
+            current_export_limit=0.01,
+            current_import_limit=0.01,
+            current_pv_max_power_limit=25.0,
+            current_ess_charge_limit=21.0,
+            current_ess_discharge_limit=24.0,
+        )
+        decision = optimizer._decide(state)
+        optimizer._freeze_decision_to_live_mode(state, decision, cfg.manual_option)
+
+        asyncio.run(optimizer._apply(state, decision))
+
+        self.assertEqual(ha.calls, [])
+        self.assertIn("optimizer writes paused", decision.outcome_reason)
 
 
 if __name__ == "__main__":
