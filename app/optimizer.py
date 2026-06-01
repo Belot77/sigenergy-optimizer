@@ -311,7 +311,12 @@ class SigEnergyOptimizer:
     # ------------------------------------------------------------------
 
     def _decide(self, s: SolarState) -> Decision:
-        return build_decision(self, s, mode_max_self=MODE_MAX_SELF)
+        return build_decision(
+            self,
+            s,
+            mode_max_self=MODE_MAX_SELF,
+            discharge_modes=DISCHARGE_MODES,
+        )
 
     # ------------------------------------------------------------------
     # 3. Apply decisions to Home Assistant
