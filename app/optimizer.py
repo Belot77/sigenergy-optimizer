@@ -1066,7 +1066,8 @@ class SigEnergyOptimizer:
             pv_surplus, is_evening_or_night, morning_slow_charge_active,
             within_morning_grace,
         )
-        d.export_limit = desired_export_limit
+        desired_export_limit_pre_value_gate = desired_export_limit
+        export_value_gate_vetoed = False
 
         export_value_gate = self._export_value_gate_advisory(
             s,
@@ -1084,6 +1085,23 @@ class SigEnergyOptimizer:
         d.export_value_gate_would_block = bool(export_value_gate["export_value_gate_would_block"])
         d.export_value_gate_reason = str(export_value_gate["export_value_gate_reason"])
 
+        value_gate_enforcement_active = bool(
+            cfg.export_value_gate_enabled and cfg.export_value_gate_enforce
+        )
+        if (
+            value_gate_enforcement_active
+            and d.export_value_gate_would_block
+            and desired_export_limit > 0
+        ):
+            export_value_gate_vetoed = True
+            desired_export_limit = 0.0
+            d.export_value_gate_reason = (
+                "Enforced veto: export blocked by value gate. "
+                f"{d.export_value_gate_reason}"
+            )
+
+        d.export_limit = desired_export_limit
+
         # ---- Import limit (grid_limit_base → desired_import_limit) --
         desired_import_limit = self._desired_import_limit(
             s, morning_dump_active, demand_window_active=s.demand_window_active,
@@ -1100,6 +1118,8 @@ class SigEnergyOptimizer:
             sunrise_soc_target, within_morning_grace,
             export_blocked_for_forecast, is_evening_or_night,
         )
+        if export_value_gate_vetoed and desired_ems_mode in DISCHARGE_MODES:
+            desired_ems_mode = MODE_MAX_SELF
         d.ems_mode = desired_ems_mode
 
         # ---- Battery-only mode → cap PV max power -------------------
@@ -1167,6 +1187,8 @@ class SigEnergyOptimizer:
             solar_surplus_bypass, evening_export_boost_active,
             battery_full_safeguard_block, desired_export_limit, positive_fit_override,
         )
+        if export_value_gate_vetoed:
+            d.export_reason = "Export vetoed by value gate enforcement; export limit forced to 0.0 kW"
         d.import_reason = self._import_reason(
             s, morning_dump_active, standby_holdoff_active,
             sunrise_soc_target, desired_import_limit, pv_surplus_actual
@@ -1199,6 +1221,8 @@ class SigEnergyOptimizer:
             export_branch = "battery_full_safeguard_block"
         elif export_blocked_effective or export_forecast_guard:
             export_branch = "forecast_guard_block"
+        elif export_value_gate_vetoed:
+            export_branch = "value_gate_veto"
         elif desired_export_limit <= 0:
             export_branch = "blocked_or_zero"
 
@@ -1243,6 +1267,7 @@ class SigEnergyOptimizer:
             "export_value_gate_enforce": bool(cfg.export_value_gate_enforce),
             "export_value_gate_would_allow": d.export_value_gate_would_allow,
             "export_value_gate_would_block": d.export_value_gate_would_block,
+            "export_value_gate_vetoed": export_value_gate_vetoed,
         }
         d.trace_values = {
             "battery_soc": s.battery_soc,
@@ -1268,6 +1293,7 @@ class SigEnergyOptimizer:
             "export_min_soc": export_min_soc,
             "export_tier_limit": export_tier_limit,
             "morning_dump_limit": morning_dump_limit,
+            "desired_export_limit_pre_value_gate": desired_export_limit_pre_value_gate,
             "desired_export_limit": desired_export_limit,
             "desired_import_limit": desired_import_limit,
             "desired_ems_mode": desired_ems_mode,
