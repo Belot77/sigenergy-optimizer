@@ -1069,8 +1069,30 @@ class SigEnergyOptimizer:
         desired_export_limit_pre_value_gate = desired_export_limit
         export_value_gate_vetoed = False
         measured_pv_surplus_kw = max(s.pv_kw - s.load_kw, 0.0)
+        export_value_gate_pv_surplus_initiated_active = False
         export_value_gate_pv_surplus_carveout_active = False
         export_value_gate_export_type = "unknown"
+
+        pv_surplus_only_initiation_eligible = (
+            desired_export_limit <= 0.01
+            and not is_evening_or_night
+            and s.battery_soc >= 99.0
+            and float(s.feedin_price or 0.0) > 0.0
+            and not s.feedin_is_negative
+            and measured_pv_surplus_kw >= cfg.min_grid_transfer_kw
+            and not export_spike_active
+            and not morning_dump_active
+            and not evening_export_boost_active
+        )
+        if pv_surplus_only_initiation_eligible:
+            conservative_pv_surplus_cap_kw = min(
+                measured_pv_surplus_kw,
+                float(s.ess_max_discharge_kw or 0.0),
+                float(cfg.export_limit_low),
+            )
+            if conservative_pv_surplus_cap_kw >= cfg.min_grid_transfer_kw:
+                desired_export_limit = round(conservative_pv_surplus_cap_kw, 1)
+                export_value_gate_pv_surplus_initiated_active = True
 
         export_value_gate = self._export_value_gate_advisory(
             s,
@@ -1110,6 +1132,22 @@ class SigEnergyOptimizer:
             export_value_gate_export_type = "battery_backed"
 
         if (
+            export_value_gate_pv_surplus_initiated_active
+            and d.export_value_gate_would_block
+            and export_value_gate_block_reason == "price_below_floor"
+        ):
+            d.export_value_gate_would_allow = True
+            d.export_value_gate_would_block = False
+            d.export_value_gate_reason = (
+                "PV-surplus-only export initiated: feed-in price "
+                f"{export_value_gate_fit_cents:.0f}c/kWh is below floor {export_value_gate_floor_cents:.0f}c/kWh, "
+                f"but daytime measured PV surplus {measured_pv_surplus_kw:.1f} kW is exported without battery backing."
+            )
+            export_value_gate_export_type = "pv_surplus_only"
+
+        if (
+            not export_value_gate_pv_surplus_initiated_active
+            and
             d.export_value_gate_would_block
             and export_value_gate_block_reason == "price_below_floor"
             and not is_evening_or_night
@@ -1164,6 +1202,9 @@ class SigEnergyOptimizer:
             sunrise_soc_target, within_morning_grace,
             export_blocked_for_forecast, is_evening_or_night,
         )
+        if export_value_gate_pv_surplus_initiated_active and desired_ems_mode in DISCHARGE_MODES:
+            # Keep initiation PV-only by avoiding discharge modes that can export battery energy.
+            desired_ems_mode = MODE_MAX_SELF
         if export_value_gate_vetoed and desired_ems_mode in DISCHARGE_MODES:
             desired_ems_mode = MODE_MAX_SELF
         d.ems_mode = desired_ems_mode
@@ -1316,6 +1357,7 @@ class SigEnergyOptimizer:
             "export_value_gate_enforcement_active": value_gate_enforcement_active,
             "export_value_gate_vetoed": export_value_gate_vetoed,
             "export_value_gate_veto_active": export_value_gate_vetoed,
+            "export_value_gate_pv_surplus_initiated_active": export_value_gate_pv_surplus_initiated_active,
             "export_value_gate_pv_surplus_carveout_active": export_value_gate_pv_surplus_carveout_active,
         }
         d.trace_values = {
