@@ -219,6 +219,9 @@ def build_decision(self, s: SolarState, mode_max_self: str, discharge_modes: set
     )
     desired_export_limit_pre_value_gate = desired_export_limit
     export_value_gate_vetoed = False
+    measured_pv_surplus_kw = max(s.pv_kw - s.load_kw, 0.0)
+    export_value_gate_pv_surplus_carveout_active = False
+    export_value_gate_export_type = "unknown"
 
     export_value_gate = self._export_value_gate_advisory(
         s,
@@ -235,10 +238,54 @@ def build_decision(self, s: SolarState, mode_max_self: str, discharge_modes: set
     d.export_value_gate_would_allow = bool(export_value_gate["export_value_gate_would_allow"])
     d.export_value_gate_would_block = bool(export_value_gate["export_value_gate_would_block"])
     d.export_value_gate_reason = str(export_value_gate["export_value_gate_reason"])
+    export_value_gate_block_reason = str(export_value_gate.get("export_value_gate_block_reason", "unknown"))
+    export_value_gate_mode = str(export_value_gate.get("export_value_gate_mode", "Disabled"))
+    export_value_gate_fit_cents = float(export_value_gate.get("export_value_gate_fit_cents", float(s.feedin_price or 0.0) * 100.0))
+    export_value_gate_floor_cents = float(export_value_gate.get("export_value_gate_floor_cents", d.stored_energy_value_floor * 100.0))
+    export_value_gate_difference_cents = float(export_value_gate.get("export_value_gate_difference_cents", export_value_gate_fit_cents - export_value_gate_floor_cents))
 
     value_gate_enforcement_active = bool(
         cfg.export_value_gate_enabled and cfg.export_value_gate_enforce
     )
+
+    if desired_export_limit <= 0.01:
+        export_value_gate_export_type = "no_live_export"
+    elif (
+        not is_evening_or_night
+        and s.battery_soc >= 99.0
+        and float(s.feedin_price or 0.0) > 0.0
+        and measured_pv_surplus_kw >= cfg.min_grid_transfer_kw
+        and desired_export_limit <= (measured_pv_surplus_kw + 0.05)
+    ):
+        export_value_gate_export_type = "pv_surplus_only"
+    else:
+        export_value_gate_export_type = "battery_backed"
+
+    if (
+        d.export_value_gate_would_block
+        and export_value_gate_block_reason == "price_below_floor"
+        and not is_evening_or_night
+        and s.battery_soc >= 99.0
+        and float(s.feedin_price or 0.0) > 0.0
+        and measured_pv_surplus_kw >= cfg.min_grid_transfer_kw
+        and desired_export_limit <= (measured_pv_surplus_kw + 0.05)
+        and not export_spike_active
+        and not morning_dump_active
+        and not evening_export_boost_active
+        and d.export_surplus_soc > 0.05
+    ):
+        export_value_gate_pv_surplus_carveout_active = True
+        d.export_value_gate_would_allow = True
+        d.export_value_gate_would_block = False
+        d.export_value_gate_reason = (
+            "PV-surplus-only export allowed: feed-in price "
+            f"{export_value_gate_fit_cents:.0f}c/kWh is below floor {export_value_gate_floor_cents:.0f}c/kWh, "
+            f"but daytime surplus PV export is capped to measured surplus {measured_pv_surplus_kw:.1f} kW."
+        )
+        export_value_gate_export_type = "pv_surplus_only"
+        if value_gate_enforcement_active:
+            desired_export_limit = min(desired_export_limit, measured_pv_surplus_kw)
+
     if (
         value_gate_enforcement_active
         and d.export_value_gate_would_block
@@ -405,7 +452,10 @@ def build_decision(self, s: SolarState, mode_max_self: str, discharge_modes: set
             "export_value_gate_enforce": bool(cfg.export_value_gate_enforce),
             "export_value_gate_would_allow": d.export_value_gate_would_allow,
             "export_value_gate_would_block": d.export_value_gate_would_block,
+            "export_value_gate_enforcement_active": value_gate_enforcement_active,
             "export_value_gate_vetoed": export_value_gate_vetoed,
+            "export_value_gate_veto_active": export_value_gate_vetoed,
+            "export_value_gate_pv_surplus_carveout_active": export_value_gate_pv_surplus_carveout_active,
         }
     )
     d.trace_values.update(
@@ -414,6 +464,13 @@ def build_decision(self, s: SolarState, mode_max_self: str, discharge_modes: set
             "export_surplus_soc": d.export_surplus_soc,
             "stored_energy_value_floor": d.stored_energy_value_floor,
             "export_value_gate_reason": d.export_value_gate_reason,
+            "export_value_gate_mode": export_value_gate_mode,
+            "export_value_gate_block_reason": export_value_gate_block_reason,
+            "export_value_gate_export_type": export_value_gate_export_type,
+            "export_value_gate_fit_cents": export_value_gate_fit_cents,
+            "export_value_gate_floor_cents": export_value_gate_floor_cents,
+            "export_value_gate_difference_cents": export_value_gate_difference_cents,
+            "export_value_gate_pv_surplus_kw": measured_pv_surplus_kw,
             "desired_export_limit_pre_value_gate": desired_export_limit_pre_value_gate,
             "cfg_export_value_gate_min_floor": cfg.export_value_gate_min_floor,
             "cfg_export_value_gate_manual_import_premium": cfg.export_value_gate_manual_import_premium,

@@ -656,6 +656,8 @@ async def get_status(request: Request) -> dict[str, Any]:
     display_pv_max = _manual_float("pv_max_power_limit", s.current_pv_max_power_limit if s else (d.pv_max_power_limit if d else None))
     display_ess_charge = _manual_float("ess_charge_limit", s.current_ess_charge_limit if s else (d.ess_charge_limit if d else None))
     display_ess_discharge = _manual_float("ess_discharge_limit", s.current_ess_discharge_limit if s else (d.ess_discharge_limit if d else None))
+    trace_gates = d.trace_gates if d and isinstance(d.trace_gates, dict) else {}
+    trace_values = d.trace_values if d and isinstance(d.trace_values, dict) else {}
     return {
         "runtime_signature": getattr(opt, "runtime_signature", "unknown"),
         "morning_slow_charge_runtime_disabled": bool(
@@ -750,6 +752,16 @@ async def get_status(request: Request) -> dict[str, Any]:
         "export_value_gate_would_allow": d.export_value_gate_would_allow if d else None,
         "export_value_gate_would_block": d.export_value_gate_would_block if d else None,
         "export_value_gate_reason": d.export_value_gate_reason if d else None,
+        "export_value_gate_mode": trace_values.get("export_value_gate_mode") if d else None,
+        "export_value_gate_block_reason": trace_values.get("export_value_gate_block_reason") if d else None,
+        "export_value_gate_fit_cents": trace_values.get("export_value_gate_fit_cents") if d else None,
+        "export_value_gate_floor_cents": trace_values.get("export_value_gate_floor_cents") if d else None,
+        "export_value_gate_difference_cents": trace_values.get("export_value_gate_difference_cents") if d else None,
+        "export_value_gate_export_type": trace_values.get("export_value_gate_export_type") if d else None,
+        "export_value_gate_pv_surplus_kw": trace_values.get("export_value_gate_pv_surplus_kw") if d else None,
+        "export_value_gate_enforcement_active": trace_gates.get("export_value_gate_enforcement_active") if d else None,
+        "export_value_gate_veto_active": trace_gates.get("export_value_gate_veto_active") if d else None,
+        "export_value_gate_pv_surplus_carveout_active": trace_gates.get("export_value_gate_pv_surplus_carveout_active") if d else None,
         "last_cycle_started": opt.last_cycle_started.isoformat() if getattr(opt, "last_cycle_started", None) else None,
         "last_cycle_completed": opt.last_cycle_completed.isoformat() if getattr(opt, "last_cycle_completed", None) else None,
         "last_cycle_error": getattr(opt, "last_cycle_error", ""),

@@ -678,10 +678,20 @@ html.theme-dark .cfg-help{color:#9fb3cf}
         <div class="glance-card"><div class="glance-lbl">Control / Mode</div><div class="glance-sub"><span id="sCtrl">---</span> -- <span id="sMode">---</span></div></div>
         <div class="glance-card advisory-card">
           <div class="glance-lbl">Advisory Export Value Gate</div>
-          <div class="advisory-note">Advisory only -- does not change live control.</div>
+          <div class="advisory-note" id="advModeNote">n/a</div>
           <div class="advisory-grid">
+            <div class="advisory-item"><span class="advisory-k">Mode</span><span class="advisory-v" id="advMode">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Config</span><span class="advisory-v" id="advConfig">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Would Allow</span><span class="advisory-v" id="advWouldAllow">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Would Block</span><span class="advisory-v" id="advWouldBlock">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Enforcement Active</span><span class="advisory-v" id="advEnforceActive">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Veto Active</span><span class="advisory-v" id="advVetoActive">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Export Type</span><span class="advisory-v" id="advExportType">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">PV Carve-out</span><span class="advisory-v" id="advCarveout">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">PV Surplus kW</span><span class="advisory-v" id="advPvSurplusKw">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">FIT</span><span class="advisory-v" id="advFitCents">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Floor</span><span class="advisory-v" id="advFloorCents">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">FIT-Floor</span><span class="advisory-v" id="advDiffCents">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Protected Reserve</span><span class="advisory-v" id="advReserve">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Export Surplus</span><span class="advisory-v" id="advSurplus">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Stored Energy Floor</span><span class="advisory-v" id="advFloor">n/a</span></div>
@@ -2320,6 +2330,8 @@ function tsISO(iso){ return iso ? new Date(iso).toLocaleString('en-CA',{year:'nu
 function fmtAdvisoryBool(v){ return v === true ? 'yes' : (v === false ? 'no' : 'n/a'); }
 function fmtAdvisoryPct(v){ return Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}%` : 'n/a'; }
 function fmtAdvisoryPrice(v){ return Number.isFinite(Number(v)) ? `${fcc(Number(v))}/kWh` : 'n/a'; }
+function fmtAdvisoryCents(v){ return Number.isFinite(Number(v)) ? `${Number(v).toFixed(0)}c/kWh` : 'n/a'; }
+function fmtAdvisoryDiffCents(v){ return Number.isFinite(Number(v)) ? `${Number(v) >= 0 ? '+' : ''}${Number(v).toFixed(0)}c/kWh` : 'n/a'; }
 function fmtAdvisoryText(v){ const t = String(v ?? '').trim(); return t ? t : 'n/a'; }
 
 function setPendingBadge(id, on, status='pending', text='Pending...') {
@@ -2530,10 +2542,27 @@ function updateOverview() {
   setTextWithFlash('pvForecastTomorrow', fc(s.forecast_tomorrow,2) + ' kWh');
   setTextWithFlash('advWouldAllow', fmtAdvisoryBool(s.export_value_gate_would_allow));
   setTextWithFlash('advWouldBlock', fmtAdvisoryBool(s.export_value_gate_would_block));
+  setTextWithFlash('advMode', fmtAdvisoryText(s.export_value_gate_mode));
+  setTextWithFlash('advConfig', `enabled=${fmtAdvisoryBool(!!uiCfg?.export_value_gate_enabled)} dry_run=${fmtAdvisoryBool(!!uiCfg?.export_value_gate_dry_run)} enforce=${fmtAdvisoryBool(!!uiCfg?.export_value_gate_enforce)}`);
+  setTextWithFlash('advEnforceActive', fmtAdvisoryBool(s.export_value_gate_enforcement_active));
+  setTextWithFlash('advVetoActive', fmtAdvisoryBool(s.export_value_gate_veto_active));
+  setTextWithFlash('advExportType', fmtAdvisoryText(s.export_value_gate_export_type));
+  setTextWithFlash('advCarveout', fmtAdvisoryBool(s.export_value_gate_pv_surplus_carveout_active));
+  setTextWithFlash('advPvSurplusKw', Number.isFinite(Number(s.export_value_gate_pv_surplus_kw)) ? `${Number(s.export_value_gate_pv_surplus_kw).toFixed(1)} kW` : 'n/a');
+  setTextWithFlash('advFitCents', fmtAdvisoryCents(s.export_value_gate_fit_cents));
+  setTextWithFlash('advFloorCents', fmtAdvisoryCents(s.export_value_gate_floor_cents));
+  setTextWithFlash('advDiffCents', fmtAdvisoryDiffCents(s.export_value_gate_difference_cents));
   setTextWithFlash('advReserve', fmtAdvisoryPct(s.protected_reserve_soc));
   setTextWithFlash('advSurplus', fmtAdvisoryPct(s.export_surplus_soc));
   setTextWithFlash('advFloor', fmtAdvisoryPrice(s.stored_energy_value_floor));
   setTextWithFlash('advReason', fmtAdvisoryText(s.export_value_gate_reason));
+  const mode = String(s.export_value_gate_mode || '').toLowerCase();
+  const note = mode === 'enforcement active'
+    ? 'Enforcement active - value gate can veto live export control.'
+    : (mode === 'advisory only'
+      ? 'Advisory only - does not change live control.'
+      : 'Disabled - value gate is not participating in decisions.');
+  setTextWithFlash('advModeNote', note);
 
   setGlanceFill('card-sBat', s.battery_soc, 'rgba(34,197,94,.22)');
   setGlanceFill('card-gPV', (Number(s.pv_kw) / Math.max(1, Number(s.pv_max_power_limit) || 25)) * 100, 'rgba(132,204,22,.22)');
