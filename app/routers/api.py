@@ -761,6 +761,7 @@ async def get_status(request: Request) -> dict[str, Any]:
         "export_value_gate_pv_surplus_kw": trace_values.get("export_value_gate_pv_surplus_kw") if d else None,
         "export_value_gate_enforcement_active": trace_gates.get("export_value_gate_enforcement_active") if d else None,
         "export_value_gate_veto_active": trace_gates.get("export_value_gate_veto_active") if d else None,
+        "export_value_gate_pv_surplus_initiated_active": trace_gates.get("export_value_gate_pv_surplus_initiated_active") if d else None,
         "export_value_gate_pv_surplus_carveout_active": trace_gates.get("export_value_gate_pv_surplus_carveout_active") if d else None,
         "last_cycle_started": opt.last_cycle_started.isoformat() if getattr(opt, "last_cycle_started", None) else None,
         "last_cycle_completed": opt.last_cycle_completed.isoformat() if getattr(opt, "last_cycle_completed", None) else None,

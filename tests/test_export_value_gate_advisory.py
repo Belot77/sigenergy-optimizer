@@ -571,6 +571,165 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertEqual(baseline.ess_charge_limit, dry_run.ess_charge_limit)
         self.assertEqual(baseline.ess_discharge_limit, dry_run.ess_discharge_limit)
 
+    def test_pv_surplus_export_initiation_opens_export_from_no_live_export(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 0.0
+        state = self._state(
+            battery_soc=100.0,
+            battery_capacity_kwh=30.0,
+            available_discharge_energy_kwh=30.0,
+            current_price=0.30,
+            current_price_cents=30.0,
+            feedin_price=0.04,
+            feedin_price_cents=4.0,
+            pv_kw=3.0,
+            solar_power_now_kw=3.0,
+            load_kw=0.0,
+            forecast_tomorrow_kwh=2.0,
+            ess_max_discharge_kw=25.0,
+            price_is_actual=True,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+            sun_above_horizon=True,
+            current_ems_mode="Maximum Self Consumption",
+            current_export_limit=0.0,
+            current_import_limit=0.0,
+            current_pv_max_power_limit=25.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertLessEqual(float(decision.trace_values.get("desired_export_limit_pre_value_gate", 1.0)), 0.01)
+        self.assertTrue(bool(decision.trace_gates.get("export_value_gate_pv_surplus_initiated_active")))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_carveout_active")))
+        self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertGreater(decision.export_limit, 0.0)
+        self.assertLessEqual(
+            float(decision.export_limit),
+            float(decision.trace_values.get("export_value_gate_pv_surplus_kw", 0.0)) + 1e-6,
+        )
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_vetoed")))
+
+    def test_pv_surplus_export_initiation_does_not_open_when_battery_below_99(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 0.0
+        state = self._state(
+            battery_soc=98.0,
+            feedin_price=0.04,
+            feedin_price_cents=4.0,
+            pv_kw=3.0,
+            load_kw=0.0,
+            sun_above_horizon=True,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_initiated_active")))
+        self.assertEqual("no_live_export", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertLessEqual(decision.export_limit, 0.01)
+
+    def test_pv_surplus_export_initiation_does_not_open_on_negative_fit(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 0.0
+        state = self._state(
+            battery_soc=100.0,
+            feedin_price=-0.01,
+            feedin_price_cents=-1.0,
+            pv_kw=3.0,
+            load_kw=0.0,
+            sun_above_horizon=True,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_initiated_active")))
+        self.assertEqual("no_live_export", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertLessEqual(decision.export_limit, 0.01)
+
+    def test_pv_surplus_export_initiation_does_not_open_at_night(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        optimizer._is_evening_or_night = lambda _now: True
+        optimizer._desired_export_limit = lambda *args, **kwargs: 0.0
+        state = self._state(
+            battery_soc=100.0,
+            feedin_price=0.04,
+            feedin_price_cents=4.0,
+            pv_kw=3.0,
+            load_kw=0.0,
+            sun_above_horizon=False,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_initiated_active")))
+        self.assertEqual("no_live_export", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertLessEqual(decision.export_limit, 0.01)
+
+    def test_pv_surplus_export_initiation_does_not_open_when_surplus_zero(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 0.0
+        state = self._state(
+            battery_soc=100.0,
+            feedin_price=0.04,
+            feedin_price_cents=4.0,
+            pv_kw=1.0,
+            load_kw=1.0,
+            sun_above_horizon=True,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_initiated_active")))
+        self.assertEqual("no_live_export", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertLessEqual(decision.export_limit, 0.01)
+
     def test_manual_mode_still_pauses_optimizer_writes_when_enforcement_enabled(self) -> None:
         cfg = Settings(export_value_gate_enabled=True, export_value_gate_enforce=True)
         ha = _RecordingHA()
