@@ -15,7 +15,9 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 
 ## 3. Current version
 - **Authoritative source**: sigenergy_optimizer_addon/config.yaml (version field)
-- **Current version**: 2.3.11-haos22
+- **Current version**: 2.3.12-haos23
+- **Current release note**: 2.3.12-haos23 added visibility-only PV cap, hidden PV, and curtailment diagnostics in status/UI surfaces.
+- **Control impact**: diagnostics-only; no live inverter control behaviour changed.
 - **Note**: release.sh updates config.yaml but not README.md. README.md has been updated to match current config version.
 
 ## 4. Main features
