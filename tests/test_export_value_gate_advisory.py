@@ -752,6 +752,133 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertEqual(ha.calls, [])
         self.assertIn("optimizer writes paused", decision.outcome_reason)
 
+    def test_hidden_pv_diagnostics_populate_when_estimated_exceeds_measured(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        state = self._state(
+            battery_soc=100.0,
+            feedin_price=0.04,
+            feedin_price_cents=4.0,
+            pv_kw=1.4,
+            solar_power_now_kw=3.6,
+            load_kw=1.0,
+            sun_above_horizon=True,
+            current_pv_max_power_limit=3.0,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertGreater(float(decision.trace_values.get("estimated_pv_surplus_kw", 0.0)), float(decision.trace_values.get("measured_pv_surplus_kw", 0.0)))
+        self.assertGreater(float(decision.trace_values.get("hidden_pv_surplus_kw", 0.0)), 0.0)
+        self.assertTrue(bool(decision.trace_gates.get("hidden_pv_possible")))
+        self.assertIn("diagnostic", str(decision.trace_values.get("curtailment_diagnostic_reason", "")).lower())
+
+    def test_hidden_pv_possible_does_not_change_live_export_limit(self) -> None:
+        now_ts = datetime.now().timestamp()
+        baseline_optimizer = self._optimizer(
+            export_value_gate_enabled=False,
+            export_value_gate_dry_run=False,
+            export_value_gate_enforce=False,
+        )
+        baseline_optimizer._is_evening_or_night = lambda _now: False
+        diag_optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=False,
+        )
+        diag_optimizer._is_evening_or_night = lambda _now: False
+        state = self._state(
+            battery_soc=100.0,
+            feedin_price=0.04,
+            feedin_price_cents=4.0,
+            pv_kw=1.4,
+            solar_power_now_kw=3.6,
+            load_kw=1.0,
+            sun_above_horizon=True,
+            current_pv_max_power_limit=3.0,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+        )
+
+        baseline = baseline_optimizer._decide(state)
+        diag = diag_optimizer._decide(state)
+
+        self.assertTrue(bool(diag.trace_gates.get("hidden_pv_possible")))
+        self.assertEqual(baseline.export_limit, diag.export_limit)
+        self.assertEqual(baseline.ems_mode, diag.ems_mode)
+        self.assertEqual(baseline.import_limit, diag.import_limit)
+
+    def test_hidden_pv_diagnostics_do_not_convert_export_type_to_pv_surplus_only(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        state = self._state(
+            battery_soc=100.0,
+            feedin_price=0.08,
+            feedin_price_cents=8.0,
+            pv_kw=1.4,
+            solar_power_now_kw=3.6,
+            load_kw=1.0,
+            sun_above_horizon=True,
+            current_pv_max_power_limit=3.0,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertTrue(bool(decision.trace_gates.get("hidden_pv_possible")))
+        self.assertNotEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_initiated_active")))
+
+    def test_pv_surplus_initiation_still_requires_measured_surplus_not_estimated(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 0.0
+        state = self._state(
+            battery_soc=100.0,
+            feedin_price=0.04,
+            feedin_price_cents=4.0,
+            pv_kw=1.0,
+            solar_power_now_kw=3.5,
+            load_kw=0.9,
+            sun_above_horizon=True,
+            current_pv_max_power_limit=3.0,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertGreater(float(decision.trace_values.get("estimated_pv_surplus_kw", 0.0)), float(decision.trace_values.get("measured_pv_surplus_kw", 0.0)))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_initiated_active")))
+        self.assertEqual("no_live_export", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertLessEqual(float(decision.export_limit), 0.01)
+
 
 if __name__ == "__main__":
     unittest.main()

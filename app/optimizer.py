@@ -62,7 +62,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.11-haos22"
+_RUNTIME_SIGNATURE = "2.3.12-haos23"
 
 
 class SigEnergyOptimizer:
@@ -1223,6 +1223,55 @@ class SigEnergyOptimizer:
         )
         d.pv_max_power_limit = desired_pv_max
 
+        # ---- Visibility-only PV cap/curtailment diagnostics ---------
+        # Diagnostic signals only. These fields must not influence live control.
+        normal_pv_max_limit_kw = max(float(cfg.pv_max_power_normal or 0.0), 0.0)
+        current_pv_max_limit_kw = float(
+            s.current_pv_max_power_limit
+            if s.current_pv_max_power_limit is not None
+            else normal_pv_max_limit_kw
+        )
+        desired_pv_max_limit_kw = float(desired_pv_max)
+        measured_pv_surplus_kw = max(float(pv_surplus_actual), 0.0)
+        estimated_pv_surplus_kw = max(float(pv_surplus), 0.0)
+        hidden_pv_surplus_kw = max(estimated_pv_surplus_kw - measured_pv_surplus_kw, 0.0)
+
+        pv_cap_active = False
+        pv_cap_reason = "none"
+        if battery_only_mode:
+            pv_cap_active = True
+            pv_cap_reason = "battery_only_mode"
+        elif standby_holdoff_active:
+            pv_cap_active = True
+            pv_cap_reason = "standby_holdoff_active"
+        elif current_pv_max_limit_kw + 0.05 < normal_pv_max_limit_kw:
+            pv_cap_active = True
+            pv_cap_reason = "current_pv_max_below_normal"
+        elif desired_pv_max_limit_kw + 0.05 < normal_pv_max_limit_kw:
+            pv_cap_active = True
+            pv_cap_reason = "desired_pv_max_below_normal"
+
+        hidden_pv_possible = bool(
+            hidden_pv_surplus_kw >= 0.2
+            and estimated_pv_surplus_kw >= cfg.min_grid_transfer_kw
+            and pv_cap_active
+        )
+        pv_surplus_trusted_for_export = bool(measured_pv_surplus_kw >= cfg.min_grid_transfer_kw)
+        if hidden_pv_possible:
+            curtailment_diagnostic_reason = (
+                "Possible hidden PV: estimated surplus exceeds measured surplus while PV may be capped. "
+                "Value Gate uses measured surplus only; estimated hidden PV is diagnostic and does not bypass battery protection."
+            )
+        elif hidden_pv_surplus_kw >= 0.2:
+            curtailment_diagnostic_reason = (
+                "Estimated surplus exceeds measured surplus, but PV cap is not evident. "
+                "Surplus not proven; Value Gate uses measured surplus only."
+            )
+        else:
+            curtailment_diagnostic_reason = (
+                "No possible hidden PV detected. Value Gate uses measured surplus only."
+            )
+
         # ---- ESS charge / discharge limits --------------------------
         d.ess_charge_limit = self._desired_ess_charge_limit(
             s, desired_import_limit, morning_slow_charge_active,
@@ -1359,6 +1408,9 @@ class SigEnergyOptimizer:
             "export_value_gate_veto_active": export_value_gate_vetoed,
             "export_value_gate_pv_surplus_initiated_active": export_value_gate_pv_surplus_initiated_active,
             "export_value_gate_pv_surplus_carveout_active": export_value_gate_pv_surplus_carveout_active,
+            "pv_cap_active": pv_cap_active,
+            "hidden_pv_possible": hidden_pv_possible,
+            "pv_surplus_trusted_for_export": pv_surplus_trusted_for_export,
         }
         d.trace_values = {
             "battery_soc": s.battery_soc,
@@ -1388,6 +1440,14 @@ class SigEnergyOptimizer:
             "export_value_gate_floor_cents": export_value_gate_floor_cents,
             "export_value_gate_difference_cents": export_value_gate_difference_cents,
             "export_value_gate_pv_surplus_kw": measured_pv_surplus_kw,
+            "pv_cap_reason": pv_cap_reason,
+            "current_pv_max_limit_kw": current_pv_max_limit_kw,
+            "desired_pv_max_limit_kw": desired_pv_max_limit_kw,
+            "normal_pv_max_limit_kw": normal_pv_max_limit_kw,
+            "measured_pv_surplus_kw": measured_pv_surplus_kw,
+            "estimated_pv_surplus_kw": estimated_pv_surplus_kw,
+            "hidden_pv_surplus_kw": hidden_pv_surplus_kw,
+            "curtailment_diagnostic_reason": curtailment_diagnostic_reason,
             "export_min_soc": export_min_soc,
             "export_tier_limit": export_tier_limit,
             "morning_dump_limit": morning_dump_limit,
