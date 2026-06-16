@@ -56,6 +56,91 @@ class StateStoreTests(unittest.TestCase):
         self.assertTrue(deleted)
         self.assertIsNone(self.store.get_threshold_preset("MyPreset"))
 
+    def test_optimizer_import_topup_floor_uses_highest_actual_price_not_average(self) -> None:
+        date = "2026-06-16"
+        self.store.record_optimizer_import_topup(
+            date=date,
+            ts="2026-06-16T09:00:00+10:00",
+            import_kwh=1.0,
+            import_price=0.12,
+            price_trusted=True,
+        )
+        self.store.record_optimizer_import_topup(
+            date=date,
+            ts="2026-06-16T10:00:00+10:00",
+            import_kwh=0.5,
+            import_price=0.16,
+            price_trusted=True,
+        )
+        self.store.record_optimizer_import_topup(
+            date=date,
+            ts="2026-06-16T11:00:00+10:00",
+            import_kwh=2.0,
+            import_price=0.10,
+            price_trusted=True,
+        )
+
+        summary = self.store.optimizer_import_topup_summary(date)
+
+        self.assertAlmostEqual(summary["today_import_topup_kwh"], 3.5, places=3)
+        self.assertAlmostEqual(summary["today_highest_actual_import_price"], 0.16, places=4)
+        self.assertAlmostEqual(summary["import_cost_export_floor"], 0.16, places=4)
+        self.assertTrue(summary["import_cost_floor_trusted"])
+
+    def test_optimizer_import_topup_floor_persists_and_resets_by_day(self) -> None:
+        first_day = "2026-06-16"
+        next_day = "2026-06-17"
+        self.store.record_optimizer_import_topup(
+            date=first_day,
+            ts="2026-06-16T09:00:00+10:00",
+            import_kwh=1.0,
+            import_price=0.16,
+            price_trusted=True,
+        )
+        self.store.record_optimizer_import_topup(
+            date=next_day,
+            ts="2026-06-17T09:00:00+10:00",
+            import_kwh=0.25,
+            import_price=None,
+            price_trusted=False,
+        )
+
+        self.store.close()
+        self.store = StateStore(self.db_path)
+
+        first_summary = self.store.optimizer_import_topup_summary(first_day)
+        next_summary = self.store.optimizer_import_topup_summary(next_day)
+
+        self.assertAlmostEqual(first_summary["import_cost_export_floor"], 0.16, places=4)
+        self.assertTrue(first_summary["import_cost_floor_trusted"])
+        self.assertIsNone(next_summary["import_cost_export_floor"])
+        self.assertFalse(next_summary["import_cost_floor_trusted"])
+        self.assertTrue(next_summary["import_cost_floor_unknown"])
+
+    def test_zero_or_tiny_untrusted_import_does_not_poison_import_floor(self) -> None:
+        date = "2026-06-16"
+        self.store.record_optimizer_import_topup(
+            date=date,
+            ts="2026-06-16T09:00:00+10:00",
+            import_kwh=0.0,
+            import_price=None,
+            price_trusted=False,
+        )
+        self.store.record_optimizer_import_topup(
+            date=date,
+            ts="2026-06-16T09:01:00+10:00",
+            import_kwh=0.005,
+            import_price=None,
+            price_trusted=False,
+        )
+
+        summary = self.store.optimizer_import_topup_summary(date)
+
+        self.assertAlmostEqual(summary["today_import_topup_kwh"], 0.005, places=3)
+        self.assertIsNone(summary["import_cost_export_floor"])
+        self.assertTrue(summary["import_cost_floor_trusted"])
+        self.assertFalse(summary["import_cost_floor_unknown"])
+
 
 if __name__ == "__main__":
     unittest.main()

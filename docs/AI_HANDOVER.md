@@ -15,16 +15,16 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 
 ## 3. Current version
 - **Authoritative source**: sigenergy_optimizer_addon/config.yaml (version field)
-- **Current version**: 2.3.12-haos23
-- **Current release note**: 2.3.12-haos23 added visibility-only PV cap, hidden PV, and curtailment diagnostics in status/UI surfaces.
-- **Control impact**: diagnostics-only; no live inverter control behaviour changed.
+- **Current version**: 2.3.13-haos24
+- **Current release note**: 2.3.13-haos24 protects battery-backed/mixed export with today's highest trusted actual optimiser import/top-up price and keeps below-floor export limited to proven PV surplus after the top-off target is met.
+- **Control impact**: safety-first Value Gate control-path change; automatic battery-backed/mixed export is blocked when FiT is below the effective battery export floor.
 - **Note**: release.sh updates config.yaml but not README.md. README.md has been updated to match current config version.
 
 ## 4. Main features
 - Event-driven optimizer with 60-second heartbeat fallback.
 - Home Assistant add-on with ingress web UI and REST/WebSocket integration.
 - Amber price and feed-in driven import/export decisions.
-- Advisory-only export value gate on `main` that dry-runs a protected-reserve/value-floor check without changing live export limits by default.
+- Value Gate / actual import-cost protection on main: 2.3.13-haos24 adds a hard automatic guard that blocks automatic battery-backed or mixed export below today’s highest trusted actual optimiser import/top-up price. True PV-surplus-only export may still be allowed after the configured top-off target is met when measured surplus is proven. Manual/force modes remain exempt.
 - Solar forecast-aware battery/export planning.
 - Earnings/session tracking and reporting.
 - Manual override controls via HA helper mode select and UI.
@@ -93,7 +93,7 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Note: release.sh updates config.yaml version but not README.md, so ensure README.md is manually updated when releasing new versions.
 - Local env/test artifact files exist in the repo root but are not source of truth.
 - Daytime full-battery export now clamps to measured PV surplus (not optimistic solar-power-now headroom) when tomorrow forecast is below forecast_safety_charging × battery_capacity_kwh.
-- Advisory export value gate is calculation/status only on `main` for now: `export_value_gate_enabled=false`, `export_value_gate_dry_run=true`, and `export_value_gate_enforce=false` keep live export behavior unchanged unless a future task explicitly wires enforcement.
+- The general Value Gate flags still control stored-energy advisory/enforcement behaviour, but the actual import-cost guard is a hard automatic protection for optimiser-controlled battery-backed/mixed export. Manual force modes remain exempt, and proven PV-surplus-only export below the import-cost floor is allowed only after the top-off target is met.
 
 ## 11. Next likely work
 - Continue targeted control-path hardening with explicit test coverage.

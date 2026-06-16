@@ -705,7 +705,20 @@ html.theme-dark .cfg-help{color:#9fb3cf}
             <div class="advisory-item"><span class="advisory-k">Protected Reserve</span><span class="advisory-v" id="advReserve">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Export Surplus</span><span class="advisory-v" id="advSurplus">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Stored Energy Floor</span><span class="advisory-v" id="advFloor">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Grid Import During Top-up Window</span><span class="advisory-v" id="advTopupKwh">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Highest Import Paid</span><span class="advisory-v" id="advHighestImport">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Import Cost Floor</span><span class="advisory-v" id="advImportCostFloor">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Effective Battery Floor</span><span class="advisory-v" id="advEffectiveFloor">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Import Floor Trusted</span><span class="advisory-v" id="advImportTrusted">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Top-off Target</span><span class="advisory-v" id="advTopoffTarget">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Top-off Met</span><span class="advisory-v" id="advTopoffMet">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Import-cost Block</span><span class="advisory-v" id="advImportBlock">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Hard Import Guard Active</span><span class="advisory-v" id="advHardImportGuardActive">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Hard Import Guard Blocking</span><span class="advisory-v" id="advHardImportGuardBlocking">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Auto Below-cost Block</span><span class="advisory-v" id="advAutoBelowCostBlock">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">PV Below Floor Allowed</span><span class="advisory-v" id="advPvBelowFloor">n/a</span></div>
             <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Curtailment Diagnostic</span><span class="advisory-v" id="advCurtailDiag">n/a</span></div>
+            <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Hard Import Guard Reason</span><span class="advisory-v" id="advHardImportGuardReason">n/a</span></div>
             <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Diagnostic only</span><span class="advisory-v">estimated hidden PV does not bypass Value Gate</span></div>
             <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Reason</span><span class="advisory-v" id="advReason">n/a</span></div>
           </div>
@@ -2577,7 +2590,20 @@ function updateOverview() {
   setTextWithFlash('advReserve', fmtAdvisoryPct(s.protected_reserve_soc));
   setTextWithFlash('advSurplus', fmtAdvisoryPct(s.export_surplus_soc));
   setTextWithFlash('advFloor', fmtAdvisoryPrice(s.stored_energy_value_floor));
+  setTextWithFlash('advTopupKwh', Number.isFinite(Number(s.today_import_topup_kwh)) ? `${Number(s.today_import_topup_kwh).toFixed(3)} kWh` : 'n/a');
+  setTextWithFlash('advHighestImport', fmtAdvisoryPrice(s.today_highest_actual_import_price));
+  setTextWithFlash('advImportCostFloor', fmtAdvisoryPrice(s.import_cost_export_floor));
+  setTextWithFlash('advEffectiveFloor', fmtAdvisoryPrice(s.effective_battery_export_floor));
+  setTextWithFlash('advImportTrusted', fmtAdvisoryBool(s.import_cost_floor_trusted));
+  setTextWithFlash('advTopoffTarget', fmtAdvisoryPct(s.topoff_target_soc));
+  setTextWithFlash('advTopoffMet', fmtAdvisoryBool(s.topoff_target_met));
+  setTextWithFlash('advImportBlock', fmtAdvisoryBool(s.import_cost_floor_block_active));
+  setTextWithFlash('advHardImportGuardActive', fmtAdvisoryBool(s.actual_import_cost_guard_active));
+  setTextWithFlash('advHardImportGuardBlocking', fmtAdvisoryBool(s.actual_import_cost_guard_blocking));
+  setTextWithFlash('advAutoBelowCostBlock', fmtAdvisoryBool(s.automatic_export_blocked_below_actual_import_cost));
+  setTextWithFlash('advPvBelowFloor', fmtAdvisoryBool(s.pv_surplus_export_allowed_below_import_floor));
   setTextWithFlash('advCurtailDiag', fmtAdvisoryText(s.curtailment_diagnostic_reason));
+  setTextWithFlash('advHardImportGuardReason', fmtAdvisoryText(s.actual_import_cost_guard_reason));
   setTextWithFlash('advReason', fmtAdvisoryText(s.export_value_gate_reason));
   const mode = String(s.export_value_gate_mode || '').toLowerCase();
   const note = mode === 'enforcement active'

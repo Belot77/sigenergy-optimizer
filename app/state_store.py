@@ -36,6 +36,21 @@ class StateStore:
             )
             self._conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS optimizer_import_topup (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  date TEXT NOT NULL,
+                  ts TEXT NOT NULL,
+                  import_kwh REAL NOT NULL DEFAULT 0.0,
+                  import_price REAL,
+                  price_trusted INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_oit_date ON optimizer_import_topup(date)"
+            )
+            self._conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS audit_log (
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   ts TEXT NOT NULL,
@@ -142,6 +157,77 @@ class StateStore:
             }
             for r in rows
         ]
+
+    def record_optimizer_import_topup(
+        self,
+        *,
+        date: str,
+        ts: str,
+        import_kwh: float,
+        import_price: float | None,
+        price_trusted: bool,
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO optimizer_import_topup
+                  (date, ts, import_kwh, import_price, price_trusted)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    date,
+                    ts,
+                    max(0.0, float(import_kwh or 0.0)),
+                    import_price,
+                    1 if price_trusted else 0,
+                ),
+            )
+            self._conn.commit()
+
+    def optimizer_import_topup_summary(self, date: str) -> dict[str, Any]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT import_kwh, import_price, price_trusted
+                FROM optimizer_import_topup
+                WHERE date = ?
+                ORDER BY ts ASC
+                """,
+                (date,),
+            ).fetchall()
+
+        total_import_kwh = 0.0
+        highest_actual_import_price: float | None = None
+        has_untrusted_import = False
+
+        significant_import_kwh = 0.01
+
+        for import_kwh_raw, import_price_raw, price_trusted_raw in rows:
+            import_kwh = max(0.0, float(import_kwh_raw or 0.0))
+            total_import_kwh += import_kwh
+            if import_kwh < significant_import_kwh:
+                continue
+            price_trusted = bool(price_trusted_raw)
+            if not price_trusted:
+                has_untrusted_import = True
+                continue
+            if import_price_raw is None:
+                has_untrusted_import = True
+                continue
+            import_price = float(import_price_raw)
+            if highest_actual_import_price is None or import_price > highest_actual_import_price:
+                highest_actual_import_price = import_price
+
+        import_cost_floor_unknown = bool(has_untrusted_import)
+        import_cost_floor_trusted = not import_cost_floor_unknown
+        return {
+            "date": date,
+            "today_import_topup_kwh": round(total_import_kwh, 3),
+            "today_highest_actual_import_price": highest_actual_import_price,
+            "import_cost_export_floor": highest_actual_import_price,
+            "import_cost_floor_trusted": import_cost_floor_trusted,
+            "import_cost_floor_unknown": import_cost_floor_unknown,
+        }
 
     def daily_earnings_summary(self, date: str) -> dict[str, Any]:
         events = self.get_price_events(date=date, limit=20000)

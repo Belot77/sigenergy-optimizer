@@ -62,7 +62,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.12-haos23"
+_RUNTIME_SIGNATURE = "2.3.13-haos24"
 
 
 class SigEnergyOptimizer:
@@ -111,6 +111,8 @@ class SigEnergyOptimizer:
         self._last_tracked_export_kw: float = -999.0
         self._last_tracked_import_price: Optional[float] = None
         self._last_tracked_feedin_price: Optional[float] = None
+        self._last_optimizer_import_daily_kwh: Optional[float] = None
+        self._last_optimizer_import_track_at: Optional[datetime] = None
         db_path = os.environ.get("STATE_DB_PATH", "/data/optimizer_state.db")
         self._state_store = StateStore(db_path)
         self._earnings = EarningsService(self.ha, self.cfg, self._state_store, self._tz)
@@ -399,10 +401,12 @@ class SigEnergyOptimizer:
             await self._handle_notifications(state, decision, prev_decision, prev_state)
             await self._handle_daily_summaries(state, decision)
             self._accumulate_history(state, decision)
-            self._record_price_tracking(state)
+            self._record_price_tracking(state, decision)
 
-    def _record_price_tracking(self, s: SolarState) -> None:
+    def _record_price_tracking(self, s: SolarState, d: Decision | None = None) -> None:
         now = datetime.now(self._tz)
+        if d is not None:
+            self._record_optimizer_import_topup(s, d, now)
         now_block = int(now.timestamp()) // 300
         import_kw = max(0.0, float(s.grid_import_power_kw or 0.0))
         export_kw = max(0.0, float(s.grid_export_power_kw or 0.0))
@@ -438,6 +442,39 @@ class SigEnergyOptimizer:
         self._last_tracked_feedin_price = feedin_price
         if now.hour == 0 and now.minute < 10:
             self._state_store.purge_old_price_tracking(retain_days=60)
+
+    def _record_optimizer_import_topup(self, s: SolarState, d: Decision, now: datetime) -> None:
+        near_zero = 0.011
+        current_daily_import_kwh = max(0.0, float(s.daily_import_kwh or 0.0))
+        import_active = d.import_limit > near_zero
+
+        if not import_active:
+            self._last_optimizer_import_daily_kwh = current_daily_import_kwh
+            self._last_optimizer_import_track_at = now
+            return
+
+        previous_daily_import_kwh = self._last_optimizer_import_daily_kwh
+        previous_track_at = self._last_optimizer_import_track_at
+        import_kwh = 0.0
+
+        if previous_daily_import_kwh is not None:
+            import_kwh = max(0.0, current_daily_import_kwh - previous_daily_import_kwh)
+        if import_kwh <= 0.0 and previous_track_at is not None and s.grid_import_power_kw is not None:
+            elapsed_h = max(0.0, min((now - previous_track_at).total_seconds(), 300.0)) / 3600.0
+            import_kwh = max(0.0, float(s.grid_import_power_kw or 0.0)) * elapsed_h
+
+        self._last_optimizer_import_daily_kwh = current_daily_import_kwh
+        self._last_optimizer_import_track_at = now
+
+        price_trusted = bool(s.price_is_actual and s.current_price is not None)
+        import_price = float(s.current_price) if price_trusted else None
+        self._state_store.record_optimizer_import_topup(
+            date=now.date().isoformat(),
+            ts=now.isoformat(timespec="seconds"),
+            import_kwh=import_kwh,
+            import_price=import_price,
+            price_trusted=price_trusted,
+        )
 
     def price_tracking_events(self, date: str | None = None, limit: int = 2000) -> list[dict[str, Any]]:
         return self._state_store.get_price_events(date=date, limit=limit)
@@ -1072,17 +1109,40 @@ class SigEnergyOptimizer:
         export_value_gate_pv_surplus_initiated_active = False
         export_value_gate_pv_surplus_carveout_active = False
         export_value_gate_export_type = "unknown"
-
-        pv_surplus_only_initiation_eligible = (
-            desired_export_limit <= 0.01
-            and not is_evening_or_night
-            and s.battery_soc >= 99.0
+        pv_surplus_export_allowed_below_import_floor = False
+        topoff_target_soc = self._topoff_target_soc()
+        topoff_target_met = s.battery_soc + 1e-6 >= topoff_target_soc
+        battery_discharge_kw_for_pv_only, battery_flow_source_for_pv_only = (
+            self._battery_discharge_kw_for_pv_only_check(s)
+        )
+        pv_only_discharge_tolerance_kw = 0.1
+        pv_only_discharge_ok = (
+            battery_discharge_kw_for_pv_only is not None
+            and battery_discharge_kw_for_pv_only <= pv_only_discharge_tolerance_kw
+        )
+        pv_only_ems_safe = s.current_ems_mode not in DISCHARGE_MODES
+        pv_surplus_base_conditions = (
+            not is_evening_or_night
             and float(s.feedin_price or 0.0) > 0.0
             and not s.feedin_is_negative
             and measured_pv_surplus_kw >= cfg.min_grid_transfer_kw
             and not export_spike_active
             and not morning_dump_active
             and not evening_export_boost_active
+        )
+        pv_surplus_only_proven = (
+            pv_surplus_base_conditions
+            and topoff_target_met
+            and pv_only_discharge_ok
+            and pv_only_ems_safe
+        )
+        pv_surplus_topoff_block_active = bool(
+            pv_surplus_base_conditions and not topoff_target_met
+        )
+
+        pv_surplus_only_initiation_eligible = (
+            desired_export_limit <= 0.01
+            and pv_surplus_only_proven
         )
         if pv_surplus_only_initiation_eligible:
             conservative_pv_surplus_cap_kw = min(
@@ -1114,17 +1174,42 @@ class SigEnergyOptimizer:
         export_value_gate_fit_cents = float(export_value_gate.get("export_value_gate_fit_cents", float(s.feedin_price or 0.0) * 100.0))
         export_value_gate_floor_cents = float(export_value_gate.get("export_value_gate_floor_cents", d.stored_energy_value_floor * 100.0))
         export_value_gate_difference_cents = float(export_value_gate.get("export_value_gate_difference_cents", export_value_gate_fit_cents - export_value_gate_floor_cents))
+        today_import_topup_kwh = float(export_value_gate.get("today_import_topup_kwh", 0.0) or 0.0)
+        today_highest_actual_import_price = export_value_gate.get("today_highest_actual_import_price")
+        import_cost_export_floor = export_value_gate.get("import_cost_export_floor")
+        effective_battery_export_floor = float(export_value_gate.get("effective_battery_export_floor", d.stored_energy_value_floor) or 0.0)
+        import_cost_floor_trusted = bool(export_value_gate.get("import_cost_floor_trusted", True))
+        import_cost_floor_unknown = bool(export_value_gate.get("import_cost_floor_unknown", False))
         value_gate_enforcement_active = bool(
             cfg.export_value_gate_enabled and cfg.export_value_gate_enforce
         )
+        mode_label = str(s.sigenergy_mode or cfg.automated_option)
+        manual_exempt_modes = {
+            str(cfg.full_export_option),
+            str(cfg.full_import_option),
+            str(cfg.full_import_pv_option),
+            str(cfg.block_flow_option),
+            str(cfg.manual_option),
+        }
+        automatic_control_mode = mode_label not in manual_exempt_modes
+        actual_import_cost_guard_active = bool(
+            automatic_control_mode
+            and (import_cost_floor_unknown or today_highest_actual_import_price is not None)
+        )
+        actual_import_cost_guard_blocking = False
+        automatic_export_blocked_below_actual_import_cost = False
+        actual_import_cost_guard_reason = "inactive: no optimiser import/top-up recorded today."
 
         if desired_export_limit <= 0.01:
             export_value_gate_export_type = "no_live_export"
+            if pv_surplus_topoff_block_active:
+                d.export_value_gate_reason = (
+                    "PV-surplus export not initiated because battery SoC "
+                    f"{s.battery_soc:.1f}% is below top-off target {topoff_target_soc:.1f}%."
+                )
+                export_value_gate_block_reason = "topoff_target_not_met"
         elif (
-            not is_evening_or_night
-            and s.battery_soc >= 99.0
-            and float(s.feedin_price or 0.0) > 0.0
-            and measured_pv_surplus_kw >= cfg.min_grid_transfer_kw
+            pv_surplus_only_proven
             and desired_export_limit <= (measured_pv_surplus_kw + 0.05)
         ):
             export_value_gate_export_type = "pv_surplus_only"
@@ -1134,8 +1219,10 @@ class SigEnergyOptimizer:
         if (
             export_value_gate_pv_surplus_initiated_active
             and d.export_value_gate_would_block
-            and export_value_gate_block_reason == "price_below_floor"
+            and export_value_gate_block_reason in {"price_below_floor", "price_below_import_cost_floor", "import_cost_floor_untrusted"}
+            and pv_surplus_only_proven
         ):
+            pv_surplus_export_allowed_below_import_floor = True
             d.export_value_gate_would_allow = True
             d.export_value_gate_would_block = False
             d.export_value_gate_reason = (
@@ -1149,18 +1236,13 @@ class SigEnergyOptimizer:
             not export_value_gate_pv_surplus_initiated_active
             and
             d.export_value_gate_would_block
-            and export_value_gate_block_reason == "price_below_floor"
-            and not is_evening_or_night
-            and s.battery_soc >= 99.0
-            and float(s.feedin_price or 0.0) > 0.0
-            and measured_pv_surplus_kw >= cfg.min_grid_transfer_kw
+            and export_value_gate_block_reason in {"price_below_floor", "price_below_import_cost_floor", "import_cost_floor_untrusted"}
+            and pv_surplus_only_proven
             and desired_export_limit <= (measured_pv_surplus_kw + 0.05)
-            and not export_spike_active
-            and not morning_dump_active
-            and not evening_export_boost_active
             and d.export_surplus_soc > 0.05
         ):
             export_value_gate_pv_surplus_carveout_active = True
+            pv_surplus_export_allowed_below_import_floor = True
             d.export_value_gate_would_allow = True
             d.export_value_gate_would_block = False
             d.export_value_gate_reason = (
@@ -1172,9 +1254,70 @@ class SigEnergyOptimizer:
             if value_gate_enforcement_active:
                 desired_export_limit = min(desired_export_limit, measured_pv_surplus_kw)
 
-        if (
+        value_gate_would_veto_live = bool(
             value_gate_enforcement_active
             and d.export_value_gate_would_block
+            and desired_export_limit > 0
+        )
+
+        if not automatic_control_mode:
+            actual_import_cost_guard_reason = (
+                f"inactive: manual mode '{mode_label}' is exempt from automatic import-cost guard."
+            )
+        elif not actual_import_cost_guard_active:
+            actual_import_cost_guard_reason = "inactive: no optimiser import/top-up recorded today."
+        elif desired_export_limit <= 0.01:
+            actual_import_cost_guard_reason = "active: no automatic export requested."
+        elif export_value_gate_export_type == "pv_surplus_only" and pv_surplus_only_proven:
+            if (
+                import_cost_floor_unknown
+                or (
+                    import_cost_export_floor is not None
+                    and float(s.feedin_price or 0.0) < float(import_cost_export_floor)
+                )
+            ):
+                pv_surplus_export_allowed_below_import_floor = True
+            actual_import_cost_guard_reason = (
+                "active: export allowed because measured PV surplus-only export is proven after top-off."
+            )
+        elif import_cost_floor_unknown:
+            actual_import_cost_guard_blocking = True
+            actual_import_cost_guard_reason = (
+                "blocking: optimiser import/top-up occurred today but actual import price was unavailable or untrusted."
+            )
+        else:
+            import_cost_floor_value = (
+                float(import_cost_export_floor)
+                if import_cost_export_floor is not None
+                else None
+            )
+            if (
+                import_cost_floor_value is not None
+                and float(s.feedin_price or 0.0) + 1e-9 < import_cost_floor_value
+            ):
+                actual_import_cost_guard_blocking = True
+                automatic_export_blocked_below_actual_import_cost = True
+                actual_import_cost_guard_reason = (
+                    "blocking: automatic battery-backed/mixed export below today's highest actual import price "
+                    f"({float(s.feedin_price or 0.0) * 100.0:.0f}c/kWh < {import_cost_floor_value * 100.0:.0f}c/kWh)."
+                )
+            else:
+                actual_import_cost_guard_reason = (
+                    "active: feed-in price meets today's actual import-cost floor."
+                )
+
+        if actual_import_cost_guard_blocking and desired_export_limit > 0:
+            if value_gate_would_veto_live:
+                export_value_gate_vetoed = True
+                d.export_value_gate_reason = (
+                    "Enforced veto: export blocked by value gate. "
+                    f"{d.export_value_gate_reason}"
+                )
+            desired_export_limit = 0.0
+
+        if (
+            value_gate_would_veto_live
+            and not export_value_gate_vetoed
             and desired_export_limit > 0
         ):
             export_value_gate_vetoed = True
@@ -1205,7 +1348,16 @@ class SigEnergyOptimizer:
         if export_value_gate_pv_surplus_initiated_active and desired_ems_mode in DISCHARGE_MODES:
             # Keep initiation PV-only by avoiding discharge modes that can export battery energy.
             desired_ems_mode = MODE_MAX_SELF
+        if (
+            export_value_gate_pv_surplus_carveout_active
+            and (value_gate_enforcement_active or actual_import_cost_guard_active)
+            and desired_ems_mode in DISCHARGE_MODES
+        ):
+            # Keep below-floor PV-only carve-outs from entering a discharge/export EMS mode.
+            desired_ems_mode = MODE_MAX_SELF
         if export_value_gate_vetoed and desired_ems_mode in DISCHARGE_MODES:
+            desired_ems_mode = MODE_MAX_SELF
+        if actual_import_cost_guard_blocking and desired_ems_mode in DISCHARGE_MODES:
             desired_ems_mode = MODE_MAX_SELF
         d.ems_mode = desired_ems_mode
 
@@ -1323,7 +1475,9 @@ class SigEnergyOptimizer:
             solar_surplus_bypass, evening_export_boost_active,
             battery_full_safeguard_block, desired_export_limit, positive_fit_override,
         )
-        if export_value_gate_vetoed:
+        if actual_import_cost_guard_blocking:
+            d.export_reason = "Export vetoed by actual import-cost guard; export limit forced to 0.0 kW"
+        elif export_value_gate_vetoed:
             d.export_reason = "Export vetoed by value gate enforcement; export limit forced to 0.0 kW"
         d.import_reason = self._import_reason(
             s, morning_dump_active, standby_holdoff_active,
@@ -1357,6 +1511,8 @@ class SigEnergyOptimizer:
             export_branch = "battery_full_safeguard_block"
         elif export_blocked_effective or export_forecast_guard:
             export_branch = "forecast_guard_block"
+        elif actual_import_cost_guard_blocking:
+            export_branch = "actual_import_cost_guard"
         elif export_value_gate_vetoed:
             export_branch = "value_gate_veto"
         elif desired_export_limit <= 0:
@@ -1408,6 +1564,21 @@ class SigEnergyOptimizer:
             "export_value_gate_veto_active": export_value_gate_vetoed,
             "export_value_gate_pv_surplus_initiated_active": export_value_gate_pv_surplus_initiated_active,
             "export_value_gate_pv_surplus_carveout_active": export_value_gate_pv_surplus_carveout_active,
+            "pv_surplus_export_allowed_below_import_floor": pv_surplus_export_allowed_below_import_floor,
+            "pv_surplus_only_proven": pv_surplus_only_proven,
+            "pv_surplus_topoff_block_active": pv_surplus_topoff_block_active,
+            "topoff_target_met": topoff_target_met,
+            "import_cost_floor_trusted": import_cost_floor_trusted,
+            "import_cost_floor_unknown": import_cost_floor_unknown,
+            "import_cost_floor_block_active": export_value_gate_block_reason in {
+                "price_below_import_cost_floor",
+                "import_cost_floor_untrusted",
+            },
+            "actual_import_cost_guard_active": actual_import_cost_guard_active,
+            "actual_import_cost_guard_blocking": actual_import_cost_guard_blocking,
+            "automatic_export_blocked_below_actual_import_cost": automatic_export_blocked_below_actual_import_cost,
+            "pv_only_discharge_ok": pv_only_discharge_ok,
+            "pv_only_ems_safe": pv_only_ems_safe,
             "pv_cap_active": pv_cap_active,
             "hidden_pv_possible": hidden_pv_possible,
             "pv_surplus_trusted_for_export": pv_surplus_trusted_for_export,
@@ -1435,11 +1606,20 @@ class SigEnergyOptimizer:
             "export_value_gate_reason": d.export_value_gate_reason,
             "export_value_gate_mode": export_value_gate_mode,
             "export_value_gate_block_reason": export_value_gate_block_reason,
+            "actual_import_cost_guard_reason": actual_import_cost_guard_reason,
             "export_value_gate_export_type": export_value_gate_export_type,
             "export_value_gate_fit_cents": export_value_gate_fit_cents,
             "export_value_gate_floor_cents": export_value_gate_floor_cents,
             "export_value_gate_difference_cents": export_value_gate_difference_cents,
             "export_value_gate_pv_surplus_kw": measured_pv_surplus_kw,
+            "today_import_topup_kwh": today_import_topup_kwh,
+            "today_highest_actual_import_price": today_highest_actual_import_price,
+            "import_cost_export_floor": import_cost_export_floor,
+            "effective_battery_export_floor": effective_battery_export_floor,
+            "topoff_target_soc": topoff_target_soc,
+            "battery_discharge_kw_for_pv_only": battery_discharge_kw_for_pv_only,
+            "battery_flow_source_for_pv_only": battery_flow_source_for_pv_only,
+            "pv_only_discharge_tolerance_kw": pv_only_discharge_tolerance_kw,
             "pv_cap_reason": pv_cap_reason,
             "current_pv_max_limit_kw": current_pv_max_limit_kw,
             "desired_pv_max_limit_kw": desired_pv_max_limit_kw,
@@ -2190,6 +2370,25 @@ class SigEnergyOptimizer:
         # TODO: wire this to an explicit manual import or force-import audit signal when one exists.
         return False
 
+    def _topoff_target_soc(self) -> float:
+        configured_target = max(0.0, float(self.cfg.daytime_topup_max_soc or 0.0))
+        return min(100.0, max(99.0, configured_target))
+
+    def _battery_discharge_kw_for_pv_only_check(self, s: SolarState) -> tuple[Optional[float], str]:
+        if s.battery_power_sensor_kw is not None:
+            return max(0.0, -float(s.battery_power_sensor_kw)), "direct_battery_sensor"
+        if s.grid_import_power_kw is not None and s.grid_export_power_kw is not None:
+            measured_import = max(float(s.grid_import_power_kw), 0.0)
+            measured_export = max(float(s.grid_export_power_kw), 0.0)
+            battery_power_kw = s.pv_kw + measured_import - measured_export - s.load_kw
+            return max(0.0, -battery_power_kw), "measured_grid_flow"
+        return None, "unknown"
+
+    def _optimizer_import_topup_summary_today(self) -> dict[str, Any]:
+        return self._state_store.optimizer_import_topup_summary(
+            datetime.now(self._tz).date().isoformat()
+        )
+
     def _export_value_gate_advisory(
         self,
         s: SolarState,
@@ -2200,7 +2399,7 @@ class SigEnergyOptimizer:
         productive_solar_end_ts: Optional[float],
         now_ts: float,
         export_spike_active: bool,
-    ) -> dict[str, float | bool | str]:
+    ) -> dict[str, float | bool | str | None]:
         cfg = self.cfg
         fit_price = float(s.feedin_price or 0.0)
         fit_cents = fit_price * 100.0
@@ -2214,10 +2413,25 @@ class SigEnergyOptimizer:
 
         gate_active = bool(cfg.export_value_gate_enabled or cfg.export_value_gate_dry_run)
         if not gate_active:
+            import_summary = self._optimizer_import_topup_summary_today()
+            today_highest_actual_import_price_raw = import_summary.get("today_highest_actual_import_price")
+            today_highest_actual_import_price = (
+                float(today_highest_actual_import_price_raw)
+                if today_highest_actual_import_price_raw is not None
+                else None
+            )
+            import_cost_export_floor = today_highest_actual_import_price
+            import_cost_floor_unknown = bool(import_summary.get("import_cost_floor_unknown", False))
             return {
                 "protected_reserve_soc": 0.0,
                 "export_surplus_soc": 0.0,
                 "stored_energy_value_floor": 0.0,
+                "today_import_topup_kwh": float(import_summary.get("today_import_topup_kwh") or 0.0),
+                "today_highest_actual_import_price": today_highest_actual_import_price,
+                "import_cost_export_floor": import_cost_export_floor,
+                "effective_battery_export_floor": import_cost_export_floor or 0.0,
+                "import_cost_floor_trusted": bool(import_summary.get("import_cost_floor_trusted", True)),
+                "import_cost_floor_unknown": import_cost_floor_unknown,
                 "export_value_gate_would_allow": False,
                 "export_value_gate_would_block": False,
                 "export_value_gate_reason": "Value gate disabled.",
@@ -2278,7 +2492,22 @@ class SigEnergyOptimizer:
             + manual_import_premium
             - forecast_modifier,
         )
-        floor_cents = stored_energy_value_floor * 100.0
+        import_summary = self._optimizer_import_topup_summary_today()
+        today_import_topup_kwh = float(import_summary.get("today_import_topup_kwh") or 0.0)
+        today_highest_actual_import_price_raw = import_summary.get("today_highest_actual_import_price")
+        today_highest_actual_import_price = (
+            float(today_highest_actual_import_price_raw)
+            if today_highest_actual_import_price_raw is not None
+            else None
+        )
+        import_cost_export_floor = today_highest_actual_import_price
+        import_cost_floor_trusted = bool(import_summary.get("import_cost_floor_trusted", True))
+        import_cost_floor_unknown = bool(import_summary.get("import_cost_floor_unknown", False))
+        effective_battery_export_floor = max(
+            stored_energy_value_floor,
+            import_cost_export_floor if import_cost_export_floor is not None else 0.0,
+        )
+        floor_cents = effective_battery_export_floor * 100.0
         difference_cents = fit_cents - floor_cents
 
         desired_export_active = desired_export_limit > 0.01
@@ -2286,94 +2515,118 @@ class SigEnergyOptimizer:
         if spike_override_threshold <= 0:
             spike_override_threshold = float(cfg.export_spike_threshold)
 
-        if not desired_export_active:
+        def _payload(
+            *,
+            would_allow: bool,
+            would_block: bool,
+            reason: str,
+            block_reason: str,
+        ) -> dict[str, float | bool | str | None]:
             return {
                 "protected_reserve_soc": protected_reserve_soc,
                 "export_surplus_soc": export_surplus_soc,
                 "stored_energy_value_floor": stored_energy_value_floor,
-                "export_value_gate_would_allow": False,
-                "export_value_gate_would_block": False,
-                "export_value_gate_reason": "No live export is active, so value gate does not apply.",
-                "export_value_gate_block_reason": "inactive",
+                "today_import_topup_kwh": today_import_topup_kwh,
+                "today_highest_actual_import_price": today_highest_actual_import_price,
+                "import_cost_export_floor": import_cost_export_floor,
+                "effective_battery_export_floor": effective_battery_export_floor,
+                "import_cost_floor_trusted": import_cost_floor_trusted,
+                "import_cost_floor_unknown": import_cost_floor_unknown,
+                "export_value_gate_would_allow": would_allow,
+                "export_value_gate_would_block": would_block,
+                "export_value_gate_reason": reason,
+                "export_value_gate_block_reason": block_reason,
                 "export_value_gate_mode": _mode_text(),
                 "export_value_gate_fit_cents": fit_cents,
                 "export_value_gate_floor_cents": floor_cents,
                 "export_value_gate_difference_cents": difference_cents,
             }
 
+        if not desired_export_active:
+            return _payload(
+                would_allow=False,
+                would_block=False,
+                reason="No live export is active, so value gate does not apply.",
+                block_reason="inactive",
+            )
+
         if export_surplus_soc <= 0.05:
-            return {
-                "protected_reserve_soc": protected_reserve_soc,
-                "export_surplus_soc": export_surplus_soc,
-                "stored_energy_value_floor": stored_energy_value_floor,
-                "export_value_gate_would_allow": False,
-                "export_value_gate_would_block": True,
-                "export_value_gate_reason": (
+            return _payload(
+                would_allow=False,
+                would_block=True,
+                reason=(
                     "Would block export because battery is at or below protected reserve "
                     f"{protected_reserve_soc:.1f}% for evening/load until useful solar."
                 ),
-                "export_value_gate_block_reason": "protected_reserve",
-                "export_value_gate_mode": _mode_text(),
-                "export_value_gate_fit_cents": fit_cents,
-                "export_value_gate_floor_cents": floor_cents,
-                "export_value_gate_difference_cents": difference_cents,
-            }
+                block_reason="protected_reserve",
+            )
 
-        if export_spike_active and spike_override_threshold > 0 and float(s.feedin_price or 0.0) >= spike_override_threshold:
-            return {
-                "protected_reserve_soc": protected_reserve_soc,
-                "export_surplus_soc": export_surplus_soc,
-                "stored_energy_value_floor": stored_energy_value_floor,
-                "export_value_gate_would_allow": True,
-                "export_value_gate_would_block": False,
-                "export_value_gate_reason": (
+        if import_cost_floor_unknown:
+            return _payload(
+                would_allow=False,
+                would_block=True,
+                reason=(
+                    "Would block export because optimizer import/top-up occurred today "
+                    "while actual import price was unavailable or untrusted."
+                ),
+                block_reason="import_cost_floor_untrusted",
+            )
+
+        if (
+            export_spike_active
+            and spike_override_threshold > 0
+            and float(s.feedin_price or 0.0) >= spike_override_threshold
+            and float(s.feedin_price or 0.0) >= effective_battery_export_floor
+        ):
+            return _payload(
+                would_allow=True,
+                would_block=False,
+                reason=(
                     "Would allow export because spike feed-in price "
                     f"{fit_cents:.0f}c/kWh exceeds override {(spike_override_threshold * 100.0):.0f}c/kWh "
+                    f"and meets effective battery export floor {floor_cents:.0f}c/kWh "
                     f"with {export_surplus_soc:.1f}% above protected reserve."
                 ),
-                "export_value_gate_block_reason": "spike_override",
-                "export_value_gate_mode": _mode_text(),
-                "export_value_gate_fit_cents": fit_cents,
-                "export_value_gate_floor_cents": floor_cents,
-                "export_value_gate_difference_cents": difference_cents,
-            }
+                block_reason="spike_override",
+            )
 
-        if float(s.feedin_price or 0.0) >= stored_energy_value_floor:
-            return {
-                "protected_reserve_soc": protected_reserve_soc,
-                "export_surplus_soc": export_surplus_soc,
-                "stored_energy_value_floor": stored_energy_value_floor,
-                "export_value_gate_would_allow": True,
-                "export_value_gate_would_block": False,
-                "export_value_gate_reason": (
+        if float(s.feedin_price or 0.0) >= effective_battery_export_floor:
+            return _payload(
+                would_allow=True,
+                would_block=False,
+                reason=(
                     "Would allow export because feed-in price "
-                    f"{fit_cents:.0f}c/kWh meets stored energy value floor {floor_cents:.0f}c/kWh "
+                    f"{fit_cents:.0f}c/kWh meets effective battery export floor {floor_cents:.0f}c/kWh "
                     f"with {export_surplus_soc:.1f}% above protected reserve."
                 ),
-                "export_value_gate_block_reason": "price_meets_floor",
-                "export_value_gate_mode": _mode_text(),
-                "export_value_gate_fit_cents": fit_cents,
-                "export_value_gate_floor_cents": floor_cents,
-                "export_value_gate_difference_cents": difference_cents,
-            }
+                block_reason="price_meets_floor",
+            )
 
-        return {
-            "protected_reserve_soc": protected_reserve_soc,
-            "export_surplus_soc": export_surplus_soc,
-            "stored_energy_value_floor": stored_energy_value_floor,
-            "export_value_gate_would_allow": False,
-            "export_value_gate_would_block": True,
-            "export_value_gate_reason": (
+        if (
+            import_cost_export_floor is not None
+            and float(s.feedin_price or 0.0) < import_cost_export_floor
+        ):
+            return _payload(
+                would_allow=False,
+                would_block=True,
+                reason=(
+                    "Would block export because feed-in price "
+                    f"{fit_cents:.0f}c/kWh is below today's highest actual optimizer import cost "
+                    f"{(import_cost_export_floor * 100.0):.0f}c/kWh."
+                ),
+                block_reason="price_below_import_cost_floor",
+            )
+
+        return _payload(
+            would_allow=False,
+            would_block=True,
+            reason=(
                 "Would block export because feed-in price "
-                f"{fit_cents:.0f}c/kWh is below stored energy value floor {floor_cents:.0f}c/kWh "
+                f"{fit_cents:.0f}c/kWh is below effective battery export floor {floor_cents:.0f}c/kWh "
                 "and battery is protected for evening/load until useful solar."
             ),
-            "export_value_gate_block_reason": "price_below_floor",
-            "export_value_gate_mode": _mode_text(),
-            "export_value_gate_fit_cents": fit_cents,
-            "export_value_gate_floor_cents": floor_cents,
-            "export_value_gate_difference_cents": difference_cents,
-        }
+            block_reason="price_below_floor",
+        )
 
     def _negative_price_forecast_ahead(self, s: SolarState, now_ts: float) -> bool:
         cutoff = now_ts + self.cfg.negative_price_forecast_lookahead_hours * 3600
