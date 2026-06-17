@@ -1,6 +1,11 @@
 # Changelog
 
 ## 2026-06-17
+- Bumped add-on buildstamp, add-on metadata, runtime signature, FastAPI metadata, and docs to 2.3.15-haos26 as a cache-bust/metadata release only.
+- This forces the Home Assistant add-on image to rebuild from current `main` so the container source commit matches the current code.
+- No optimiser control logic changed from 2.3.14-haos25.
+
+## 2026-06-17
 - Added conservative estimated-PV-surplus initiation for the PV-surplus-only export path, gated by `PV_SURPLUS_ESTIMATED_INIT_ENABLED`, so a full battery can open a small probe export when measured PV is curtailed to house load but Solcast/current potential shows surplus.
 - Bumped add-on and app version surfaces to 2.3.14-haos25 for the estimated PV-surplus initiation rollout.
 

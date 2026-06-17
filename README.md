@@ -237,7 +237,9 @@ Uninstall:
 
 ## Version
 
-2.3.14-haos25
+2.3.15-haos26
+
+2.3.15-haos26 is a cache-bust/metadata release only. It bumps the add-on buildstamp so Home Assistant rebuilds the image from current `main` and the container source commit matches the current code. No optimiser control logic changed from 2.3.14-haos25.
 
 ## Maintainer Release Flow
 

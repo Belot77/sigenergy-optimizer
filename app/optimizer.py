@@ -62,7 +62,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.14-haos25"
+_RUNTIME_SIGNATURE = "2.3.15-haos26"
 
 
 class SigEnergyOptimizer:

@@ -16,16 +16,16 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 
 ## 3. Current version
 - **Authoritative source**: sigenergy_optimizer_addon/config.yaml (version field)
-- **Current version**: 2.3.14-haos25
-- **Current release note**: 2.3.14-haos25 keeps the 2.3.13 hard actual import-cost guard and adds `PV_SURPLUS_ESTIMATED_INIT_ENABLED`, allowing a conservative estimated-surplus probe when measured PV is curtailed to house load.
-- **Control impact**: safety-first Value Gate control-path change; automatic battery-backed/mixed export is blocked when FiT is below the effective battery export floor.
+- **Current version**: 2.3.15-haos26
+- **Current release note**: 2.3.15-haos26 is a cache-bust/metadata release only. It bumps the add-on buildstamp so the Home Assistant add-on image rebuilds from current `main` and the container source commit matches the current code.
+- **Control impact**: no optimiser control logic changed from 2.3.14-haos25. The 2.3.14 behaviour keeps the 2.3.13 hard actual import-cost guard and adds `PV_SURPLUS_ESTIMATED_INIT_ENABLED`, allowing a conservative estimated-surplus probe when measured PV is curtailed to house load.
 - **Note**: release.sh updates config.yaml but not README.md. README.md has been updated to match current config version.
 
 ## 4. Main features
 - Event-driven optimizer with 60-second heartbeat fallback.
 - Home Assistant add-on with ingress web UI and REST/WebSocket integration.
 - Amber price and feed-in driven import/export decisions.
-- Value Gate / actual import-cost protection on main: 2.3.14-haos25 includes the hard automatic guard from 2.3.13 that blocks automatic battery-backed or mixed export below today's highest trusted actual optimiser import/top-up price. True PV-surplus-only export may still be allowed after the configured top-off target is met when measured surplus is proven; a conservative estimated-surplus initiation probe can open a small capped export when measured PV is self-curtailed to house load. Manual/force modes remain exempt.
+- Value Gate / actual import-cost protection on main: 2.3.15-haos26 is cache-bust/metadata only; live control behaviour remains the 2.3.14-haos25 behaviour. That includes the hard automatic guard from 2.3.13 that blocks automatic battery-backed or mixed export below today's highest trusted actual optimiser import/top-up price. True PV-surplus-only export may still be allowed after the configured top-off target is met when measured surplus is proven; a conservative estimated-surplus initiation probe can open a small capped export when measured PV is self-curtailed to house load. Manual/force modes remain exempt.
 - Solar forecast-aware battery/export planning.
 - Earnings/session tracking and reporting.
 - Manual override controls via HA helper mode select and UI.
