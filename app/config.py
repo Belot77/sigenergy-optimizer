@@ -154,6 +154,7 @@ class Settings(BaseSettings):
     export_value_gate_safety_margin: float = Field(0.02, env="EXPORT_VALUE_GATE_SAFETY_MARGIN")
     export_value_gate_spike_override_threshold: float = Field(0.0, env="EXPORT_VALUE_GATE_SPIKE_OVERRIDE_THRESHOLD")
     export_value_gate_useful_solar_offset_hours: float = Field(1.75, env="EXPORT_VALUE_GATE_USEFUL_SOLAR_OFFSET_HOURS")
+    pv_surplus_estimated_init_enabled: bool = Field(True, env="PV_SURPLUS_ESTIMATED_INIT_ENABLED")
 
     # ------------------------------------------------------------------
     # Import pricing thresholds and caps

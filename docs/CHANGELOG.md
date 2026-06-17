@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-17
+- Added conservative estimated-PV-surplus initiation for the PV-surplus-only export path, gated by `PV_SURPLUS_ESTIMATED_INIT_ENABLED`, so a full battery can open a small probe export when measured PV is curtailed to house load but Solcast/current potential shows surplus.
+- Bumped add-on and app version surfaces to 2.3.14-haos25 for the estimated PV-surplus initiation rollout.
+
 ## 2026-06-16
 - Added optimiser import/top-up tracking for today's imported kWh and highest trusted actual import price, using the highest actual price as the import-cost export floor rather than a weighted average.
 - Updated the Value Gate effective battery export floor to `max(stored-energy floor, today highest actual optimiser import price)` and to block battery-backed/mixed export when the actual import-cost floor is unknown or the FiT is below that floor.

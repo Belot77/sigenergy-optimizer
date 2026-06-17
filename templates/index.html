@@ -687,10 +687,15 @@ html.theme-dark .cfg-help{color:#9fb3cf}
             <div class="advisory-item"><span class="advisory-k">Enforcement Active</span><span class="advisory-v" id="advEnforceActive">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Veto Active</span><span class="advisory-v" id="advVetoActive">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Export Type</span><span class="advisory-v" id="advExportType">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">PV Init Source</span><span class="advisory-v" id="advPvInitSource">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Estimated Init Enabled</span><span class="advisory-v" id="advEstimatedInitEnabled">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Estimated Init Active</span><span class="advisory-v" id="advEstimatedInitActive">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">PV Carve-out</span><span class="advisory-v" id="advCarveout">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">PV Cap / Limit Diagnostic</span><span class="advisory-v" id="advPvCapActive">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">PV Cap Reason</span><span class="advisory-v" id="advPvCapReason">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">PV Surplus kW</span><span class="advisory-v" id="advPvSurplusKw">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Solar Potential</span><span class="advisory-v" id="advSolarPotential">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Probe Export Cap</span><span class="advisory-v" id="advProbeExportCap">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Current PV Max</span><span class="advisory-v" id="advCurrentPvMax">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Desired PV Max</span><span class="advisory-v" id="advDesiredPvMax">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Normal PV Max</span><span class="advisory-v" id="advNormalPvMax">n/a</span></div>
@@ -719,7 +724,8 @@ html.theme-dark .cfg-help{color:#9fb3cf}
             <div class="advisory-item"><span class="advisory-k">PV Below Floor Allowed</span><span class="advisory-v" id="advPvBelowFloor">n/a</span></div>
             <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Curtailment Diagnostic</span><span class="advisory-v" id="advCurtailDiag">n/a</span></div>
             <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Hard Import Guard Reason</span><span class="advisory-v" id="advHardImportGuardReason">n/a</span></div>
-            <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Diagnostic only</span><span class="advisory-v">estimated hidden PV does not bypass Value Gate</span></div>
+            <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Estimated Init Reason</span><span class="advisory-v" id="advEstimatedInitReason">n/a</span></div>
+            <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Estimated Probe</span><span class="advisory-v">estimated initiation is capped and guarded</span></div>
             <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Reason</span><span class="advisory-v" id="advReason">n/a</span></div>
           </div>
         </div>
@@ -2572,10 +2578,15 @@ function updateOverview() {
   setTextWithFlash('advEnforceActive', fmtAdvisoryBool(s.export_value_gate_enforcement_active));
   setTextWithFlash('advVetoActive', fmtAdvisoryBool(s.export_value_gate_veto_active));
   setTextWithFlash('advExportType', fmtAdvisoryText(s.export_value_gate_export_type));
+  setTextWithFlash('advPvInitSource', fmtAdvisoryText(s.pv_surplus_initiation_source));
+  setTextWithFlash('advEstimatedInitEnabled', fmtAdvisoryBool(s.pv_surplus_estimated_init_enabled));
+  setTextWithFlash('advEstimatedInitActive', fmtAdvisoryBool(s.pv_surplus_estimated_init_active));
   setTextWithFlash('advCarveout', fmtAdvisoryBool(s.export_value_gate_pv_surplus_carveout_active));
   setTextWithFlash('advPvCapActive', fmtAdvisoryBool(s.pv_cap_active));
   setTextWithFlash('advPvCapReason', fmtAdvisoryText(s.pv_cap_reason));
   setTextWithFlash('advPvSurplusKw', Number.isFinite(Number(s.export_value_gate_pv_surplus_kw)) ? `${Number(s.export_value_gate_pv_surplus_kw).toFixed(1)} kW` : 'n/a');
+  setTextWithFlash('advSolarPotential', Number.isFinite(Number(s.solar_potential_kw)) ? `${Number(s.solar_potential_kw).toFixed(1)} kW` : 'n/a');
+  setTextWithFlash('advProbeExportCap', Number.isFinite(Number(s.pv_surplus_probe_export_cap_kw)) ? `${Number(s.pv_surplus_probe_export_cap_kw).toFixed(1)} kW` : 'n/a');
   setTextWithFlash('advCurrentPvMax', Number.isFinite(Number(s.current_pv_max_limit_kw)) ? `${Number(s.current_pv_max_limit_kw).toFixed(1)} kW` : 'n/a');
   setTextWithFlash('advDesiredPvMax', Number.isFinite(Number(s.desired_pv_max_limit_kw)) ? `${Number(s.desired_pv_max_limit_kw).toFixed(1)} kW` : 'n/a');
   setTextWithFlash('advNormalPvMax', Number.isFinite(Number(s.normal_pv_max_limit_kw)) ? `${Number(s.normal_pv_max_limit_kw).toFixed(1)} kW` : 'n/a');
@@ -2604,6 +2615,7 @@ function updateOverview() {
   setTextWithFlash('advPvBelowFloor', fmtAdvisoryBool(s.pv_surplus_export_allowed_below_import_floor));
   setTextWithFlash('advCurtailDiag', fmtAdvisoryText(s.curtailment_diagnostic_reason));
   setTextWithFlash('advHardImportGuardReason', fmtAdvisoryText(s.actual_import_cost_guard_reason));
+  setTextWithFlash('advEstimatedInitReason', fmtAdvisoryText(s.pv_surplus_estimated_init_reason));
   setTextWithFlash('advReason', fmtAdvisoryText(s.export_value_gate_reason));
   const mode = String(s.export_value_gate_mode || '').toLowerCase();
   const note = mode === 'enforcement active'

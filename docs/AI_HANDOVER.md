@@ -15,8 +15,8 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 
 ## 3. Current version
 - **Authoritative source**: sigenergy_optimizer_addon/config.yaml (version field)
-- **Current version**: 2.3.13-haos24
-- **Current release note**: 2.3.13-haos24 protects battery-backed/mixed export with today's highest trusted actual optimiser import/top-up price and keeps below-floor export limited to proven PV surplus after the top-off target is met.
+- **Current version**: 2.3.14-haos25
+- **Current release note**: 2.3.14-haos25 keeps the 2.3.13 hard actual import-cost guard and adds `PV_SURPLUS_ESTIMATED_INIT_ENABLED`, allowing a conservative estimated-surplus probe when measured PV is curtailed to house load.
 - **Control impact**: safety-first Value Gate control-path change; automatic battery-backed/mixed export is blocked when FiT is below the effective battery export floor.
 - **Note**: release.sh updates config.yaml but not README.md. README.md has been updated to match current config version.
 
@@ -24,7 +24,7 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Event-driven optimizer with 60-second heartbeat fallback.
 - Home Assistant add-on with ingress web UI and REST/WebSocket integration.
 - Amber price and feed-in driven import/export decisions.
-- Value Gate / actual import-cost protection on main: 2.3.13-haos24 adds a hard automatic guard that blocks automatic battery-backed or mixed export below today’s highest trusted actual optimiser import/top-up price. True PV-surplus-only export may still be allowed after the configured top-off target is met when measured surplus is proven. Manual/force modes remain exempt.
+- Value Gate / actual import-cost protection on main: 2.3.14-haos25 includes the hard automatic guard from 2.3.13 that blocks automatic battery-backed or mixed export below today's highest trusted actual optimiser import/top-up price. True PV-surplus-only export may still be allowed after the configured top-off target is met when measured surplus is proven; a conservative estimated-surplus initiation probe can open a small capped export when measured PV is self-curtailed to house load. Manual/force modes remain exempt.
 - Solar forecast-aware battery/export planning.
 - Earnings/session tracking and reporting.
 - Manual override controls via HA helper mode select and UI.
@@ -93,7 +93,7 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Note: release.sh updates config.yaml version but not README.md, so ensure README.md is manually updated when releasing new versions.
 - Local env/test artifact files exist in the repo root but are not source of truth.
 - Daytime full-battery export now clamps to measured PV surplus (not optimistic solar-power-now headroom) when tomorrow forecast is below forecast_safety_charging × battery_capacity_kwh.
-- The general Value Gate flags still control stored-energy advisory/enforcement behaviour, but the actual import-cost guard is a hard automatic protection for optimiser-controlled battery-backed/mixed export. Manual force modes remain exempt, and proven PV-surplus-only export below the import-cost floor is allowed only after the top-off target is met.
+- The general Value Gate flags still control stored-energy advisory/enforcement behaviour, but the actual import-cost guard is a hard automatic protection for optimiser-controlled battery-backed/mixed export. Manual force modes remain exempt, and PV-surplus-only export below the import-cost floor is allowed only after the top-off target is met and export is safely capped to measured surplus or the conservative estimated-surplus initiation probe.
 
 ## 11. Next likely work
 - Continue targeted control-path hardening with explicit test coverage.
