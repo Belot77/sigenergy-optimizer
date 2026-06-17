@@ -8,6 +8,7 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Add-on version/package metadata: sigenergy_optimizer_addon/config.yaml
 - Main runtime configuration and entity assumptions: app/config.py
 - Core optimizer logic: app/optimizer.py
+- Control-map/audit reference: docs/CONTROL_MAP.md
 - API/UI entry points: app/main.py and app/routers/
 - Forecast, earnings, and persistence helpers: app/forecast_utils.py, app/earnings.py, app/state_store.py
 - Tests: tests/
