@@ -279,6 +279,8 @@ select:focus,input:focus{border-color:#276749}
 .cfg-help{font-size:11px;line-height:1.35;color:#64748b;margin-top:1px}
 .cfg-entity-badge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;font-size:10px;font-weight:700;letter-spacing:0;text-transform:none}
 .cfg-hint{font-size:11px;color:#475569;margin:0 0 10px 0;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;padding:8px 10px}
+.cfg-backup{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;flex-wrap:wrap}
+.cfg-backup-note{font-size:11px;line-height:1.4;color:#475569;flex:1 1 260px}
 .entity-picker{position:relative}
 .entity-picker-main{display:flex;align-items:center;gap:6px}
 .entity-picker-value{flex:1}
@@ -395,6 +397,8 @@ html.theme-dark .action-msg.ok{color:#86efac}
 html.theme-dark .action-msg.warn{color:#fcd34d}
 html.theme-dark .action-msg.err{color:#fca5a5}
 html.theme-dark .cfg-hint,html.theme-dark .preview-card,html.theme-dark .audit-empty{background:#0f172a;border-color:#3a4c6a;color:#cfe0f6}
+html.theme-dark .cfg-backup{background:#0f172a;border-color:#3a4c6a}
+html.theme-dark .cfg-backup-note{color:#cfe0f6}
 html.theme-dark .preview-title{color:#93c5fd}
 html.theme-dark .preview-cell{background:#101b2d;border-color:#30415d}
 html.theme-dark .stale-banner{background:#4a2412;border-color:#9a3412;color:#ffddb5}
@@ -4282,6 +4286,76 @@ function readConfigFieldValue(sectionKey, field) {
   return { key, value: el.value ?? '' };
 }
 
+const CONFIG_BACKUP_REDACT_KEY_PARTS = ['token', 'api_key', 'password', 'secret', 'bearer', 'authorization', 'ha_token'];
+
+function isSensitiveConfigBackupKey(key) {
+  const k = String(key || '').toLowerCase();
+  return CONFIG_BACKUP_REDACT_KEY_PARTS.some((part) => k.includes(part));
+}
+
+function redactConfigBackupValue(value, key = '') {
+  if (isSensitiveConfigBackupKey(key)) return '[REDACTED]';
+  if (Array.isArray(value)) return value.map((item) => redactConfigBackupValue(item));
+  if (value && typeof value === 'object') {
+    const redacted = {};
+    for (const [childKey, childValue] of Object.entries(value)) {
+      redacted[childKey] = redactConfigBackupValue(childValue, childKey);
+    }
+    return redacted;
+  }
+  return value;
+}
+
+function configBackupTimestamp(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+}
+
+async function downloadConfigBackup(btn) {
+  const originalText = btn?.textContent || 'Download Config Backup';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Preparing...';
+  }
+  try {
+    const cfg = await getJson('api/config');
+    let status = {};
+    try {
+      status = await getJson('api/status');
+    } catch (_) {
+      status = {};
+    }
+    const runtimeSignature = status?.runtime_signature || null;
+    const backup = {
+      exported_at: new Date().toISOString(),
+      config: redactConfigBackupValue(cfg),
+    };
+    if (runtimeSignature) {
+      backup.app_version = runtimeSignature;
+      backup.runtime_signature = runtimeSignature;
+    }
+    if (status?.source_commit) backup.source_commit = status.source_commit;
+
+    const blob = new Blob([`${JSON.stringify(backup, null, 2)}\n`], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `sigenergy_optimizer_config_${configBackupTimestamp()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    console.error('downloadConfigBackup:', e);
+    alert(`Config backup failed: ${e?.message || e}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+}
+
 async function loadConfig() {
   const el = document.getElementById('cfgContent');
   try {
@@ -4289,7 +4363,11 @@ async function loadConfig() {
     uiCfg = cfg;
     syncThresholdInputsFromConfig(cfg);
     const sectionsHtml = _CONFIG_SECTIONS.map((section, index) => renderConfigSection(cfg, section, index === 0)).join('');
-    el.innerHTML = `<div class="cfg-stack"><div class="cfg-hint">Entity fields are now searchable. Click a field marked <strong>searchable</strong>, then type part of the entity id or name.</div>${sectionsHtml}</div>`;
+    const backupHtml = `<div class="cfg-backup">
+      <button class="hbtn" type="button" onclick="downloadConfigBackup(this)">Download Config Backup</button>
+      <div class="cfg-backup-note">Downloads a backup of the current Config settings. Keep private if it contains local URLs or helper names.</div>
+    </div>`;
+    el.innerHTML = `<div class="cfg-stack">${backupHtml}<div class="cfg-hint">Entity fields are now searchable. Click a field marked <strong>searchable</strong>, then type part of the entity id or name.</div>${sectionsHtml}</div>`;
     setupConfigEntityAutocomplete();
     await loadPresets();
     updateScenarioComparison();
