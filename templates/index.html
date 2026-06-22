@@ -4287,9 +4287,15 @@ function readConfigFieldValue(sectionKey, field) {
 }
 
 const CONFIG_BACKUP_REDACT_KEY_PARTS = ['token', 'api_key', 'password', 'secret', 'bearer', 'authorization', 'ha_token'];
+const CONFIG_BACKUP_REDACT_ALLOW_KEYS = new Set([
+  'allow_loopback_without_api_key',
+  'require_api_key_for_all_mutations',
+  'require_api_key_for_config_read',
+]);
 
 function isSensitiveConfigBackupKey(key) {
   const k = String(key || '').toLowerCase();
+  if (CONFIG_BACKUP_REDACT_ALLOW_KEYS.has(k)) return false;
   return CONFIG_BACKUP_REDACT_KEY_PARTS.some((part) => k.includes(part));
 }
 
