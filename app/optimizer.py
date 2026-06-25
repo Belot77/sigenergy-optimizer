@@ -23,7 +23,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings
 from .earnings import EarningsService
-from .forecast_utils import extract_forecast_entries, forecast_entry_time, forecast_entry_value
+from .forecast_utils import (
+    extract_forecast_entries,
+    forecast_entity_candidates,
+    forecast_entry_time,
+    forecast_entry_value,
+)
 from .ha_client import HAClient
 from .models import Decision, SolarState
 from .state_store import StateStore
@@ -62,7 +67,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.17-haos28"
+_RUNTIME_SIGNATURE = "2.3.18-haos29"
 
 
 class SigEnergyOptimizer:
@@ -78,6 +83,7 @@ class SigEnergyOptimizer:
         self._prev_demand_window: bool = False
         self._config_time_warnings: list[str] = self._validate_time_config()
         self._sensor_parse_warning_cache: dict[tuple[str, str], float] = {}
+        self._forecast_parse_warning_cache: dict[tuple[str, str, str, str, str], float] = {}
         self._holdoff_entry_floor: Optional[float] = None  # Stable SoC floor for holdoff window
         self._last_hw_charge_cap_kw: Optional[float] = None
         self._last_hw_discharge_cap_kw: Optional[float] = None
@@ -263,6 +269,46 @@ class SigEnergyOptimizer:
             self._sensor_parse_warning_cache = dict(newest)
 
         logger.warning("%s sensor %s returned non-numeric state %r; using safe defaults", label, entity_id, raw_value)
+
+    def _warn_forecast_issue(self, label: str, diagnostics: dict[str, Any]) -> None:
+        if not diagnostics or diagnostics.get("selected_entity"):
+            return
+
+        entities = [str(v) for v in diagnostics.get("entities_tried", []) if v]
+        attributes = [str(v) for v in diagnostics.get("attributes_tried", []) if v]
+        time_keys = [str(v) for v in diagnostics.get("time_keys_tried", []) if v]
+        value_keys = [str(v) for v in diagnostics.get("value_keys_tried", []) if v]
+        cache_key = (
+            label,
+            "|".join(entities),
+            "|".join(attributes),
+            "|".join(time_keys),
+            "|".join(value_keys),
+        )
+        now_ts = datetime.now().timestamp()
+        last_ts = self._forecast_parse_warning_cache.get(cache_key)
+        if last_ts is not None and now_ts - last_ts < 900:
+            return
+
+        cutoff = now_ts - 3600
+        if len(self._forecast_parse_warning_cache) > 128:
+            self._forecast_parse_warning_cache = {
+                k: ts for k, ts in self._forecast_parse_warning_cache.items() if ts >= cutoff
+            }
+        self._forecast_parse_warning_cache[cache_key] = now_ts
+
+        logger.warning(
+            "%s parsing failed; entities tried=%s; attributes tried=%s; time keys tried=%s; "
+            "value keys tried=%s; missing entities=%s; unavailable entities=%s; reason=%s",
+            label,
+            entities,
+            attributes,
+            time_keys,
+            value_keys,
+            diagnostics.get("missing_entities", []),
+            diagnostics.get("unavailable_entities", []),
+            diagnostics.get("failure_reason", "no compatible forecast entries found"),
+        )
 
     def get_watch_entities(self) -> set[str]:
         """Return the set of entity IDs the WS client should subscribe to."""
@@ -672,6 +718,12 @@ class SigEnergyOptimizer:
             entity_ids.append(cfg.grid_import_power_sensor)
         if cfg.grid_export_power_sensor:
             entity_ids.append(cfg.grid_export_power_sensor)
+        for candidate in forecast_entity_candidates(cfg.price_sensor, cfg.price_forecast_sensor):
+            if candidate and candidate not in entity_ids:
+                entity_ids.append(candidate)
+        for candidate in forecast_entity_candidates(cfg.feedin_sensor, cfg.feedin_forecast_sensor):
+            if candidate and candidate not in entity_ids:
+                entity_ids.append(candidate)
         bulk = await self.ha.bulk_states(entity_ids)
 
         def _fv(eid: str, default: float = 0.0) -> float:
@@ -824,6 +876,7 @@ class SigEnergyOptimizer:
         s.solar_power_now_kw = solar_raw / 1000 if solar_raw > 100 else solar_raw
 
         s.solcast_detailed = _attr(cfg.forecast_today_sensor, "detailedForecast") or []
+        price_forecast_diagnostics: dict[str, Any] = {}
         s.price_forecast_entries = extract_forecast_entries(
             bulk,
             primary_entity=cfg.price_sensor,
@@ -831,7 +884,10 @@ class SigEnergyOptimizer:
             preferred_attr=cfg.price_forecast_attribute,
             preferred_time_key=cfg.price_forecast_time_key,
             preferred_value_key=cfg.price_forecast_value_key,
+            diagnostics=price_forecast_diagnostics,
         )
+        self._warn_forecast_issue("Price forecast", price_forecast_diagnostics)
+        feedin_forecast_diagnostics: dict[str, Any] = {}
         s.feedin_forecast_entries = extract_forecast_entries(
             bulk,
             primary_entity=cfg.feedin_sensor,
@@ -839,7 +895,9 @@ class SigEnergyOptimizer:
             preferred_attr=cfg.feedin_forecast_attribute,
             preferred_time_key=cfg.price_forecast_time_key,
             preferred_value_key=cfg.feedin_forecast_value_key,
+            diagnostics=feedin_forecast_diagnostics,
         )
+        self._warn_forecast_issue("Feed-in forecast", feedin_forecast_diagnostics)
 
         # ---- Sun ------------------------------------------------------
         s.sun_elevation = float(_attr(cfg.sun_entity, "elevation") or 0)
@@ -2834,8 +2892,10 @@ class SigEnergyOptimizer:
             if not isinstance(f, dict):
                 continue
             try:
-                ts = self._parse_ts(f.get(cfg.price_forecast_time_key, ""))
-                price = float(f.get(cfg.feedin_forecast_value_key, 0))
+                ts = self._parse_ts(forecast_entry_time(f, cfg.price_forecast_time_key))
+                price = forecast_entry_value(f, cfg.feedin_forecast_value_key)
+                if price is None:
+                    continue
                 if ts and now_ts <= ts <= tomorrow_6am and price >= cfg.export_threshold_medium:
                     no_high_fit = False
                     break

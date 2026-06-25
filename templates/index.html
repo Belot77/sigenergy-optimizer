@@ -3943,6 +3943,13 @@ function configFieldHelp(key, label, type) {
     allow_loopback_without_api_key: 'Allows localhost UI/API mutation calls without API key.',
     require_api_key_for_all_mutations: 'If enabled, all write/mutation endpoints require API key even on local network.',
     require_api_key_for_config_read: 'If enabled, config read endpoints require API key.',
+    price_forecast_sensor: 'Amber Express v1 uses the detailed general price sensor with forecasts. Amber Express v2 folds forecast data into the primary price sensor; old *_detailed names can fall back to the primary entity.',
+    feedin_forecast_sensor: 'Amber Express v1 uses the detailed feed-in price sensor with forecasts. Amber Express v2 folds forecast data into the primary feed-in sensor; old *_detailed names can fall back to the primary entity.',
+    price_forecast_attribute: 'Amber Express v1 usually uses forecasts. Amber Express v2 uses detailedForecast. If the configured attribute is missing, the optimizer tries detailedForecast and forecasts.',
+    feedin_forecast_attribute: 'Amber Express v1 usually uses forecasts. Amber Express v2 uses detailedForecast. If the configured attribute is missing, the optimizer tries detailedForecast and forecasts.',
+    price_forecast_value_key: 'Forecast price key. Amber Express v1 usually uses per_kwh; v2 may use value. The optimizer tries the configured key, then per_kwh, then value.',
+    feedin_forecast_value_key: 'Forecast feed-in value key. Amber Express v1 usually uses per_kwh; v2 may use value. The optimizer tries the configured key, then per_kwh, then value.',
+    price_forecast_time_key: 'Forecast time key. Amber Express v1 usually uses start_time; v2 may use time or nem_time. The optimizer tries the configured key, then start_time, time, and nem_time.',
   };
 
   if (specific[k]) return specific[k];
