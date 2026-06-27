@@ -67,7 +67,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.18-haos29"
+_RUNTIME_SIGNATURE = "2.3.19-haos30"
 
 
 class SigEnergyOptimizer:
@@ -1170,6 +1170,7 @@ class SigEnergyOptimizer:
         pv_surplus_export_allowed_below_import_floor = False
         pv_surplus_initiation_source = "none"
         pv_surplus_estimated_init_active = False
+        pv_surplus_breathe_probe_active = False
         pv_surplus_estimated_init_reason = "inactive"
         pv_surplus_probe_export_cap_kw = 0.0
         topoff_target_soc = self._topoff_target_soc()
@@ -1193,6 +1194,16 @@ class SigEnergyOptimizer:
         )
         pv_only_ems_safe = s.current_ems_mode not in DISCHARGE_MODES
         estimated_pv_surplus_kw_for_init = max(float(pv_surplus), 0.0)
+        live_pv_kw_for_breathe_probe = max(float(s.pv_kw or 0.0), 0.0)
+        live_load_kw_for_breathe_probe = max(float(s.load_kw or 0.0), 0.0)
+        live_pv_plausible_for_breathe_probe = (
+            live_pv_kw_for_breathe_probe > 0.05
+            and (
+                live_pv_kw_for_breathe_probe >= max(float(cfg.productive_solar_threshold_kw or 0.0), 0.0)
+                or live_pv_kw_for_breathe_probe + pv_only_discharge_tolerance_kw >= live_load_kw_for_breathe_probe
+            )
+        )
+        export_limit_clamped_for_breathe_probe = float(s.current_export_limit or 0.0) <= 0.05
         pv_surplus_common_conditions = (
             not is_evening_or_night
             and float(s.feedin_price or 0.0) > 0.0
@@ -1242,6 +1253,18 @@ class SigEnergyOptimizer:
             and measured_pv_surplus_kw < cfg.min_grid_transfer_kw
             and estimated_pv_surplus_kw_for_init >= cfg.min_grid_transfer_kw
         )
+        breathe_probe_conditions = (
+            automatic_control_mode
+            and desired_export_limit <= 0.01
+            and pv_surplus_common_conditions
+            and topoff_target_met
+            and pv_only_discharge_ok
+            and pv_only_ems_safe
+            and measured_pv_surplus_kw < cfg.min_grid_transfer_kw
+            and estimated_pv_surplus_kw_for_init < cfg.min_grid_transfer_kw
+            and live_pv_plausible_for_breathe_probe
+            and export_limit_clamped_for_breathe_probe
+        )
         if estimated_init_conditions:
             estimated_probe_cap_kw = min(
                 estimated_pv_surplus_kw_for_init,
@@ -1261,6 +1284,25 @@ class SigEnergyOptimizer:
                 )
             else:
                 pv_surplus_estimated_init_reason = "inactive: estimated probe cap is below minimum transfer threshold."
+        elif breathe_probe_conditions:
+            breathe_probe_cap_kw = min(
+                float(s.ess_max_discharge_kw or 0.0),
+                float(cfg.export_limit_low),
+                max(float(cfg.morning_slow_export_probe_step_kw or 0.0), float(cfg.min_grid_transfer_kw)),
+            )
+            if breathe_probe_cap_kw >= cfg.min_grid_transfer_kw:
+                desired_export_limit = round(breathe_probe_cap_kw, 1)
+                export_value_gate_pv_surplus_initiated_active = True
+                pv_surplus_breathe_probe_active = True
+                pv_surplus_initiation_source = "full_battery_breathe_probe"
+                pv_surplus_probe_export_cap_kw = desired_export_limit
+                pv_surplus_estimated_init_reason = (
+                    "full-battery hidden-PV breathe probe: measured and estimated surplus are below threshold, "
+                    "but the battery is topped off, export is clamped near zero, live PV is plausible, "
+                    "and battery discharge is within tolerance; opening a tiny capped probe without discharge EMS."
+                )
+            else:
+                pv_surplus_estimated_init_reason = "inactive: full-battery breathe probe cap is below minimum transfer threshold."
         elif not bool(cfg.pv_surplus_estimated_init_enabled):
             pv_surplus_estimated_init_reason = "inactive: estimated PV surplus initiation disabled."
         elif not automatic_control_mode:
@@ -1323,12 +1365,17 @@ class SigEnergyOptimizer:
                     f"{s.battery_soc:.1f}% is below top-off target {topoff_target_soc:.1f}%."
                 )
                 export_value_gate_block_reason = "topoff_target_not_met"
-        pv_surplus_only_safe_for_export = pv_surplus_only_proven or pv_surplus_estimated_init_active
-        pv_surplus_limit_basis_kw = (
-            estimated_pv_surplus_kw_for_init
-            if pv_surplus_estimated_init_active
-            else measured_pv_surplus_kw
+        pv_surplus_only_safe_for_export = (
+            pv_surplus_only_proven
+            or pv_surplus_estimated_init_active
+            or pv_surplus_breathe_probe_active
         )
+        if pv_surplus_estimated_init_active:
+            pv_surplus_limit_basis_kw = estimated_pv_surplus_kw_for_init
+        elif pv_surplus_breathe_probe_active:
+            pv_surplus_limit_basis_kw = pv_surplus_probe_export_cap_kw
+        else:
+            pv_surplus_limit_basis_kw = measured_pv_surplus_kw
         if (
             export_value_gate_export_type != "no_live_export"
             and pv_surplus_only_safe_for_export
@@ -1690,6 +1737,7 @@ class SigEnergyOptimizer:
             "pv_surplus_only_proven": pv_surplus_only_proven,
             "pv_surplus_estimated_init_enabled": bool(cfg.pv_surplus_estimated_init_enabled),
             "pv_surplus_estimated_init_active": pv_surplus_estimated_init_active,
+            "pv_surplus_breathe_probe_active": pv_surplus_breathe_probe_active,
             "pv_surplus_topoff_block_active": pv_surplus_topoff_block_active,
             "topoff_target_met": topoff_target_met,
             "import_cost_floor_trusted": import_cost_floor_trusted,

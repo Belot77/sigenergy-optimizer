@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-27
+- Added a narrow full-battery hidden-PV breathe probe that can open a tiny capped export when measured and estimated surplus are both below threshold, export is clamped near zero, top-off is met, FiT is positive, and battery discharge is safely ruled out.
+- The probe stays out of discharge EMS modes and is reported as `pv_surplus_initiation_source=full_battery_breathe_probe`; manual/force modes remain exempt.
+
 ## 2026-06-17
 - Bumped add-on buildstamp, add-on metadata, runtime signature, FastAPI metadata, and docs to 2.3.15-haos26 as a cache-bust/metadata release only.
 - This forces the Home Assistant add-on image to rebuild from current `main` so the container source commit matches the current code.
