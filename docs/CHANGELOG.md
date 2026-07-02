@@ -3,6 +3,7 @@
 ## 2026-06-27
 - Added a narrow full-battery hidden-PV breathe probe that can open a tiny capped export when measured and estimated surplus are both below threshold, export is clamped near zero, top-off is met, FiT is positive, and battery discharge is safely ruled out.
 - The probe stays out of discharge EMS modes and is reported as `pv_surplus_initiation_source=full_battery_breathe_probe`; manual/force modes remain exempt.
+- Added safe continuation/ramping for the breathe probe when the previous cycle used that source, grid export confirms the probe is producing export, and battery discharge remains safely within tolerance.
 
 ## 2026-06-17
 - Bumped add-on buildstamp, add-on metadata, runtime signature, FastAPI metadata, and docs to 2.3.15-haos26 as a cache-bust/metadata release only.
