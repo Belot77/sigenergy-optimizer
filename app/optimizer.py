@@ -67,7 +67,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.23-haos34"
+_RUNTIME_SIGNATURE = "2.3.24-haos35"
 
 
 class SigEnergyOptimizer:
@@ -1458,6 +1458,82 @@ class SigEnergyOptimizer:
         elif estimated_pv_surplus_kw_for_init < cfg.min_grid_transfer_kw:
             pv_surplus_estimated_init_reason = "inactive: estimated surplus below minimum transfer threshold."
 
+        def classify_export_type() -> tuple[str, bool, float, str]:
+            if desired_export_limit <= 0.01:
+                return "no_live_export", False, 0.0, "export limit closed"
+            if battery_discharge_kw_for_pv_only is None:
+                return (
+                    "unknown_or_mixed",
+                    False,
+                    0.0,
+                    "battery flow unknown, so export cannot be proven PV-only",
+                )
+            if battery_discharge_kw_for_pv_only > pv_only_discharge_tolerance_kw:
+                return (
+                    "battery_backed",
+                    False,
+                    0.0,
+                    "battery discharge above PV-only tolerance",
+                )
+
+            pv_only_context_ok = bool(
+                automatic_control_mode
+                and pv_surplus_common_conditions
+                and topoff_target_met
+                and pv_only_discharge_ok
+                and pv_only_ems_safe
+            )
+            if not pv_only_context_ok:
+                return (
+                    "unknown_or_mixed",
+                    False,
+                    0.0,
+                    "PV-only safety context not satisfied",
+                )
+
+            pv_only_basis_kw = 0.0
+            pv_only_source = "none"
+            if pv_surplus_estimated_init_active:
+                pv_only_basis_kw = estimated_pv_surplus_kw_for_init
+                pv_only_source = "estimated_probe"
+            elif pv_surplus_breathe_probe_active:
+                pv_only_basis_kw = pv_surplus_probe_export_cap_kw
+                pv_only_source = "full_battery_breathe_probe"
+            elif pv_surplus_only_proven:
+                pv_only_basis_kw = measured_pv_surplus_kw
+                pv_only_source = "measured_surplus"
+            elif (
+                breathe_probe_state_fresh
+                and self._full_battery_breathe_probe_source
+                in {"full_battery_breathe_probe", "pv_surplus_carveout"}
+            ):
+                pv_only_basis_kw = prev_breathe_probe_cap_kw
+                pv_only_source = self._full_battery_breathe_probe_source
+
+            if pv_only_basis_kw <= 0:
+                return (
+                    "unknown_or_mixed",
+                    False,
+                    0.0,
+                    "export source is not safely identified as PV-only",
+                )
+            if (
+                desired_export_limit <= (pv_only_basis_kw + 0.05)
+                and desired_export_limit <= (breathe_probe_static_cap_kw + 1e-6)
+            ):
+                return (
+                    "pv_surplus_only",
+                    True,
+                    pv_only_basis_kw,
+                    f"confirmed PV-only export via {pv_only_source}",
+                )
+            return (
+                "unknown_or_mixed",
+                False,
+                pv_only_basis_kw,
+                "export cap exceeds confirmed PV-only basis",
+            )
+
         export_value_gate = self._export_value_gate_advisory(
             s,
             desired_export_limit=desired_export_limit,
@@ -1495,33 +1571,22 @@ class SigEnergyOptimizer:
         automatic_export_blocked_below_actual_import_cost = False
         actual_import_cost_guard_reason = "inactive: no optimiser import/top-up recorded today."
 
-        if desired_export_limit <= 0.01:
-            export_value_gate_export_type = "no_live_export"
-            if pv_surplus_topoff_block_active:
-                d.export_value_gate_reason = (
-                    "PV-surplus export not initiated because battery SoC "
-                    f"{s.battery_soc:.1f}% is below top-off target {topoff_target_soc:.1f}%."
-                )
-                export_value_gate_block_reason = "topoff_target_not_met"
-        pv_surplus_only_safe_for_export = (
-            pv_surplus_only_proven
-            or pv_surplus_estimated_init_active
-            or pv_surplus_breathe_probe_active
-        )
-        if pv_surplus_estimated_init_active:
-            pv_surplus_limit_basis_kw = estimated_pv_surplus_kw_for_init
-        elif pv_surplus_breathe_probe_active:
-            pv_surplus_limit_basis_kw = pv_surplus_probe_export_cap_kw
-        else:
-            pv_surplus_limit_basis_kw = measured_pv_surplus_kw
-        if (
-            export_value_gate_export_type != "no_live_export"
-            and pv_surplus_only_safe_for_export
-            and desired_export_limit <= (pv_surplus_limit_basis_kw + 0.05)
-        ):
-            export_value_gate_export_type = "pv_surplus_only"
-        elif export_value_gate_export_type != "no_live_export":
-            export_value_gate_export_type = "battery_backed"
+        (
+            export_value_gate_export_type,
+            pv_surplus_only_safe_for_export,
+            pv_surplus_limit_basis_kw,
+            export_classification_reason,
+        ) = classify_export_type()
+        export_value_gate_applies_to_export_type = export_value_gate_export_type in {
+            "battery_backed",
+            "unknown_or_mixed",
+        }
+        if export_value_gate_export_type == "no_live_export" and pv_surplus_topoff_block_active:
+            d.export_value_gate_reason = (
+                "PV-surplus export not initiated because battery SoC "
+                f"{s.battery_soc:.1f}% is below top-off target {topoff_target_soc:.1f}%."
+            )
+            export_value_gate_block_reason = "topoff_target_not_met"
 
         if (
             export_value_gate_pv_surplus_initiated_active
@@ -1565,6 +1630,7 @@ class SigEnergyOptimizer:
             value_gate_enforcement_active
             and d.export_value_gate_would_block
             and desired_export_limit > 0
+            and export_value_gate_applies_to_export_type
         )
 
         if not automatic_control_mode:
@@ -1635,6 +1701,11 @@ class SigEnergyOptimizer:
             )
 
         d.export_limit = desired_export_limit
+        export_value_gate_bypassed_for_pv_surplus_only = bool(
+            export_value_gate_export_type == "pv_surplus_only"
+            and pv_surplus_only_safe_for_export
+            and pv_surplus_export_allowed_below_import_floor
+        )
 
         # ---- Import limit (grid_limit_base → desired_import_limit) --
         desired_import_limit = self._desired_import_limit(
@@ -1910,6 +1981,8 @@ class SigEnergyOptimizer:
             "export_value_gate_enforcement_active": value_gate_enforcement_active,
             "export_value_gate_vetoed": export_value_gate_vetoed,
             "export_value_gate_veto_active": export_value_gate_vetoed,
+            "export_value_gate_applies_to_export_type": export_value_gate_applies_to_export_type,
+            "export_value_gate_bypassed_for_pv_surplus_only": export_value_gate_bypassed_for_pv_surplus_only,
             "export_value_gate_pv_surplus_initiated_active": export_value_gate_pv_surplus_initiated_active,
             "export_value_gate_pv_surplus_carveout_active": export_value_gate_pv_surplus_carveout_active,
             "pv_surplus_export_allowed_below_import_floor": pv_surplus_export_allowed_below_import_floor,
@@ -1966,6 +2039,7 @@ class SigEnergyOptimizer:
             "export_value_gate_block_reason": export_value_gate_block_reason,
             "actual_import_cost_guard_reason": actual_import_cost_guard_reason,
             "export_value_gate_export_type": export_value_gate_export_type,
+            "export_classification_reason": export_classification_reason,
             "pv_surplus_initiation_source": pv_surplus_initiation_source,
             "pv_surplus_estimated_init_reason": pv_surplus_estimated_init_reason,
             "pv_surplus_probe_export_cap_kw": pv_surplus_probe_export_cap_kw,

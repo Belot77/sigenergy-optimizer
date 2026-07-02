@@ -647,6 +647,9 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertFalse(bool(decision.trace_gates.get("export_value_gate_vetoed")))
         self.assertTrue(bool(decision.trace_gates.get("export_value_gate_pv_surplus_carveout_active")))
         self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_applies_to_export_type")))
+        self.assertTrue(bool(decision.trace_gates.get("export_value_gate_bypassed_for_pv_surplus_only")))
+        self.assertIn("confirmed PV-only", str(decision.trace_values.get("export_classification_reason", "")))
         self.assertGreater(decision.export_limit, 0.0)
         self.assertLessEqual(
             float(decision.export_limit),
@@ -786,6 +789,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertTrue(bool(decision.trace_gates.get("export_value_gate_pv_surplus_initiated_active")))
         self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_carveout_active")))
         self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_applies_to_export_type")))
+        self.assertTrue(bool(decision.trace_gates.get("export_value_gate_bypassed_for_pv_surplus_only")))
         self.assertGreater(decision.export_limit, 0.0)
         self.assertLessEqual(
             float(decision.export_limit),
@@ -819,6 +824,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
 
         self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_initiated_active")))
         self.assertEqual("no_live_export", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_applies_to_export_type")))
+        self.assertIn("export limit closed", str(decision.trace_values.get("export_classification_reason", "")))
         self.assertLessEqual(decision.export_limit, 0.01)
 
     def test_pv_surplus_export_initiation_does_not_open_on_negative_fit(self) -> None:
@@ -1051,6 +1058,9 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertTrue(bool(decision.trace_gates.get("pv_surplus_only_proven")))
         self.assertTrue(bool(decision.trace_gates.get("pv_surplus_export_allowed_below_import_floor")))
         self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_applies_to_export_type")))
+        self.assertTrue(bool(decision.trace_gates.get("export_value_gate_bypassed_for_pv_surplus_only")))
+        self.assertIn("confirmed PV-only", str(decision.trace_values.get("export_classification_reason", "")))
         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
         self.assertLessEqual(
             float(decision.export_limit),
@@ -1086,6 +1096,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertTrue(bool(decision.trace_gates.get("pv_surplus_estimated_init_active")))
         self.assertEqual("estimated", decision.trace_values.get("pv_surplus_initiation_source"))
         self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_applies_to_export_type")))
+        self.assertIn("estimated_probe", str(decision.trace_values.get("export_classification_reason", "")))
         self.assertGreater(decision.export_limit, 0.0)
         self.assertLessEqual(
             float(decision.export_limit),
@@ -1443,6 +1455,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertTrue(bool(decision.trace_gates.get("pv_surplus_breathe_probe_active")))
         self.assertTrue(bool(decision.trace_gates.get("pv_surplus_export_allowed_below_import_floor")))
         self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_applies_to_export_type")))
+        self.assertIn("full_battery_breathe_probe", str(decision.trace_values.get("export_classification_reason", "")))
         self.assertGreater(decision.export_limit, 0.0)
 
     def test_measured_pv_surplus_carveout_seeds_breathe_discovery_state(self) -> None:
@@ -1504,6 +1518,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertTrue(bool(decision.trace_gates.get("pv_surplus_breathe_probe_state_active")))
         self.assertEqual("full_battery_breathe_probe", decision.trace_values.get("pv_surplus_initiation_source"))
         self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_applies_to_export_type")))
         self.assertTrue(bool(decision.trace_gates.get("pv_surplus_export_allowed_below_import_floor")))
         self.assertFalse(bool(decision.trace_gates.get("export_value_gate_vetoed")))
         self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
@@ -1546,6 +1561,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertFalse(bool(decision.trace_gates.get("pv_only_discharge_ok")))
         self.assertFalse(bool(decision.trace_gates.get("pv_surplus_breathe_probe_active")))
         self.assertEqual("battery_backed", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertTrue(bool(decision.trace_gates.get("export_value_gate_applies_to_export_type")))
         self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
         self.assertEqual(0.0, decision.export_limit)
         self.assertFalse(optimizer._full_battery_breathe_probe_active)
@@ -1579,7 +1595,9 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
 
         self.assertFalse(bool(decision.trace_gates.get("pv_only_discharge_ok")))
         self.assertFalse(bool(decision.trace_gates.get("pv_surplus_breathe_probe_active")))
-        self.assertEqual("battery_backed", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertEqual("unknown_or_mixed", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertTrue(bool(decision.trace_gates.get("export_value_gate_applies_to_export_type")))
+        self.assertTrue(bool(decision.trace_gates.get("export_value_gate_vetoed")))
         self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
         self.assertEqual(0.0, decision.export_limit)
         self.assertFalse(optimizer._full_battery_breathe_probe_active)
@@ -1604,6 +1622,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertFalse(bool(decision.trace_gates.get("pv_surplus_breathe_probe_active")))
         self.assertFalse(bool(decision.trace_gates.get("pv_surplus_only_proven")))
         self.assertEqual("battery_backed", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertTrue(bool(decision.trace_gates.get("export_value_gate_applies_to_export_type")))
         self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
         self.assertEqual(0.0, decision.export_limit)
         self.assertFalse(optimizer._full_battery_breathe_probe_active)
@@ -1964,6 +1983,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertFalse(bool(decision.trace_gates.get("pv_surplus_only_proven")))
         self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_carveout_active")))
         self.assertFalse(bool(decision.trace_gates.get("pv_surplus_export_allowed_below_import_floor")))
+        self.assertEqual("battery_backed", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertTrue(bool(decision.trace_gates.get("export_value_gate_applies_to_export_type")))
         self.assertTrue(bool(decision.trace_gates.get("export_value_gate_vetoed")))
         self.assertEqual(0.0, decision.export_limit)
 
