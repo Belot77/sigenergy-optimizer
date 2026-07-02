@@ -67,7 +67,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.20-haos31"
+_RUNTIME_SIGNATURE = "2.3.21-haos32"
 
 
 class SigEnergyOptimizer:
@@ -1188,6 +1188,10 @@ class SigEnergyOptimizer:
             prev_trace_values.get("pv_surplus_initiation_source") == "full_battery_breathe_probe"
             or prev_trace_gates.get("pv_surplus_breathe_probe_active")
         )
+        prev_breathe_probe_cap_kw = max(
+            float(prev_trace_values.get("pv_surplus_probe_export_cap_kw") or 0.0),
+            0.0,
+        )
         topoff_target_soc = self._topoff_target_soc()
         topoff_target_met = s.battery_soc + 1e-6 >= topoff_target_soc
         mode_label = str(s.sigenergy_mode or cfg.automated_option)
@@ -1209,6 +1213,10 @@ class SigEnergyOptimizer:
         )
         pv_only_ems_safe = s.current_ems_mode not in DISCHARGE_MODES
         estimated_pv_surplus_kw_for_init = max(float(pv_surplus), 0.0)
+        estimated_hidden_surplus_kw_for_breathe_probe = max(
+            estimated_pv_surplus_kw_for_init - measured_pv_surplus_kw,
+            0.0,
+        )
         live_pv_kw_for_breathe_probe = max(float(s.pv_kw or 0.0), 0.0)
         live_load_kw_for_breathe_probe = max(float(s.load_kw or 0.0), 0.0)
         breathe_probe_step_kw = max(
@@ -1234,13 +1242,28 @@ class SigEnergyOptimizer:
         )
         export_limit_clamped_for_breathe_probe = float(s.current_export_limit or 0.0) <= 0.05
         export_open_for_breathe_probe = current_export_limit_for_breathe_probe > 0.05
+        desired_export_open_for_breathe_probe = desired_export_limit > 0.01
+        prior_probe_cap_open_for_breathe_probe = prev_breathe_probe_cap_kw >= cfg.min_grid_transfer_kw
+        breathe_probe_current_or_prior_cap_kw = max(
+            current_export_limit_for_breathe_probe,
+            prev_breathe_probe_cap_kw,
+            float(cfg.min_grid_transfer_kw),
+        )
         export_still_small_for_breathe_probe = (
-            current_export_limit_for_breathe_probe <= breathe_probe_static_cap_kw + 1e-6
+            max(current_export_limit_for_breathe_probe, prev_breathe_probe_cap_kw)
+            <= breathe_probe_static_cap_kw + 1e-6
         )
         grid_export_confirms_breathe_probe = (
             s.grid_export_power_kw is not None
             and measured_grid_export_for_breathe_probe
             >= max(0.1, min(cfg.min_grid_transfer_kw, current_export_limit_for_breathe_probe) - 0.1)
+        )
+        estimated_hidden_confirms_breathe_probe = (
+            estimated_hidden_surplus_kw_for_breathe_probe >= cfg.min_grid_transfer_kw
+        )
+        continuation_evidence_for_breathe_probe = (
+            grid_export_confirms_breathe_probe
+            or estimated_hidden_confirms_breathe_probe
         )
         pv_surplus_common_conditions = (
             not is_evening_or_night
@@ -1311,12 +1334,48 @@ class SigEnergyOptimizer:
             and topoff_target_met
             and pv_only_discharge_ok
             and pv_only_ems_safe
-            and export_open_for_breathe_probe
+            and (
+                export_open_for_breathe_probe
+                or desired_export_open_for_breathe_probe
+                or prior_probe_cap_open_for_breathe_probe
+            )
             and export_still_small_for_breathe_probe
-            and grid_export_confirms_breathe_probe
+            and continuation_evidence_for_breathe_probe
             and live_pv_plausible_for_breathe_probe
         )
-        if estimated_init_conditions:
+        if breathe_probe_continuation_conditions:
+            breathe_probe_evidence_cap_kw = 0.0
+            if grid_export_confirms_breathe_probe:
+                breathe_probe_evidence_cap_kw = max(
+                    breathe_probe_evidence_cap_kw,
+                    measured_grid_export_for_breathe_probe + breathe_probe_step_kw,
+                )
+            if estimated_hidden_confirms_breathe_probe:
+                breathe_probe_evidence_cap_kw = max(
+                    breathe_probe_evidence_cap_kw,
+                    estimated_pv_surplus_kw_for_init,
+                )
+            breathe_probe_cap_kw = min(
+                breathe_probe_static_cap_kw,
+                breathe_probe_current_or_prior_cap_kw + breathe_probe_step_kw,
+                breathe_probe_evidence_cap_kw,
+            )
+            if breathe_probe_cap_kw >= cfg.min_grid_transfer_kw:
+                desired_export_limit = round(breathe_probe_cap_kw, 1)
+                export_value_gate_pv_surplus_initiated_active = True
+                pv_surplus_breathe_probe_active = True
+                pv_surplus_breathe_probe_continuation_active = True
+                pv_surplus_initiation_source = "full_battery_breathe_probe"
+                pv_surplus_probe_export_cap_kw = desired_export_limit
+                pv_surplus_estimated_init_reason = (
+                    "continuing full-battery hidden-PV breathe probe: previous cycle opened the probe, "
+                    f"estimated hidden surplus is {estimated_hidden_surplus_kw_for_breathe_probe:.1f} kW, "
+                    f"grid export is {measured_grid_export_for_breathe_probe:.1f} kW, "
+                    "battery discharge remains within tolerance, and the cap is held or ramped by one small step."
+                )
+            else:
+                pv_surplus_estimated_init_reason = "inactive: full-battery breathe probe continuation cap is below minimum transfer threshold."
+        elif estimated_init_conditions:
             estimated_probe_cap_kw = min(
                 estimated_pv_surplus_kw_for_init,
                 float(s.ess_max_discharge_kw or 0.0),
@@ -1354,26 +1413,6 @@ class SigEnergyOptimizer:
                 )
             else:
                 pv_surplus_estimated_init_reason = "inactive: full-battery breathe probe cap is below minimum transfer threshold."
-        elif breathe_probe_continuation_conditions:
-            breathe_probe_cap_kw = min(
-                breathe_probe_static_cap_kw,
-                current_export_limit_for_breathe_probe + breathe_probe_step_kw,
-                measured_grid_export_for_breathe_probe + breathe_probe_step_kw,
-            )
-            if breathe_probe_cap_kw >= cfg.min_grid_transfer_kw:
-                desired_export_limit = round(breathe_probe_cap_kw, 1)
-                export_value_gate_pv_surplus_initiated_active = True
-                pv_surplus_breathe_probe_active = True
-                pv_surplus_breathe_probe_continuation_active = True
-                pv_surplus_initiation_source = "full_battery_breathe_probe"
-                pv_surplus_probe_export_cap_kw = desired_export_limit
-                pv_surplus_estimated_init_reason = (
-                    "continuing full-battery hidden-PV breathe probe: previous cycle opened the probe, "
-                    f"grid export is {measured_grid_export_for_breathe_probe:.1f} kW, "
-                    "battery discharge remains within tolerance, and the cap is held or ramped by one small step."
-                )
-            else:
-                pv_surplus_estimated_init_reason = "inactive: full-battery breathe probe continuation cap is below minimum transfer threshold."
         elif not bool(cfg.pv_surplus_estimated_init_enabled):
             pv_surplus_estimated_init_reason = "inactive: estimated PV surplus initiation disabled."
         elif not automatic_control_mode:

@@ -1249,6 +1249,53 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
         self.assertIn("continuing full-battery hidden-PV breathe probe", str(decision.trace_values.get("pv_surplus_estimated_init_reason", "")))
 
+    def test_full_battery_breathe_probe_continues_when_desired_export_already_open_with_hidden_surplus(self) -> None:
+        from app.optimizer import DISCHARGE_MODES
+
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            daytime_topup_max_soc=100.0,
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        self._record_import_topup(optimizer, import_kwh=1.0, import_price=0.23)
+        optimizer._last_decision = self._previous_breathe_probe_decision(export_limit=1.0)
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 5.0
+        state = self._breathe_probe_state(
+            now_ts,
+            battery_soc=100.0,
+            feedin_price=0.08,
+            feedin_price_cents=8.0,
+            pv_kw=0.9,
+            solar_power_now_kw=6.0,
+            load_kw=0.9,
+            battery_power_sensor_kw=-0.01,
+            current_export_limit=1.0,
+            grid_export_power_kw=0.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertTrue(bool(decision.trace_gates.get("pv_only_discharge_ok")))
+        self.assertTrue(bool(decision.trace_gates.get("pv_surplus_breathe_probe_active")))
+        self.assertTrue(bool(decision.trace_gates.get("pv_surplus_breathe_probe_continuation_active")))
+        self.assertEqual("full_battery_breathe_probe", decision.trace_values.get("pv_surplus_initiation_source"))
+        self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertTrue(bool(decision.trace_gates.get("pv_surplus_export_allowed_below_import_floor")))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_vetoed")))
+        self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
+        self.assertGreater(decision.export_limit, 0.0)
+        self.assertLessEqual(
+            decision.export_limit,
+            1.0 + max(optimizer.cfg.morning_slow_export_probe_step_kw, optimizer.cfg.min_grid_transfer_kw) + 1e-6,
+        )
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        reason = str(decision.trace_values.get("pv_surplus_estimated_init_reason", ""))
+        self.assertIn("continuing full-battery hidden-PV breathe probe", reason)
+        self.assertNotIn("live export is already open", reason)
+
     def test_full_battery_breathe_probe_continuation_capped_by_export_limit_low(self) -> None:
         now_ts = datetime.now().timestamp()
         optimizer = self._optimizer(
