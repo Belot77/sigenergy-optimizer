@@ -67,7 +67,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.21-haos32"
+_RUNTIME_SIGNATURE = "2.3.22-haos33"
 
 
 class SigEnergyOptimizer:
@@ -76,6 +76,9 @@ class SigEnergyOptimizer:
         self.cfg = cfg
         self._last_state: Optional[SolarState] = None
         self._last_decision: Optional[Decision] = None
+        self._full_battery_breathe_probe_active: bool = False
+        self._full_battery_breathe_probe_cap_kw: float = 0.0
+        self._full_battery_breathe_probe_last_ts: Optional[float] = None
         self._last_daily_summary_date: Optional[datetime] = None
         self._last_morning_summary_date: Optional[datetime] = None
         self._running = False
@@ -1184,11 +1187,28 @@ class SigEnergyOptimizer:
             if self._last_decision and isinstance(self._last_decision.trace_gates, dict)
             else {}
         )
+        breathe_probe_state_age_s = (
+            now_ts - self._full_battery_breathe_probe_last_ts
+            if self._full_battery_breathe_probe_last_ts is not None
+            else None
+        )
+        breathe_probe_state_fresh = bool(
+            self._full_battery_breathe_probe_active
+            and breathe_probe_state_age_s is not None
+            and 0.0 <= breathe_probe_state_age_s <= 300.0
+        )
+        if self._full_battery_breathe_probe_active and not breathe_probe_state_fresh:
+            self._full_battery_breathe_probe_active = False
+            self._full_battery_breathe_probe_cap_kw = 0.0
+            self._full_battery_breathe_probe_last_ts = None
+            breathe_probe_state_age_s = None
         prev_breathe_probe_active = bool(
-            prev_trace_values.get("pv_surplus_initiation_source") == "full_battery_breathe_probe"
+            breathe_probe_state_fresh
+            or prev_trace_values.get("pv_surplus_initiation_source") == "full_battery_breathe_probe"
             or prev_trace_gates.get("pv_surplus_breathe_probe_active")
         )
         prev_breathe_probe_cap_kw = max(
+            self._full_battery_breathe_probe_cap_kw if breathe_probe_state_fresh else 0.0,
             float(prev_trace_values.get("pv_surplus_probe_export_cap_kw") or 0.0),
             0.0,
         )
@@ -1809,6 +1829,28 @@ class SigEnergyOptimizer:
         elif desired_import_limit > 0:
             import_branch = "cheap_topup_import"
 
+        if (
+            pv_surplus_breathe_probe_active
+            and export_value_gate_export_type == "pv_surplus_only"
+            and desired_export_limit > 0.01
+            and automatic_control_mode
+            and pv_surplus_common_conditions
+            and topoff_target_met
+            and pv_only_discharge_ok
+            and pv_only_ems_safe
+        ):
+            self._full_battery_breathe_probe_active = True
+            self._full_battery_breathe_probe_cap_kw = max(
+                float(pv_surplus_probe_export_cap_kw or 0.0),
+                float(desired_export_limit or 0.0),
+                float(cfg.min_grid_transfer_kw),
+            )
+            self._full_battery_breathe_probe_last_ts = now_ts
+        else:
+            self._full_battery_breathe_probe_active = False
+            self._full_battery_breathe_probe_cap_kw = 0.0
+            self._full_battery_breathe_probe_last_ts = None
+
         d.trace_gates = {
             "is_evening_or_night": is_evening_or_night,
             "close_to_sunset": close_to_sunset,
@@ -1849,6 +1891,8 @@ class SigEnergyOptimizer:
             "pv_surplus_estimated_init_active": pv_surplus_estimated_init_active,
             "pv_surplus_breathe_probe_active": pv_surplus_breathe_probe_active,
             "pv_surplus_breathe_probe_continuation_active": pv_surplus_breathe_probe_continuation_active,
+            "pv_surplus_breathe_probe_state_active": self._full_battery_breathe_probe_active,
+            "pv_surplus_breathe_probe_state_fresh": self._full_battery_breathe_probe_active,
             "pv_surplus_topoff_block_active": pv_surplus_topoff_block_active,
             "topoff_target_met": topoff_target_met,
             "import_cost_floor_trusted": import_cost_floor_trusted,
@@ -1895,6 +1939,10 @@ class SigEnergyOptimizer:
             "pv_surplus_initiation_source": pv_surplus_initiation_source,
             "pv_surplus_estimated_init_reason": pv_surplus_estimated_init_reason,
             "pv_surplus_probe_export_cap_kw": pv_surplus_probe_export_cap_kw,
+            "pv_surplus_breathe_probe_state_cap_kw": self._full_battery_breathe_probe_cap_kw,
+            "pv_surplus_breathe_probe_state_age_s": (
+                0.0 if self._full_battery_breathe_probe_last_ts is not None else None
+            ),
             "export_value_gate_fit_cents": export_value_gate_fit_cents,
             "export_value_gate_floor_cents": export_value_gate_floor_cents,
             "export_value_gate_difference_cents": export_value_gate_difference_cents,
