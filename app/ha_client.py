@@ -181,14 +181,42 @@ class HAClient:
         return await self.call_service("input_number", "set_value", {"entity_id": entity_id, "value": round(value, 3)})
 
     async def send_notification(self, service: str, title: str, message: str) -> bool:
+        service = (service or "").strip()
         if not service:
+            logger.warning("Notification skipped: no notification service configured")
             return False
-        # service looks like "notify.mobile_app_pixel" → domain=notify, svc=mobile_app_pixel
+
+        if service.startswith("notify."):
+            data = {"entity_id": service, "title": title, "message": message}
+            try:
+                logger.info("Sending notification via notify.send_message to %s", service)
+                ok = await self.call_service("notify", "send_message", data)
+            except Exception as exc:
+                logger.error("Notification via notify.send_message to %s failed: %s", service, exc)
+                return False
+            if ok:
+                logger.info("Notification sent via notify.send_message to %s", service)
+            else:
+                logger.warning("Notification via notify.send_message to %s failed", service)
+            return ok
+
+        # Legacy service form, for example "persistent_notification.create".
         parts = service.split(".", 1)
-        if len(parts) != 2:
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            logger.warning("Notification skipped: invalid notification service %r", service)
             return False
         domain, svc = parts
-        return await self.call_service(domain, svc, {"title": title, "message": message})
+        try:
+            logger.info("Sending notification via %s.%s", domain, svc)
+            ok = await self.call_service(domain, svc, {"title": title, "message": message})
+        except Exception as exc:
+            logger.error("Notification via %s.%s failed: %s", domain, svc, exc)
+            return False
+        if ok:
+            logger.info("Notification sent via %s.%s", domain, svc)
+        else:
+            logger.warning("Notification via %s.%s failed", domain, svc)
+        return ok
 
     async def logbook_log(self, name: str, message: str, entity_id: str = "") -> bool:
         data: dict = {"name": name, "message": message}
