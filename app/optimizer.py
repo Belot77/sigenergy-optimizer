@@ -68,7 +68,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.26-haos37"
+_RUNTIME_SIGNATURE = "2.3.27-haos38"
 
 
 @dataclass(frozen=True)
@@ -1727,6 +1727,15 @@ class SigEnergyOptimizer:
             if value_gate_enforcement_active:
                 desired_export_limit = min(desired_export_limit, measured_pv_surplus_kw)
 
+        export_value_gate_applies_to_export_type = export_value_gate_export_type in {
+            "battery_backed",
+            "unknown_or_mixed",
+        }
+        actual_import_cost_guard_applies_to_export_type = export_value_gate_applies_to_export_type
+        actual_import_cost_guard_bypassed_for_pv_surplus_only = bool(
+            export_value_gate_export_type == "pv_surplus_only"
+            and pv_surplus_only_safe_for_export
+        )
         value_gate_would_veto_live = bool(
             value_gate_enforcement_active
             and d.export_value_gate_would_block
@@ -1742,7 +1751,7 @@ class SigEnergyOptimizer:
             actual_import_cost_guard_reason = "inactive: no optimiser import/top-up recorded today."
         elif desired_export_limit <= 0.01:
             actual_import_cost_guard_reason = "active: no automatic export requested."
-        elif export_value_gate_export_type == "pv_surplus_only" and pv_surplus_only_safe_for_export:
+        elif actual_import_cost_guard_bypassed_for_pv_surplus_only:
             if (
                 import_cost_floor_unknown
                 or (
@@ -1752,7 +1761,11 @@ class SigEnergyOptimizer:
             ):
                 pv_surplus_export_allowed_below_import_floor = True
             actual_import_cost_guard_reason = (
-                "active: export allowed because PV surplus-only export is safely capped after top-off."
+                "bypassed: confirmed PV-only surplus/discovery export; battery discharge within tolerance."
+            )
+        elif not actual_import_cost_guard_applies_to_export_type:
+            actual_import_cost_guard_reason = (
+                f"inactive: export type {export_value_gate_export_type} is not subject to the import-cost guard."
             )
         elif import_cost_floor_unknown:
             actual_import_cost_guard_blocking = True
@@ -2112,6 +2125,8 @@ class SigEnergyOptimizer:
                 "import_cost_floor_untrusted",
             },
             "actual_import_cost_guard_active": actual_import_cost_guard_active,
+            "actual_import_cost_guard_applies_to_export_type": actual_import_cost_guard_applies_to_export_type,
+            "actual_import_cost_guard_bypassed_for_pv_surplus_only": actual_import_cost_guard_bypassed_for_pv_surplus_only,
             "actual_import_cost_guard_blocking": actual_import_cost_guard_blocking,
             "automatic_export_blocked_below_actual_import_cost": automatic_export_blocked_below_actual_import_cost,
             "pv_only_discharge_ok": pv_only_discharge_ok,

@@ -1637,6 +1637,49 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
         self.assertIn("PV-only discovery/ramp", str(decision.trace_values.get("pv_surplus_estimated_init_reason", "")))
 
+    def test_untrusted_import_cost_does_not_block_safe_pv_only_discovery(self) -> None:
+        from app.optimizer import DISCHARGE_MODES
+
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            daytime_topup_max_soc=100.0,
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        self._record_import_topup(
+            optimizer,
+            import_kwh=0.5,
+            import_price=None,
+            price_trusted=False,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 0.0
+        state = self._breathe_probe_state(
+            now_ts,
+            pv_kw=0.9,
+            solar_power_now_kw=5.5,
+            load_kw=0.9,
+            battery_power_sensor_kw=-0.01,
+            current_export_limit=0.01,
+            grid_export_power_kw=0.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertTrue(bool(decision.trace_gates.get("import_cost_floor_unknown")))
+        self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_active")))
+        self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_applies_to_export_type")))
+        self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_bypassed_for_pv_surplus_only")))
+        self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_vetoed")))
+        self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertGreater(decision.export_limit, 0.0)
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        reason = str(decision.trace_values.get("actual_import_cost_guard_reason", ""))
+        self.assertIn("bypassed: confirmed PV-only surplus/discovery export", reason)
+        self.assertNotIn("unavailable or untrusted", reason)
+
     def test_pv_only_discovery_state_real_discharge_clears_and_blocks(self) -> None:
         now_ts = datetime.now().timestamp()
         optimizer = self._optimizer(
@@ -1667,6 +1710,43 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
         self.assertEqual(0.0, decision.export_limit)
         self.assertFalse(optimizer._pv_discovery_active)
+
+    def test_untrusted_import_cost_blocks_discovery_when_battery_discharge_is_real(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            daytime_topup_max_soc=100.0,
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        self._record_import_topup(
+            optimizer,
+            import_kwh=0.5,
+            import_price=None,
+            price_trusted=False,
+        )
+        optimizer._record_pv_discovery_state("estimated_probe", 1.0, now_ts)
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 1.0
+        state = self._breathe_probe_state(
+            now_ts + 60.0,
+            pv_kw=1.9,
+            solar_power_now_kw=5.3,
+            load_kw=0.9,
+            battery_power_sensor_kw=-0.2,
+            current_export_limit=1.0,
+            grid_export_power_kw=1.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertFalse(bool(decision.trace_gates.get("pv_only_discovery_active")))
+        self.assertEqual("battery_backed", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_applies_to_export_type")))
+        self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_bypassed_for_pv_surplus_only")))
+        self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
+        self.assertEqual(0.0, decision.export_limit)
+        self.assertIn("unavailable or untrusted", decision.trace_values.get("actual_import_cost_guard_reason"))
 
     def test_measured_carveout_state_real_discharge_clears_and_blocks(self) -> None:
         now_ts = datetime.now().timestamp()
@@ -2083,6 +2163,52 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
 
         self.assertTrue(bool(decision.trace_gates.get("import_cost_floor_unknown")))
         self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_active")))
+        self.assertEqual("battery_backed", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_applies_to_export_type")))
+        self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_bypassed_for_pv_surplus_only")))
+        self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
+        self.assertEqual(0.0, decision.export_limit)
+        self.assertIn("unavailable or untrusted", decision.trace_values.get("actual_import_cost_guard_reason"))
+
+    def test_untrusted_import_cost_blocks_unknown_or_mixed_export(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            export_value_gate_enabled=False,
+            export_value_gate_dry_run=False,
+            export_value_gate_enforce=False,
+        )
+        self._record_import_topup(
+            optimizer,
+            import_kwh=0.5,
+            import_price=None,
+            price_trusted=False,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 2.0
+        state = self._state(
+            battery_soc=100.0,
+            feedin_price=0.08,
+            feedin_price_cents=8.0,
+            pv_kw=1.0,
+            solar_power_now_kw=5.0,
+            load_kw=0.5,
+            battery_power_sensor_kw=None,
+            grid_import_power_kw=None,
+            grid_export_power_kw=None,
+            sun_above_horizon=True,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+            current_ems_mode="Maximum Self Consumption",
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertTrue(bool(decision.trace_gates.get("import_cost_floor_unknown")))
+        self.assertEqual("unknown_or_mixed", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_applies_to_export_type")))
+        self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_bypassed_for_pv_surplus_only")))
         self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
         self.assertEqual(0.0, decision.export_limit)
         self.assertIn("unavailable or untrusted", decision.trace_values.get("actual_import_cost_guard_reason"))
