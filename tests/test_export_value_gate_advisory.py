@@ -1227,7 +1227,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertLessEqual(decision.export_limit, 0.01)
 
     def test_full_battery_breathe_probe_opens_tiny_hidden_pv_probe(self) -> None:
-        from app.optimizer import DISCHARGE_MODES
+        from app.optimizer import DISCHARGE_MODES, MODE_MAX_SELF
 
         now_ts = datetime.now().timestamp()
         optimizer = self._optimizer(daytime_topup_max_soc=100.0)
@@ -1259,8 +1259,104 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         )
         self.assertLess(float(decision.trace_values.get("measured_pv_surplus_kw", 0.0)), optimizer.cfg.min_grid_transfer_kw)
         self.assertLess(float(decision.trace_values.get("estimated_pv_surplus_kw", 0.0)), optimizer.cfg.min_grid_transfer_kw)
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        self.assertTrue(bool(decision.trace_gates.get("pv_surplus_only_ems_safety_clamp")))
         self.assertIn("full-battery hidden-PV breathe probe", str(decision.trace_values.get("pv_surplus_estimated_init_reason", "")))
+
+    def test_measured_pv_surplus_already_open_uses_max_self_consumption(self) -> None:
+        from app.optimizer import DISCHARGE_MODES, MODE_MAX_SELF
+
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            daytime_topup_max_soc=100.0,
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 1.0
+        state = self._breathe_probe_state(
+            now_ts,
+            battery_soc=100.0,
+            feedin_price=0.50,
+            feedin_price_cents=50.0,
+            pv_kw=2.0,
+            solar_power_now_kw=2.0,
+            load_kw=1.0,
+            battery_power_sensor_kw=0.0,
+            current_export_limit=1.0,
+            grid_export_power_kw=1.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertTrue(bool(decision.trace_gates.get("pv_surplus_only_proven")))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_initiated_active")))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_carveout_active")))
+        self.assertGreater(decision.export_limit, 0.0)
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        self.assertNotEqual(optimizer.cfg.full_export_option, decision.ems_mode)
+        self.assertTrue(bool(decision.trace_gates.get("pv_surplus_only_ems_safety_clamp")))
+        self.assertIn(
+            "forced Maximum Self Consumption",
+            str(decision.trace_values.get("pv_surplus_only_ems_safety_clamp_reason", "")),
+        )
+
+    def test_battery_backed_allowed_export_not_forced_by_pv_only_ems_clamp(self) -> None:
+        from app.optimizer import MODE_CMD_DISCHARGE_PV
+
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 2.0
+        state = self._state(
+            battery_soc=100.0,
+            feedin_price=0.50,
+            feedin_price_cents=50.0,
+            pv_kw=0.0,
+            solar_power_now_kw=0.0,
+            load_kw=0.0,
+            battery_power_sensor_kw=-0.2,
+            sun_above_horizon=True,
+            next_sunrise_ts=now_ts + (10.0 * 3600),
+            next_sunset_ts=now_ts + (6.0 * 3600),
+            hours_to_sunrise=10.0,
+            hours_to_sunset=6.0,
+            current_ems_mode="Maximum Self Consumption",
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertEqual("battery_backed", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertTrue(decision.export_value_gate_would_allow)
+        self.assertFalse(bool(decision.trace_gates.get("pv_surplus_only_ems_safety_clamp")))
+        self.assertGreater(decision.export_limit, 0.0)
+        self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+
+    def test_manual_force_full_export_target_still_uses_discharge_mode(self) -> None:
+        from app.optimizer import MODE_CMD_DISCHARGE_PV
+
+        optimizer = self._optimizer()
+        state = self._state(
+            current_export_limit=0.01,
+            current_import_limit=0.01,
+            current_pv_max_power_limit=25.0,
+            current_ess_charge_limit=21.0,
+            current_ess_discharge_limit=24.0,
+        )
+
+        targets = optimizer._manual_mode_targets(optimizer.cfg.full_export_option, state)
+
+        self.assertIsNotNone(targets)
+        assert targets is not None
+        self.assertEqual(MODE_CMD_DISCHARGE_PV, targets["ems_mode"])
 
     def test_full_battery_breathe_probe_continues_and_ramps_from_open_export(self) -> None:
         from app.optimizer import DISCHARGE_MODES

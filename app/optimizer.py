@@ -68,7 +68,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.27-haos38"
+_RUNTIME_SIGNATURE = "2.3.28-haos39"
 
 
 @dataclass(frozen=True)
@@ -1837,6 +1837,24 @@ class SigEnergyOptimizer:
             sunrise_soc_target, within_morning_grace,
             export_blocked_for_forecast, is_evening_or_night,
         )
+        pv_surplus_only_ems_safety_clamp = False
+        pv_surplus_only_ems_safety_clamp_reason = (
+            f"inactive: final export type is {export_value_gate_export_type}."
+        )
+        if (
+            export_value_gate_export_type == "pv_surplus_only"
+            and desired_ems_mode in DISCHARGE_MODES
+        ):
+            pv_surplus_only_ems_safety_clamp = True
+            pv_surplus_only_ems_safety_clamp_reason = (
+                "forced Maximum Self Consumption because final export type is confirmed PV-only; "
+                "discharge EMS is not allowed for PV-only export."
+            )
+            desired_ems_mode = MODE_MAX_SELF
+        elif export_value_gate_export_type == "pv_surplus_only":
+            pv_surplus_only_ems_safety_clamp_reason = (
+                "inactive: confirmed PV-only export already uses a non-discharge EMS mode."
+            )
         if export_value_gate_pv_surplus_initiated_active and desired_ems_mode in DISCHARGE_MODES:
             # Keep initiation PV-only by avoiding discharge modes that can export battery energy.
             desired_ems_mode = MODE_MAX_SELF
@@ -2129,6 +2147,7 @@ class SigEnergyOptimizer:
             "actual_import_cost_guard_bypassed_for_pv_surplus_only": actual_import_cost_guard_bypassed_for_pv_surplus_only,
             "actual_import_cost_guard_blocking": actual_import_cost_guard_blocking,
             "automatic_export_blocked_below_actual_import_cost": automatic_export_blocked_below_actual_import_cost,
+            "pv_surplus_only_ems_safety_clamp": pv_surplus_only_ems_safety_clamp,
             "pv_only_discharge_ok": pv_only_discharge_ok,
             "pv_only_ems_safe": pv_only_ems_safe,
             "pv_cap_active": pv_cap_active,
@@ -2160,6 +2179,7 @@ class SigEnergyOptimizer:
             "export_value_gate_mode": export_value_gate_mode,
             "export_value_gate_block_reason": export_value_gate_block_reason,
             "actual_import_cost_guard_reason": actual_import_cost_guard_reason,
+            "pv_surplus_only_ems_safety_clamp_reason": pv_surplus_only_ems_safety_clamp_reason,
             "export_value_gate_export_type": export_value_gate_export_type,
             "export_classification_reason": export_classification_reason,
             "pv_surplus_initiation_source": pv_surplus_initiation_source,
