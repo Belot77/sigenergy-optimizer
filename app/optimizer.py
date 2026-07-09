@@ -68,7 +68,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.28-haos39"
+_RUNTIME_SIGNATURE = "2.3.29-haos40"
 
 
 @dataclass(frozen=True)
@@ -1284,6 +1284,12 @@ class SigEnergyOptimizer:
             if s.grid_export_power_kw is not None
             else 0.0
         )
+        meaningful_export_open_threshold_kw = max(float(cfg.min_grid_transfer_kw or 0.0), 0.1)
+        meaningful_live_export_open_for_discovery = bool(
+            current_export_limit_for_breathe_probe >= meaningful_export_open_threshold_kw
+            or measured_grid_export_for_breathe_probe >= meaningful_export_open_threshold_kw
+        )
+        export_effectively_closed_for_discovery = not meaningful_live_export_open_for_discovery
         live_pv_plausible_for_breathe_probe = (
             live_pv_kw_for_breathe_probe > 0.05
             and (
@@ -1370,7 +1376,7 @@ class SigEnergyOptimizer:
         estimated_init_conditions = (
             bool(cfg.pv_surplus_estimated_init_enabled)
             and automatic_control_mode
-            and desired_export_limit <= 0.01
+            and export_effectively_closed_for_discovery
             and pv_surplus_common_conditions
             and topoff_target_met
             and pv_only_discharge_ok
@@ -1380,7 +1386,7 @@ class SigEnergyOptimizer:
         )
         breathe_probe_conditions = (
             automatic_control_mode
-            and desired_export_limit <= 0.01
+            and export_effectively_closed_for_discovery
             and pv_surplus_common_conditions
             and topoff_target_met
             and pv_only_discharge_ok
@@ -1481,8 +1487,9 @@ class SigEnergyOptimizer:
                 pv_surplus_initiation_source = "estimated"
                 pv_surplus_probe_export_cap_kw = desired_export_limit
                 pv_surplus_estimated_init_reason = (
-                    "estimated PV surplus probe: measured surplus is curtailed/near zero, "
-                    f"estimated surplus is {estimated_pv_surplus_kw_for_init:.1f} kW."
+                    "estimated PV surplus probe: starting hidden-PV discovery because export is effectively closed; "
+                    "a tiny export limit does not count as live export, measured surplus is curtailed/near zero, "
+                    f"and estimated surplus is {estimated_pv_surplus_kw_for_init:.1f} kW."
                 )
                 pv_only_discovery_decision = PVOnlyDiscoveryDecision(
                     active=True,
@@ -1533,8 +1540,8 @@ class SigEnergyOptimizer:
             pv_surplus_estimated_init_reason = "inactive: estimated PV surplus initiation disabled."
         elif not automatic_control_mode:
             pv_surplus_estimated_init_reason = f"inactive: manual mode '{mode_label}' is exempt."
-        elif desired_export_limit > 0.01:
-            pv_surplus_estimated_init_reason = "inactive: live export is already open."
+        elif meaningful_live_export_open_for_discovery:
+            pv_surplus_estimated_init_reason = "inactive: meaningful live export already open."
         elif not topoff_target_met:
             pv_surplus_estimated_init_reason = "inactive: top-off target not met."
         elif not pv_only_discharge_ok:
@@ -2134,6 +2141,8 @@ class SigEnergyOptimizer:
                 self._pv_discovery_source == "pv_surplus_carveout"
             ),
             "pv_surplus_discovery_state_from_controller": pv_surplus_discovery_state_from_controller,
+            "meaningful_live_export_open_for_discovery": meaningful_live_export_open_for_discovery,
+            "export_effectively_closed_for_discovery": export_effectively_closed_for_discovery,
             "pv_surplus_topoff_block_active": pv_surplus_topoff_block_active,
             "topoff_target_met": topoff_target_met,
             "import_cost_floor_trusted": import_cost_floor_trusted,
@@ -2208,6 +2217,7 @@ class SigEnergyOptimizer:
             "battery_discharge_kw_for_pv_only": battery_discharge_kw_for_pv_only,
             "battery_flow_source_for_pv_only": battery_flow_source_for_pv_only,
             "pv_only_discharge_tolerance_kw": pv_only_discharge_tolerance_kw,
+            "meaningful_export_open_threshold_kw": meaningful_export_open_threshold_kw,
             "pv_cap_reason": pv_cap_reason,
             "current_pv_max_limit_kw": current_pv_max_limit_kw,
             "desired_pv_max_limit_kw": desired_pv_max_limit_kw,

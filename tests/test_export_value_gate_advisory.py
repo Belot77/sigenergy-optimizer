@@ -129,6 +129,22 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         values.update(overrides)
         return self._state(**values)
 
+    def _hidden_estimated_discovery_state(
+        self,
+        now_ts: float,
+        **overrides: float | bool | str | None,
+    ) -> SolarState:
+        values: dict[str, float | bool | str | None] = {
+            "pv_kw": 0.9,
+            "solar_power_now_kw": 5.8,
+            "load_kw": 0.9,
+            "battery_power_sensor_kw": -0.01,
+            "current_export_limit": 0.01,
+            "grid_export_power_kw": 0.0,
+        }
+        values.update(overrides)
+        return self._breathe_probe_state(now_ts, **values)
+
     @staticmethod
     def _previous_breathe_probe_decision(export_limit: float = 1.0) -> Decision:
         return Decision(
@@ -1106,6 +1122,147 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         )
         self.assertLessEqual(float(decision.export_limit), 0.5 + 1e-6)
         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+
+    def test_estimated_hidden_pv_discovery_treats_tiny_export_as_closed(self) -> None:
+        from app.optimizer import DISCHARGE_MODES, MODE_MAX_SELF
+
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            daytime_topup_max_soc=100.0,
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        self._record_import_topup(optimizer, import_kwh=1.0, import_price=0.23)
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 5.0
+        state = self._hidden_estimated_discovery_state(
+            now_ts,
+            feedin_price=0.09,
+            feedin_price_cents=9.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertFalse(bool(decision.trace_gates.get("meaningful_live_export_open_for_discovery")))
+        self.assertTrue(bool(decision.trace_gates.get("export_effectively_closed_for_discovery")))
+        self.assertTrue(bool(decision.trace_gates.get("pv_surplus_estimated_init_active")))
+        self.assertTrue(bool(decision.trace_gates.get("export_value_gate_pv_surplus_initiated_active")))
+        self.assertEqual("estimated", decision.trace_values.get("pv_surplus_initiation_source"))
+        self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertGreater(float(decision.trace_values.get("pv_surplus_probe_export_cap_kw", 0.0)), 0.0)
+        self.assertGreater(decision.export_limit, 0.0)
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_vetoed")))
+        self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
+        reason = str(decision.trace_values.get("pv_surplus_estimated_init_reason", ""))
+        self.assertIn("tiny export limit does not count as live export", reason)
+        self.assertNotIn("live export is already open", reason)
+
+    def test_estimated_hidden_pv_discovery_skips_when_meaningful_export_open(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            daytime_topup_max_soc=100.0,
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        self._record_import_topup(optimizer, import_kwh=1.0, import_price=0.23)
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 5.0
+        state = self._hidden_estimated_discovery_state(
+            now_ts,
+            feedin_price=0.09,
+            feedin_price_cents=9.0,
+            current_export_limit=1.0,
+            grid_export_power_kw=1.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertTrue(bool(decision.trace_gates.get("meaningful_live_export_open_for_discovery")))
+        self.assertFalse(bool(decision.trace_gates.get("export_effectively_closed_for_discovery")))
+        self.assertFalse(bool(decision.trace_gates.get("pv_surplus_estimated_init_active")))
+        self.assertFalse(bool(decision.trace_gates.get("export_value_gate_pv_surplus_initiated_active")))
+        self.assertEqual("none", decision.trace_values.get("pv_surplus_initiation_source"))
+        self.assertEqual(0.0, float(decision.trace_values.get("pv_surplus_probe_export_cap_kw", 0.0)))
+        self.assertIn(
+            "meaningful live export already open",
+            str(decision.trace_values.get("pv_surplus_estimated_init_reason", "")),
+        )
+
+    def test_tiny_export_hidden_pv_discovery_blocks_on_real_battery_discharge(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(daytime_topup_max_soc=100.0)
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 5.0
+        state = self._hidden_estimated_discovery_state(
+            now_ts,
+            battery_power_sensor_kw=-0.2,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertFalse(bool(decision.trace_gates.get("pv_only_discharge_ok")))
+        self.assertFalse(bool(decision.trace_gates.get("pv_surplus_estimated_init_active")))
+        self.assertEqual("none", decision.trace_values.get("pv_surplus_initiation_source"))
+        self.assertEqual("battery_backed", decision.trace_values.get("export_value_gate_export_type"))
+
+    def test_tiny_export_hidden_pv_discovery_blocks_on_unknown_battery_flow(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(daytime_topup_max_soc=100.0)
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 5.0
+        state = self._hidden_estimated_discovery_state(
+            now_ts,
+            battery_power_sensor_kw=None,
+            grid_import_power_kw=None,
+            grid_export_power_kw=0.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertFalse(bool(decision.trace_gates.get("pv_only_discharge_ok")))
+        self.assertFalse(bool(decision.trace_gates.get("pv_surplus_estimated_init_active")))
+        self.assertEqual("none", decision.trace_values.get("pv_surplus_initiation_source"))
+        self.assertEqual("unknown_or_mixed", decision.trace_values.get("export_value_gate_export_type"))
+
+    def test_tiny_export_hidden_pv_discovery_blocks_in_manual_force_mode(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(daytime_topup_max_soc=100.0)
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 5.0
+        cfg = optimizer.cfg
+        state = self._hidden_estimated_discovery_state(
+            now_ts,
+            sigenergy_mode=cfg.full_export_option,
+            current_ess_charge_limit=21.0,
+            current_ess_discharge_limit=24.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertFalse(bool(decision.trace_gates.get("pv_surplus_estimated_init_active")))
+        self.assertEqual("none", decision.trace_values.get("pv_surplus_initiation_source"))
+        self.assertIn("manual mode", str(decision.trace_values.get("actual_import_cost_guard_reason", "")).lower())
+
+    def test_tiny_export_hidden_pv_discovery_blocks_when_fit_zero(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(daytime_topup_max_soc=100.0)
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 5.0
+        state = self._hidden_estimated_discovery_state(
+            now_ts,
+            feedin_price=0.0,
+            feedin_price_cents=0.0,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertFalse(bool(decision.trace_gates.get("pv_surplus_estimated_init_active")))
+        self.assertEqual("none", decision.trace_values.get("pv_surplus_initiation_source"))
+        self.assertNotEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
 
     def test_estimated_pv_surplus_initiation_requires_positive_fit(self) -> None:
         now_ts = datetime.now().timestamp()
