@@ -55,6 +55,11 @@ _HEARTBEAT_INTERVAL = 60  # seconds
 # Minimum gap between back-to-back rapid triggers (debounce)
 _DEBOUNCE_SECONDS = 3.0
 
+# Remote EMS switch service-call protection. State is still checked every cycle,
+# but unavailable targets are never called and valid-off retries are bounded.
+_HA_CONTROL_ENABLE_RETRY_SECONDS = 60.0
+_HA_CONTROL_WARNING_INTERVAL_SECONDS = 300.0
+
 # Config attribute names whose entity IDs should trigger immediate cycles
 _TRIGGER_ENTITY_ATTRS = [
     "pv_power_sensor",
@@ -68,7 +73,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.29-haos40"
+_RUNTIME_SIGNATURE = "2.3.30-haos41"
 
 
 @dataclass(frozen=True)
@@ -108,6 +113,9 @@ class SigEnergyOptimizer:
         self._config_time_warnings: list[str] = self._validate_time_config()
         self._sensor_parse_warning_cache: dict[tuple[str, str], float] = {}
         self._forecast_parse_warning_cache: dict[tuple[str, str, str, str, str], float] = {}
+        self._last_ha_control_enable_attempt_at: Optional[float] = None
+        self._last_ha_control_switch_warning_at: Optional[float] = None
+        self._last_ha_control_switch_warning_key: Optional[tuple[str, str]] = None
         self._holdoff_entry_floor: Optional[float] = None  # Stable SoC floor for holdoff window
         self._last_hw_charge_cap_kw: Optional[float] = None
         self._last_hw_discharge_cap_kw: Optional[float] = None
@@ -846,7 +854,25 @@ class SigEnergyOptimizer:
             except (TypeError, ValueError):
                 s.ess_discharge_limit_entity_max_kw = None
         s.current_ems_mode = _sv(cfg.ems_mode_select, MODE_MAX_SELF)
-        s.ha_control_enabled = _bv(cfg.ha_control_switch)
+        ha_control_entity = str(cfg.ha_control_switch or "").strip()
+        ha_control_obj = bulk.get(ha_control_entity)
+        ha_control_raw_state = (
+            str(ha_control_obj.get("state", "")).strip().lower()
+            if ha_control_obj
+            else ""
+        )
+        if not ha_control_entity.startswith("switch."):
+            s.ha_control_switch_state = "invalid_domain"
+        elif not ha_control_obj:
+            s.ha_control_switch_state = "missing"
+        elif ha_control_raw_state not in {"on", "off"}:
+            s.ha_control_switch_state = ha_control_raw_state or "unknown"
+        else:
+            s.ha_control_switch_state = ha_control_raw_state
+            s.ha_control_switch_available = True
+        s.ha_control_enabled = (
+            s.ha_control_switch_available and s.ha_control_switch_state == "on"
+        )
 
         # ---- Prices ---------------------------------------------------
         price_obj = bulk.get(cfg.price_sensor, {})
@@ -1954,6 +1980,7 @@ class SigEnergyOptimizer:
         # ---- Needs HA control auto-enable? --------------------------
         d.needs_ha_control_switch = (
             cfg.auto_enable_ha_control
+            and s.ha_control_switch_available
             and not s.ha_control_enabled
             and (
                 s.feedin_is_negative
@@ -2109,6 +2136,7 @@ class SigEnergyOptimizer:
             "export_forecast_guard": export_forecast_guard,
             "export_blocked_effective": export_blocked_effective,
             "battery_only_mode": battery_only_mode,
+            "ha_control_switch_available": s.ha_control_switch_available,
             "needs_ha_control_switch": d.needs_ha_control_switch,
             "demand_window_active": s.demand_window_active,
             "price_is_negative": s.price_is_negative,
@@ -2165,6 +2193,7 @@ class SigEnergyOptimizer:
         }
         d.trace_values = {
             "battery_soc": s.battery_soc,
+            "ha_control_switch_state": s.ha_control_switch_state,
             "current_price": s.current_price,
             "feedin_price": s.feedin_price,
             "pv_kw": s.pv_kw,
@@ -2376,12 +2405,54 @@ class SigEnergyOptimizer:
 
             logger.debug("Manual mode active (%s); optimizer decisions paused", effective_mode)
             return
-        effective_ha_control = s.ha_control_enabled or d.needs_ha_control_switch
+        if cfg.auto_enable_ha_control and not s.ha_control_switch_available:
+            now_ts = datetime.now().timestamp()
+            warning_key = (str(cfg.ha_control_switch), s.ha_control_switch_state)
+            warning_due = (
+                warning_key != self._last_ha_control_switch_warning_key
+                or self._last_ha_control_switch_warning_at is None
+                or now_ts - self._last_ha_control_switch_warning_at
+                >= _HA_CONTROL_WARNING_INTERVAL_SECONDS
+            )
+            if warning_due:
+                logger.warning(
+                    "Remote EMS control switch unavailable: configured entity=%s status=%s; "
+                    "automatic EMS writes are paused and no turn_on call will be made until "
+                    "a real available switch entity is observed",
+                    cfg.ha_control_switch,
+                    s.ha_control_switch_state,
+                )
+                self._last_ha_control_switch_warning_at = now_ts
+                self._last_ha_control_switch_warning_key = warning_key
+            return
 
-        # Auto-enable HA control switch if needed
+        effective_ha_control = s.ha_control_enabled
+
+        # Auto-enable an explicitly available HA control switch if needed.
         if d.needs_ha_control_switch and not s.ha_control_enabled:
-            logger.info("Auto-enabling HA control switch")
-            await ha.turn_on(cfg.ha_control_switch)
+            now_ts = datetime.now().timestamp()
+            last_attempt = self._last_ha_control_enable_attempt_at
+            if (
+                last_attempt is not None
+                and now_ts - last_attempt < _HA_CONTROL_ENABLE_RETRY_SECONDS
+            ):
+                logger.debug(
+                    "Remote EMS control switch remains off; enable retry suppressed for %s",
+                    cfg.ha_control_switch,
+                )
+                return
+            self._last_ha_control_enable_attempt_at = now_ts
+            logger.info("Auto-enabling Remote EMS control switch %s", cfg.ha_control_switch)
+            enable_ok = await ha.turn_on(cfg.ha_control_switch)
+            if not enable_ok:
+                logger.warning(
+                    "Failed to enable Remote EMS control switch %s; automatic EMS writes "
+                    "remain paused and retry is delayed",
+                    cfg.ha_control_switch,
+                )
+                return
+            logger.info("Remote EMS control switch enable requested successfully: %s", cfg.ha_control_switch)
+            effective_ha_control = True
 
         if not effective_ha_control:
             return

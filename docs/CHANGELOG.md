@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-14
+- Fixed the default Remote EMS control switch entity spelling and added availability/domain guards before automatic `switch.turn_on` calls.
+- Missing, unavailable, or helper-domain Remote EMS targets now pause automatic EMS writes, emit a rate-limited warning, and do not hammer Home Assistant services; valid switches already on are left alone, while valid switches off retain bounded auto-enable behaviour.
+- Bumped add-on metadata, buildstamp, FastAPI metadata, and runtime signature to 2.3.30-haos41.
+
 ## 2026-06-27
 - Added a narrow full-battery hidden-PV breathe probe that can open a tiny capped export when measured and estimated surplus are both below threshold, export is clamped near zero, top-off is met, FiT is positive, and battery discharge is safely ruled out.
 - The probe stays out of discharge EMS modes and is reported as `pv_surplus_initiation_source=full_battery_breathe_probe`; manual/force modes remain exempt.

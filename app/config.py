@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # EMS entity IDs
     # ------------------------------------------------------------------
-    ha_control_switch: str = Field("switch.sigen_plant_remote_ems_controled_by_home_assistant", env="HA_CONTROL_SWITCH")
+    ha_control_switch: str = Field("switch.sigen_plant_remote_ems_controlled_by_home_assistant", env="HA_CONTROL_SWITCH")
     ems_mode_select: str = Field("select.sigen_plant_remote_ems_control_mode", env="EMS_MODE_SELECT")
     grid_export_limit: str = Field("number.sigen_plant_grid_export_limitation", env="GRID_EXPORT_LIMIT")
     grid_import_limit: str = Field("number.sigen_plant_grid_import_limitation", env="GRID_IMPORT_LIMIT")
