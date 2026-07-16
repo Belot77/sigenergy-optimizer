@@ -48,6 +48,21 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Document entity and integration assumptions for any logic change.
 - Do not run old SigEnergy blueprint automations alongside this add-on.
 
+### Confirmed control and actuator policy
+- Automated mode may use the specifically approved inverter Command Charging and Command Discharging modes selected by the existing native strategy. These modes are part of known-good energy strategy and must not be removed by a structural safety refactor.
+- Automated strategy must not generate or interpret the manual Force-mode labels as automatic decisions.
+- PV-only discovery and confirmed `pv_surplus_only` export must remain in Maximum Self Consumption. They must not use a discharge EMS mode.
+- Battery-backed export may use the existing approved Command Discharging mode when all existing safety, reserve, price, Value Gate, and actual import-cost conditions permit it.
+- Normal automatic writes require a correctly configured, real, available Remote EMS `switch.*` entity that has been observed as on.
+- Successfully requesting Remote EMS activation is not equivalent to observing the switch on. Normal automatic strategy writes must wait for a later confirmed on state.
+- Observed EMS-mode state must be represented separately from a fallback or recovery target. Maximum Self Consumption must not be used as a fabricated observed value.
+- If EMS state is missing, unavailable, unknown, empty, malformed, or otherwise untrusted, normal strategy limit writes must remain blocked. Maximum Self Consumption is the safe recovery target, but a recovery write is allowed only when the EMS entity configuration is valid and Remote EMS has already been observed on. Normal strategy processing may resume only after Maximum Self Consumption has actually been observed; it must not be fabricated as an observed state. A subsequent normal automatic decision may then select another specifically approved EMS mode.
+- Manual modes may continue using their current mapped inverter command modes.
+- Returning from Manual to Automated must clear manual overrides. The final safe transition sequence still requires design and tests because Automated may legitimately select a command mode.
+- Every Sigenergy write should eventually pass through one controlled actuator boundary.
+- The direct `/api/set_ess` operator-control route requires separate future safety hardening, allowed-value validation, ordered execution, and truthful failure reporting.
+- HAFO, HAEO, and EMHASS may provide advisory information only. SigEnergy Optimizer remains the sole Sigenergy actuator.
+
 ## 7. Control mode behaviour
 - Documented HA helper mode options are:
   - Automated
@@ -56,6 +71,18 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
   - Force Full Import + PV
   - Prevent Import & Export
   - Manual
+- Automated inverter EMS behaviour intentionally includes:
+  - Command Charging (PV First) for positive desired import, cheap charging, and top-up behaviour.
+  - Command Charging (Grid First) for sufficiently negative import prices.
+  - Command Discharging (PV First) for morning dumping, demand-window export, permitted battery-backed export, export hysteresis, and related existing strategy.
+  - Maximum Self Consumption for PV-only discovery and confirmed PV-surplus-only export.
+- Automated planning does not use the manual Force-mode labels themselves.
+- Current manual mappings are:
+  - Force Full Export -> Command Discharging (PV First)
+  - Force Full Import -> Command Charging (Grid First)
+  - Force Full Import + PV -> Command Charging (PV First)
+  - Prevent Import & Export -> Maximum Self Consumption
+- Command Discharging (ESS First) is not selected by the native planner or manual target map. It is currently exposed by the direct ESS-control UI/API.
 - README distinguishes non-live tools from live actions:
   - Verified non-live paths are Simulate Automated, Preview, Overlay This, and Clear Simulation.
   - Verified live-control paths are Run Cycle Now and manual override actions.
@@ -96,7 +123,22 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Daytime full-battery export now clamps to measured PV surplus (not optimistic solar-power-now headroom) when tomorrow forecast is below forecast_safety_charging × battery_capacity_kwh.
 - The general Value Gate flags still control stored-energy advisory/enforcement behaviour, but the actual import-cost guard is a hard automatic protection for optimiser-controlled battery-backed/mixed export. Manual force modes remain exempt, and PV-surplus-only export below the import-cost floor is allowed only after the top-off target is met and export is safely capped to measured surplus or the conservative estimated-surplus initiation probe.
 
+### Confirmed safety/actuator review findings - not yet fixed
+- Remote EMS enable currently trusts a successful service-call return and can continue normal writes in the same cycle without rereading the switch state.
+- Missing or unavailable EMS mode currently defaults internally to Maximum Self Consumption and may allow automatic writes to continue. This default is not proof of the observed inverter state.
+- Manual-to-Automated currently clears the helper and internal overrides but does not perform a distinct, confirmed neutral transition.
+- `/api/set_ess` is a supported direct operator-control feature that bypasses the normal automatic gate, accepts backend EMS strings without an allow-list, and ignores service-call failure results.
+- Safe fallback writes may partially fail and currently lack strong per-write result handling and confirmed final-state verification.
+
 ## 11. Next likely work
+### Recommended safety work order
+1. Add characterization tests for current strategy and explicit tests for the approved safety expectations.
+2. Separate observed EMS state from fallback and recovery intent.
+3. Make Remote EMS activation an enable-and-wait-for-observed-on sequence.
+4. Design and test Manual-to-Automated transition behaviour without prohibiting legitimate automatic command modes.
+5. Harden `/api/set_ess` separately, including allowed values, prerequisites, write ordering, and failure reporting.
+6. Reassess the proven behavior and tests, then introduce a common safety/actuator boundary.
+
 - Continue targeted control-path hardening with explicit test coverage.
 - If approved, carry the advisory export value gate from `main` into `feature/modular-refactor` as a separate follow-up task.
 - Keep entity assumptions and operator docs aligned with current UI and add-on behaviour.
