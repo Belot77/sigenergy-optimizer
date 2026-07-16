@@ -7,7 +7,12 @@ import unittest
 
 from app.config import Settings
 from app.models import Decision, SolarState
-from app.optimizer import MODE_CMD_CHARGE_PV, MODE_MAX_SELF, SigEnergyOptimizer
+from app.optimizer import (
+    MODE_CMD_CHARGE_PV,
+    MODE_CMD_DISCHARGE_PV,
+    MODE_MAX_SELF,
+    SigEnergyOptimizer,
+)
 
 
 REAL_CONTROL_SWITCH = "switch.sigen_plant_remote_ems_controlled_by_home_assistant"
@@ -203,6 +208,24 @@ class RemoteEMSControlTests(unittest.TestCase):
             [("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)],
         )
 
+    def _assert_supported_command_does_not_complete_recovery(self, ems_mode: str) -> None:
+        ha, optimizer, state = self._untrusted_ems_cycle("not-a-real-ems-mode")
+        decision = self._normal_strategy_decision(ems_mode=ems_mode)
+
+        asyncio.run(optimizer._apply(state, decision))
+        ha.calls.clear()
+        ha.states[optimizer.cfg.ems_mode_select]["state"] = ems_mode
+        command_state = asyncio.run(optimizer._read_state())
+        self.assertTrue(command_state.current_ems_mode_trusted)
+        self.assertIsNotNone(optimizer._last_ems_mode_recovery_attempt_at)
+        optimizer._last_ems_mode_recovery_attempt_at -= 60.0
+        asyncio.run(optimizer._apply(command_state, decision))
+
+        self.assertEqual(
+            self._sigenergy_actuator_calls(ha, optimizer),
+            [("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)],
+        )
+
     def test_default_control_switch_uses_current_sigenergy_entity_spelling(self) -> None:
         self.assertEqual(Settings().ha_control_switch, REAL_CONTROL_SWITCH)
 
@@ -339,7 +362,7 @@ class RemoteEMSControlTests(unittest.TestCase):
             actuator_calls,
             [("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)],
         )
-        warnings = [line for line in captured.output if "Observed EMS mode is untrusted" in line]
+        warnings = [line for line in captured.output if "EMS mode recovery is required" in line]
         self.assertEqual(len(warnings), 1)
 
     def test_untrusted_ems_recovery_retries_after_60_seconds(self) -> None:
@@ -377,12 +400,12 @@ class RemoteEMSControlTests(unittest.TestCase):
             [("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)],
         )
 
-    def test_trusted_ems_observation_resets_recovery_retry_episode(self) -> None:
+    def test_max_self_observation_resets_recovery_retry_episode(self) -> None:
         ha, optimizer, state = self._untrusted_ems_cycle("not-a-real-ems-mode")
         decision = self._normal_strategy_decision()
 
         asyncio.run(optimizer._apply(state, decision))
-        ha.states[optimizer.cfg.ems_mode_select]["state"] = MODE_CMD_CHARGE_PV
+        ha.states[optimizer.cfg.ems_mode_select]["state"] = MODE_MAX_SELF
         trusted_state = asyncio.run(optimizer._read_state())
         self.assertTrue(trusted_state.current_ems_mode_trusted)
         ha.states[optimizer.cfg.ems_mode_select]["state"] = "not-a-real-ems-mode"
@@ -395,6 +418,76 @@ class RemoteEMSControlTests(unittest.TestCase):
             if call == ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
         ]
         self.assertEqual(len(recovery_calls), 2)
+
+    def test_supported_command_modes_remain_normal_without_recovery_episode(self) -> None:
+        for ems_mode in (MODE_CMD_CHARGE_PV, MODE_CMD_DISCHARGE_PV):
+            with self.subTest(ems_mode=ems_mode):
+                ha, optimizer, state = self._untrusted_ems_cycle(ems_mode)
+                decision = self._normal_strategy_decision(ems_mode=ems_mode)
+
+                asyncio.run(optimizer._apply(state, decision))
+
+                actuator_calls = self._sigenergy_actuator_calls(ha, optimizer)
+                self.assertNotIn(
+                    ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF),
+                    actuator_calls,
+                )
+                self.assertTrue(any(call[0] == "set_number" for call in actuator_calls))
+
+    def test_command_discharging_does_not_complete_recovery_episode(self) -> None:
+        self._assert_supported_command_does_not_complete_recovery(MODE_CMD_DISCHARGE_PV)
+
+    def test_command_charging_does_not_complete_recovery_episode(self) -> None:
+        self._assert_supported_command_does_not_complete_recovery(MODE_CMD_CHARGE_PV)
+
+    def test_remote_ems_off_then_on_with_command_mode_still_requires_recovery(self) -> None:
+        ha, optimizer, off_state = self._untrusted_ems_cycle(
+            "not-a-real-ems-mode",
+            remote_ems_state="off",
+        )
+
+        asyncio.run(
+            optimizer._apply(
+                off_state,
+                self._normal_strategy_decision(needs_ha_control_switch=True),
+            )
+        )
+        self.assertEqual(
+            [call for call in ha.calls if call[0] == "turn_on"],
+            [("turn_on", REAL_CONTROL_SWITCH, True)],
+        )
+        self.assertEqual(self._sigenergy_actuator_calls(ha, optimizer), [])
+
+        ha.calls.clear()
+        ha.states[REAL_CONTROL_SWITCH]["state"] = "on"
+        ha.states[optimizer.cfg.ems_mode_select]["state"] = MODE_CMD_DISCHARGE_PV
+        command_state = asyncio.run(optimizer._read_state())
+        asyncio.run(
+            optimizer._apply(
+                command_state,
+                self._normal_strategy_decision(ems_mode=MODE_CMD_DISCHARGE_PV),
+            )
+        )
+        self.assertEqual(
+            self._sigenergy_actuator_calls(ha, optimizer),
+            [("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)],
+        )
+
+        ha.calls.clear()
+        ha.states[optimizer.cfg.ems_mode_select]["state"] = MODE_MAX_SELF
+        recovered_state = asyncio.run(optimizer._read_state())
+        asyncio.run(
+            optimizer._apply(
+                recovered_state,
+                self._normal_strategy_decision(ems_mode=MODE_CMD_CHARGE_PV),
+            )
+        )
+        recovered_calls = self._sigenergy_actuator_calls(ha, optimizer)
+        self.assertIn(
+            ("select_option", optimizer.cfg.ems_mode_select, MODE_CMD_CHARGE_PV),
+            recovered_calls,
+        )
+        self.assertTrue(any(call[0] == "set_number" for call in recovered_calls))
 
     def test_untrusted_ems_requires_later_observed_max_self_before_normal_strategy(self) -> None:
         ha, optimizer, first_state = self._untrusted_ems_cycle("unavailable")

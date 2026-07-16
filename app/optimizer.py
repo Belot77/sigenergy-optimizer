@@ -119,6 +119,7 @@ class SigEnergyOptimizer:
         self._last_ha_control_enable_attempt_at: Optional[float] = None
         self._last_ha_control_switch_warning_at: Optional[float] = None
         self._last_ha_control_switch_warning_key: Optional[tuple[str, str]] = None
+        self._ems_mode_recovery_required: bool = False
         self._last_ems_mode_recovery_attempt_at: Optional[float] = None
         self._last_ems_mode_recovery_warning_at: Optional[float] = None
         self._holdoff_entry_floor: Optional[float] = None  # Stable SoC floor for holdoff window
@@ -866,7 +867,10 @@ class SigEnergyOptimizer:
         )
         s.current_ems_mode = ems_mode_raw
         s.current_ems_mode_trusted = ems_mode_raw in SUPPORTED_EMS_MODES
-        if s.current_ems_mode_trusted:
+        if not s.current_ems_mode_trusted:
+            self._ems_mode_recovery_required = True
+        elif self._ems_mode_recovery_required and ems_mode_raw == MODE_MAX_SELF:
+            self._ems_mode_recovery_required = False
             self._last_ems_mode_recovery_attempt_at = None
             self._last_ems_mode_recovery_warning_at = None
         ha_control_entity = str(cfg.ha_control_switch or "").strip()
@@ -2474,6 +2478,9 @@ class SigEnergyOptimizer:
             return
 
         if not s.current_ems_mode_trusted:
+            self._ems_mode_recovery_required = True
+
+        if self._ems_mode_recovery_required:
             ems_mode_entity = str(cfg.ems_mode_select or "").strip()
             now_ts = datetime.now().timestamp()
             warning_due = (
@@ -2484,7 +2491,7 @@ class SigEnergyOptimizer:
             if not ems_mode_entity.startswith("select."):
                 if warning_due:
                     logger.warning(
-                        "Observed EMS mode is untrusted and configured EMS entity is invalid: %s; "
+                        "EMS mode recovery is required and configured EMS entity is invalid: %s; "
                         "automatic writes remain paused",
                         ems_mode_entity or "<empty>",
                     )
@@ -2492,10 +2499,12 @@ class SigEnergyOptimizer:
                 return
             if warning_due:
                 logger.warning(
-                    "Observed EMS mode is untrusted (entity=%s state=%r); requesting recovery to %s "
+                    "EMS mode recovery is required (entity=%s state=%r trusted=%s); "
+                    "requesting recovery to %s "
                     "and pausing limit writes until a later confirmed state read",
                     ems_mode_entity,
                     s.current_ems_mode,
+                    s.current_ems_mode_trusted,
                     MODE_MAX_SELF,
                 )
                 self._last_ems_mode_recovery_warning_at = now_ts
@@ -2505,7 +2514,7 @@ class SigEnergyOptimizer:
                 and now_ts - last_attempt < _EMS_MODE_RECOVERY_RETRY_SECONDS
             ):
                 logger.debug(
-                    "EMS mode remains untrusted; recovery retry suppressed for %s",
+                    "EMS mode recovery remains required; retry suppressed for %s",
                     ems_mode_entity,
                 )
                 return
