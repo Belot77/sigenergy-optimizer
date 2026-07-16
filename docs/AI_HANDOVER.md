@@ -16,9 +16,9 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 
 ## 3. Current version
 - **Authoritative source**: sigenergy_optimizer_addon/config.yaml (version field)
-- **Current version**: 2.3.15-haos26
-- **Current release note**: 2.3.15-haos26 is a cache-bust/metadata release only. It bumps the add-on buildstamp so the Home Assistant add-on image rebuilds from current `main` and the container source commit matches the current code.
-- **Control impact**: no optimiser control logic changed from 2.3.14-haos25. The 2.3.14 behaviour keeps the 2.3.13 hard actual import-cost guard and adds `PV_SURPLUS_ESTIMATED_INIT_ENABLED`, allowing a conservative estimated-surplus probe when measured PV is curtailed to house load.
+- **Live-known-good version**: 2.3.30-haos41 at commit `b088bb6`, tagged `live-good-2.3.30-haos41`.
+- **Feature branch**: `feature/safety-actuator-refactor` at commit `89ccc21` contains completed EMS trust and recovery safety work.
+- **Deployment status**: the feature branch is not merged into `main`, is not versioned as a new add-on release, has not been installed into Home Assistant, and has not been live-tested.
 - **Note**: release.sh updates config.yaml but not README.md. README.md has been updated to match current config version.
 
 ## 4. Main features
@@ -57,6 +57,7 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Successfully requesting Remote EMS activation is not equivalent to observing the switch on. Normal automatic strategy writes must wait for a later confirmed on state.
 - Observed EMS-mode state must be represented separately from a fallback or recovery target. Maximum Self Consumption must not be used as a fabricated observed value.
 - If EMS state is missing, unavailable, unknown, empty, malformed, or otherwise untrusted, normal strategy limit writes must remain blocked. Maximum Self Consumption is the safe recovery target, but a recovery write is allowed only when the EMS entity configuration is valid and Remote EMS has already been observed on. Normal strategy processing may resume only after Maximum Self Consumption has actually been observed; it must not be fabricated as an observed state. A subsequent normal automatic decision may then select another specifically approved EMS mode.
+- Supported Command Charging and Command Discharging observations remain trusted during normal operation. Once an untrusted observation starts a recovery episode, however, an approved command-mode observation does not complete recovery; only a later observed Maximum Self Consumption state does.
 - Manual modes may continue using their current mapped inverter command modes.
 - Returning from Manual to Automated must clear manual overrides. The final safe transition sequence still requires design and tests because Automated may legitimately select a command mode.
 - Every Sigenergy write should eventually pass through one controlled actuator boundary.
@@ -123,21 +124,35 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Daytime full-battery export now clamps to measured PV surplus (not optimistic solar-power-now headroom) when tomorrow forecast is below forecast_safety_charging × battery_capacity_kwh.
 - The general Value Gate flags still control stored-energy advisory/enforcement behaviour, but the actual import-cost guard is a hard automatic protection for optimiser-controlled battery-backed/mixed export. Manual force modes remain exempt, and PV-surplus-only export below the import-cost floor is allowed only after the top-off target is met and export is safely capped to measured surplus or the conservative estimated-surplus initiation probe.
 
-### Confirmed safety/actuator review findings - not yet fixed
-- Remote EMS enable currently trusts a successful service-call return and can continue normal writes in the same cycle without rereading the switch state.
-- Missing or unavailable EMS mode currently defaults internally to Maximum Self Consumption and may allow automatic writes to continue. This default is not proof of the observed inverter state.
+### Safety/actuator feature-branch status
+Completed on `feature/safety-actuator-refactor` and not live:
+- `fafc42a` corrected the safety policy while preserving approved automatic Command Charging (PV First), Command Charging (Grid First), and Command Discharging (PV First) strategy modes. PV-only discovery and confirmed `pv_surplus_only` export remain Maximum Self Consumption only.
+- `30e1ace` characterized the approved automatic and manual EMS strategy modes so the safety work does not remove intentional charging, morning-dump, demand-window, or battery-backed-export behaviour.
+- `41cfdfc` made EMS observation trust explicit: `SolarState` retains the raw Home Assistant value and separately trusts only Maximum Self Consumption, both Command Charging modes, and both Command Discharging modes. Missing, unavailable, unknown, empty, and malformed values are not fabricated as Maximum Self Consumption.
+- Untrusted EMS state blocks ordinary grid, PV, and ESS limit writes. With Remote EMS already observed on, the only permitted recovery request is Maximum Self Consumption; service-call success is not state confirmation.
+- Remote EMS observed off may receive the existing activation request, after which the optimiser returns without EMS recovery or limit writes and waits for a later observed-on cycle.
+- Recovery requests are limited to once per 60 seconds, detailed warnings to once per five minutes, and failed attempts consume the same retry interval. Remote EMS activation retry state remains separate.
+- `89ccc21` requires observed Maximum Self Consumption to complete a recovery episode. Supported command modes remain trusted normally but cannot complete a recovery episode started by an untrusted observation. After Max Self is observed, ordinary Automated processing may resume and may select an approved command mode.
+- Validation at `89ccc21`: Remote EMS tests 23 passed plus 2 subtests; strategy tests 83 passed plus 3 subtests; full suite 141 passed plus 5 subtests; compileall and `git diff --check` passed. No Home Assistant installation or live testing occurred.
+
+Still unresolved:
 - Manual-to-Automated currently clears the helper and internal overrides but does not perform a distinct, confirmed neutral transition.
 - `/api/set_ess` is a supported direct operator-control feature that bypasses the normal automatic gate, accepts backend EMS strings without an allow-list, and ignores service-call failure results.
 - Safe fallback writes may partially fail and currently lack strong per-write result handling and confirmed final-state verification.
+- A common controlled actuator boundary has not yet been created and should be reconsidered only after the targeted safety behaviours are characterized and hardened.
 
 ## 11. Next likely work
 ### Recommended safety work order
-1. Add characterization tests for current strategy and explicit tests for the approved safety expectations.
-2. Separate observed EMS state from fallback and recovery intent.
-3. Make Remote EMS activation an enable-and-wait-for-observed-on sequence.
-4. Design and test Manual-to-Automated transition behaviour without prohibiting legitimate automatic command modes.
-5. Harden `/api/set_ess` separately, including allowed values, prerequisites, write ordering, and failure reporting.
-6. Reassess the proven behavior and tests, then introduce a common safety/actuator boundary.
+1. Completed: correct the safety policy.
+2. Completed: characterize approved automatic and manual EMS strategy modes.
+3. Completed: separate observed EMS trust from the recovery target.
+4. Completed: make Remote EMS activation wait for a later observed-on state.
+5. Completed: require observed Maximum Self Consumption to complete an untrusted-state recovery episode.
+6. Completed: add EMS recovery retry and warning throttling.
+7. Next: inspect, characterize, and design Manual-to-Automated transition behaviour.
+8. Later: harden `/api/set_ess`, including allowed values, prerequisites, write ordering, and failure reporting.
+9. Later: harden fallback partial-failure handling and confirmed final-state verification.
+10. Later: reassess the common safety/actuator boundary.
 
 - Continue targeted control-path hardening with explicit test coverage.
 - If approved, carry the advisory export value gate from `main` into `feature/modular-refactor` as a separate follow-up task.
