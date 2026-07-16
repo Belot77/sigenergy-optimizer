@@ -45,6 +45,7 @@ MODE_CMD_CHARGE_GRID = "Command Charging (Grid First)"
 
 DISCHARGE_MODES = {MODE_CMD_DISCHARGE_PV, MODE_CMD_DISCHARGE_ESS}
 CHARGE_MODES = {MODE_CMD_CHARGE_PV, MODE_CMD_CHARGE_GRID}
+SUPPORTED_EMS_MODES = {MODE_MAX_SELF, *DISCHARGE_MODES, *CHARGE_MODES}
 
 # Manual mode labels for the mode select entity
 AUTOMATED_MODES = {"Automated"}
@@ -59,6 +60,8 @@ _DEBOUNCE_SECONDS = 3.0
 # but unavailable targets are never called and valid-off retries are bounded.
 _HA_CONTROL_ENABLE_RETRY_SECONDS = 60.0
 _HA_CONTROL_WARNING_INTERVAL_SECONDS = 300.0
+_EMS_MODE_RECOVERY_RETRY_SECONDS = 60.0
+_EMS_MODE_RECOVERY_WARNING_INTERVAL_SECONDS = 300.0
 
 # Config attribute names whose entity IDs should trigger immediate cycles
 _TRIGGER_ENTITY_ATTRS = [
@@ -116,6 +119,8 @@ class SigEnergyOptimizer:
         self._last_ha_control_enable_attempt_at: Optional[float] = None
         self._last_ha_control_switch_warning_at: Optional[float] = None
         self._last_ha_control_switch_warning_key: Optional[tuple[str, str]] = None
+        self._last_ems_mode_recovery_attempt_at: Optional[float] = None
+        self._last_ems_mode_recovery_warning_at: Optional[float] = None
         self._holdoff_entry_floor: Optional[float] = None  # Stable SoC floor for holdoff window
         self._last_hw_charge_cap_kw: Optional[float] = None
         self._last_hw_discharge_cap_kw: Optional[float] = None
@@ -853,7 +858,17 @@ class SigEnergyOptimizer:
                     s.ess_discharge_limit_entity_max_kw = float(max_attr)
             except (TypeError, ValueError):
                 s.ess_discharge_limit_entity_max_kw = None
-        s.current_ems_mode = _sv(cfg.ems_mode_select, MODE_MAX_SELF)
+        ems_mode_obj = bulk.get(cfg.ems_mode_select)
+        ems_mode_raw = (
+            str(ems_mode_obj.get("state", "")).strip()
+            if ems_mode_obj
+            else ""
+        )
+        s.current_ems_mode = ems_mode_raw
+        s.current_ems_mode_trusted = ems_mode_raw in SUPPORTED_EMS_MODES
+        if s.current_ems_mode_trusted:
+            self._last_ems_mode_recovery_attempt_at = None
+            self._last_ems_mode_recovery_warning_at = None
         ha_control_entity = str(cfg.ha_control_switch or "").strip()
         ha_control_obj = bulk.get(ha_control_entity)
         ha_control_raw_state = (
@@ -2274,6 +2289,7 @@ class SigEnergyOptimizer:
             "current_import_limit": s.current_import_limit,
             "current_pv_max_power_limit": s.current_pv_max_power_limit,
             "current_ems_mode": s.current_ems_mode,
+            "current_ems_mode_trusted": s.current_ems_mode_trusted,
             "sigenergy_mode": s.sigenergy_mode,
             "manual_mode_override": self._manual_mode_override,
             "export_branch": export_branch,
@@ -2452,9 +2468,53 @@ class SigEnergyOptimizer:
                 )
                 return
             logger.info("Remote EMS control switch enable requested successfully: %s", cfg.ha_control_switch)
-            effective_ha_control = True
+            return
 
         if not effective_ha_control:
+            return
+
+        if not s.current_ems_mode_trusted:
+            ems_mode_entity = str(cfg.ems_mode_select or "").strip()
+            now_ts = datetime.now().timestamp()
+            warning_due = (
+                self._last_ems_mode_recovery_warning_at is None
+                or now_ts - self._last_ems_mode_recovery_warning_at
+                >= _EMS_MODE_RECOVERY_WARNING_INTERVAL_SECONDS
+            )
+            if not ems_mode_entity.startswith("select."):
+                if warning_due:
+                    logger.warning(
+                        "Observed EMS mode is untrusted and configured EMS entity is invalid: %s; "
+                        "automatic writes remain paused",
+                        ems_mode_entity or "<empty>",
+                    )
+                    self._last_ems_mode_recovery_warning_at = now_ts
+                return
+            if warning_due:
+                logger.warning(
+                    "Observed EMS mode is untrusted (entity=%s state=%r); requesting recovery to %s "
+                    "and pausing limit writes until a later confirmed state read",
+                    ems_mode_entity,
+                    s.current_ems_mode,
+                    MODE_MAX_SELF,
+                )
+                self._last_ems_mode_recovery_warning_at = now_ts
+            last_attempt = self._last_ems_mode_recovery_attempt_at
+            if (
+                last_attempt is not None
+                and now_ts - last_attempt < _EMS_MODE_RECOVERY_RETRY_SECONDS
+            ):
+                logger.debug(
+                    "EMS mode remains untrusted; recovery retry suppressed for %s",
+                    ems_mode_entity,
+                )
+                return
+            self._last_ems_mode_recovery_attempt_at = now_ts
+            recovery_ok = await ha.select_option(ems_mode_entity, MODE_MAX_SELF)
+            if recovery_ok:
+                logger.info("EMS recovery requested successfully: %s", MODE_MAX_SELF)
+            else:
+                logger.error("Failed requesting EMS recovery to %s", MODE_MAX_SELF)
             return
 
         ems_mode_to_apply = d.ems_mode

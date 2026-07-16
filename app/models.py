@@ -32,6 +32,7 @@ class SolarState:
     ess_charge_limit_entity_max_kw: Optional[float] = None
     ess_discharge_limit_entity_max_kw: Optional[float] = None
     current_ems_mode: str = "Maximum Self Consumption"
+    current_ems_mode_trusted: bool = False
     ha_control_enabled: bool = False
     ha_control_switch_available: bool = False
     ha_control_switch_state: str = "missing"
