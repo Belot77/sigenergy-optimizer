@@ -1421,6 +1421,115 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertTrue(bool(decision.trace_gates.get("pv_surplus_only_ems_safety_clamp")))
         self.assertIn("full-battery hidden-PV breathe probe", str(decision.trace_values.get("pv_surplus_estimated_init_reason", "")))
 
+    def test_automated_cheap_topup_selects_command_charging_pv_first(self) -> None:
+        from app.optimizer import MODE_CMD_CHARGE_PV, MODE_CMD_DISCHARGE_ESS
+
+        optimizer = self._optimizer(standby_holdoff_enabled=False)
+        state = self._state(
+            sigenergy_mode=optimizer.cfg.automated_option,
+            battery_soc=40.0,
+            current_price=0.01,
+            current_price_cents=1.0,
+            price_is_actual=True,
+            feedin_price=0.0,
+            feedin_price_cents=0.0,
+            ess_max_charge_kw=25.0,
+            current_ems_mode="Maximum Self Consumption",
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertGreater(decision.import_limit, 0.0)
+        self.assertEqual("cheap_topup_import", decision.trace_values.get("import_branch"))
+        self.assertEqual(MODE_CMD_CHARGE_PV, decision.ems_mode)
+        self.assertNotEqual(MODE_CMD_DISCHARGE_ESS, decision.ems_mode)
+
+    def test_automated_negative_price_selects_command_charging_grid_first(self) -> None:
+        from app.optimizer import MODE_CMD_CHARGE_GRID, MODE_CMD_DISCHARGE_ESS
+
+        optimizer = self._optimizer(standby_holdoff_enabled=False)
+        state = self._state(
+            sigenergy_mode=optimizer.cfg.automated_option,
+            battery_soc=40.0,
+            current_price=-0.31,
+            current_price_cents=-31.0,
+            price_is_actual=True,
+            feedin_price=0.0,
+            feedin_price_cents=0.0,
+            ess_max_charge_kw=25.0,
+            current_ems_mode="Maximum Self Consumption",
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertGreater(decision.import_limit, 0.0)
+        self.assertEqual("negative_price_import", decision.trace_values.get("import_branch"))
+        self.assertEqual(MODE_CMD_CHARGE_GRID, decision.ems_mode)
+        self.assertNotEqual(MODE_CMD_DISCHARGE_ESS, decision.ems_mode)
+
+    def test_automated_morning_dump_selects_command_discharging_pv_first(self) -> None:
+        from app.optimizer import MODE_CMD_DISCHARGE_ESS, MODE_CMD_DISCHARGE_PV
+
+        now_ts = datetime.now().timestamp()
+        sunrise_ts = now_ts + (0.5 * 3600)
+        optimizer = self._optimizer(
+            morning_dump_enabled=True,
+            battery_full_safeguard_enabled=False,
+        )
+        state = self._state(
+            sigenergy_mode=optimizer.cfg.automated_option,
+            battery_soc=80.0,
+            battery_capacity_kwh=30.0,
+            available_discharge_energy_kwh=25.0,
+            current_price=0.30,
+            current_price_cents=30.0,
+            price_is_actual=True,
+            feedin_price=1.20,
+            feedin_price_cents=120.0,
+            load_kw=0.0,
+            next_sunrise_ts=sunrise_ts,
+            next_sunset_ts=now_ts + (12.0 * 3600),
+            hours_to_sunrise=0.5,
+            sun_above_horizon=False,
+            solcast_detailed=[
+                {"period_start": sunrise_ts + (1.5 * 3600), "pv_estimate": 20.0},
+                {"period_start": sunrise_ts + (2.0 * 3600), "pv_estimate": 20.0},
+            ],
+            current_ems_mode="Maximum Self Consumption",
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertTrue(decision.morning_dump_active)
+        self.assertEqual("morning_dump", decision.trace_values.get("export_branch"))
+        self.assertGreater(decision.export_limit, 0.0)
+        self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+        self.assertNotEqual(MODE_CMD_DISCHARGE_ESS, decision.ems_mode)
+
+    def test_automated_demand_window_export_uses_discharge_and_blocks_import(self) -> None:
+        from app.optimizer import MODE_CMD_DISCHARGE_ESS, MODE_CMD_DISCHARGE_PV
+
+        optimizer = self._optimizer(battery_full_safeguard_enabled=False)
+        state = self._state(
+            sigenergy_mode=optimizer.cfg.automated_option,
+            demand_window_active=True,
+            battery_soc=80.0,
+            current_price=0.30,
+            current_price_cents=30.0,
+            price_is_actual=True,
+            feedin_price=1.20,
+            feedin_price_cents=120.0,
+            current_ems_mode="Maximum Self Consumption",
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertGreater(decision.export_limit, 0.0)
+        self.assertEqual(0.0, decision.import_limit)
+        self.assertEqual("demand_window_block", decision.trace_values.get("import_branch"))
+        self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+        self.assertNotEqual(MODE_CMD_DISCHARGE_ESS, decision.ems_mode)
+
     def test_measured_pv_surplus_already_open_uses_max_self_consumption(self) -> None:
         from app.optimizer import DISCHARGE_MODES, MODE_MAX_SELF
 
@@ -1514,6 +1623,30 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertIsNotNone(targets)
         assert targets is not None
         self.assertEqual(MODE_CMD_DISCHARGE_PV, targets["ems_mode"])
+
+    def test_manual_mode_targets_preserve_remaining_ems_mappings(self) -> None:
+        from app.optimizer import MODE_CMD_CHARGE_GRID, MODE_CMD_CHARGE_PV, MODE_MAX_SELF
+
+        optimizer = self._optimizer()
+        state = self._state(
+            current_export_limit=0.01,
+            current_import_limit=0.01,
+            current_pv_max_power_limit=25.0,
+            current_ess_charge_limit=21.0,
+            current_ess_discharge_limit=24.0,
+        )
+        expected_modes = {
+            optimizer.cfg.full_import_option: MODE_CMD_CHARGE_GRID,
+            optimizer.cfg.full_import_pv_option: MODE_CMD_CHARGE_PV,
+            optimizer.cfg.block_flow_option: MODE_MAX_SELF,
+        }
+
+        for mode_label, expected_ems_mode in expected_modes.items():
+            with self.subTest(mode_label=mode_label):
+                targets = optimizer._manual_mode_targets(mode_label, state)
+                self.assertIsNotNone(targets)
+                assert targets is not None
+                self.assertEqual(expected_ems_mode, targets["ems_mode"])
 
     def test_full_battery_breathe_probe_continues_and_ramps_from_open_export(self) -> None:
         from app.optimizer import DISCHARGE_MODES
