@@ -25,7 +25,11 @@ class SolarState:
 
     # Grid
     current_export_limit: float = 0.0
+    current_export_limit_raw: Optional[str] = None
+    current_export_limit_trusted: bool = False
     current_import_limit: float = 0.0
+    current_import_limit_raw: Optional[str] = None
+    current_import_limit_trusted: bool = False
     current_pv_max_power_limit: float = 25.0
     current_ess_charge_limit: Optional[float] = None
     current_ess_discharge_limit: Optional[float] = None

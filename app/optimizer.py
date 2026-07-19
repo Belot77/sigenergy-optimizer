@@ -17,8 +17,10 @@ import asyncio
 from collections import deque
 from dataclasses import dataclass
 import logging
+import math
 import os
 from datetime import datetime, time, timedelta, timezone
+from time import monotonic
 from typing import Any, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -62,6 +64,13 @@ _HA_CONTROL_ENABLE_RETRY_SECONDS = 60.0
 _HA_CONTROL_WARNING_INTERVAL_SECONDS = 300.0
 _EMS_MODE_RECOVERY_RETRY_SECONDS = 60.0
 _EMS_MODE_RECOVERY_WARNING_INTERVAL_SECONDS = 300.0
+_AUTOMATED_TRANSITION_ACTION_RETRY_SECONDS = 60.0
+_AUTOMATED_TRANSITION_WARNING_INTERVAL_SECONDS = 300.0
+_GRID_CONTAINMENT_CLOSED_THRESHOLD_KW = 0.011
+
+_AUTOMATED_TRANSITION_IDLE = "IDLE"
+_AUTOMATED_TRANSITION_CONTAINING_GRID = "CONTAINING_GRID"
+_AUTOMATED_TRANSITION_WAITING_FOR_TARGET_EMS = "WAITING_FOR_TARGET_EMS"
 
 # Config attribute names whose entity IDs should trigger immediate cycles
 _TRIGGER_ENTITY_ATTRS = [
@@ -73,6 +82,10 @@ _TRIGGER_ENTITY_ATTRS = [
     "demand_window_sensor",
     "price_spike_sensor",
     "sigenergy_mode_select",
+    "grid_export_limit",
+    "grid_import_limit",
+    "ems_mode_select",
+    "ha_control_switch",
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
@@ -91,6 +104,17 @@ class PVOnlyDiscoveryDecision:
     estimated_probe: bool = False
     breathe_probe: bool = False
     continuation: bool = False
+
+
+@dataclass
+class AutomatedTransitionState:
+    phase: str = _AUTOMATED_TRANSITION_IDLE
+    started_at: Optional[float] = None
+    target_ems_mode: str = ""
+    last_action_at: Optional[float] = None
+    last_warning_at: Optional[float] = None
+    source: str = ""
+    previous_mode: str = ""
 
 
 class SigEnergyOptimizer:
@@ -122,6 +146,8 @@ class SigEnergyOptimizer:
         self._ems_mode_recovery_required: bool = False
         self._last_ems_mode_recovery_attempt_at: Optional[float] = None
         self._last_ems_mode_recovery_warning_at: Optional[float] = None
+        self._automated_transition = AutomatedTransitionState()
+        self._startup_automated_transition_checked: bool = False
         self._holdoff_entry_floor: Optional[float] = None  # Stable SoC floor for holdoff window
         self._last_hw_charge_cap_kw: Optional[float] = None
         self._last_hw_discharge_cap_kw: Optional[float] = None
@@ -358,6 +384,44 @@ class SigEnergyOptimizer:
             }
         return self._watch_entities
 
+    def _recognized_manual_modes(self) -> set[str]:
+        cfg = self.cfg
+        return {
+            cfg.full_export_option,
+            cfg.full_import_option,
+            cfg.full_import_pv_option,
+            cfg.block_flow_option,
+            cfg.manual_option,
+        }
+
+    def _automated_transition_pending(self) -> bool:
+        return self._automated_transition.phase != _AUTOMATED_TRANSITION_IDLE
+
+    def _start_automated_transition(self, *, source: str, previous_mode: str) -> None:
+        if self._automated_transition_pending():
+            return
+        self._automated_transition = AutomatedTransitionState(
+            phase=_AUTOMATED_TRANSITION_CONTAINING_GRID,
+            started_at=monotonic(),
+            source=source,
+            previous_mode=previous_mode,
+        )
+        logger.info(
+            "Automated transition started: source=%s previous_mode=%s",
+            source,
+            previous_mode,
+        )
+
+    def _clear_automated_transition(self, *, reason: str) -> None:
+        if not self._automated_transition_pending():
+            return
+        logger.info(
+            "Automated transition cleared: phase=%s reason=%s",
+            self._automated_transition.phase,
+            reason,
+        )
+        self._automated_transition = AutomatedTransitionState()
+
     def on_ws_connect(self) -> None:
         self._ws_connected = True
         logger.info("WebSocket connected — event-driven mode active")
@@ -473,9 +537,39 @@ class SigEnergyOptimizer:
             prev_decision = self._last_decision
             prev_state = self._last_state
             state = await self._read_state()
+            previous_mode = prev_state.sigenergy_mode if prev_state else ""
+            effective_mode = self._manual_mode_override or state.sigenergy_mode
+            if (
+                self._automated_transition_pending()
+                and effective_mode in self._recognized_manual_modes()
+            ):
+                self._clear_automated_transition(reason=f"manual mode observed: {effective_mode}")
+            elif (
+                not self._automated_transition_pending()
+                and self._manual_mode_override is None
+                and previous_mode in self._recognized_manual_modes()
+                and state.sigenergy_mode == self.cfg.automated_option
+            ):
+                self._start_automated_transition(
+                    source="helper",
+                    previous_mode=previous_mode,
+                )
             self._last_state = state
             decision = self._decide(state)
             effective_mode = self._manual_mode_override or state.sigenergy_mode
+            if not self._startup_automated_transition_checked:
+                if self._automated_transition_pending():
+                    self._startup_automated_transition_checked = True
+                elif effective_mode in self._recognized_manual_modes():
+                    self._startup_automated_transition_checked = True
+                elif effective_mode == self.cfg.automated_option:
+                    if not self._ems_mode_recovery_required and state.current_ems_mode_trusted:
+                        self._startup_automated_transition_checked = True
+                        if state.current_ems_mode != decision.ems_mode:
+                            self._start_automated_transition(
+                                source="startup",
+                                previous_mode=effective_mode,
+                            )
             if effective_mode not in {self.cfg.automated_option, ""}:
                 self._freeze_decision_to_live_mode(state, decision, effective_mode)
             self._last_decision = decision
@@ -773,6 +867,25 @@ class SigEnergyOptimizer:
             except (TypeError, ValueError):
                 return default
 
+        def _grid_limit_observation(eid: str) -> tuple[float, Optional[str], bool]:
+            obj = bulk.get(eid)
+            if not obj:
+                return 0.0, None, False
+
+            raw_value = obj.get("state", "")
+            raw = "" if raw_value is None else str(raw_value).strip()
+            if not str(eid or "").strip().startswith("number."):
+                return 0.0, raw, False
+            if not raw or raw.lower() in {"unknown", "unavailable", "none"}:
+                return 0.0, raw, False
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                return 0.0, raw, False
+            if not math.isfinite(value) or value < 0:
+                return 0.0, raw, False
+            return value, raw, True
+
         def _sv(eid: str, default: str = "") -> str:
             obj = bulk.get(eid)
             if not obj:
@@ -840,8 +953,16 @@ class SigEnergyOptimizer:
             self._last_hw_discharge_cap_kw = float(s.ess_max_discharge_kw)
 
         # ---- Grid limits / EMS mode -----------------------------------
-        s.current_export_limit = _fv(cfg.grid_export_limit)
-        s.current_import_limit = _fv(cfg.grid_import_limit)
+        (
+            s.current_export_limit,
+            s.current_export_limit_raw,
+            s.current_export_limit_trusted,
+        ) = _grid_limit_observation(cfg.grid_export_limit)
+        (
+            s.current_import_limit,
+            s.current_import_limit_raw,
+            s.current_import_limit_trusted,
+        ) = _grid_limit_observation(cfg.grid_import_limit)
         s.current_pv_max_power_limit = _fv(cfg.pv_max_power_limit)
         if cfg.ess_max_charging_limit:
             s.current_ess_charge_limit = _fv(cfg.ess_max_charging_limit)
@@ -2334,6 +2455,309 @@ class SigEnergyOptimizer:
     # 3. Apply decisions to Home Assistant
     # ------------------------------------------------------------------
 
+    def _warn_automated_transition(self, now_ts: float, message: str, *args: Any) -> bool:
+        transition = self._automated_transition
+        if (
+            transition.last_warning_at is not None
+            and now_ts - transition.last_warning_at
+            < _AUTOMATED_TRANSITION_WARNING_INTERVAL_SECONDS
+        ):
+            return False
+        logger.warning(message, *args)
+        transition.last_warning_at = now_ts
+        return True
+
+    def _set_automated_transition_diagnostics(
+        self,
+        s: SolarState,
+        d: Decision,
+        *,
+        reason: str,
+        retry_suppressed: bool = False,
+        warning_suppressed: bool = False,
+        blocking: bool = True,
+    ) -> None:
+        transition = self._automated_transition
+        now_ts = monotonic()
+        elapsed = (
+            max(0.0, now_ts - transition.started_at)
+            if transition.started_at is not None
+            else 0.0
+        )
+        export_closed = (
+            s.current_export_limit_trusted
+            and s.current_export_limit <= _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+        )
+        import_closed = (
+            s.current_import_limit_trusted
+            and s.current_import_limit <= _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+        )
+        d.trace_gates.update(
+            {
+                "automated_transition_pending": blocking,
+                "automated_transition_grid_contained": export_closed and import_closed,
+                "automated_transition_retry_suppressed": retry_suppressed,
+                "automated_transition_warning_suppressed": warning_suppressed,
+                "automated_transition_normal_writes_blocked": blocking,
+            }
+        )
+        d.trace_values.update(
+            {
+                "automated_transition_phase": transition.phase,
+                "automated_transition_source": transition.source,
+                "automated_transition_previous_mode": transition.previous_mode,
+                "automated_transition_target_ems_mode": transition.target_ems_mode,
+                "automated_transition_elapsed_seconds": elapsed,
+                "automated_transition_block_reason": reason,
+                "current_export_limit_raw": s.current_export_limit_raw,
+                "current_export_limit_trusted": s.current_export_limit_trusted,
+                "current_import_limit_raw": s.current_import_limit_raw,
+                "current_import_limit_trusted": s.current_import_limit_trusted,
+            }
+        )
+        if blocking:
+            d.outcome_reason = reason
+
+    async def _apply_automated_transition(self, s: SolarState, d: Decision) -> bool:
+        """Return True while transition safety blocks normal actuator writes."""
+        transition = self._automated_transition
+        if transition.phase == _AUTOMATED_TRANSITION_IDLE:
+            return False
+
+        now_ts = monotonic()
+        elapsed = (
+            max(0.0, now_ts - transition.started_at)
+            if transition.started_at is not None
+            else 0.0
+        )
+        warning_suppressed = False
+        if elapsed >= _AUTOMATED_TRANSITION_WARNING_INTERVAL_SECONDS:
+            warning_suppressed = not self._warn_automated_transition(
+                now_ts,
+                "Automated transition remains pending: phase=%s source=%s elapsed=%.0fs",
+                transition.phase,
+                transition.source,
+                elapsed,
+            )
+
+        transition.target_ems_mode = d.ems_mode
+        try:
+            containment_value = float(self.cfg.block_flow_limit_value)
+        except (TypeError, ValueError):
+            containment_value = float("nan")
+        containment_value_valid = (
+            math.isfinite(containment_value)
+            and 0.0 <= containment_value <= _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+        )
+        if not containment_value_valid:
+            warning_emitted = self._warn_automated_transition(
+                now_ts,
+                "Automated transition blocked by invalid block_flow_limit_value=%r; "
+                "required range is 0.0..%.3f",
+                self.cfg.block_flow_limit_value,
+                _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW,
+            )
+            self._set_automated_transition_diagnostics(
+                s,
+                d,
+                reason="Automated transition blocked: invalid grid containment configuration.",
+                warning_suppressed=warning_suppressed or not warning_emitted,
+            )
+            return True
+
+        export_closed = (
+            s.current_export_limit_trusted
+            and s.current_export_limit <= _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+        )
+        import_closed = (
+            s.current_import_limit_trusted
+            and s.current_import_limit <= _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+        )
+        grid_contained = export_closed and import_closed
+
+        if (
+            transition.phase == _AUTOMATED_TRANSITION_WAITING_FOR_TARGET_EMS
+            and not grid_contained
+        ):
+            transition.phase = _AUTOMATED_TRANSITION_CONTAINING_GRID
+            transition.last_action_at = None
+
+        if transition.phase == _AUTOMATED_TRANSITION_CONTAINING_GRID:
+            if grid_contained:
+                transition.phase = _AUTOMATED_TRANSITION_WAITING_FOR_TARGET_EMS
+                transition.last_action_at = None
+            else:
+                close_export = (
+                    s.current_export_limit_trusted
+                    and s.current_export_limit > _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+                )
+                close_import = (
+                    s.current_import_limit_trusted
+                    and s.current_import_limit > _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+                )
+                if not close_export and not close_import:
+                    warning_emitted = self._warn_automated_transition(
+                        now_ts,
+                        "Automated transition waiting for trusted grid-limit observations: "
+                        "export raw=%r trusted=%s import raw=%r trusted=%s",
+                        s.current_export_limit_raw,
+                        s.current_export_limit_trusted,
+                        s.current_import_limit_raw,
+                        s.current_import_limit_trusted,
+                    )
+                    self._set_automated_transition_diagnostics(
+                        s,
+                        d,
+                        reason="Automated transition blocked: waiting for trusted closed grid limits.",
+                        warning_suppressed=warning_suppressed or not warning_emitted,
+                    )
+                    return True
+
+                last_action = transition.last_action_at
+                retry_suppressed = (
+                    last_action is not None
+                    and now_ts - last_action < _AUTOMATED_TRANSITION_ACTION_RETRY_SECONDS
+                )
+                if retry_suppressed:
+                    self._set_automated_transition_diagnostics(
+                        s,
+                        d,
+                        reason="Automated transition blocked: grid containment retry is throttled.",
+                        retry_suppressed=True,
+                        warning_suppressed=warning_suppressed,
+                    )
+                    return True
+
+                transition.last_action_at = now_ts
+                failed: list[str] = []
+                requested: list[str] = []
+                if close_export:
+                    requested.append("export")
+                    if not await self.ha.set_number(
+                        self.cfg.grid_export_limit,
+                        containment_value,
+                    ):
+                        failed.append("export")
+                if close_import:
+                    requested.append("import")
+                    if not await self.ha.set_number(
+                        self.cfg.grid_import_limit,
+                        containment_value,
+                    ):
+                        failed.append("import")
+                if failed:
+                    warning_emitted = self._warn_automated_transition(
+                        now_ts,
+                        "Automated transition grid containment request failed for: %s",
+                        ", ".join(failed),
+                    )
+                    warning_suppressed = warning_suppressed or not warning_emitted
+                else:
+                    logger.info(
+                        "Automated transition requested grid containment: %s",
+                        ", ".join(requested),
+                    )
+                self._set_automated_transition_diagnostics(
+                    s,
+                    d,
+                    reason=(
+                        "Automated transition requested grid containment; "
+                        "waiting for a later trusted observation."
+                    ),
+                    warning_suppressed=warning_suppressed,
+                )
+                return True
+
+        approved_targets = {
+            MODE_MAX_SELF,
+            MODE_CMD_CHARGE_PV,
+            MODE_CMD_CHARGE_GRID,
+            MODE_CMD_DISCHARGE_PV,
+        }
+        if transition.target_ems_mode not in approved_targets:
+            warning_emitted = self._warn_automated_transition(
+                now_ts,
+                "Automated transition blocked by unsupported strategy EMS target=%r",
+                transition.target_ems_mode,
+            )
+            self._set_automated_transition_diagnostics(
+                s,
+                d,
+                reason="Automated transition blocked: unsupported Automated EMS target.",
+                warning_suppressed=warning_suppressed or not warning_emitted,
+            )
+            return True
+
+        if not s.current_ems_mode_trusted:
+            warning_emitted = self._warn_automated_transition(
+                now_ts,
+                "Automated transition waiting for a trusted EMS observation: state=%r",
+                s.current_ems_mode,
+            )
+            self._set_automated_transition_diagnostics(
+                s,
+                d,
+                reason="Automated transition blocked: waiting for trusted EMS observation.",
+                warning_suppressed=warning_suppressed or not warning_emitted,
+            )
+            return True
+
+        if s.current_ems_mode == transition.target_ems_mode:
+            self._set_automated_transition_diagnostics(
+                s,
+                d,
+                reason="Automated transition complete: target EMS and grid containment observed.",
+                warning_suppressed=warning_suppressed,
+                blocking=False,
+            )
+            d.trace_gates["automated_transition_completed"] = True
+            d.trace_values["automated_transition_phase"] = "COMPLETED"
+            self._clear_automated_transition(reason="target EMS and grid containment observed")
+            return False
+
+        last_action = transition.last_action_at
+        retry_suppressed = (
+            last_action is not None
+            and now_ts - last_action < _AUTOMATED_TRANSITION_ACTION_RETRY_SECONDS
+        )
+        if retry_suppressed:
+            self._set_automated_transition_diagnostics(
+                s,
+                d,
+                reason="Automated transition blocked: EMS target request retry is throttled.",
+                retry_suppressed=True,
+                warning_suppressed=warning_suppressed,
+            )
+            return True
+
+        transition.last_action_at = now_ts
+        logger.info(
+            "Automated transition requesting EMS target: observed=%s target=%s",
+            s.current_ems_mode,
+            transition.target_ems_mode,
+        )
+        target_ok = await self.ha.select_option(
+            self.cfg.ems_mode_select,
+            transition.target_ems_mode,
+        )
+        if not target_ok:
+            warning_emitted = self._warn_automated_transition(
+                now_ts,
+                "Automated transition failed requesting EMS target=%s",
+                transition.target_ems_mode,
+            )
+            warning_suppressed = warning_suppressed or not warning_emitted
+        self._set_automated_transition_diagnostics(
+            s,
+            d,
+            reason=(
+                "Automated requested - waiting for inverter EMS confirmation "
+                f"of {transition.target_ems_mode}."
+            ),
+            warning_suppressed=warning_suppressed,
+        )
+        return True
+
     async def _apply(self, s: SolarState, d: Decision) -> None:
         cfg = self.cfg
         ha = self.ha
@@ -2347,6 +2771,11 @@ class SigEnergyOptimizer:
                 await ha.set_number(cfg.ess_max_discharging_limit, 0.01)
 
         effective_mode = self._manual_mode_override or s.sigenergy_mode
+        if (
+            self._automated_transition_pending()
+            and effective_mode in self._recognized_manual_modes()
+        ):
+            self._clear_automated_transition(reason=f"manual mode active: {effective_mode}")
         if self._manual_mode_override and s.sigenergy_mode != self._manual_mode_override:
             logger.warning(
                 "Mode selector drift detected (%s -> %s); restoring manual selection",
@@ -2425,7 +2854,13 @@ class SigEnergyOptimizer:
 
             logger.debug("Manual mode active (%s); optimizer decisions paused", effective_mode)
             return
-        if cfg.auto_enable_ha_control and not s.ha_control_switch_available:
+        transition_pending = self._automated_transition_pending()
+        if transition_pending:
+            self._automated_transition.target_ems_mode = d.ems_mode
+        if (
+            (cfg.auto_enable_ha_control or transition_pending)
+            and not s.ha_control_switch_available
+        ):
             now_ts = datetime.now().timestamp()
             warning_key = (str(cfg.ha_control_switch), s.ha_control_switch_state)
             warning_due = (
@@ -2444,12 +2879,24 @@ class SigEnergyOptimizer:
                 )
                 self._last_ha_control_switch_warning_at = now_ts
                 self._last_ha_control_switch_warning_key = warning_key
+            if transition_pending:
+                self._set_automated_transition_diagnostics(
+                    s,
+                    d,
+                    reason="Automated transition blocked: Remote EMS switch is unavailable.",
+                )
             return
 
         effective_ha_control = s.ha_control_enabled
 
         # Auto-enable an explicitly available HA control switch if needed.
-        if d.needs_ha_control_switch and not s.ha_control_enabled:
+        if (
+            (
+                d.needs_ha_control_switch
+                or (transition_pending and cfg.auto_enable_ha_control)
+            )
+            and not s.ha_control_enabled
+        ):
             now_ts = datetime.now().timestamp()
             last_attempt = self._last_ha_control_enable_attempt_at
             if (
@@ -2460,6 +2907,16 @@ class SigEnergyOptimizer:
                     "Remote EMS control switch remains off; enable retry suppressed for %s",
                     cfg.ha_control_switch,
                 )
+                if transition_pending:
+                    self._set_automated_transition_diagnostics(
+                        s,
+                        d,
+                        reason=(
+                            "Automated transition blocked: waiting for observed Remote EMS on; "
+                            "activation retry is throttled."
+                        ),
+                        retry_suppressed=True,
+                    )
                 return
             self._last_ha_control_enable_attempt_at = now_ts
             logger.info("Auto-enabling Remote EMS control switch %s", cfg.ha_control_switch)
@@ -2470,17 +2927,44 @@ class SigEnergyOptimizer:
                     "remain paused and retry is delayed",
                     cfg.ha_control_switch,
                 )
+                if transition_pending:
+                    self._set_automated_transition_diagnostics(
+                        s,
+                        d,
+                        reason="Automated transition blocked: Remote EMS activation failed.",
+                    )
                 return
             logger.info("Remote EMS control switch enable requested successfully: %s", cfg.ha_control_switch)
+            if transition_pending:
+                self._set_automated_transition_diagnostics(
+                    s,
+                    d,
+                    reason="Automated transition blocked: waiting for observed Remote EMS on.",
+                )
             return
 
         if not effective_ha_control:
+            if transition_pending:
+                self._set_automated_transition_diagnostics(
+                    s,
+                    d,
+                    reason="Automated transition blocked: Remote EMS is not observed on.",
+                )
             return
 
         if not s.current_ems_mode_trusted:
             self._ems_mode_recovery_required = True
 
         if self._ems_mode_recovery_required:
+            if transition_pending:
+                self._set_automated_transition_diagnostics(
+                    s,
+                    d,
+                    reason=(
+                        "Automated transition paused: waiting for observed Maximum Self "
+                        "Consumption to complete EMS recovery."
+                    ),
+                )
             ems_mode_entity = str(cfg.ems_mode_select or "").strip()
             now_ts = datetime.now().timestamp()
             warning_due = (
@@ -2524,6 +3008,9 @@ class SigEnergyOptimizer:
                 logger.info("EMS recovery requested successfully: %s", MODE_MAX_SELF)
             else:
                 logger.error("Failed requesting EMS recovery to %s", MODE_MAX_SELF)
+            return
+
+        if transition_pending and await self._apply_automated_transition(s, d):
             return
 
         ems_mode_to_apply = d.ems_mode
@@ -2804,6 +3291,37 @@ class SigEnergyOptimizer:
         ha = self.ha
 
         async with self._control_lock:
+            previous_mode = ""
+            if mode_label == cfg.automated_option:
+                recognized_manual_modes = self._recognized_manual_modes()
+                trusted_prior_modes = {cfg.automated_option, *recognized_manual_modes}
+                if self._manual_mode_override in recognized_manual_modes:
+                    previous_mode = self._manual_mode_override
+                elif self._last_state is not None:
+                    cached_mode = str(self._last_state.sigenergy_mode or "").strip()
+                    if cached_mode in trusted_prior_modes:
+                        previous_mode = cached_mode
+
+                if not previous_mode:
+                    try:
+                        helper_value = await ha.get_state_value(
+                            cfg.sigenergy_mode_select,
+                            None,
+                        )
+                    except Exception as exc:
+                        raise RuntimeError(
+                            "Cannot switch to Automated: failed to read the current mode helper"
+                        ) from exc
+                    helper_mode = (
+                        "" if helper_value is None else str(helper_value).strip()
+                    )
+                    if helper_mode not in trusted_prior_modes:
+                        helper_label = helper_mode or "<empty-or-missing>"
+                        raise RuntimeError(
+                            "Cannot switch to Automated: current mode helper state is "
+                            f"untrusted ({helper_label!r})"
+                        )
+                    previous_mode = helper_mode
             # Update the input_select in HA
             ok_mode_select = await ha.select_option(cfg.sigenergy_mode_select, mode_label)
             if not ok_mode_select:
@@ -2811,10 +3329,19 @@ class SigEnergyOptimizer:
                     f"Failed to set mode selector {cfg.sigenergy_mode_select} to '{mode_label}'"
                 )
             if mode_label == cfg.automated_option:
+                if previous_mode in self._recognized_manual_modes():
+                    self._start_automated_transition(
+                        source="apply_manual_mode",
+                        previous_mode=previous_mode,
+                    )
                 self._manual_mode_override = None
                 self._manual_ess_charge_override_kw = None
                 self._manual_ess_discharge_override_kw = None
             else:
+                if mode_label in self._recognized_manual_modes():
+                    self._clear_automated_transition(
+                        reason=f"manual mode selected: {mode_label}"
+                    )
                 self._manual_mode_override = mode_label
                 if mode_label in {
                     cfg.block_flow_option,
