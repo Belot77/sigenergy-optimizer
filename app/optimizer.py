@@ -117,6 +117,7 @@ class AutomatedTransitionState:
     phase: str = _AUTOMATED_TRANSITION_IDLE
     started_at: Optional[float] = None
     target_ems_mode: str = ""
+    last_requested_target: str = ""
     last_action_at: Optional[float] = None
     last_warning_at: Optional[float] = None
     source: str = ""
@@ -2757,7 +2758,13 @@ class SigEnergyOptimizer:
             )
             return True
 
-        if s.current_ems_mode == transition.target_ems_mode:
+        if (
+            s.current_ems_mode == transition.target_ems_mode
+            and (
+                not transition.last_requested_target
+                or transition.last_requested_target == transition.target_ems_mode
+            )
+        ):
             self._set_automated_transition_diagnostics(
                 s,
                 d,
@@ -2786,6 +2793,7 @@ class SigEnergyOptimizer:
             return True
 
         transition.last_action_at = now_ts
+        transition.last_requested_target = transition.target_ems_mode
         logger.info(
             "Automated transition requesting EMS target: observed=%s target=%s",
             s.current_ems_mode,

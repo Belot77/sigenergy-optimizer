@@ -1573,6 +1573,185 @@ class ManualToAutomatedTransitionTests(unittest.TestCase):
             [("select_option", cfg.ems_mode_select, MODE_CMD_CHARGE_GRID)],
         )
 
+    def test_shared_transition_target_return_after_request_requires_superseding_confirmation(
+        self,
+    ) -> None:
+        for source in ("apply_manual_mode", "startup"):
+            with self.subTest(source=source):
+                ha, optimizer = self._optimizer()
+                cfg = optimizer.cfg
+                if source == "apply_manual_mode":
+                    self._enter_transition(ha, optimizer)
+                else:
+                    optimizer._start_automated_transition(
+                        source="startup",
+                        previous_mode=cfg.automated_option,
+                    )
+                self.assertEqual(
+                    optimizer._automated_transition.last_requested_target,
+                    "",
+                )
+                ha.update_state_on_success = False
+
+                observed_b = self._state(current_ems_mode=MODE_CMD_DISCHARGE_PV)
+                target_a = self._normal_decision(ems_mode=MODE_CMD_CHARGE_PV)
+                with patch("app.optimizer.monotonic", return_value=100.0):
+                    asyncio.run(optimizer._apply(observed_b, target_a))
+
+                self.assertEqual(
+                    self._inverter_calls(ha, optimizer),
+                    [("select_option", cfg.ems_mode_select, MODE_CMD_CHARGE_PV)],
+                )
+                self.assertEqual(
+                    optimizer._automated_transition.last_requested_target,
+                    MODE_CMD_CHARGE_PV,
+                )
+                self.assertEqual(
+                    optimizer._automated_transition.phase,
+                    "WAITING_FOR_TARGET_EMS",
+                )
+
+                newest_b = self._normal_decision(ems_mode=MODE_CMD_DISCHARGE_PV)
+                newest_b.export_limit = 4.0
+                newest_b.import_limit = 5.0
+                newest_b.ess_charge_limit = 8.0
+                newest_b.ess_discharge_limit = 9.0
+                newest_b.pv_max_power_limit = 18.0
+                ha.calls.clear()
+                with patch("app.optimizer.monotonic", return_value=159.0):
+                    asyncio.run(optimizer._apply(observed_b, newest_b))
+
+                self.assertEqual(self._inverter_calls(ha, optimizer), [])
+                self.assertEqual(
+                    optimizer._automated_transition.last_requested_target,
+                    MODE_CMD_CHARGE_PV,
+                )
+                self.assertEqual(
+                    optimizer._automated_transition.phase,
+                    "WAITING_FOR_TARGET_EMS",
+                )
+                self.assertTrue(
+                    newest_b.trace_gates["automated_transition_retry_suppressed"]
+                )
+
+                ha.calls.clear()
+                with patch("app.optimizer.monotonic", return_value=160.0):
+                    asyncio.run(optimizer._apply(observed_b, newest_b))
+
+                self.assertEqual(
+                    self._inverter_calls(ha, optimizer),
+                    [
+                        (
+                            "select_option",
+                            cfg.ems_mode_select,
+                            MODE_CMD_DISCHARGE_PV,
+                        )
+                    ],
+                )
+                self.assertEqual(
+                    optimizer._automated_transition.last_requested_target,
+                    MODE_CMD_DISCHARGE_PV,
+                )
+                self.assertEqual(
+                    optimizer._automated_transition.phase,
+                    "WAITING_FOR_TARGET_EMS",
+                )
+
+                ha.set_state(cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)
+                fresh_observed_b = asyncio.run(optimizer._read_state())
+                ha.calls.clear()
+                with patch("app.optimizer.monotonic", return_value=161.0):
+                    asyncio.run(optimizer._apply(fresh_observed_b, newest_b))
+
+                self.assertEqual(optimizer._automated_transition.phase, "IDLE")
+                self.assertEqual(
+                    self._inverter_calls(ha, optimizer),
+                    [
+                        ("set_number", cfg.grid_export_limit, 4.0),
+                        ("set_number", cfg.grid_import_limit, 5.0),
+                        ("set_number", cfg.ess_max_charging_limit, 8.0),
+                        ("set_number", cfg.ess_max_discharging_limit, 9.0),
+                        ("set_number", cfg.pv_max_power_limit, 18.0),
+                    ],
+                )
+
+    def test_failed_or_raised_ems_request_records_history_and_blocks_target_return(
+        self,
+    ) -> None:
+        for failure in ("false", "raises"):
+            with self.subTest(failure=failure):
+                ha, optimizer = self._optimizer()
+                cfg = optimizer.cfg
+                self._enter_transition(ha, optimizer)
+                ha.update_state_on_success = False
+                if failure == "false":
+                    ha.select_option_results[cfg.ems_mode_select] = False
+                else:
+                    ha.select_option_exceptions[cfg.ems_mode_select] = RuntimeError(
+                        "EMS request failed"
+                    )
+
+                observed_b = self._state(current_ems_mode=MODE_CMD_DISCHARGE_PV)
+                target_a = self._normal_decision(ems_mode=MODE_CMD_CHARGE_PV)
+                with patch("app.optimizer.monotonic", return_value=100.0):
+                    if failure == "raises":
+                        with self.assertRaises(RuntimeError):
+                            asyncio.run(optimizer._apply(observed_b, target_a))
+                    else:
+                        asyncio.run(optimizer._apply(observed_b, target_a))
+
+                self.assertEqual(
+                    self._inverter_calls(ha, optimizer),
+                    [("select_option", cfg.ems_mode_select, MODE_CMD_CHARGE_PV)],
+                )
+                self.assertEqual(
+                    optimizer._automated_transition.last_requested_target,
+                    MODE_CMD_CHARGE_PV,
+                )
+                self.assertEqual(
+                    optimizer._automated_transition.phase,
+                    "WAITING_FOR_TARGET_EMS",
+                )
+
+                ha.select_option_results.pop(cfg.ems_mode_select, None)
+                ha.select_option_exceptions.pop(cfg.ems_mode_select, None)
+                newest_b = self._normal_decision(ems_mode=MODE_CMD_DISCHARGE_PV)
+                ha.calls.clear()
+                with patch("app.optimizer.monotonic", return_value=120.0):
+                    asyncio.run(optimizer._apply(observed_b, newest_b))
+
+                self.assertEqual(self._inverter_calls(ha, optimizer), [])
+                self.assertEqual(
+                    optimizer._automated_transition.last_requested_target,
+                    MODE_CMD_CHARGE_PV,
+                )
+                self.assertEqual(
+                    optimizer._automated_transition.phase,
+                    "WAITING_FOR_TARGET_EMS",
+                )
+
+                with patch("app.optimizer.monotonic", return_value=160.0):
+                    asyncio.run(optimizer._apply(observed_b, newest_b))
+
+                self.assertEqual(
+                    self._inverter_calls(ha, optimizer),
+                    [
+                        (
+                            "select_option",
+                            cfg.ems_mode_select,
+                            MODE_CMD_DISCHARGE_PV,
+                        )
+                    ],
+                )
+                self.assertEqual(
+                    optimizer._automated_transition.last_requested_target,
+                    MODE_CMD_DISCHARGE_PV,
+                )
+                self.assertEqual(
+                    optimizer._automated_transition.phase,
+                    "WAITING_FOR_TARGET_EMS",
+                )
+
     def test_reopened_or_untrusted_grid_limit_returns_to_containment(self) -> None:
         cases = (
             (
