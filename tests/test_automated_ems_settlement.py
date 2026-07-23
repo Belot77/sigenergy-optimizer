@@ -1400,6 +1400,110 @@ class AutomatedEMSSettlementSpecificationTests(unittest.TestCase):
         )
         self.assertEqual(self._control_calls(ha, optimizer), [])
 
+    def test_unsupported_automated_target_with_different_observed_ems_blocks_all_writes(
+        self,
+    ) -> None:
+        for rejected_target in (
+            MODE_CMD_DISCHARGE_ESS,
+            "Unsupported Automated Target",
+            "",
+        ):
+            with self.subTest(target=rejected_target):
+                ha, optimizer = self._optimizer(observed_ems=MODE_MAX_SELF)
+                decision = self._decision(rejected_target)
+
+                self._run_tick(optimizer, decision, now=100.0)
+
+                self.assertEqual(self._control_calls(ha, optimizer), [])
+                self.assertEqual(
+                    [call for call in ha.calls if call[0] != "get_state_value"],
+                    [],
+                )
+                self.assertEqual(optimizer._ordinary_ems_settlement.phase, "IDLE")
+                self.assertTrue(
+                    decision.trace_gates["automated_ems_target_unsupported"]
+                )
+                self.assertTrue(
+                    decision.trace_gates["automated_ems_target_blocked_writes"]
+                )
+                self.assertEqual(
+                    decision.trace_values["automated_ems_rejected_target"],
+                    rejected_target,
+                )
+                self.assertIn("unsupported", decision.outcome_reason.lower())
+                self.assertIn("blocked", decision.outcome_reason.lower())
+
+    def test_unsupported_automated_target_matching_observation_blocks_dependent_writes(
+        self,
+    ) -> None:
+        ha, optimizer = self._optimizer(observed_ems=MODE_CMD_DISCHARGE_ESS)
+        decision = self._decision(MODE_CMD_DISCHARGE_ESS)
+
+        self._run_tick(optimizer, decision, now=100.0)
+
+        self.assertEqual(self._control_calls(ha, optimizer), [])
+        self.assertEqual(
+            [call for call in ha.calls if call[0] != "get_state_value"],
+            [],
+        )
+        self.assertEqual(optimizer._ordinary_ems_settlement.phase, "IDLE")
+        self.assertTrue(decision.trace_gates["automated_ems_target_unsupported"])
+        self.assertTrue(decision.trace_gates["automated_ems_target_blocked_writes"])
+        self.assertEqual(
+            decision.trace_values["automated_ems_rejected_target"],
+            MODE_CMD_DISCHARGE_ESS,
+        )
+
+    def test_unsupported_automated_target_warning_is_throttled(self) -> None:
+        ha, optimizer = self._optimizer(observed_ems=MODE_MAX_SELF)
+        rejected_target = "Unsupported Automated Target"
+        decision = self._decision(rejected_target)
+
+        with patch("app.optimizer.logger.warning") as warning:
+            self._run_tick(optimizer, decision, now=100.0)
+            first_count = sum(
+                rejected_target in str(call) for call in warning.call_args_list
+            )
+
+            self._run_tick(optimizer, decision, now=399.0)
+            within_interval_count = sum(
+                rejected_target in str(call) for call in warning.call_args_list
+            )
+
+            self._run_tick(optimizer, decision, now=400.0)
+            after_interval_count = sum(
+                rejected_target in str(call) for call in warning.call_args_list
+            )
+
+        self.assertEqual(first_count, 1)
+        self.assertEqual(within_interval_count, first_count)
+        self.assertEqual(after_interval_count, first_count + 1)
+        self.assertEqual(self._control_calls(ha, optimizer), [])
+        self.assertEqual(
+            [call for call in ha.calls if call[0] != "get_state_value"],
+            [],
+        )
+        self.assertEqual(optimizer._ordinary_ems_settlement.phase, "IDLE")
+
+    def test_unsupported_idle_target_does_not_block_untrusted_ems_recovery(
+        self,
+    ) -> None:
+        ha, optimizer = self._optimizer(observed_ems="unavailable")
+        decision = self._decision("Unsupported Automated Target")
+
+        self._run_tick(optimizer, decision, now=100.0)
+
+        self.assertEqual(
+            self._control_calls(ha, optimizer),
+            [("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)],
+        )
+        self.assertTrue(optimizer._ems_mode_recovery_required)
+        self.assertEqual(optimizer._ordinary_ems_settlement.phase, "IDLE")
+        self.assertNotIn(
+            "automated_ems_target_unsupported",
+            decision.trace_gates,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

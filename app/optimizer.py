@@ -68,6 +68,7 @@ _AUTOMATED_TRANSITION_ACTION_RETRY_SECONDS = 60.0
 _AUTOMATED_TRANSITION_WARNING_INTERVAL_SECONDS = 300.0
 _ORDINARY_EMS_SETTLEMENT_ACTION_RETRY_SECONDS = 60.0
 _ORDINARY_EMS_SETTLEMENT_WARNING_INTERVAL_SECONDS = 300.0
+_UNSUPPORTED_AUTOMATED_EMS_TARGET_WARNING_INTERVAL_SECONDS = 300.0
 _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW = 0.011
 
 _AUTOMATED_TRANSITION_IDLE = "IDLE"
@@ -168,6 +169,7 @@ class SigEnergyOptimizer:
         self._last_ems_mode_recovery_warning_at: Optional[float] = None
         self._automated_transition = AutomatedTransitionState()
         self._ordinary_ems_settlement = OrdinaryEMSSettlementState()
+        self._last_unsupported_automated_ems_target_warning_at: Optional[float] = None
         self._startup_automated_transition_checked: bool = False
         self._holdoff_entry_floor: Optional[float] = None  # Stable SoC floor for holdoff window
         self._last_hw_charge_cap_kw: Optional[float] = None
@@ -3541,6 +3543,38 @@ class SigEnergyOptimizer:
             self._ordinary_ems_settlement_pending()
             and await self._apply_ordinary_ems_settlement(s, d)
         ):
+            return
+
+        if (
+            effective_mode == cfg.automated_option
+            and d.ems_mode not in approved_ordinary_targets
+        ):
+            reason = (
+                "Automated writes blocked: unsupported EMS strategy target "
+                f"{d.ems_mode!r}."
+            )
+            d.trace_gates.update(
+                {
+                    "automated_ems_target_unsupported": True,
+                    "automated_ems_target_blocked_writes": True,
+                }
+            )
+            d.trace_values["automated_ems_rejected_target"] = d.ems_mode
+            d.outcome_reason = reason
+
+            now_ts = monotonic()
+            last_warning = self._last_unsupported_automated_ems_target_warning_at
+            if (
+                last_warning is None
+                or now_ts - last_warning
+                >= _UNSUPPORTED_AUTOMATED_EMS_TARGET_WARNING_INTERVAL_SECONDS
+            ):
+                logger.warning(
+                    "Unsupported Automated EMS strategy target rejected: target=%r; "
+                    "normal EMS, grid, ESS and PV writes remain blocked",
+                    d.ems_mode,
+                )
+                self._last_unsupported_automated_ems_target_warning_at = now_ts
             return
 
         ems_mode_to_apply = d.ems_mode
