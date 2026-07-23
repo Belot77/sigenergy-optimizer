@@ -1706,14 +1706,31 @@ class ManualToAutomatedTransitionTests(unittest.TestCase):
 
         matching_ha.calls.clear()
         matching_ha.set_state(matching_cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)
+        matching_ha.set_state(matching_cfg.grid_export_limit, 5.0)
+        matching_ha.set_state(matching_cfg.grid_import_limit, 6.0)
         self._run_tick_with_decision(
             matching_optimizer,
             self._normal_decision(ems_mode=MODE_CMD_CHARGE_PV),
         )
         self.assertEqual(matching_optimizer._automated_transition.phase, "IDLE")
         self.assertEqual(
-            self._inverter_calls(matching_ha, matching_optimizer)[0],
-            ("select_option", matching_cfg.ems_mode_select, MODE_CMD_CHARGE_PV),
+            matching_optimizer._ordinary_ems_settlement.phase,
+            "CONTAINING_GRID",
+        )
+        self.assertEqual(
+            self._inverter_calls(matching_ha, matching_optimizer),
+            [
+                (
+                    "set_number",
+                    matching_cfg.grid_export_limit,
+                    matching_cfg.block_flow_limit_value,
+                ),
+                (
+                    "set_number",
+                    matching_cfg.grid_import_limit,
+                    matching_cfg.block_flow_limit_value,
+                ),
+            ],
         )
 
         mismatch_ha, mismatch_optimizer = self._optimizer()

@@ -66,11 +66,17 @@ _EMS_MODE_RECOVERY_RETRY_SECONDS = 60.0
 _EMS_MODE_RECOVERY_WARNING_INTERVAL_SECONDS = 300.0
 _AUTOMATED_TRANSITION_ACTION_RETRY_SECONDS = 60.0
 _AUTOMATED_TRANSITION_WARNING_INTERVAL_SECONDS = 300.0
+_ORDINARY_EMS_SETTLEMENT_ACTION_RETRY_SECONDS = 60.0
+_ORDINARY_EMS_SETTLEMENT_WARNING_INTERVAL_SECONDS = 300.0
 _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW = 0.011
 
 _AUTOMATED_TRANSITION_IDLE = "IDLE"
 _AUTOMATED_TRANSITION_CONTAINING_GRID = "CONTAINING_GRID"
 _AUTOMATED_TRANSITION_WAITING_FOR_TARGET_EMS = "WAITING_FOR_TARGET_EMS"
+
+_ORDINARY_EMS_SETTLEMENT_IDLE = "IDLE"
+_ORDINARY_EMS_SETTLEMENT_CONTAINING_GRID = "CONTAINING_GRID"
+_ORDINARY_EMS_SETTLEMENT_WAITING_FOR_TARGET_EMS = "WAITING_FOR_TARGET_EMS"
 
 # Config attribute names whose entity IDs should trigger immediate cycles
 _TRIGGER_ENTITY_ATTRS = [
@@ -117,6 +123,19 @@ class AutomatedTransitionState:
     previous_mode: str = ""
 
 
+@dataclass
+class OrdinaryEMSSettlementState:
+    phase: str = _ORDINARY_EMS_SETTLEMENT_IDLE
+    started_at: Optional[float] = None
+    initial_observed_ems: str = ""
+    target_ems_mode: str = ""
+    last_requested_target: str = ""
+    last_export_action_at: Optional[float] = None
+    last_import_action_at: Optional[float] = None
+    last_ems_action_at: Optional[float] = None
+    last_warning_at: Optional[float] = None
+
+
 class SigEnergyOptimizer:
     def __init__(self, ha: HAClient, cfg: Settings) -> None:
         self.ha = ha
@@ -147,6 +166,7 @@ class SigEnergyOptimizer:
         self._last_ems_mode_recovery_attempt_at: Optional[float] = None
         self._last_ems_mode_recovery_warning_at: Optional[float] = None
         self._automated_transition = AutomatedTransitionState()
+        self._ordinary_ems_settlement = OrdinaryEMSSettlementState()
         self._startup_automated_transition_checked: bool = False
         self._holdoff_entry_floor: Optional[float] = None  # Stable SoC floor for holdoff window
         self._last_hw_charge_cap_kw: Optional[float] = None
@@ -422,6 +442,34 @@ class SigEnergyOptimizer:
         )
         self._automated_transition = AutomatedTransitionState()
 
+    def _ordinary_ems_settlement_pending(self) -> bool:
+        return self._ordinary_ems_settlement.phase != _ORDINARY_EMS_SETTLEMENT_IDLE
+
+    def _start_ordinary_ems_settlement(self, s: SolarState, d: Decision) -> None:
+        if self._ordinary_ems_settlement_pending():
+            return
+        self._ordinary_ems_settlement = OrdinaryEMSSettlementState(
+            phase=_ORDINARY_EMS_SETTLEMENT_CONTAINING_GRID,
+            started_at=monotonic(),
+            initial_observed_ems=s.current_ems_mode,
+            target_ems_mode=d.ems_mode,
+        )
+        logger.info(
+            "Ordinary Automated EMS settlement started: observed=%s target=%s",
+            s.current_ems_mode,
+            d.ems_mode,
+        )
+
+    def _clear_ordinary_ems_settlement(self, *, reason: str) -> None:
+        if not self._ordinary_ems_settlement_pending():
+            return
+        logger.info(
+            "Ordinary Automated EMS settlement cleared: phase=%s reason=%s",
+            self._ordinary_ems_settlement.phase,
+            reason,
+        )
+        self._ordinary_ems_settlement = OrdinaryEMSSettlementState()
+
     def on_ws_connect(self) -> None:
         self._ws_connected = True
         logger.info("WebSocket connected — event-driven mode active")
@@ -544,7 +592,14 @@ class SigEnergyOptimizer:
                 and effective_mode in self._recognized_manual_modes()
             ):
                 self._clear_automated_transition(reason=f"manual mode observed: {effective_mode}")
-            elif (
+            if (
+                self._ordinary_ems_settlement_pending()
+                and effective_mode in self._recognized_manual_modes()
+            ):
+                self._clear_ordinary_ems_settlement(
+                    reason=f"manual mode observed: {effective_mode}"
+                )
+            if (
                 not self._automated_transition_pending()
                 and self._manual_mode_override is None
                 and previous_mode in self._recognized_manual_modes()
@@ -2758,6 +2813,376 @@ class SigEnergyOptimizer:
         )
         return True
 
+    def _warn_ordinary_ems_settlement(
+        self,
+        now_ts: float,
+        message: str,
+        *args: Any,
+    ) -> bool:
+        settlement = self._ordinary_ems_settlement
+        if (
+            settlement.last_warning_at is not None
+            and now_ts - settlement.last_warning_at
+            < _ORDINARY_EMS_SETTLEMENT_WARNING_INTERVAL_SECONDS
+        ):
+            return False
+        logger.warning(message, *args)
+        settlement.last_warning_at = now_ts
+        return True
+
+    def _set_ordinary_ems_settlement_diagnostics(
+        self,
+        s: SolarState,
+        d: Decision,
+        *,
+        reason: str,
+        retry_suppressed: bool = False,
+        higher_precedence: str = "",
+        blocking: bool = True,
+    ) -> None:
+        settlement = self._ordinary_ems_settlement
+        now_ts = monotonic()
+        elapsed = (
+            max(0.0, now_ts - settlement.started_at)
+            if settlement.started_at is not None
+            else 0.0
+        )
+        d.trace_values.update(
+            {
+                "ordinary_ems_settlement_phase": settlement.phase,
+                "ordinary_ems_settlement_initial_observed_ems": (
+                    settlement.initial_observed_ems
+                ),
+                "ordinary_ems_settlement_current_observed_ems": s.current_ems_mode,
+                "ordinary_ems_settlement_target_ems": settlement.target_ems_mode,
+                "ordinary_ems_settlement_last_requested_target": (
+                    settlement.last_requested_target
+                ),
+                "ordinary_ems_settlement_elapsed_seconds": elapsed,
+                "ordinary_ems_settlement_retry_suppressed": retry_suppressed,
+                "ordinary_ems_settlement_blocked_writes": blocking,
+                "ordinary_ems_settlement_block_reason": reason,
+                "ordinary_ems_settlement_higher_precedence": higher_precedence,
+            }
+        )
+        if blocking:
+            d.outcome_reason = reason
+
+    async def _apply_ordinary_ems_settlement(
+        self,
+        s: SolarState,
+        d: Decision,
+    ) -> bool:
+        """Return True while ordinary Automated EMS settlement blocks normal writes."""
+        settlement = self._ordinary_ems_settlement
+        if settlement.phase == _ORDINARY_EMS_SETTLEMENT_IDLE:
+            return False
+
+        now_ts = monotonic()
+        settlement.target_ems_mode = d.ems_mode
+        elapsed = (
+            max(0.0, now_ts - settlement.started_at)
+            if settlement.started_at is not None
+            else 0.0
+        )
+        if elapsed >= _ORDINARY_EMS_SETTLEMENT_WARNING_INTERVAL_SECONDS:
+            self._warn_ordinary_ems_settlement(
+                now_ts,
+                "Ordinary Automated EMS settlement remains pending: phase=%s "
+                "observed=%s target=%s elapsed=%.0fs",
+                settlement.phase,
+                s.current_ems_mode,
+                settlement.target_ems_mode,
+                elapsed,
+            )
+
+        approved_targets = {
+            MODE_MAX_SELF,
+            MODE_CMD_CHARGE_PV,
+            MODE_CMD_CHARGE_GRID,
+            MODE_CMD_DISCHARGE_PV,
+        }
+        if settlement.target_ems_mode not in approved_targets:
+            self._warn_ordinary_ems_settlement(
+                now_ts,
+                "Ordinary Automated EMS settlement blocked by unsupported target=%r",
+                settlement.target_ems_mode,
+            )
+            self._set_ordinary_ems_settlement_diagnostics(
+                s,
+                d,
+                reason="Ordinary EMS settlement blocked: unsupported Automated EMS target.",
+            )
+            return True
+
+        if not s.current_ems_mode_trusted:
+            self._warn_ordinary_ems_settlement(
+                now_ts,
+                "Ordinary Automated EMS settlement waiting for trusted EMS observation: %r",
+                s.current_ems_mode,
+            )
+            self._set_ordinary_ems_settlement_diagnostics(
+                s,
+                d,
+                reason="Ordinary EMS settlement blocked: waiting for trusted EMS observation.",
+            )
+            return True
+
+        if (
+            not settlement.last_requested_target
+            and s.current_ems_mode == settlement.target_ems_mode
+        ):
+            self._set_ordinary_ems_settlement_diagnostics(
+                s,
+                d,
+                reason=(
+                    "Ordinary EMS settlement cancelled: newest target already matches "
+                    "the trusted observed EMS mode before any EMS request."
+                ),
+                blocking=False,
+            )
+            d.trace_values["ordinary_ems_settlement_phase"] = "CANCELLED"
+            self._clear_ordinary_ems_settlement(
+                reason="newest target returned to observed EMS before any request"
+            )
+            return False
+
+        try:
+            containment_value = float(self.cfg.block_flow_limit_value)
+        except (TypeError, ValueError):
+            containment_value = float("nan")
+        containment_value_valid = (
+            math.isfinite(containment_value)
+            and 0.0
+            <= containment_value
+            <= _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+        )
+        if not containment_value_valid:
+            self._warn_ordinary_ems_settlement(
+                now_ts,
+                "Ordinary Automated EMS settlement blocked by invalid "
+                "block_flow_limit_value=%r; required range is 0.0..%.3f",
+                self.cfg.block_flow_limit_value,
+                _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW,
+            )
+            self._set_ordinary_ems_settlement_diagnostics(
+                s,
+                d,
+                reason=(
+                    "Ordinary EMS settlement blocked: invalid grid containment "
+                    "configuration."
+                ),
+            )
+            return True
+
+        export_closed = (
+            s.current_export_limit_trusted
+            and s.current_export_limit <= _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+        )
+        import_closed = (
+            s.current_import_limit_trusted
+            and s.current_import_limit <= _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+        )
+        if export_closed:
+            settlement.last_export_action_at = None
+        if import_closed:
+            settlement.last_import_action_at = None
+        grid_contained = export_closed and import_closed
+
+        if (
+            settlement.phase == _ORDINARY_EMS_SETTLEMENT_WAITING_FOR_TARGET_EMS
+            and not grid_contained
+        ):
+            settlement.phase = _ORDINARY_EMS_SETTLEMENT_CONTAINING_GRID
+
+        if settlement.phase == _ORDINARY_EMS_SETTLEMENT_CONTAINING_GRID:
+            if grid_contained:
+                settlement.phase = _ORDINARY_EMS_SETTLEMENT_WAITING_FOR_TARGET_EMS
+            else:
+                close_export = (
+                    s.current_export_limit_trusted
+                    and s.current_export_limit > _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+                )
+                close_import = (
+                    s.current_import_limit_trusted
+                    and s.current_import_limit > _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+                )
+                export_retry_suppressed = (
+                    close_export
+                    and settlement.last_export_action_at is not None
+                    and now_ts - settlement.last_export_action_at
+                    < _ORDINARY_EMS_SETTLEMENT_ACTION_RETRY_SECONDS
+                )
+                import_retry_suppressed = (
+                    close_import
+                    and settlement.last_import_action_at is not None
+                    and now_ts - settlement.last_import_action_at
+                    < _ORDINARY_EMS_SETTLEMENT_ACTION_RETRY_SECONDS
+                )
+                request_export = close_export and not export_retry_suppressed
+                request_import = close_import and not import_retry_suppressed
+
+                if not request_export and not request_import:
+                    retry_suppressed = export_retry_suppressed or import_retry_suppressed
+                    if not close_export and not close_import:
+                        self._warn_ordinary_ems_settlement(
+                            now_ts,
+                            "Ordinary Automated EMS settlement waiting for trusted grid "
+                            "observations: export raw=%r trusted=%s import raw=%r trusted=%s",
+                            s.current_export_limit_raw,
+                            s.current_export_limit_trusted,
+                            s.current_import_limit_raw,
+                            s.current_import_limit_trusted,
+                        )
+                        reason = (
+                            "Ordinary EMS settlement blocked: waiting for trusted closed "
+                            "grid limits."
+                        )
+                    else:
+                        reason = (
+                            "Ordinary EMS settlement blocked: grid containment retry is "
+                            "throttled."
+                        )
+                    self._set_ordinary_ems_settlement_diagnostics(
+                        s,
+                        d,
+                        reason=reason,
+                        retry_suppressed=retry_suppressed,
+                    )
+                    return True
+
+                requested: list[str] = []
+                failed: list[str] = []
+                if request_export:
+                    settlement.last_export_action_at = now_ts
+                    requested.append("export")
+                    try:
+                        export_ok = await self.ha.set_number(
+                            self.cfg.grid_export_limit,
+                            containment_value,
+                        )
+                    except Exception as exc:
+                        export_ok = False
+                        logger.error(
+                            "Ordinary Automated EMS settlement export containment "
+                            "request raised: %s",
+                            exc,
+                        )
+                    if not export_ok:
+                        failed.append("export")
+                if request_import:
+                    settlement.last_import_action_at = now_ts
+                    requested.append("import")
+                    try:
+                        import_ok = await self.ha.set_number(
+                            self.cfg.grid_import_limit,
+                            containment_value,
+                        )
+                    except Exception as exc:
+                        import_ok = False
+                        logger.error(
+                            "Ordinary Automated EMS settlement import containment "
+                            "request raised: %s",
+                            exc,
+                        )
+                    if not import_ok:
+                        failed.append("import")
+                if failed:
+                    self._warn_ordinary_ems_settlement(
+                        now_ts,
+                        "Ordinary Automated EMS settlement grid containment request "
+                        "failed for: %s",
+                        ", ".join(failed),
+                    )
+                else:
+                    logger.info(
+                        "Ordinary Automated EMS settlement requested grid containment: %s",
+                        ", ".join(requested),
+                    )
+                self._set_ordinary_ems_settlement_diagnostics(
+                    s,
+                    d,
+                    reason=(
+                        "Ordinary EMS settlement requested grid containment; waiting "
+                        "for a later trusted observation."
+                    ),
+                    retry_suppressed=(
+                        export_retry_suppressed or import_retry_suppressed
+                    ),
+                )
+                return True
+
+        if (
+            settlement.last_requested_target == settlement.target_ems_mode
+            and s.current_ems_mode == settlement.target_ems_mode
+        ):
+            self._set_ordinary_ems_settlement_diagnostics(
+                s,
+                d,
+                reason=(
+                    "Ordinary EMS settlement complete: newest requested EMS target "
+                    "and grid containment observed."
+                ),
+                blocking=False,
+            )
+            d.trace_values["ordinary_ems_settlement_phase"] = "COMPLETED"
+            self._clear_ordinary_ems_settlement(
+                reason="newest requested EMS target and grid containment observed"
+            )
+            return False
+
+        last_ems_action = settlement.last_ems_action_at
+        retry_suppressed = (
+            last_ems_action is not None
+            and now_ts - last_ems_action
+            < _ORDINARY_EMS_SETTLEMENT_ACTION_RETRY_SECONDS
+        )
+        if retry_suppressed:
+            self._set_ordinary_ems_settlement_diagnostics(
+                s,
+                d,
+                reason=(
+                    "Ordinary EMS settlement blocked: newest EMS target request is "
+                    "throttled or awaiting later observation."
+                ),
+                retry_suppressed=True,
+            )
+            return True
+
+        settlement.last_ems_action_at = now_ts
+        settlement.last_requested_target = settlement.target_ems_mode
+        logger.info(
+            "Ordinary Automated EMS settlement requesting target: observed=%s target=%s",
+            s.current_ems_mode,
+            settlement.target_ems_mode,
+        )
+        try:
+            target_ok = await self.ha.select_option(
+                self.cfg.ems_mode_select,
+                settlement.target_ems_mode,
+            )
+        except Exception as exc:
+            target_ok = False
+            logger.error(
+                "Ordinary Automated EMS settlement EMS target request raised: %s",
+                exc,
+            )
+        if not target_ok:
+            self._warn_ordinary_ems_settlement(
+                now_ts,
+                "Ordinary Automated EMS settlement failed requesting target=%s",
+                settlement.target_ems_mode,
+            )
+        self._set_ordinary_ems_settlement_diagnostics(
+            s,
+            d,
+            reason=(
+                "Ordinary Automated EMS target requested; waiting for a later trusted "
+                f"observation of {settlement.target_ems_mode}."
+            ),
+        )
+        return True
+
     async def _apply(self, s: SolarState, d: Decision) -> None:
         cfg = self.cfg
         ha = self.ha
@@ -2776,6 +3201,13 @@ class SigEnergyOptimizer:
             and effective_mode in self._recognized_manual_modes()
         ):
             self._clear_automated_transition(reason=f"manual mode active: {effective_mode}")
+        if (
+            self._ordinary_ems_settlement_pending()
+            and effective_mode in self._recognized_manual_modes()
+        ):
+            self._clear_ordinary_ems_settlement(
+                reason=f"manual mode active: {effective_mode}"
+            )
         if self._manual_mode_override and s.sigenergy_mode != self._manual_mode_override:
             logger.warning(
                 "Mode selector drift detected (%s -> %s); restoring manual selection",
@@ -2857,8 +3289,15 @@ class SigEnergyOptimizer:
         transition_pending = self._automated_transition_pending()
         if transition_pending:
             self._automated_transition.target_ems_mode = d.ems_mode
+        ordinary_settlement_pending = self._ordinary_ems_settlement_pending()
+        if ordinary_settlement_pending:
+            self._ordinary_ems_settlement.target_ems_mode = d.ems_mode
         if (
-            (cfg.auto_enable_ha_control or transition_pending)
+            (
+                cfg.auto_enable_ha_control
+                or transition_pending
+                or ordinary_settlement_pending
+            )
             and not s.ha_control_switch_available
         ):
             now_ts = datetime.now().timestamp()
@@ -2885,6 +3324,13 @@ class SigEnergyOptimizer:
                     d,
                     reason="Automated transition blocked: Remote EMS switch is unavailable.",
                 )
+            if ordinary_settlement_pending:
+                self._set_ordinary_ems_settlement_diagnostics(
+                    s,
+                    d,
+                    reason="Ordinary EMS settlement paused: Remote EMS switch is unavailable.",
+                    higher_precedence="remote_ems_unavailable",
+                )
             return
 
         effective_ha_control = s.ha_control_enabled
@@ -2894,6 +3340,7 @@ class SigEnergyOptimizer:
             (
                 d.needs_ha_control_switch
                 or (transition_pending and cfg.auto_enable_ha_control)
+                or (ordinary_settlement_pending and cfg.auto_enable_ha_control)
             )
             and not s.ha_control_enabled
         ):
@@ -2917,6 +3364,17 @@ class SigEnergyOptimizer:
                         ),
                         retry_suppressed=True,
                     )
+                if ordinary_settlement_pending:
+                    self._set_ordinary_ems_settlement_diagnostics(
+                        s,
+                        d,
+                        reason=(
+                            "Ordinary EMS settlement paused: waiting for observed Remote "
+                            "EMS on; activation retry is throttled."
+                        ),
+                        retry_suppressed=True,
+                        higher_precedence="remote_ems_activation",
+                    )
                 return
             self._last_ha_control_enable_attempt_at = now_ts
             logger.info("Auto-enabling Remote EMS control switch %s", cfg.ha_control_switch)
@@ -2933,6 +3391,13 @@ class SigEnergyOptimizer:
                         d,
                         reason="Automated transition blocked: Remote EMS activation failed.",
                     )
+                if ordinary_settlement_pending:
+                    self._set_ordinary_ems_settlement_diagnostics(
+                        s,
+                        d,
+                        reason="Ordinary EMS settlement paused: Remote EMS activation failed.",
+                        higher_precedence="remote_ems_activation",
+                    )
                 return
             logger.info("Remote EMS control switch enable requested successfully: %s", cfg.ha_control_switch)
             if transition_pending:
@@ -2940,6 +3405,13 @@ class SigEnergyOptimizer:
                     s,
                     d,
                     reason="Automated transition blocked: waiting for observed Remote EMS on.",
+                )
+            if ordinary_settlement_pending:
+                self._set_ordinary_ems_settlement_diagnostics(
+                    s,
+                    d,
+                    reason="Ordinary EMS settlement paused: waiting for observed Remote EMS on.",
+                    higher_precedence="remote_ems_activation",
                 )
             return
 
@@ -2949,6 +3421,13 @@ class SigEnergyOptimizer:
                     s,
                     d,
                     reason="Automated transition blocked: Remote EMS is not observed on.",
+                )
+            if ordinary_settlement_pending:
+                self._set_ordinary_ems_settlement_diagnostics(
+                    s,
+                    d,
+                    reason="Ordinary EMS settlement paused: Remote EMS is not observed on.",
+                    higher_precedence="remote_ems_activation",
                 )
             return
 
@@ -2964,6 +3443,16 @@ class SigEnergyOptimizer:
                         "Automated transition paused: waiting for observed Maximum Self "
                         "Consumption to complete EMS recovery."
                     ),
+                )
+            if ordinary_settlement_pending:
+                self._set_ordinary_ems_settlement_diagnostics(
+                    s,
+                    d,
+                    reason=(
+                        "Ordinary EMS settlement paused: untrusted EMS recovery has "
+                        "precedence."
+                    ),
+                    higher_precedence="ems_recovery",
                 )
             ems_mode_entity = str(cfg.ems_mode_select or "").strip()
             now_ts = datetime.now().timestamp()
@@ -3011,6 +3500,39 @@ class SigEnergyOptimizer:
             return
 
         if transition_pending and await self._apply_automated_transition(s, d):
+            if ordinary_settlement_pending:
+                self._set_ordinary_ems_settlement_diagnostics(
+                    s,
+                    d,
+                    reason=(
+                        "Ordinary EMS settlement paused: Manual/startup Automated "
+                        "transition has precedence."
+                    ),
+                    higher_precedence="automated_transition",
+                )
+            return
+
+        approved_ordinary_targets = {
+            MODE_MAX_SELF,
+            MODE_CMD_CHARGE_PV,
+            MODE_CMD_CHARGE_GRID,
+            MODE_CMD_DISCHARGE_PV,
+        }
+        if (
+            not self._ordinary_ems_settlement_pending()
+            and self._startup_automated_transition_checked
+            and not self._automated_transition_pending()
+            and effective_mode == cfg.automated_option
+            and s.current_ems_mode_trusted
+            and d.ems_mode in approved_ordinary_targets
+            and s.current_ems_mode != d.ems_mode
+        ):
+            self._start_ordinary_ems_settlement(s, d)
+
+        if (
+            self._ordinary_ems_settlement_pending()
+            and await self._apply_ordinary_ems_settlement(s, d)
+        ):
             return
 
         ems_mode_to_apply = d.ems_mode
@@ -3340,6 +3862,9 @@ class SigEnergyOptimizer:
             else:
                 if mode_label in self._recognized_manual_modes():
                     self._clear_automated_transition(
+                        reason=f"manual mode selected: {mode_label}"
+                    )
+                    self._clear_ordinary_ems_settlement(
                         reason=f"manual mode selected: {mode_label}"
                     )
                 self._manual_mode_override = mode_label
