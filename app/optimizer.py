@@ -79,6 +79,12 @@ _ORDINARY_EMS_SETTLEMENT_IDLE = "IDLE"
 _ORDINARY_EMS_SETTLEMENT_CONTAINING_GRID = "CONTAINING_GRID"
 _ORDINARY_EMS_SETTLEMENT_WAITING_FOR_TARGET_EMS = "WAITING_FOR_TARGET_EMS"
 
+_MANUAL_TAKEOVER_IDLE = "IDLE"
+_MANUAL_TAKEOVER_CONTAINING_GRID = "CONTAINING_GRID"
+_MANUAL_TAKEOVER_WAITING_FOR_TARGET_EMS = "WAITING_FOR_TARGET_EMS"
+_MANUAL_TAKEOVER_WAITING_FOR_PRESET = "WAITING_FOR_EXPLICIT_PRESET"
+_MANUAL_TAKEOVER_SETTLED = "SETTLED"
+
 # Config attribute names whose entity IDs should trigger immediate cycles
 _TRIGGER_ENTITY_ATTRS = [
     "pv_power_sensor",
@@ -138,6 +144,18 @@ class OrdinaryEMSSettlementState:
     last_warning_at: Optional[float] = None
 
 
+@dataclass
+class ManualTakeoverState:
+    active: bool = False
+    phase: str = _MANUAL_TAKEOVER_IDLE
+    manual_mode: str = ""
+    inherited_automated_target: str = ""
+    requested_manual_target: str = ""
+    requested_state_generation: Optional[int] = None
+    dependent_targets_applied: bool = False
+    last_action_at: Optional[float] = None
+
+
 class SigEnergyOptimizer:
     def __init__(self, ha: HAClient, cfg: Settings) -> None:
         self.ha = ha
@@ -169,6 +187,8 @@ class SigEnergyOptimizer:
         self._last_ems_mode_recovery_warning_at: Optional[float] = None
         self._automated_transition = AutomatedTransitionState()
         self._ordinary_ems_settlement = OrdinaryEMSSettlementState()
+        self._manual_takeover = ManualTakeoverState()
+        self._state_read_generation: int = 0
         self._last_unsupported_automated_ems_target_warning_at: Optional[float] = None
         self._startup_automated_transition_checked: bool = False
         self._holdoff_entry_floor: Optional[float] = None  # Stable SoC floor for holdoff window
@@ -473,6 +493,30 @@ class SigEnergyOptimizer:
         )
         self._ordinary_ems_settlement = OrdinaryEMSSettlementState()
 
+    def _attempted_automated_ems_target(self) -> str:
+        for owner in (self._automated_transition, self._ordinary_ems_settlement):
+            target = str(owner.last_requested_target or "").strip()
+            if target:
+                return target
+        if self._manual_takeover.active:
+            return self._manual_takeover.inherited_automated_target
+        return ""
+
+    def _start_manual_takeover(self, mode_label: str, inherited_target: str) -> None:
+        self._manual_takeover = ManualTakeoverState(
+            active=True,
+            phase=_MANUAL_TAKEOVER_CONTAINING_GRID,
+            manual_mode=mode_label,
+            inherited_automated_target=inherited_target,
+        )
+        logger.info("Manual takeover started: mode=%s inherited_target=%s", mode_label, inherited_target)
+
+    def _clear_manual_takeover(self, *, reason: str) -> None:
+        if not self._manual_takeover.active:
+            return
+        logger.info("Manual takeover cleared: phase=%s reason=%s", self._manual_takeover.phase, reason)
+        self._manual_takeover = ManualTakeoverState()
+
     def on_ws_connect(self) -> None:
         self._ws_connected = True
         logger.info("WebSocket connected — event-driven mode active")
@@ -590,6 +634,14 @@ class SigEnergyOptimizer:
             state = await self._read_state()
             previous_mode = prev_state.sigenergy_mode if prev_state else ""
             effective_mode = self._manual_mode_override or state.sigenergy_mode
+            takeover = self._manual_takeover
+            if effective_mode in self._recognized_manual_modes():
+                attempted_target = self._attempted_automated_ems_target()
+                takeover_changed = not takeover.active or takeover.manual_mode != effective_mode
+                if attempted_target and takeover_changed:
+                    self._start_manual_takeover(effective_mode, attempted_target)
+            elif effective_mode == self.cfg.automated_option and takeover.active:
+                self._clear_manual_takeover(reason="Automated mode observed")
             if (
                 self._automated_transition_pending()
                 and effective_mode in self._recognized_manual_modes()
@@ -915,6 +967,7 @@ class SigEnergyOptimizer:
             if candidate and candidate not in entity_ids:
                 entity_ids.append(candidate)
         bulk = await self.ha.bulk_states(entity_ids)
+        self._state_read_generation += 1
 
         def _fv(eid: str, default: float = 0.0) -> float:
             obj = bulk.get(eid)
@@ -3193,6 +3246,129 @@ class SigEnergyOptimizer:
         )
         return True
 
+    async def _apply_manual_takeover(self, s: SolarState, d: Decision) -> None:
+        takeover = self._manual_takeover
+        retry_seconds = _AUTOMATED_TRANSITION_ACTION_RETRY_SECONDS
+
+        def _block(reason: str) -> None:
+            d.trace_gates["manual_takeover_pending"] = not takeover.dependent_targets_applied
+            d.trace_values["manual_takeover_phase"] = takeover.phase
+            d.trace_values["manual_takeover_block_reason"] = reason
+            d.outcome_reason = reason
+
+        try:
+            containment_value = float(self.cfg.block_flow_limit_value)
+        except (TypeError, ValueError):
+            containment_value = float("nan")
+        containment_valid = math.isfinite(containment_value) and (
+            0.0 <= containment_value <= _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+        )
+        if not containment_valid:
+            _block("Manual takeover blocked: invalid grid containment configuration.")
+            return
+
+        if takeover.dependent_targets_applied and (
+            s.current_ems_mode != takeover.requested_manual_target
+        ):
+            takeover.phase = _MANUAL_TAKEOVER_CONTAINING_GRID
+            takeover.requested_manual_target = ""
+            takeover.requested_state_generation = None
+            takeover.dependent_targets_applied = False
+            takeover.last_action_at = None
+
+        export_closed = s.current_export_limit_trusted and s.current_export_limit <= _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+        import_closed = s.current_import_limit_trusted and s.current_import_limit <= _GRID_CONTAINMENT_CLOSED_THRESHOLD_KW
+        if not (export_closed and import_closed):
+            takeover.phase = _MANUAL_TAKEOVER_CONTAINING_GRID
+            close_export = s.current_export_limit_trusted and not export_closed
+            close_import = s.current_import_limit_trusted and not import_closed
+            now_ts = monotonic()
+            if not (close_export or close_import):
+                _block("Manual takeover waiting for trusted closed grid limits.")
+                return
+            retry_held = takeover.last_action_at is not None and now_ts - takeover.last_action_at < retry_seconds
+            if retry_held:
+                _block("Manual takeover grid containment retry is throttled.")
+                return
+            takeover.last_action_at = now_ts
+            if close_export:
+                await self.ha.set_number(self.cfg.grid_export_limit, containment_value)
+            if close_import:
+                await self.ha.set_number(self.cfg.grid_import_limit, containment_value)
+            _block("Manual takeover requested grid containment; waiting for observation.")
+            return
+
+        if takeover.phase == _MANUAL_TAKEOVER_CONTAINING_GRID:
+            takeover.last_action_at = None
+        if takeover.manual_mode == self.cfg.manual_option:
+            takeover.phase = _MANUAL_TAKEOVER_WAITING_FOR_PRESET
+            _block("Manual takeover waiting for an explicit preset target.")
+            return
+
+        include_ess = takeover.manual_mode == self.cfg.block_flow_option
+        targets = self._manual_mode_targets(
+            takeover.manual_mode, s, include_block_flow_ess_limits=include_ess
+        )
+        if not targets:
+            _block("Manual takeover blocked: selected Manual preset has no target mapping.")
+            return
+        target_mode = str(targets["ems_mode"])
+        requested_generation = takeover.requested_state_generation
+        fresh_target_observed = requested_generation is not None and takeover.requested_manual_target == target_mode
+        fresh_target_observed = fresh_target_observed and self._state_read_generation > requested_generation
+        fresh_target_observed = fresh_target_observed and s.current_ems_mode == target_mode
+        if fresh_target_observed:
+            try:
+                write_results = await self._apply_manual_mode_targets(
+                    targets, mode_label=takeover.manual_mode, dependent_only=True
+                )
+            except Exception as exc:
+                logger.exception("Manual takeover dependent writes raised: %s", exc)
+                write_results = {}
+            takeover.dependent_targets_applied = bool(write_results) and all(write_results.values())
+            if not write_results or not takeover.dependent_targets_applied:
+                takeover.phase = _MANUAL_TAKEOVER_CONTAINING_GRID
+                containment_failures: list[str] = []
+                for name, entity_id in (
+                    ("export", self.cfg.grid_export_limit),
+                    ("import", self.cfg.grid_import_limit),
+                ):
+                    try:
+                        if not await self.ha.set_number(entity_id, containment_value):
+                            containment_failures.append(name)
+                    except Exception as exc:
+                        containment_failures.append(name)
+                        logger.exception("Manual takeover %s recontainment raised: %s", name, exc)
+                if containment_failures:
+                    logger.error("Manual takeover recontainment failed for: %s", ", ".join(containment_failures))
+                _block("Manual takeover dependent writes failed; grid recontainment requested.")
+                return
+            if takeover.manual_mode == self.cfg.block_flow_option:
+                self.set_manual_ess_overrides(
+                    charge_kw=float(targets["ess_charge_limit"]),
+                    discharge_kw=float(targets["ess_discharge_limit"]),
+                )
+            takeover.phase = _MANUAL_TAKEOVER_SETTLED
+            _block("Manual takeover settled after later EMS observation.")
+            return
+
+        now_ts = monotonic()
+        retry_held = takeover.requested_manual_target and takeover.last_action_at is not None
+        retry_held = retry_held and now_ts - takeover.last_action_at < retry_seconds
+        if retry_held:
+            _block("Manual takeover waiting for later EMS observation; retry is throttled.")
+            return
+        takeover.phase = _MANUAL_TAKEOVER_WAITING_FOR_TARGET_EMS
+        takeover.requested_manual_target = target_mode
+        takeover.requested_state_generation = self._state_read_generation
+        takeover.last_action_at = now_ts
+        target_ok = await self.ha.select_option(self.cfg.ems_mode_select, target_mode)
+        _block(
+            f"Manual takeover requested {target_mode}; waiting for later EMS observation."
+            if target_ok
+            else f"Manual takeover failed requesting {target_mode}; remaining fail-closed."
+        )
+
     async def _apply(self, s: SolarState, d: Decision) -> None:
         cfg = self.cfg
         ha = self.ha
@@ -3206,6 +3382,15 @@ class SigEnergyOptimizer:
                 await ha.set_number(cfg.ess_max_discharging_limit, 0.01)
 
         effective_mode = self._manual_mode_override or s.sigenergy_mode
+        takeover = self._manual_takeover
+        manual_takeover_pending = (
+            takeover.active
+            and takeover.manual_mode == effective_mode
+            and (
+                not takeover.dependent_targets_applied
+                or s.current_ems_mode != takeover.requested_manual_target
+            )
+        )
         if (
             self._automated_transition_pending()
             and effective_mode in self._recognized_manual_modes()
@@ -3236,7 +3421,10 @@ class SigEnergyOptimizer:
 
         # If in a manual mode, keep manual targets pinned when external writers drift
         # them (e.g. morning slow-charge branch in other automations).
-        if effective_mode not in {cfg.automated_option, ""}:
+        if (
+            effective_mode not in {cfg.automated_option, ""}
+            and not manual_takeover_pending
+        ):
             manual_targets = self._manual_mode_targets(
                 effective_mode,
                 s,
@@ -3307,6 +3495,7 @@ class SigEnergyOptimizer:
                 cfg.auto_enable_ha_control
                 or transition_pending
                 or ordinary_settlement_pending
+                or manual_takeover_pending
             )
             and not s.ha_control_switch_available
         ):
@@ -3351,6 +3540,7 @@ class SigEnergyOptimizer:
                 d.needs_ha_control_switch
                 or (transition_pending and cfg.auto_enable_ha_control)
                 or (ordinary_settlement_pending and cfg.auto_enable_ha_control)
+                or (manual_takeover_pending and cfg.auto_enable_ha_control)
             )
             and not s.ha_control_enabled
         ):
@@ -3507,6 +3697,10 @@ class SigEnergyOptimizer:
                 logger.info("EMS recovery requested successfully: %s", MODE_MAX_SELF)
             else:
                 logger.error("Failed requesting EMS recovery to %s", MODE_MAX_SELF)
+            return
+
+        if manual_takeover_pending:
+            await self._apply_manual_takeover(s, d)
             return
 
         if transition_pending and await self._apply_automated_transition(s, d):
@@ -3748,6 +3942,8 @@ class SigEnergyOptimizer:
         self,
         targets: dict[str, float | str],
         mode_label: Optional[str] = None,
+        *,
+        dependent_only: bool = False,
     ) -> dict[str, bool]:
         cfg = self.cfg
         ha = self.ha
@@ -3797,12 +3993,15 @@ class SigEnergyOptimizer:
             return False
 
         target_mode = str(targets["ems_mode"])
-        ok_mode = await _select_mode_with_retry(cfg.ems_mode_select, target_mode)
-        if not ok_mode:
-            logger.warning(
-                "Manual mode target apply: EMS mode did not settle to '%s'; applying non-mode limits anyway",
-                target_mode,
-            )
+        ok_mode = True
+        if not dependent_only:
+            ok_mode = await _select_mode_with_retry(cfg.ems_mode_select, target_mode)
+            if not ok_mode:
+                logger.warning(
+                    "Manual mode target apply: EMS mode did not settle to '%s'; "
+                    "applying non-mode limits anyway",
+                    target_mode,
+                )
 
         ok_exp = await ha.set_number(cfg.grid_export_limit, float(targets["grid_export_limit"]))
         ok_imp = await ha.set_number(cfg.grid_import_limit, float(targets["grid_import_limit"]))
@@ -3856,8 +4055,9 @@ class SigEnergyOptimizer:
 
         async with self._control_lock:
             previous_mode = ""
+            recognized_manual_modes = self._recognized_manual_modes()
+            attempted_automated_target = self._attempted_automated_ems_target() if mode_label in recognized_manual_modes else ""
             if mode_label == cfg.automated_option:
-                recognized_manual_modes = self._recognized_manual_modes()
                 trusted_prior_modes = {cfg.automated_option, *recognized_manual_modes}
                 if self._manual_mode_override in recognized_manual_modes:
                     previous_mode = self._manual_mode_override
@@ -3893,6 +4093,7 @@ class SigEnergyOptimizer:
                     f"Failed to set mode selector {cfg.sigenergy_mode_select} to '{mode_label}'"
                 )
             if mode_label == cfg.automated_option:
+                self._clear_manual_takeover(reason="Automated mode selected")
                 if previous_mode in self._recognized_manual_modes():
                     self._start_automated_transition(
                         source="apply_manual_mode",
@@ -3903,6 +4104,8 @@ class SigEnergyOptimizer:
                 self._manual_ess_discharge_override_kw = None
             else:
                 if mode_label in self._recognized_manual_modes():
+                    if attempted_automated_target:
+                        self._start_manual_takeover(mode_label, attempted_automated_target)
                     self._clear_automated_transition(
                         reason=f"manual mode selected: {mode_label}"
                     )
@@ -3931,6 +4134,16 @@ class SigEnergyOptimizer:
             # All manual modes disable the optimizer for one cycle
             # (the next _apply will skip because sigenergy_mode != "Automated")
             logger.info("Manual mode → %s", mode_label)
+
+            if self._manual_takeover.active and self._manual_takeover.manual_mode == mode_label:
+                current_state = await self._read_state()
+                current_state.sigenergy_mode = mode_label
+                self._last_state = current_state
+                decision = self._decide(current_state)
+                self._freeze_decision_to_live_mode(current_state, decision, mode_label)
+                self._last_decision = decision
+                await self._apply(current_state, decision)
+                return
 
             if mode_label == cfg.manual_option:
                 refreshed_state = await self._read_state()

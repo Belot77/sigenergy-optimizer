@@ -297,6 +297,27 @@ class AutomatedEMSSettlementSpecificationTests(unittest.TestCase):
             else:
                 asyncio.run(optimizer._tick())
 
+    def _start_attempted_automated_ems_request(
+        self,
+        ha: _SettlementRecordingHA,
+        optimizer: SigEnergyOptimizer,
+        *,
+        target: str = MODE_CMD_CHARGE_PV,
+        now: float = 100.0,
+    ) -> Decision:
+        decision = self._decision(target)
+        self._run_tick(optimizer, decision, now=now)
+        self.assertEqual(
+            self._inverter_calls(ha, optimizer),
+            [("select_option", optimizer.cfg.ems_mode_select, target)],
+        )
+        self.assertEqual(
+            optimizer._ordinary_ems_settlement.last_requested_target,
+            target,
+        )
+        ha.calls.clear()
+        return decision
+
     def test_each_ordinary_automated_mode_change_uses_settlement_barrier(self) -> None:
         self.assertEqual(len(AUTOMATED_MODE_CHANGES), 16)
         self.assertEqual(
@@ -1212,6 +1233,299 @@ class AutomatedEMSSettlementSpecificationTests(unittest.TestCase):
             [("select_option", optimizer.cfg.ems_mode_select, MODE_CMD_CHARGE_PV)],
         )
         self.assertEqual(unconfirmed_target_calls, [])
+
+    def test_api_preset_manual_takeover_after_attempted_automated_request(
+        self,
+    ) -> None:
+        ha, optimizer = self._optimizer(
+            observed_ems=MODE_CMD_DISCHARGE_PV,
+            export_limit=0.01,
+            import_limit=0.01,
+        )
+        automated_target = MODE_CMD_CHARGE_PV
+        self._start_attempted_automated_ems_request(
+            ha,
+            optimizer,
+            target=automated_target,
+        )
+        cfg = optimizer.cfg
+        manual_mode = cfg.full_export_option
+
+        asyncio.run(optimizer.apply_manual_mode(manual_mode))
+        calls = self._inverter_calls(ha, optimizer)
+
+        self.assertEqual(optimizer._manual_mode_override, manual_mode)
+        self.assertIn(
+            ("select_option", cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV),
+            calls,
+        )
+        self.assertNotIn(
+            ("select_option", cfg.ems_mode_select, automated_target),
+            calls,
+        )
+        self.assertEqual(
+            [call for call in calls if call[0] == "set_number"],
+            [],
+            "Manual dependent targets must wait for later Manual EMS observation",
+        )
+
+    def test_helper_observed_preset_manual_takeover_after_attempted_automated_request(
+        self,
+    ) -> None:
+        ha, optimizer = self._optimizer(
+            observed_ems=MODE_CMD_DISCHARGE_PV,
+            export_limit=0.01,
+            import_limit=0.01,
+        )
+        automated_target = MODE_CMD_CHARGE_PV
+        decision = self._start_attempted_automated_ems_request(
+            ha,
+            optimizer,
+            target=automated_target,
+        )
+        cfg = optimizer.cfg
+        manual_mode = cfg.full_export_option
+        manual_targets = optimizer._manual_mode_targets(
+            manual_mode,
+            optimizer._last_state,
+        )
+        self.assertIsNotNone(manual_targets)
+        ha.set_state(cfg.sigenergy_mode_select, manual_mode)
+
+        self._run_tick(optimizer, decision, now=101.0)
+        calls = self._inverter_calls(ha, optimizer)
+
+        self.assertEqual(optimizer._last_state.sigenergy_mode, manual_mode)
+        self.assertIn(
+            ("select_option", cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV),
+            calls,
+        )
+        self.assertNotIn(
+            ("select_option", cfg.ems_mode_select, automated_target),
+            calls,
+        )
+        self.assertEqual(
+            [call for call in calls if call[0] == "set_number"],
+            [],
+            "Helper-observed Manual takeover must retain the safety barrier",
+        )
+
+        ha.set_state(cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)
+        ha.calls.clear()
+        reads_before_confirmation = ha.bulk_state_reads
+        self._run_tick(optimizer, decision, now=102.0)
+        confirmed_cycle_calls = self._inverter_calls(ha, optimizer)
+
+        self.assertGreater(ha.bulk_state_reads, reads_before_confirmation)
+        self.assertIn(
+            (
+                "set_number",
+                cfg.grid_export_limit,
+                manual_targets["grid_export_limit"],
+            ),
+            confirmed_cycle_calls,
+        )
+
+    def test_preset_manual_takeover_requires_later_independent_ems_observation(
+        self,
+    ) -> None:
+        ha, optimizer = self._optimizer(
+            observed_ems=MODE_MAX_SELF,
+            export_limit=0.01,
+            import_limit=0.01,
+        )
+        decision = self._start_attempted_automated_ems_request(ha, optimizer)
+        cfg = optimizer.cfg
+        manual_mode = cfg.full_export_option
+        manual_target = MODE_CMD_DISCHARGE_PV
+        manual_targets = optimizer._manual_mode_targets(
+            manual_mode,
+            optimizer._last_state,
+        )
+        self.assertIsNotNone(manual_targets)
+
+        same_operation_poll = AsyncMock(return_value=manual_target)
+        with patch.object(ha, "get_state_value", new=same_operation_poll):
+            asyncio.run(optimizer.apply_manual_mode(manual_mode))
+        request_cycle_calls = self._inverter_calls(ha, optimizer)
+
+        self.assertEqual(
+            same_operation_poll.await_count,
+            0,
+            "Same-operation polling must not count as Manual EMS confirmation",
+        )
+        self.assertIn(
+            ("select_option", cfg.ems_mode_select, manual_target),
+            request_cycle_calls,
+        )
+        self.assertEqual(
+            [call for call in request_cycle_calls if call[0] == "set_number"],
+            [],
+            "Manual dependent targets must not be written in the EMS request operation",
+        )
+
+        ha.set_state(cfg.sigenergy_mode_select, manual_mode)
+        ha.set_state(cfg.ems_mode_select, manual_target)
+        ha.calls.clear()
+        reads_before_confirmation = ha.bulk_state_reads
+        self._run_tick(optimizer, decision, now=101.0)
+        confirmed_cycle_calls = self._inverter_calls(ha, optimizer)
+
+        self.assertGreater(ha.bulk_state_reads, reads_before_confirmation)
+        self.assertIn(
+            (
+                "set_number",
+                cfg.grid_export_limit,
+                manual_targets["grid_export_limit"],
+            ),
+            confirmed_cycle_calls,
+        )
+
+    def test_unrestricted_manual_with_outstanding_automated_request_stays_contained_and_targetless(
+        self,
+    ) -> None:
+        ha, optimizer = self._optimizer(
+            observed_ems=MODE_MAX_SELF,
+            export_limit=0.01,
+            import_limit=0.01,
+        )
+        decision = self._start_attempted_automated_ems_request(ha, optimizer)
+        cfg = optimizer.cfg
+        self._observe_grid(ha, optimizer, 5.0, 6.0)
+
+        asyncio.run(optimizer.apply_manual_mode(cfg.manual_option))
+        first_calls = self._inverter_calls(ha, optimizer)
+
+        self.assertEqual(optimizer._manual_mode_override, cfg.manual_option)
+        self.assertEqual(first_calls, self._close_calls(optimizer))
+        self.assertNotIn(
+            ("select_option", cfg.ems_mode_select, MODE_MAX_SELF),
+            first_calls,
+        )
+
+        ha.set_state(cfg.sigenergy_mode_select, cfg.manual_option)
+        self._observe_grid(ha, optimizer, 0.01, 0.01)
+        ha.calls.clear()
+        self._run_tick(optimizer, decision, now=101.0)
+
+        self.assertEqual(self._inverter_calls(ha, optimizer), [])
+
+    def test_unrestricted_manual_without_outstanding_request_preserves_existing_behavior(
+        self,
+    ) -> None:
+        ha, optimizer = self._optimizer(
+            observed_ems=MODE_MAX_SELF,
+            export_limit=5.0,
+            import_limit=6.0,
+        )
+        cfg = optimizer.cfg
+        self.assertEqual(
+            optimizer._automated_transition.last_requested_target,
+            "",
+        )
+        self.assertEqual(
+            optimizer._ordinary_ems_settlement.last_requested_target,
+            "",
+        )
+
+        asyncio.run(optimizer.apply_manual_mode(cfg.manual_option))
+
+        self.assertEqual(optimizer._manual_mode_override, cfg.manual_option)
+        self.assertEqual(self._inverter_calls(ha, optimizer), [])
+
+        ha.set_state(cfg.sigenergy_mode_select, cfg.manual_option)
+        ha.calls.clear()
+        self._run_tick(
+            optimizer,
+            self._decision(MODE_CMD_CHARGE_PV),
+            now=101.0,
+        )
+        self.assertEqual(self._inverter_calls(ha, optimizer), [])
+
+    def test_manual_takeover_immediately_recontains_after_dependent_write_failure(
+        self,
+    ) -> None:
+        ha, optimizer = self._optimizer(
+            observed_ems=MODE_MAX_SELF,
+            export_limit=0.01,
+            import_limit=0.01,
+        )
+        decision = self._start_attempted_automated_ems_request(ha, optimizer)
+        cfg = optimizer.cfg
+        manual_mode = cfg.full_export_option
+        manual_targets = optimizer._manual_mode_targets(
+            manual_mode,
+            optimizer._last_state,
+        )
+        self.assertIsNotNone(manual_targets)
+
+        asyncio.run(optimizer.apply_manual_mode(manual_mode))
+        ha.set_state(cfg.sigenergy_mode_select, manual_mode)
+        ha.set_state(cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)
+        ha.set_number_results[cfg.pv_max_power_limit] = False
+        ha.calls.clear()
+
+        self._run_tick(optimizer, decision, now=101.0)
+        calls = self._inverter_calls(ha, optimizer)
+        open_export = ("set_number", cfg.grid_export_limit, manual_targets["grid_export_limit"])
+        failed_pv = ("set_number", cfg.pv_max_power_limit, manual_targets["pv_max_power_limit"])
+        close_export = ("set_number", cfg.grid_export_limit, cfg.block_flow_limit_value)
+        close_import = ("set_number", cfg.grid_import_limit, cfg.block_flow_limit_value)
+
+        self.assertIn(open_export, calls)
+        self.assertIn(failed_pv, calls)
+        self.assertLess(calls.index(open_export), calls.index(failed_pv))
+        post_failure_calls = calls[calls.index(failed_pv) + 1 :]
+        self.assertIn(close_export, post_failure_calls)
+        self.assertIn(close_import, post_failure_calls)
+        self.assertLess(post_failure_calls.index(close_export), post_failure_calls.index(close_import))
+        self.assertTrue(decision.trace_gates.get("manual_takeover_pending"))
+        self.assertNotIn(("select_option", cfg.ems_mode_select, MODE_MAX_SELF), post_failure_calls)
+
+    def test_block_flow_takeover_preserves_existing_ess_override_pinning(self) -> None:
+        ha, optimizer = self._optimizer(
+            observed_ems=MODE_CMD_DISCHARGE_PV,
+            export_limit=0.01,
+            import_limit=0.01,
+        )
+        decision = self._start_attempted_automated_ems_request(ha, optimizer)
+        cfg = optimizer.cfg
+        manual_mode = cfg.block_flow_option
+        initial_targets = optimizer._manual_mode_targets(
+            manual_mode, optimizer._last_state, include_block_flow_ess_limits=True
+        )
+        self.assertIsNotNone(initial_targets)
+
+        asyncio.run(optimizer.apply_manual_mode(manual_mode))
+        ha.set_state(cfg.sigenergy_mode_select, manual_mode)
+        ha.set_state(cfg.ems_mode_select, MODE_MAX_SELF)
+        ha.calls.clear()
+        self._run_tick(optimizer, decision, now=101.0)
+        initial_calls = self._inverter_calls(ha, optimizer)
+
+        initial_charge = float(initial_targets["ess_charge_limit"])
+        initial_discharge = float(initial_targets["ess_discharge_limit"])
+        self.assertIn(("set_number", cfg.ess_max_charging_limit, initial_charge), initial_calls)
+        self.assertIn(("set_number", cfg.ess_max_discharging_limit, initial_discharge), initial_calls)
+
+        changed_charge = initial_charge + 5.0
+        changed_discharge = initial_discharge + 5.0
+        ha.set_state(cfg.grid_export_limit, initial_targets["grid_export_limit"])
+        ha.set_state(cfg.grid_import_limit, initial_targets["grid_import_limit"])
+        ha.set_state(cfg.pv_max_power_limit, initial_targets["pv_max_power_limit"])
+        ha.set_state(cfg.ess_max_charging_limit, 1.0, {"max": changed_charge})
+        ha.set_state(cfg.ess_max_discharging_limit, 1.0, {"max": changed_discharge})
+        ha.calls.clear()
+
+        self._run_tick(optimizer, decision, now=102.0)
+        drift_calls = self._inverter_calls(ha, optimizer)
+
+        self.assertIn(("set_number", cfg.ess_max_charging_limit, initial_charge), drift_calls)
+        self.assertIn(("set_number", cfg.ess_max_discharging_limit, initial_discharge), drift_calls)
+        self.assertNotIn(("set_number", cfg.ess_max_charging_limit, changed_charge), drift_calls)
+        self.assertNotIn(("set_number", cfg.ess_max_discharging_limit, changed_discharge), drift_calls)
+        self.assertEqual(optimizer._manual_ess_charge_override_kw, initial_charge)
+        self.assertEqual(optimizer._manual_ess_discharge_override_kw, initial_discharge)
 
     def test_successful_manual_reentry_cancels_ordinary_settlement(self) -> None:
         ha, optimizer = self._optimizer(
