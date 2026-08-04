@@ -45,8 +45,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: sigenergy_optimizer_addon/Dockerfile
+          context: ./sigenergy_optimizer_addon
+          file: ./sigenergy_optimizer_addon/Dockerfile
           build-args: |
             SOURCE_REF=${{ github.sha }}
           platforms: linux/amd64,linux/arm64
