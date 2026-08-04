@@ -74,7 +74,7 @@ This document records the sensor, helper, config, derived-signal, algorithm, act
 | Value Gate | `EXPORT_VALUE_GATE_ENABLED`, `DRY_RUN`, `ENFORCE`, floor/premiums/margins | booleans, dollars/kWh, percent-ish floor | `_export_value_gate_advisory` | Live when enforced; hard guard independent | Keep advisory, enforce, and hard guard distinct. |
 | Estimated PV initiation | `PV_SURPLUS_ESTIMATED_INIT_ENABLED=true` | boolean | decision PV-surplus path | Live small probe | Disables only estimated initiation, not hard import-cost guard. |
 | Import thresholds | `IMPORT_THRESHOLD_*`, `IMPORT_LIMIT_*`, `CAP_TOTAL_IMPORT` | dollars/kWh, kW | `_desired_import_limit` | Live | Cheap import/top-up. |
-| Reserve/top-off | `MIN_SOC_FLOOR`, `NIGHT_RESERVE_SOC`, `SUNRISE_RESERVE_SOC`, `DAYTIME_TOPUP_MAX_SOC` | percent | reserve and PV-only paths | Live | Effective PV top-off target is max configured target and 99, capped 100. |
+| Reserve/top-off | `MIN_SOC_FLOOR`, `NIGHT_RESERVE_SOC`, `SUNRISE_RESERVE_SOC`, `DAYTIME_TOPUP_MAX_SOC` | percent | reserve and PV-only paths | Live | `DAYTIME_TOPUP_MAX_SOC` governs ordinary daytime import/top-up; PV-surplus-only export requires a fixed 100% top-off target. |
 | Negative price/holdoff | standby, slow charge, forecast holdoff, negative lookahead | booleans, hours, kWh, kW | import/export/PV limit paths | Live | Overlaps with anti-curtailment. |
 | Morning slow export | probe/ramp/margin keys | kW | morning slow-charge/export paths | Live | Existing anti-self-lock path. |
 | Safeguards | full battery safeguard, hysteresis, min transfer, forecast safety | percent, kW, kWh | export/import/PV logic | Live | Safety margins. |
@@ -95,7 +95,7 @@ This document records the sensor, helper, config, derived-signal, algorithm, act
 | `battery_discharge_kw_for_pv_only` | battery sensor discharge, else power-balance fallback | kW | PV-only proof | carve-out/initiation | Proven if known | Unknown or above tolerance prevents PV-only classification. |
 | `pv_only_discharge_ok` | discharge known and <= tolerance | boolean | PV-only proof | carve-out/initiation | Safety gate | Must stay conservative. |
 | `pv_only_ems_safe` | current/proposed EMS not discharge mode | boolean | PV-only proof | carve-out/initiation | Safety gate | Prevents battery-backed export being called PV-only. |
-| `topoff_target_soc` | `min(100, max(99, DAYTIME_TOPUP_MAX_SOC))` | percent | decision trace | PV-only export | Live guard | Source of truth for full-enough target. |
+| `topoff_target_soc` | `100` | percent | decision trace | PV-only export | Live guard | Fixed source of truth for the PV-surplus export top-off target. |
 | `topoff_target_met` | `battery_soc >= topoff_target_soc` | boolean | PV-only proof | carve-out/initiation | Live guard | If target is 100, 99 is not enough. |
 | `pv_surplus_only_proven` | common conditions + measured surplus + top-off + no discharge + EMS safe | boolean | decision | import-floor carve-out | Proven | Source of truth for measured PV-only export. |
 | `pv_surplus_estimated_init_active` | estimated path conditions and capped probe | boolean | decision | export initiation | Estimated live probe | Never equate with measured proof. |
@@ -125,8 +125,8 @@ This document records the sensor, helper, config, derived-signal, algorithm, act
 | Force Full Import + PV | manual mode | hardware caps/manual values | PV charge EMS, import cap, export block | Manual override | Add explicit test if changing. |
 | Prevent Import & Export | manual mode | block limit, optional ESS overrides | max self, grid limits near zero, optional ESS caps | Manual drift correction retries | Manual path tested. |
 | Cheap import/top-up | import price thresholds, reserve need, SoC | price, SoC, forecasts | import limit, charge modes | price/reserve/holdoff logic | Add more import-specific tests before cleanup. |
-| Negative FiT curtailment | negative feed-in or related forecast context | FiT, PV/load, config | PV max/export/import limits | avoids uneconomic export | Needs direct priority tests. |
-| PV max limiting | negative/standby/normal PV cap context | PV max config, current limit | PV max power limit | min-change threshold | UI diagnostics present. |
+| Negative FiT curtailment | negative feed-in or related forecast context | FiT, PV/load, config | export/EMS controls | suppresses uneconomic export without imposing a house-load PV max cap solely because the battery is full | Direct regression coverage exists in `tests/test_negative_fit_pv_curtailment.py`. |
+| PV max limiting | standby, battery-only, normal, and other configured PV-cap contexts | PV max config, current limit | PV max power limit | min-change threshold | UI diagnostics present. |
 | Full battery export | full SoC and export opportunity | SoC, FiT, forecasts | export limit/EMS | poor-tomorrow measured surplus clamp | `test_export_poor_tomorrow.py`. |
 | PV-surplus-only export | positive FiT, day, top-off met, measured surplus, no discharge, EMS safe | measured PV/load, battery flow, SoC, EMS | export capped to measured surplus; EMS safe | Can bypass import floor only when proven | Value Gate tests present. |
 | Estimated PV-surplus initiation | measured surplus low, estimated surplus positive, top-off met, positive FiT, no battery discharge, automated mode | Solcast power now, PV/load, SoC, EMS | small capped export probe; no discharge EMS | Toggle only disables estimated initiation | 2.3.14 tests present. |
@@ -147,7 +147,7 @@ This document records the sensor, helper, config, derived-signal, algorithm, act
 | EMS mode | `_apply`, `_safe_fallback`, `_apply_manual_mode_targets`, `/set_ess` | manual drift correction first; automatic decision later only in automated mode | hard guard/Value Gate can force max self; estimated probe avoids discharge mode | High-impact control surface. |
 | Grid export limit | `_apply`, `_safe_fallback`, manual targets, `/set_ess` | final automatic `Decision.export_limit` unless manual/API | hard guard and Value Gate veto clamp; zero becomes 0.01 setpoint | Central export safety output. |
 | Grid import limit | `_apply`, `_safe_fallback`, manual targets, `/set_ess` | final automatic `Decision.import_limit` unless manual/API | standby holdoff can force near zero | Can conflict with manual/API writes. |
-| PV max power limit | `_apply`, manual targets, `/set_ess` | final `Decision.pv_max_power_limit` unless manual/API | min-change threshold; configured normal cap | Negative FiT and PV cap logic overlap. |
+| PV max power limit | `_apply`, manual targets, `/set_ess` | final `Decision.pv_max_power_limit` unless manual/API | min-change threshold; configured normal cap | Negative-FiT export suppression is handled by export/EMS control rather than a full-battery house-load PV cap. |
 | ESS charge limit | `_apply`, manual targets, `/set_ess` | decision/manual/API | retry logic in manual apply | Optional entity but live if configured. |
 | ESS discharge limit | `_apply`, `_safe_fallback`, manual targets, `/set_ess` | decision/manual/API | fallback near zero on failures | Key to battery-backed export prevention. |
 | Mode helper | `apply_manual_mode`, manual drift restore | manual selection | allowed mode validation in API | Source of manual override. |
@@ -259,7 +259,7 @@ Do not delete these without a dedicated cleanup branch and tests:
 2. `test/api-direct-write-guardrails`: add coverage for `/set_ess`, `/set_mode`, auth, and audit behavior.
 3. `refactor/pv-surplus-source-names`: centralize measured vs estimated surplus helpers.
 4. `refactor/value-gate-status-boundaries`: separate classic Value Gate labels from hard import-cost guard labels.
-5. `test/negative-fit-pv-cap-priority`: pin negative FiT, PV cap, and full-battery priority.
+5. `test/negative-fit-pv-cap-priority`: focused negative-FiT/full-battery PV-max priority coverage now exists in `tests/test_negative_fit_pv_curtailment.py`.
 6. `cleanup/stale-mode-and-helper-candidates`: remove or document `AUTOMATED_EXPORT_FLAG`, `AUTOMATED_MODES`, and legacy manual import premium hook.
 
 ## Tests To Add Before Cleanup
@@ -267,7 +267,7 @@ Do not delete these without a dedicated cleanup branch and tests:
 - API direct-write tests for `/set_ess`: auth, audit log, and explicit live-control status.
 - Unknown non-automated mode label test: must not silently enable automatic estimated initiation.
 - Centralized PV surplus helper tests: measured and estimated formulas stay distinct.
-- Negative FiT plus full battery plus PV cap priority tests.
+- Negative FiT plus full battery plus PV max priority is covered by `tests/test_negative_fit_pv_curtailment.py`.
 - UI/status snapshot tests for hard import-cost guard vs classic Value Gate flags.
 - Import top-up tracking test documenting conservative inclusion of load during optimizer import windows.
 - Manual/force mode regression tests for every configured mode label.
