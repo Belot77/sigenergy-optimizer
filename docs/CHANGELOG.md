@@ -4,6 +4,7 @@
 - At negative feed-in prices, the automatic optimiser no longer reduces PV max power to approximately rounded house load when the battery is full. Existing grid-export controls remain responsible for preventing uneconomic export, while normal PV max allows solar to serve house load before the inverter internally curtails genuine excess.
 - The separate PV-surplus-only export top-off threshold is now fixed at 100% SoC. `DAYTIME_TOPUP_MAX_SOC` remains unchanged and continues to govern ordinary daytime cheap-import/top-up behaviour.
 - Added focused regression tests for the 100% PV-export top-off threshold and negative-FiT full-battery PV-max behaviour.
+- Bumped add-on metadata, buildstamp, FastAPI metadata, and runtime signature to 2.3.31-haos42.
 
 ## 2026-07-14
 - Fixed the default Remote EMS control switch entity spelling and added availability/domain guards before automatic `switch.turn_on` calls.
