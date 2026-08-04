@@ -3040,8 +3040,9 @@ class SigEnergyOptimizer:
         return False
 
     def _topoff_target_soc(self) -> float:
-        configured_target = max(0.0, float(self.cfg.daytime_topup_max_soc or 0.0))
-        return min(100.0, max(99.0, configured_target))
+        # PV-surplus export requires a genuinely full battery; ordinary daytime
+        # import top-up remains governed separately by daytime_topup_max_soc.
+        return 100.0
 
     def _record_pv_discovery_state(self, source: str, cap_kw: float, now_ts: float) -> None:
         cap = max(float(cap_kw or 0.0), 0.0)
@@ -3919,9 +3920,6 @@ class SigEnergyOptimizer:
 
         if s.price_is_negative and s.current_price <= cfg.import_threshold_low:
             return 0.1
-        if s.feedin_is_negative and s.battery_soc >= 99:
-            # FIT is negative and battery is full: curtail PV to approximately cover load only.
-            return max(cover_load, 0.1)
         if standby_holdoff and desired_export == 0:
             return max(cover_load, 0.1)
         if battery_only:
