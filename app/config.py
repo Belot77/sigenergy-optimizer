@@ -3,8 +3,9 @@ Configuration — loaded from environment variables (or a .env file).
 Every setting here maps 1:1 to a blueprint input from the original YAML automations.
 """
 from __future__ import annotations
+import math
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, model_validator
 
 
 class Settings(BaseSettings):
@@ -117,6 +118,26 @@ class Settings(BaseSettings):
     solar_power_now_sensor: str = Field("sensor.solcast_pv_forecast_power_now", env="SOLAR_POWER_NOW_SENSOR")
     productive_solar_threshold_kw: float = Field(1.0, env="PRODUCTIVE_SOLAR_THRESHOLD_KW")
     solcast_forecast_period_hours: float = Field(0.5, env="SOLCAST_FORECAST_PERIOD_HOURS")
+
+    # ------------------------------------------------------------------
+    # HVAC solar permission (diagnostic output only)
+    # ------------------------------------------------------------------
+    hvac_solar_permission_entity: str = Field(
+        "sensor.sigenergy_hvac_solar_permission",
+        env="HVAC_SOLAR_PERMISSION_ENTITY",
+    )
+    hvac_solar_start_kw: float = Field(1.0, env="HVAC_SOLAR_START_KW")
+    hvac_solar_continue_kw: float = Field(0.5, env="HVAC_SOLAR_CONTINUE_KW")
+    hvac_solar_battery_discharge_tolerance_kw: float = Field(
+        0.1,
+        env="HVAC_SOLAR_BATTERY_DISCHARGE_TOLERANCE_KW",
+    )
+    hvac_solar_hidden_margin_kw: float = Field(0.2, env="HVAC_SOLAR_HIDDEN_MARGIN_KW")
+    # Two heartbeat windows allow normal HA update jitter without accepting old evidence.
+    hvac_solar_data_max_age_seconds: float = Field(
+        120.0,
+        env="HVAC_SOLAR_DATA_MAX_AGE_SECONDS",
+    )
 
     # ------------------------------------------------------------------
     # HA helpers
@@ -284,6 +305,40 @@ class Settings(BaseSettings):
     export_limit_value: float = Field(30.0, env="EXPORT_LIMIT_VALUE")
     import_limit_value: float = Field(30.0, env="IMPORT_LIMIT_VALUE")
     pv_max_power_value: float = Field(30.0, env="PV_MAX_POWER_VALUE")
+
+    @model_validator(mode="after")
+    def _normalize_hvac_solar_permission_settings(self) -> "Settings":
+        def _nonnegative(value: float, default: float) -> float:
+            value = float(value)
+            if not math.isfinite(value):
+                return default
+            return max(0.0, value)
+
+        start_kw = float(self.hvac_solar_start_kw)
+        self.hvac_solar_start_kw = (
+            start_kw if math.isfinite(start_kw) and start_kw > 0 else 1.0
+        )
+        continue_kw = float(self.hvac_solar_continue_kw)
+        if not math.isfinite(continue_kw) or continue_kw <= 0:
+            continue_kw = min(0.5, self.hvac_solar_start_kw)
+        self.hvac_solar_continue_kw = min(continue_kw, self.hvac_solar_start_kw)
+        self.hvac_solar_battery_discharge_tolerance_kw = _nonnegative(
+            self.hvac_solar_battery_discharge_tolerance_kw,
+            0.1,
+        )
+        self.hvac_solar_hidden_margin_kw = _nonnegative(
+            self.hvac_solar_hidden_margin_kw,
+            0.2,
+        )
+        max_age = float(self.hvac_solar_data_max_age_seconds)
+        self.hvac_solar_data_max_age_seconds = (
+            max_age if math.isfinite(max_age) and max_age > 0 else 120.0
+        )
+        self.hvac_solar_permission_entity = (
+            str(self.hvac_solar_permission_entity or "").strip()
+            or "sensor.sigenergy_hvac_solar_permission"
+        )
+        return self
 
     class Config:
         env_file = ".env"
