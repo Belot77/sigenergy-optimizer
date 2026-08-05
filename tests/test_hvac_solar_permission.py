@@ -363,6 +363,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
             hvac_solar_battery_discharge_tolerance_kw=-0.1,
             hvac_solar_hidden_margin_kw=float("nan"),
             hvac_solar_data_max_age_seconds=float("inf"),
+            hvac_solar_forecast_max_age_seconds=float("inf"),
         )
 
         self.assertEqual(cfg.hvac_solar_start_kw, 1.0)
@@ -370,6 +371,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cfg.hvac_solar_battery_discharge_tolerance_kw, 0.0)
         self.assertEqual(cfg.hvac_solar_hidden_margin_kw, 0.2)
         self.assertEqual(cfg.hvac_solar_data_max_age_seconds, 120.0)
+        self.assertEqual(cfg.hvac_solar_forecast_max_age_seconds, 600.0)
 
         optimizer = self._optimizer(
             hvac_solar_start_kw=0.0,
@@ -500,19 +502,112 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.state, "unavailable")
         self.assertEqual(result.reason_code, "required_data_unavailable")
 
-    async def test_stale_required_data_produces_unavailable(self) -> None:
+    async def test_stale_live_pv_load_and_battery_data_produce_unavailable(self) -> None:
         cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)
         now = datetime.now(timezone.utc)
+        for entity_id in (
+            cfg.pv_power_sensor,
+            cfg.consumed_power_sensor,
+            cfg.battery_power_sensor,
+        ):
+            with self.subTest(entity_id=entity_id):
+                states = self._bulk_states(cfg, updated_at=now)
+                states[entity_id] = self._ha_state(
+                    0.0,
+                    now,
+                    reported_at=now - timedelta(seconds=121),
+                )
+                if entity_id == cfg.battery_power_sensor:
+                    states.pop(cfg.grid_import_power_sensor)
+                    states.pop(cfg.grid_export_power_sensor)
+                optimizer = self._optimizer(
+                    _BulkStateHA(states),
+                    hvac_solar_data_max_age_seconds=120.0,
+                )
+
+                state = await optimizer._read_state()
+                result = self._evaluate(optimizer, state.hvac_solar_inputs)
+
+                self.assertEqual(result.state, "unavailable")
+                self.assertEqual(result.reason_code, "required_data_stale")
+                self.assertFalse(result.data_fresh)
+
+    async def test_solcast_300_seconds_old_uses_forecast_freshness_window(self) -> None:
+        cfg = Settings(
+            _env_file=None,
+            hvac_solar_data_max_age_seconds=120.0,
+            hvac_solar_forecast_max_age_seconds=600.0,
+        )
+        now = datetime.now(timezone.utc)
         states = self._bulk_states(cfg, updated_at=now)
-        states[cfg.pv_power_sensor] = self._ha_state(0.0, now - timedelta(seconds=121))
-        optimizer = self._optimizer(_BulkStateHA(states), hvac_solar_data_max_age_seconds=120.0)
+        states[cfg.solar_power_now_sensor] = self._ha_state(
+            2.0,
+            now - timedelta(seconds=300),
+            reported_at=now - timedelta(seconds=300),
+        )
+        optimizer = self._optimizer(
+            _BulkStateHA(states),
+            hvac_solar_data_max_age_seconds=120.0,
+            hvac_solar_forecast_max_age_seconds=600.0,
+        )
+
+        state = await optimizer._read_state()
+
+        self.assertTrue(state.hvac_solar_inputs.solar_power_now.fresh)
+        self.assertFalse(state.hvac_solar_inputs.pv_power.value)
+        self.assertFalse(state.hvac_solar_inputs.load_power.value)
+
+    async def test_accepted_300_second_solcast_evidence_can_start_estimated_permission(self) -> None:
+        cfg = Settings(
+            _env_file=None,
+            hvac_solar_data_max_age_seconds=120.0,
+            hvac_solar_forecast_max_age_seconds=600.0,
+        )
+        now = datetime.now(timezone.utc)
+        states = self._bulk_states(cfg, updated_at=now)
+        states[cfg.solar_power_now_sensor] = self._ha_state(
+            2.0,
+            now,
+            reported_at=now - timedelta(seconds=300),
+        )
+        optimizer = self._optimizer(
+            _BulkStateHA(states),
+            hvac_solar_data_max_age_seconds=120.0,
+            hvac_solar_forecast_max_age_seconds=600.0,
+        )
 
         state = await optimizer._read_state()
         result = self._evaluate(optimizer, state.hvac_solar_inputs)
 
+        self.assertEqual(result.state, "start")
+        self.assertEqual(result.source, "estimated")
+        self.assertEqual(result.reason_code, "estimated_opportunity_start")
+
+    async def test_solcast_older_than_forecast_window_is_stale_when_needed(self) -> None:
+        cfg = Settings(
+            _env_file=None,
+            hvac_solar_data_max_age_seconds=120.0,
+            hvac_solar_forecast_max_age_seconds=600.0,
+        )
+        now = datetime.now(timezone.utc)
+        states = self._bulk_states(cfg, updated_at=now)
+        states[cfg.solar_power_now_sensor] = self._ha_state(
+            2.0,
+            now,
+            reported_at=now - timedelta(seconds=601),
+        )
+        optimizer = self._optimizer(
+            _BulkStateHA(states),
+            hvac_solar_data_max_age_seconds=120.0,
+            hvac_solar_forecast_max_age_seconds=600.0,
+        )
+
+        state = await optimizer._read_state()
+        result = self._evaluate(optimizer, state.hvac_solar_inputs)
+
+        self.assertFalse(state.hvac_solar_inputs.solar_power_now.fresh)
         self.assertEqual(result.state, "unavailable")
         self.assertEqual(result.reason_code, "required_data_stale")
-        self.assertFalse(result.data_fresh)
 
     async def test_recent_last_reported_overrides_old_last_updated(self) -> None:
         cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)
@@ -796,6 +891,23 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result.state, "blocked")
                 self.assertEqual(result.reason_code, "control_mode_not_automated")
 
+    async def test_watch_entities_include_permission_critical_inputs(self) -> None:
+        optimizer = self._optimizer()
+
+        watched = optimizer.get_watch_entities()
+
+        self.assertTrue(
+            {
+                optimizer.cfg.battery_power_sensor,
+                optimizer.cfg.grid_import_power_sensor,
+                optimizer.cfg.grid_export_power_sensor,
+                optimizer.cfg.solar_power_now_sensor,
+                optimizer.cfg.sun_entity,
+                optimizer.cfg.ems_mode_select,
+                optimizer.cfg.grid_export_limit,
+            }.issubset(watched)
+        )
+
     async def test_unsafe_observed_ems_blocks(self) -> None:
         optimizer = self._optimizer()
         discharging = self._evaluate(
@@ -1016,8 +1128,11 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
             [("grid_export", 7.0), ("grid_import", 3.0), ("pv_max", 25.0)],
         )
 
-    async def test_expires_at_is_present_and_later_than_evaluated_at(self) -> None:
-        optimizer = self._optimizer(hvac_solar_data_max_age_seconds=120.0)
+    async def test_expires_at_uses_live_data_window_not_forecast_window(self) -> None:
+        optimizer = self._optimizer(
+            hvac_solar_data_max_age_seconds=120.0,
+            hvac_solar_forecast_max_age_seconds=600.0,
+        )
         evaluated_at = datetime(2026, 8, 4, 1, 2, 3, tzinfo=timezone.utc)
 
         result = optimizer._evaluate_hvac_solar_permission(

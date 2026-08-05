@@ -71,6 +71,13 @@ _HA_CONTROL_WARNING_INTERVAL_SECONDS = 300.0
 _TRIGGER_ENTITY_ATTRS = [
     "pv_power_sensor",
     "consumed_power_sensor",
+    "battery_power_sensor",
+    "grid_import_power_sensor",
+    "grid_export_power_sensor",
+    "solar_power_now_sensor",
+    "sun_entity",
+    "ems_mode_select",
+    "grid_export_limit",
     "battery_soc_sensor",
     "price_sensor",
     "feedin_sensor",
@@ -515,7 +522,7 @@ class SigEnergyOptimizer:
         previous_result: Optional[HVACSolarPermissionResult],
         evaluated_at: Optional[datetime] = None,
     ) -> HVACSolarPermissionResult:
-        """Evaluate a diagnostic-only HVAC solar permission from fresh HA evidence."""
+        """Evaluate authoritative HVAC permission with no inverter-control effect."""
         cfg = self.cfg
         inputs = s.hvac_solar_inputs
         evaluated_at = evaluated_at or datetime.now(timezone.utc)
@@ -1153,7 +1160,10 @@ class SigEnergyOptimizer:
         observed_at = datetime.now(timezone.utc)
         unavailable_states = {"unknown", "unavailable", "none", ""}
 
-        def _metadata_is_fresh(obj: dict[str, Any]) -> bool:
+        def _metadata_is_fresh(
+            obj: dict[str, Any],
+            max_age_seconds: float,
+        ) -> bool:
             raw_timestamp = (
                 obj.get("last_reported")
                 if "last_reported" in obj
@@ -1170,11 +1180,16 @@ class SigEnergyOptimizer:
                 age_seconds = (
                     observed_at - updated_at.astimezone(timezone.utc)
                 ).total_seconds()
-                return -5.0 <= age_seconds <= cfg.hvac_solar_data_max_age_seconds
+                return -5.0 <= age_seconds <= max_age_seconds
             except (TypeError, ValueError):
                 return False
 
-        def _observed_number(eid: str, converter=None) -> HVACObservedValue:
+        def _observed_number(
+            eid: str,
+            converter=None,
+            *,
+            max_age_seconds: float,
+        ) -> HVACObservedValue:
             obj = bulk.get(eid)
             if not obj:
                 return HVACObservedValue()
@@ -1190,7 +1205,7 @@ class SigEnergyOptimizer:
                 return HVACObservedValue(
                     value=value,
                     available=True,
-                    fresh=_metadata_is_fresh(obj),
+                    fresh=_metadata_is_fresh(obj, max_age_seconds),
                 )
             except (TypeError, ValueError, OverflowError):
                 return HVACObservedValue()
@@ -1199,6 +1214,7 @@ class SigEnergyOptimizer:
             eid: str,
             *,
             current_when_present: bool = False,
+            max_age_seconds: float,
         ) -> HVACObservedValue:
             obj = bulk.get(eid)
             if not obj:
@@ -1209,7 +1225,8 @@ class SigEnergyOptimizer:
             return HVACObservedValue(
                 value=value,
                 available=True,
-                fresh=current_when_present or _metadata_is_fresh(obj),
+                fresh=current_when_present
+                or _metadata_is_fresh(obj, max_age_seconds),
             )
 
         def _positive_power_kw(value: float) -> float:
@@ -1219,7 +1236,12 @@ class SigEnergyOptimizer:
             value = value / 1000.0 if abs(value) > 100 else value
             return -value if cfg.battery_power_sensor_invert else value
 
-        sun_observation = _observed_text(cfg.sun_entity)
+        live_max_age = cfg.hvac_solar_data_max_age_seconds
+        forecast_max_age = cfg.hvac_solar_forecast_max_age_seconds
+        sun_observation = _observed_text(
+            cfg.sun_entity,
+            max_age_seconds=live_max_age,
+        )
         if sun_observation.available:
             if sun_observation.value in {"above_horizon", "below_horizon"}:
                 sun_observation = HVACObservedValue(
@@ -1241,6 +1263,7 @@ class SigEnergyOptimizer:
         control_mode_observation = _observed_text(
             cfg.sigenergy_mode_select,
             current_when_present=str(cfg.sigenergy_mode_select).startswith("input_select."),
+            max_age_seconds=live_max_age,
         )
         if (
             control_mode_observation.available
@@ -1249,25 +1272,46 @@ class SigEnergyOptimizer:
             control_mode_observation = HVACObservedValue()
 
         s.hvac_solar_inputs = HVACSolarInputContext(
-            pv_power=_observed_number(cfg.pv_power_sensor, _positive_power_kw),
-            load_power=_observed_number(cfg.consumed_power_sensor, _positive_power_kw),
-            battery_power=_observed_number(cfg.battery_power_sensor, _battery_power_kw),
+            pv_power=_observed_number(
+                cfg.pv_power_sensor,
+                _positive_power_kw,
+                max_age_seconds=live_max_age,
+            ),
+            load_power=_observed_number(
+                cfg.consumed_power_sensor,
+                _positive_power_kw,
+                max_age_seconds=live_max_age,
+            ),
+            battery_power=_observed_number(
+                cfg.battery_power_sensor,
+                _battery_power_kw,
+                max_age_seconds=live_max_age,
+            ),
             grid_import_power=_observed_number(
                 cfg.grid_import_power_sensor,
                 _positive_power_kw,
+                max_age_seconds=live_max_age,
             ),
             grid_export_power=_observed_number(
                 cfg.grid_export_power_sensor,
                 _positive_power_kw,
+                max_age_seconds=live_max_age,
             ),
             solar_power_now=_observed_number(
                 cfg.solar_power_now_sensor,
                 _positive_power_kw,
+                max_age_seconds=forecast_max_age,
             ),
             sun_above_horizon=sun_observation,
             control_mode=control_mode_observation,
-            observed_ems_mode=_observed_text(cfg.ems_mode_select),
-            observed_export_limit=_observed_number(cfg.grid_export_limit),
+            observed_ems_mode=_observed_text(
+                cfg.ems_mode_select,
+                max_age_seconds=live_max_age,
+            ),
+            observed_export_limit=_observed_number(
+                cfg.grid_export_limit,
+                max_age_seconds=live_max_age,
+            ),
         )
 
         # ---- PV / battery ---------------------------------------------

@@ -120,7 +120,7 @@ class Settings(BaseSettings):
     solcast_forecast_period_hours: float = Field(0.5, env="SOLCAST_FORECAST_PERIOD_HOURS")
 
     # ------------------------------------------------------------------
-    # HVAC solar permission (diagnostic output only)
+    # Authoritative HVAC permission output; no inverter-control effect.
     # ------------------------------------------------------------------
     hvac_solar_permission_entity: str = Field(
         "sensor.sigenergy_hvac_solar_permission",
@@ -137,6 +137,10 @@ class Settings(BaseSettings):
     hvac_solar_data_max_age_seconds: float = Field(
         120.0,
         env="HVAC_SOLAR_DATA_MAX_AGE_SECONDS",
+    )
+    hvac_solar_forecast_max_age_seconds: float = Field(
+        600.0,
+        env="HVAC_SOLAR_FORECAST_MAX_AGE_SECONDS",
     )
 
     # ------------------------------------------------------------------
@@ -333,6 +337,12 @@ class Settings(BaseSettings):
         max_age = float(self.hvac_solar_data_max_age_seconds)
         self.hvac_solar_data_max_age_seconds = (
             max_age if math.isfinite(max_age) and max_age > 0 else 120.0
+        )
+        forecast_max_age = float(self.hvac_solar_forecast_max_age_seconds)
+        self.hvac_solar_forecast_max_age_seconds = (
+            forecast_max_age
+            if math.isfinite(forecast_max_age) and forecast_max_age > 0
+            else 600.0
         )
         self.hvac_solar_permission_entity = (
             str(self.hvac_solar_permission_entity or "").strip()
