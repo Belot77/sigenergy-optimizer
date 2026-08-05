@@ -237,9 +237,9 @@ Uninstall:
 
 ## Version
 
-2.3.32-haos43
+2.3.33-haos44
 
-2.3.32-haos43 adds the authoritative Home Assistant entity `sensor.sigenergy_hvac_solar_permission`, publishing `start`, `continue`, `blocked`, or `unavailable` with separate freshness handling for live inverter evidence and Solcast forecast evidence. It is intended for later Climate Manager integration, does not give Climate Manager actuator control, and does not change optimiser inverter decisions or actuator behaviour.
+2.3.33-haos44 adds the authoritative Home Assistant entity `sensor.sigenergy_hvac_solar_permission`, publishing `start`, `continue`, `blocked`, or `unavailable` with separate freshness handling for live inverter evidence and Solcast forecast evidence. It is intended for later Climate Manager integration, does not give Climate Manager actuator control, and does not change optimiser inverter decisions or actuator behaviour.
 
 ## Maintainer Release Flow
 
