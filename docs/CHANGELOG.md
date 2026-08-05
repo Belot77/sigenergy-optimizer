@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-05
+- Added the authoritative Home Assistant entity `sensor.sigenergy_hvac_solar_permission`, publishing `start`, `continue`, `blocked`, or `unavailable`.
+- Added measured solar-opportunity evaluation with separate start/continue hysteresis; Solcast is used only as separate hidden-opportunity evidence.
+- Live inverter evidence and permission expiry use a 120-second freshness window, while Solcast forecast evidence uses a separate 600-second window.
+- Added permission-critical WebSocket triggers so relevant entity changes promptly refresh the published permission.
+- Kept permission publication isolated from existing optimiser inverter decisions and actuator writes.
+- Bumped add-on metadata, buildstamp, FastAPI metadata, and runtime signature to 2.3.32-haos43.
+
 ## 2026-08-04
 - At negative feed-in prices, the automatic optimiser no longer reduces PV max power to approximately rounded house load when the battery is full. Existing grid-export controls remain responsible for preventing uneconomic export, while normal PV max allows solar to serve house load before the inverter internally curtails genuine excess.
 - The separate PV-surplus-only export top-off threshold is now fixed at 100% SoC. `DAYTIME_TOPUP_MAX_SOC` remains unchanged and continues to govern ordinary daytime cheap-import/top-up behaviour.
