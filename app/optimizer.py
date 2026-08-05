@@ -1306,6 +1306,7 @@ class SigEnergyOptimizer:
             control_mode=control_mode_observation,
             observed_ems_mode=_observed_text(
                 cfg.ems_mode_select,
+                current_when_present=True,
                 max_age_seconds=live_max_age,
             ),
             observed_export_limit=_observed_number(
