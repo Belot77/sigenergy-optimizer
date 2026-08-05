@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-06
+- Release `2.3.33-haos44` fixes HVAC solar permission freshness when the observed Home Assistant EMS selector is present and valid but unchanged, preventing false `required_data_stale` results.
+- Existing inverter commands, export-limit policy, PV MAX behaviour and actuator settlement logic are unchanged.
+- Added regression coverage for an unchanged valid `Maximum Self Consumption` EMS selector.
+
 ## 2026-08-05
 - Added the authoritative Home Assistant entity `sensor.sigenergy_hvac_solar_permission`, publishing `start`, `continue`, `blocked`, or `unavailable`.
 - Added measured solar-opportunity evaluation with separate start/continue hysteresis; Solcast is used only as separate hidden-opportunity evidence.

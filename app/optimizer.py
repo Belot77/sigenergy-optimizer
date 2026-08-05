@@ -87,7 +87,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.32-haos43"
+_RUNTIME_SIGNATURE = "2.3.33-haos44"
 
 
 @dataclass(frozen=True)
