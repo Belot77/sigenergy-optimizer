@@ -17,6 +17,7 @@ import asyncio
 from collections import deque
 from dataclasses import dataclass
 import logging
+import math
 import os
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Optional
@@ -31,7 +32,13 @@ from .forecast_utils import (
     forecast_entry_value,
 )
 from .ha_client import HAClient
-from .models import Decision, SolarState
+from .models import (
+    Decision,
+    HVACObservedValue,
+    HVACSolarInputContext,
+    HVACSolarPermissionResult,
+    SolarState,
+)
 from .state_store import StateStore
 
 logger = logging.getLogger(__name__)
@@ -64,6 +71,13 @@ _HA_CONTROL_WARNING_INTERVAL_SECONDS = 300.0
 _TRIGGER_ENTITY_ATTRS = [
     "pv_power_sensor",
     "consumed_power_sensor",
+    "battery_power_sensor",
+    "grid_import_power_sensor",
+    "grid_export_power_sensor",
+    "solar_power_now_sensor",
+    "sun_entity",
+    "ems_mode_select",
+    "grid_export_limit",
     "battery_soc_sensor",
     "price_sensor",
     "feedin_sensor",
@@ -122,6 +136,9 @@ class SigEnergyOptimizer:
         self._last_cycle_started: Optional[datetime] = None
         self._last_cycle_completed: Optional[datetime] = None
         self._last_cycle_error: str = ""
+        self._last_published_hvac_solar_permission_result: Optional[
+            HVACSolarPermissionResult
+        ] = None
         self._notif_export_active: Optional[bool] = None
         self._last_export_start_notice_at: Optional[datetime] = None
         self._battery_full_alert_armed: bool = True
@@ -464,22 +481,379 @@ class SigEnergyOptimizer:
 
     async def _tick(self) -> None:
         async with self._control_lock:
-            prev_decision = self._last_decision
-            prev_state = self._last_state
-            state = await self._read_state()
-            self._last_state = state
-            decision = self._decide(state)
-            effective_mode = self._manual_mode_override or state.sigenergy_mode
-            if effective_mode not in {self.cfg.automated_option, ""}:
-                self._freeze_decision_to_live_mode(state, decision, effective_mode)
-            self._last_decision = decision
-            await self._apply(state, decision)
-            self._record_automation_audit(state, decision, prev_decision)
-            self._record_decision_trace(state, decision)
-            await self._handle_notifications(state, decision, prev_decision, prev_state)
-            await self._handle_daily_summaries(state, decision)
-            self._accumulate_history(state, decision)
-            self._record_price_tracking(state, decision)
+            try:
+                prev_decision = self._last_decision
+                prev_state = self._last_state
+                state = await self._read_state()
+                self._last_state = state
+                decision = self._decide(state)
+                effective_mode = self._manual_mode_override or state.sigenergy_mode
+                if effective_mode not in {self.cfg.automated_option, ""}:
+                    self._freeze_decision_to_live_mode(state, decision, effective_mode)
+                self._last_decision = decision
+                await self._apply(state, decision)
+                permission = self._evaluate_hvac_solar_permission(
+                    state,
+                    decision,
+                    effective_mode=effective_mode,
+                    previous_result=self._last_published_hvac_solar_permission_result,
+                )
+                await self._publish_hvac_solar_permission(permission)
+                self._record_automation_audit(state, decision, prev_decision)
+                self._record_decision_trace(state, decision)
+                await self._handle_notifications(state, decision, prev_decision, prev_state)
+                await self._handle_daily_summaries(state, decision)
+                self._accumulate_history(state, decision)
+                self._record_price_tracking(state, decision)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await self._publish_hvac_solar_permission(
+                    self._hvac_solar_cycle_error_result()
+                )
+                raise
+
+    def _evaluate_hvac_solar_permission(
+        self,
+        s: SolarState,
+        d: Decision,
+        *,
+        effective_mode: str,
+        previous_result: Optional[HVACSolarPermissionResult],
+        evaluated_at: Optional[datetime] = None,
+    ) -> HVACSolarPermissionResult:
+        """Evaluate authoritative HVAC permission with no inverter-control effect."""
+        cfg = self.cfg
+        inputs = s.hvac_solar_inputs
+        evaluated_at = evaluated_at or datetime.now(timezone.utc)
+        if evaluated_at.tzinfo is None:
+            evaluated_at = evaluated_at.replace(tzinfo=timezone.utc)
+        else:
+            evaluated_at = evaluated_at.astimezone(timezone.utc)
+        expires_at = evaluated_at + timedelta(
+            seconds=cfg.hvac_solar_data_max_age_seconds
+        )
+        previous = previous_result.state if previous_result is not None else "none"
+        previous_expires_at = (
+            previous_result.expires_at if previous_result is not None else None
+        )
+        if previous_expires_at is not None and previous_expires_at.tzinfo is None:
+            previous_expires_at = previous_expires_at.replace(tzinfo=timezone.utc)
+        previous_allows_continue = bool(
+            previous in {"start", "continue"}
+            and previous_expires_at is not None
+            and previous_expires_at.astimezone(timezone.utc) > evaluated_at
+        )
+        normal_export_cap = max(0.0, float(cfg.export_limit_high))
+        export_constraint_active = bool(
+            normal_export_cap > 0.0
+            and float(d.export_limit) < normal_export_cap - 0.011
+        )
+        observed_export_limit = (
+            float(inputs.observed_export_limit.value)
+            if inputs.observed_export_limit.available
+            and inputs.observed_export_limit.fresh
+            else None
+        )
+
+        control_mode = "unavailable"
+        observed_ems_mode: Optional[str] = None
+        measured_opportunity: Optional[float] = None
+        estimated_opportunity: Optional[float] = None
+        hidden_opportunity: Optional[float] = None
+        battery_discharge: Optional[float] = None
+        battery_flow_source = "unavailable"
+
+        def _result(
+            state: str,
+            reason_code: str,
+            *,
+            source: str = "none",
+            data_fresh: bool,
+        ) -> HVACSolarPermissionResult:
+            return HVACSolarPermissionResult(
+                state=state,
+                reason_code=reason_code,
+                source=source,
+                export_constraint_active=export_constraint_active,
+                control_mode=control_mode,
+                data_fresh=data_fresh,
+                measured_opportunity_kw=measured_opportunity,
+                estimated_opportunity_kw=estimated_opportunity,
+                hidden_opportunity_kw=hidden_opportunity,
+                start_threshold_kw=cfg.hvac_solar_start_kw,
+                continue_threshold_kw=cfg.hvac_solar_continue_kw,
+                battery_discharge_kw=battery_discharge,
+                battery_flow_source=battery_flow_source,
+                observed_ems_mode=observed_ems_mode,
+                desired_ems_mode=str(d.ems_mode) if d.ems_mode else None,
+                previous_permission=previous,
+                desired_export_limit_kw=float(d.export_limit),
+                observed_export_limit_kw=observed_export_limit,
+                evaluated_at=evaluated_at,
+                expires_at=expires_at,
+            )
+
+        configured_modes = {
+            cfg.automated_option,
+            cfg.full_export_option,
+            cfg.full_import_option,
+            cfg.full_import_pv_option,
+            cfg.block_flow_option,
+            cfg.manual_option,
+        }
+        if self._manual_mode_override:
+            control_mode = str(self._manual_mode_override)
+        else:
+            if not inputs.control_mode.available:
+                return _result(
+                    "unavailable",
+                    "control_mode_unavailable",
+                    data_fresh=False,
+                )
+            if not inputs.control_mode.fresh:
+                return _result(
+                    "unavailable",
+                    "required_data_stale",
+                    data_fresh=False,
+                )
+            control_mode = str(inputs.control_mode.value)
+        if control_mode not in configured_modes:
+            return _result(
+                "unavailable",
+                "control_mode_unavailable",
+                data_fresh=False,
+            )
+        if control_mode != cfg.automated_option or effective_mode != cfg.automated_option:
+            return _result(
+                "blocked",
+                "control_mode_not_automated",
+                data_fresh=True,
+            )
+
+        if not inputs.observed_ems_mode.available:
+            return _result(
+                "unavailable",
+                "ems_mode_unavailable",
+                data_fresh=False,
+            )
+        if not inputs.observed_ems_mode.fresh:
+            return _result(
+                "unavailable",
+                "required_data_stale",
+                data_fresh=False,
+            )
+        observed_ems_mode = str(inputs.observed_ems_mode.value)
+        known_ems_modes = {MODE_MAX_SELF, *DISCHARGE_MODES, *CHARGE_MODES}
+        if observed_ems_mode not in known_ems_modes:
+            return _result(
+                "unavailable",
+                "ems_mode_unavailable",
+                data_fresh=False,
+            )
+        if observed_ems_mode in DISCHARGE_MODES:
+            return _result("blocked", "ems_discharging", data_fresh=True)
+        if observed_ems_mode != MODE_MAX_SELF:
+            return _result("blocked", "ems_mode_not_solar_safe", data_fresh=True)
+        if d.ems_mode in DISCHARGE_MODES:
+            return _result("blocked", "ems_discharge_requested", data_fresh=True)
+        if d.ems_mode != MODE_MAX_SELF:
+            return _result("blocked", "ems_mode_not_solar_safe", data_fresh=True)
+
+        required_power = (inputs.pv_power, inputs.load_power)
+        if any(not reading.available for reading in required_power):
+            return _result(
+                "unavailable",
+                "required_data_unavailable",
+                data_fresh=False,
+            )
+        if any(not reading.fresh for reading in required_power):
+            return _result(
+                "unavailable",
+                "required_data_stale",
+                data_fresh=False,
+            )
+        pv_kw = float(inputs.pv_power.value)
+        load_kw = float(inputs.load_power.value)
+        measured_opportunity = max(pv_kw - load_kw, 0.0)
+
+        if inputs.battery_power.available and inputs.battery_power.fresh:
+            battery_discharge = max(0.0, -float(inputs.battery_power.value))
+            battery_flow_source = "direct_battery_sensor"
+        elif (
+            inputs.grid_import_power.available
+            and inputs.grid_import_power.fresh
+            and inputs.grid_export_power.available
+            and inputs.grid_export_power.fresh
+        ):
+            measured_import = max(float(inputs.grid_import_power.value), 0.0)
+            measured_export = max(float(inputs.grid_export_power.value), 0.0)
+            battery_power_kw = pv_kw + measured_import - measured_export - load_kw
+            battery_discharge = max(0.0, -battery_power_kw)
+            battery_flow_source = "measured_grid_flow"
+        else:
+            battery_candidates = (
+                inputs.battery_power,
+                inputs.grid_import_power,
+                inputs.grid_export_power,
+            )
+            reason = (
+                "required_data_stale"
+                if any(reading.available and not reading.fresh for reading in battery_candidates)
+                else "battery_flow_unavailable"
+            )
+            return _result("unavailable", reason, data_fresh=False)
+
+        if battery_discharge > cfg.hvac_solar_battery_discharge_tolerance_kw:
+            return _result("blocked", "battery_discharging", data_fresh=True)
+
+        estimated_inputs = (inputs.solar_power_now, inputs.sun_above_horizon)
+        estimated_inputs_available = all(
+            reading.available for reading in estimated_inputs
+        )
+        estimated_inputs_fresh = all(reading.fresh for reading in estimated_inputs)
+        if estimated_inputs_available and estimated_inputs_fresh:
+            estimated_opportunity = max(
+                max(pv_kw, float(inputs.solar_power_now.value)) - load_kw,
+                0.0,
+            )
+            hidden_opportunity = max(
+                estimated_opportunity - measured_opportunity,
+                0.0,
+            )
+
+        if measured_opportunity >= cfg.hvac_solar_start_kw:
+            return _result(
+                "start",
+                "measured_opportunity_start",
+                source="measured",
+                data_fresh=True,
+            )
+        estimated_safe = bool(
+            estimated_inputs_available
+            and estimated_inputs_fresh
+            and inputs.sun_above_horizon.value
+            and hidden_opportunity is not None
+            and hidden_opportunity >= cfg.hvac_solar_hidden_margin_kw
+        )
+        if (
+            estimated_safe
+            and estimated_opportunity is not None
+            and estimated_opportunity >= cfg.hvac_solar_start_kw
+        ):
+            return _result(
+                "start",
+                "estimated_opportunity_start",
+                source="estimated",
+                data_fresh=True,
+            )
+        if (
+            previous_allows_continue
+            and measured_opportunity >= cfg.hvac_solar_continue_kw
+        ):
+            return _result(
+                "continue",
+                "measured_opportunity_continue",
+                source="measured",
+                data_fresh=True,
+            )
+
+        if not estimated_inputs_available:
+            return _result(
+                "unavailable",
+                "required_data_unavailable",
+                data_fresh=False,
+            )
+        if not estimated_inputs_fresh:
+            return _result(
+                "unavailable",
+                "required_data_stale",
+                data_fresh=False,
+            )
+        assert estimated_opportunity is not None
+        assert hidden_opportunity is not None
+        if (
+            estimated_safe
+            and previous_allows_continue
+            and estimated_opportunity >= cfg.hvac_solar_continue_kw
+        ):
+            return _result(
+                "continue",
+                "estimated_opportunity_continue",
+                source="estimated",
+                data_fresh=True,
+            )
+        if previous_allows_continue:
+            return _result(
+                "blocked",
+                "opportunity_below_continue",
+                data_fresh=True,
+            )
+        trustworthy_opportunity = max(
+            measured_opportunity,
+            estimated_opportunity if estimated_safe else 0.0,
+        )
+        if trustworthy_opportunity >= cfg.hvac_solar_continue_kw:
+            return _result(
+                "blocked",
+                "start_threshold_not_met",
+                data_fresh=True,
+            )
+        return _result(
+            "blocked",
+            "insufficient_solar_opportunity",
+            data_fresh=True,
+        )
+
+    def _hvac_solar_cycle_error_result(self) -> HVACSolarPermissionResult:
+        evaluated_at = datetime.now(timezone.utc)
+        return HVACSolarPermissionResult(
+            state="unavailable",
+            reason_code="optimizer_cycle_error",
+            source="none",
+            export_constraint_active=False,
+            control_mode="unavailable",
+            data_fresh=False,
+            measured_opportunity_kw=None,
+            estimated_opportunity_kw=None,
+            hidden_opportunity_kw=None,
+            start_threshold_kw=self.cfg.hvac_solar_start_kw,
+            continue_threshold_kw=self.cfg.hvac_solar_continue_kw,
+            battery_discharge_kw=None,
+            battery_flow_source="unavailable",
+            observed_ems_mode=None,
+            desired_ems_mode=None,
+            previous_permission=str(
+                self._last_published_hvac_solar_permission_result.state
+                if self._last_published_hvac_solar_permission_result is not None
+                else "none"
+            ),
+            desired_export_limit_kw=None,
+            observed_export_limit_kw=None,
+            evaluated_at=evaluated_at,
+            expires_at=evaluated_at
+            + timedelta(seconds=self.cfg.hvac_solar_data_max_age_seconds),
+        )
+
+    async def _publish_hvac_solar_permission(
+        self,
+        result: HVACSolarPermissionResult,
+    ) -> bool:
+        entity_id = self.cfg.hvac_solar_permission_entity
+        try:
+            published = await self.ha.set_state(
+                entity_id,
+                result.state,
+                result.attributes(),
+            )
+        except Exception as exc:
+            logger.warning("HVAC solar permission publication failed for %s: %s", entity_id, exc)
+            return False
+        if not published:
+            logger.warning("HVAC solar permission publication failed for %s", entity_id)
+            return False
+        self._last_published_hvac_solar_permission_result = result
+        return True
 
     def _record_price_tracking(self, s: SolarState, d: Decision | None = None) -> None:
         now = datetime.now(self._tz)
@@ -782,6 +1156,163 @@ class SigEnergyOptimizer:
             if not obj:
                 return default
             return obj.get("attributes", {}).get(attr, default)
+
+        observed_at = datetime.now(timezone.utc)
+        unavailable_states = {"unknown", "unavailable", "none", ""}
+
+        def _metadata_is_fresh(
+            obj: dict[str, Any],
+            max_age_seconds: float,
+        ) -> bool:
+            raw_timestamp = (
+                obj.get("last_reported")
+                if "last_reported" in obj
+                else obj.get("last_updated")
+            )
+            if not raw_timestamp:
+                return False
+            try:
+                updated_at = datetime.fromisoformat(
+                    str(raw_timestamp).replace("Z", "+00:00")
+                )
+                if updated_at.tzinfo is None:
+                    return False
+                age_seconds = (
+                    observed_at - updated_at.astimezone(timezone.utc)
+                ).total_seconds()
+                return -5.0 <= age_seconds <= max_age_seconds
+            except (TypeError, ValueError):
+                return False
+
+        def _observed_number(
+            eid: str,
+            converter=None,
+            *,
+            max_age_seconds: float,
+        ) -> HVACObservedValue:
+            obj = bulk.get(eid)
+            if not obj:
+                return HVACObservedValue()
+            raw_value = obj.get("state", "")
+            if str(raw_value).strip().lower() in unavailable_states:
+                return HVACObservedValue()
+            try:
+                value = float(raw_value)
+                if not math.isfinite(value):
+                    return HVACObservedValue()
+                if converter is not None:
+                    value = float(converter(value))
+                return HVACObservedValue(
+                    value=value,
+                    available=True,
+                    fresh=_metadata_is_fresh(obj, max_age_seconds),
+                )
+            except (TypeError, ValueError, OverflowError):
+                return HVACObservedValue()
+
+        def _observed_text(
+            eid: str,
+            *,
+            current_when_present: bool = False,
+            max_age_seconds: float,
+        ) -> HVACObservedValue:
+            obj = bulk.get(eid)
+            if not obj:
+                return HVACObservedValue()
+            value = str(obj.get("state", "")).strip()
+            if value.lower() in unavailable_states:
+                return HVACObservedValue()
+            return HVACObservedValue(
+                value=value,
+                available=True,
+                fresh=current_when_present
+                or _metadata_is_fresh(obj, max_age_seconds),
+            )
+
+        def _positive_power_kw(value: float) -> float:
+            return value / 1000.0 if value > 100 else value
+
+        def _battery_power_kw(value: float) -> float:
+            value = value / 1000.0 if abs(value) > 100 else value
+            return -value if cfg.battery_power_sensor_invert else value
+
+        live_max_age = cfg.hvac_solar_data_max_age_seconds
+        forecast_max_age = cfg.hvac_solar_forecast_max_age_seconds
+        sun_observation = _observed_text(
+            cfg.sun_entity,
+            max_age_seconds=live_max_age,
+        )
+        if sun_observation.available:
+            if sun_observation.value in {"above_horizon", "below_horizon"}:
+                sun_observation = HVACObservedValue(
+                    value=sun_observation.value == "above_horizon",
+                    available=True,
+                    fresh=sun_observation.fresh,
+                )
+            else:
+                sun_observation = HVACObservedValue()
+
+        configured_control_modes = {
+            cfg.automated_option,
+            cfg.full_export_option,
+            cfg.full_import_option,
+            cfg.full_import_pv_option,
+            cfg.block_flow_option,
+            cfg.manual_option,
+        }
+        control_mode_observation = _observed_text(
+            cfg.sigenergy_mode_select,
+            current_when_present=str(cfg.sigenergy_mode_select).startswith("input_select."),
+            max_age_seconds=live_max_age,
+        )
+        if (
+            control_mode_observation.available
+            and control_mode_observation.value not in configured_control_modes
+        ):
+            control_mode_observation = HVACObservedValue()
+
+        s.hvac_solar_inputs = HVACSolarInputContext(
+            pv_power=_observed_number(
+                cfg.pv_power_sensor,
+                _positive_power_kw,
+                max_age_seconds=live_max_age,
+            ),
+            load_power=_observed_number(
+                cfg.consumed_power_sensor,
+                _positive_power_kw,
+                max_age_seconds=live_max_age,
+            ),
+            battery_power=_observed_number(
+                cfg.battery_power_sensor,
+                _battery_power_kw,
+                max_age_seconds=live_max_age,
+            ),
+            grid_import_power=_observed_number(
+                cfg.grid_import_power_sensor,
+                _positive_power_kw,
+                max_age_seconds=live_max_age,
+            ),
+            grid_export_power=_observed_number(
+                cfg.grid_export_power_sensor,
+                _positive_power_kw,
+                max_age_seconds=live_max_age,
+            ),
+            solar_power_now=_observed_number(
+                cfg.solar_power_now_sensor,
+                _positive_power_kw,
+                max_age_seconds=forecast_max_age,
+            ),
+            sun_above_horizon=sun_observation,
+            control_mode=control_mode_observation,
+            observed_ems_mode=_observed_text(
+                cfg.ems_mode_select,
+                max_age_seconds=live_max_age,
+            ),
+            observed_export_limit=_observed_number(
+                cfg.grid_export_limit,
+                max_age_seconds=live_max_age,
+            ),
+        )
 
         # ---- PV / battery ---------------------------------------------
         pv_raw = _fv(cfg.pv_power_sensor)

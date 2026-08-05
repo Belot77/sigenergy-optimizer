@@ -86,6 +86,25 @@ class HAClient:
             logger.warning("bulk_states failed: %s", exc)
             return {}
 
+    async def set_state(
+        self,
+        entity_id: str,
+        state: str,
+        attributes: dict[str, Any],
+    ) -> bool:
+        """Best-effort publish of a synthetic Home Assistant state."""
+        try:
+            path = f"/api/states/{quote(str(entity_id).strip(), safe='')}"
+            r = await self._client.post(
+                path,
+                json={"state": str(state), "attributes": attributes},
+            )
+            r.raise_for_status()
+            return True
+        except Exception as exc:
+            logger.warning("set_state(%s) failed: %s", entity_id, exc)
+            return False
+
     async def search_entities(
         self,
         query: str = "",

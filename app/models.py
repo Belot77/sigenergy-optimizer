@@ -6,7 +6,81 @@ typed Python dataclasses.
 from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
+
+
+@dataclass(frozen=True)
+class HVACObservedValue:
+    """Raw HA evidence retained separately from control-path defaults."""
+
+    value: float | str | bool | None = None
+    available: bool = False
+    fresh: bool = False
+
+
+@dataclass(frozen=True)
+class HVACSolarInputContext:
+    pv_power: HVACObservedValue = field(default_factory=HVACObservedValue)
+    load_power: HVACObservedValue = field(default_factory=HVACObservedValue)
+    battery_power: HVACObservedValue = field(default_factory=HVACObservedValue)
+    grid_import_power: HVACObservedValue = field(default_factory=HVACObservedValue)
+    grid_export_power: HVACObservedValue = field(default_factory=HVACObservedValue)
+    solar_power_now: HVACObservedValue = field(default_factory=HVACObservedValue)
+    sun_above_horizon: HVACObservedValue = field(default_factory=HVACObservedValue)
+    control_mode: HVACObservedValue = field(default_factory=HVACObservedValue)
+    observed_ems_mode: HVACObservedValue = field(default_factory=HVACObservedValue)
+    observed_export_limit: HVACObservedValue = field(default_factory=HVACObservedValue)
+
+
+@dataclass(frozen=True)
+class HVACSolarPermissionResult:
+    state: str
+    reason_code: str
+    source: str
+    export_constraint_active: bool
+    control_mode: str
+    data_fresh: bool
+    measured_opportunity_kw: Optional[float]
+    estimated_opportunity_kw: Optional[float]
+    hidden_opportunity_kw: Optional[float]
+    start_threshold_kw: float
+    continue_threshold_kw: float
+    battery_discharge_kw: Optional[float]
+    battery_flow_source: str
+    observed_ems_mode: Optional[str]
+    desired_ems_mode: Optional[str]
+    previous_permission: str
+    desired_export_limit_kw: Optional[float]
+    observed_export_limit_kw: Optional[float]
+    evaluated_at: datetime
+    expires_at: datetime
+
+    def attributes(self) -> dict[str, Any]:
+        attrs: dict[str, Any] = {
+            "reason_code": self.reason_code,
+            "source": self.source,
+            "export_constraint_active": self.export_constraint_active,
+            "control_mode": self.control_mode,
+            "data_fresh": self.data_fresh,
+            "start_threshold_kw": self.start_threshold_kw,
+            "continue_threshold_kw": self.continue_threshold_kw,
+            "battery_flow_source": self.battery_flow_source,
+            "previous_permission": self.previous_permission,
+            "evaluated_at": self.evaluated_at.isoformat(),
+            "expires_at": self.expires_at.isoformat(),
+        }
+        optional = {
+            "measured_opportunity_kw": self.measured_opportunity_kw,
+            "estimated_opportunity_kw": self.estimated_opportunity_kw,
+            "hidden_opportunity_kw": self.hidden_opportunity_kw,
+            "battery_discharge_kw": self.battery_discharge_kw,
+            "observed_ems_mode": self.observed_ems_mode,
+            "desired_ems_mode": self.desired_ems_mode,
+            "desired_export_limit_kw": self.desired_export_limit_kw,
+            "observed_export_limit_kw": self.observed_export_limit_kw,
+        }
+        attrs.update({key: value for key, value in optional.items() if value is not None})
+        return attrs
 
 
 @dataclass
@@ -81,6 +155,9 @@ class SolarState:
 
     # Mode
     sigenergy_mode: str = "Automated"
+
+    # Permission-only evidence; existing optimiser controls do not read this context.
+    hvac_solar_inputs: HVACSolarInputContext = field(default_factory=HVACSolarInputContext)
 
     timestamp: datetime = field(default_factory=datetime.now)
 
