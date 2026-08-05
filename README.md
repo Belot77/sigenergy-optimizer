@@ -237,9 +237,9 @@ Uninstall:
 
 ## Version
 
-2.3.31-haos42
+2.3.32-haos43
 
-2.3.31-haos42 releases the negative-FiT PV curtailment correction. With negative feed-in prices and a full battery, the optimiser keeps normal configured PV max so solar can serve house load while grid-export and EMS controls suppress uneconomic export. The separate PV-surplus-only export top-off threshold now requires 100% SoC; ordinary `DAYTIME_TOPUP_MAX_SOC` behaviour remains unchanged.
+2.3.32-haos43 adds the authoritative Home Assistant entity `sensor.sigenergy_hvac_solar_permission`, publishing `start`, `continue`, `blocked`, or `unavailable` with separate freshness handling for live inverter evidence and Solcast forecast evidence. It is intended for later Climate Manager integration, does not give Climate Manager actuator control, and does not change optimiser inverter decisions or actuator behaviour.
 
 ## Maintainer Release Flow
 
