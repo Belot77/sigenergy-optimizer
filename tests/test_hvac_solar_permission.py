@@ -645,6 +645,38 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.state, "blocked")
         self.assertNotEqual(result.reason_code, "required_data_stale")
 
+    async def test_unchanged_valid_observed_ems_mode_is_current(self) -> None:
+        cfg = Settings(
+            _env_file=None,
+            hvac_solar_data_max_age_seconds=120.0,
+        )
+        now = datetime.now(timezone.utc)
+        states = self._bulk_states(cfg, updated_at=now)
+        states[cfg.ems_mode_select] = self._ha_state(
+            MODE_MAX_SELF,
+            now - timedelta(days=1),
+        )
+        optimizer = self._optimizer(_BulkStateHA(states))
+
+        state = await optimizer._read_state()
+        result = self._evaluate(
+            optimizer,
+            state.hvac_solar_inputs,
+        )
+
+        self.assertTrue(
+            state.hvac_solar_inputs.observed_ems_mode.fresh
+        )
+        self.assertEqual(
+            state.hvac_solar_inputs.observed_ems_mode.value,
+            MODE_MAX_SELF,
+        )
+        self.assertEqual(result.state, "blocked")
+        self.assertEqual(
+            result.reason_code,
+            "insufficient_solar_opportunity",
+        )
+
     async def test_old_device_last_reported_remains_stale(self) -> None:
         cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)
         now = datetime.now(timezone.utc)
