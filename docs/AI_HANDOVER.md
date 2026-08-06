@@ -16,17 +16,23 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 
 ## 3. Current version
 - **Authoritative source**: sigenergy_optimizer_addon/config.yaml (version field)
-- **Current version**: 2.3.15-haos26
-- **Current release note**: 2.3.15-haos26 is a cache-bust/metadata release only. It bumps the add-on buildstamp so the Home Assistant add-on image rebuilds from current `main` and the container source commit matches the current code.
-- **Control impact**: no optimiser control logic changed from 2.3.14-haos25. The 2.3.14 behaviour keeps the 2.3.13 hard actual import-cost guard and adds `PV_SURPLUS_ESTIMATED_INIT_ENABLED`, allowing a conservative estimated-surplus probe when measured PV is curtailed to house load.
-- **Note**: release.sh updates config.yaml but not README.md. README.md has been updated to match current config version.
+- **Current live version**: 2.3.33-haos44
+- **Current live source**: commit `3e33088767977da6ba6543074e4129ecf9705e87`, immutable tag `v2.3.33-haos44`.
+- **Current unreleased work**: branch `fix/hvac-measured-solar-permission`, based on the exact live commit above.
+- **Live release note**: 2.3.33-haos44 fixed HVAC solar-permission freshness when a valid Home Assistant EMS selector had not recently changed.
+- **Pending branch control impact**: HVAC solar permission is corrected so only measured opportunity may authorise `start` or `continue`. Solcast remains published as diagnostic context but cannot authorise permission or make otherwise-fresh measured inputs unavailable.
+- **Isolation rule**: this permission evaluator and HA publication do not alter inverter commands, export-limit policy, PV MAX behaviour, actuator settlement, Climate Manager profiles, zones, targets, AC0, or AirTouch operation.
+- **Note**: release.sh updates config.yaml but not README.md. Verify all version surfaces manually during release.
 
 ## 4. Main features
 - Event-driven optimizer with 60-second heartbeat fallback.
 - Home Assistant add-on with ingress web UI and REST/WebSocket integration.
 - Amber price and feed-in driven import/export decisions.
-- Value Gate / actual import-cost protection on main: 2.3.15-haos26 is cache-bust/metadata only; live control behaviour remains the 2.3.14-haos25 behaviour. That includes the hard automatic guard from 2.3.13 that blocks automatic battery-backed or mixed export below today's highest trusted actual optimiser import/top-up price. True PV-surplus-only export may still be allowed after the configured top-off target is met when measured surplus is proven; a conservative estimated-surplus initiation probe can open a small capped export when measured PV is self-curtailed to house load. Manual/force modes remain exempt.
+- Value Gate and actual import-cost protection block automatic battery-backed or mixed export below today's highest trusted actual optimiser import/top-up price. True PV-surplus-only export may still be allowed after the fixed 100% export top-off requirement is met and measured surplus is proven; separate guarded estimated/probe export paths remain narrowly capped. Manual and force modes remain exempt.
 - Solar forecast-aware battery/export planning.
+- Authoritative advisory entity `sensor.sigenergy_hvac_solar_permission`, publishing `start`, `continue`, `blocked`, or `unavailable` for Climate Manager solar-target opportunity.
+- HVAC measured opportunity is `max(actual_pv_kw - ordinary_house_load_kw, 0)`, using `sensor.sigen_plant_pv_power` and `sensor.sigen_plant_consumed_power`.
+- Solcast HVAC opportunity attributes are diagnostic-only and are explicitly marked unusable for permission authority.
 - Earnings/session tracking and reporting.
 - Manual override controls via HA helper mode select and UI.
 - Non-live simulation/preview/overlay tools documented in README.
@@ -38,6 +44,8 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Keep entity IDs and thresholds configurable through app/config.py and add-on options.
 - Separate non-live simulation/inspection tools from live control actions.
 - Changes to control logic should be small, explicit, and accompanied by before/after reasoning and test notes.
+- SigEnergy Optimizer owns only measured energy-opportunity and energy-safety evaluation for the HVAC permission contract.
+- Climate Manager remains the sole owner of sessions, profiles, zones, temperature targets, battery-policy overlays, AC0, and AirTouch commands.
 - Do not scan .git, .venv, ZIP/release artifacts, backups, caches, generated files, local DBs, or unrelated files unless explicitly required.
 
 ## 6. Safety rules / do-not-break rules
@@ -46,6 +54,12 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Do not assume grid sign conventions from a single signed sensor if separate import/export sensors are configured.
 - Do not assume export/import semantics, battery SoC meaning, inverter state behaviour, or tariff interpretation without checking current config/docs.
 - Document entity and integration assumptions for any logic change.
+- HVAC permission `start` may create or retain a Climate Manager solar target session.
+- HVAC permission `continue` may retain an already-active session only; it must never create or recreate one.
+- `blocked` and `unavailable` remove only the solar-target overlay. They do not directly turn HVAC, zones, or AC0 off.
+- A prior permission must not survive an uncertain restart boundary. Continuation relies only on a trustworthy, unexpired result published successfully by the current process.
+- Solcast, estimated opportunity, PV MAX, zero export, feed-in price, export-constraint state, diagnostic prose, and Home Assistant's retained prior entity state must not independently authorise HVAC permission.
+- Material battery discharge blocks permission. SigEnergy Optimizer must not add Climate Manager SoC thresholds to this contract.
 - Do not run old SigEnergy blueprint automations alongside this add-on.
 
 ## 7. Control mode behaviour
@@ -68,6 +82,10 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Grid import/export limit entities, ESS charge/discharge limits, and PV max power limits are live-controlled surfaces.
 - reason_text_helper and sigenergy_mode helper entities are part of the operator-facing control/reporting path.
 - Avoid changing logic that depends on SoC floors, reserve buffers, forecast safety, or export/import thresholds without test notes.
+- HVAC permission start threshold is 1.0 kW measured opportunity; continuation threshold is 0.5 kW.
+- Required live measurements use the existing 120-second freshness/expiry boundary.
+- Missing or stale Solcast does not make otherwise-valid measured HVAC permission inputs unavailable.
+- Published v2 contract attributes include `scope=solar_target_opportunity_only`, `soc_policy_included=false`, `consumer_safety_overlay_required=true`, `controls_hvac_directly=false`, and `contract_version=hvac_solar_permission_v2`.
 
 ## 9. Key files and folders
 - AGENTS.md
@@ -95,12 +113,14 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Local env/test artifact files exist in the repo root but are not source of truth.
 - Daytime full-battery export now clamps to measured PV surplus (not optimistic solar-power-now headroom) when tomorrow forecast is below forecast_safety_charging × battery_capacity_kwh.
 - The general Value Gate flags still control stored-energy advisory/enforcement behaviour, but the actual import-cost guard is a hard automatic protection for optimiser-controlled battery-backed/mixed export. Manual force modes remain exempt, and PV-surplus-only export below the import-cost floor is allowed only after the top-off target is met and export is safely capped to measured surplus or the conservative estimated-surplus initiation probe.
+- Live 2.3.33-haos44 still contains the confirmed advisory HVAC permission defect where Solcast-estimated opportunity can promote measured opportunity below the 1.0 kW start threshold to `start`. The current unreleased branch corrects that defect.
 
 ## 11. Next likely work
-- Continue targeted control-path hardening with explicit test coverage.
-- If approved, carry the advisory export value gate from `main` into `feature/modular-refactor` as a separate follow-up task.
-- Keep entity assumptions and operator docs aligned with current UI and add-on behaviour.
-- Maintain clear separation between simulation/inspection tools and live control actions.
+- Complete final review, commit, push, pull-request, merge, build, release, and live validation of `fix/hvac-measured-solar-permission`.
+- Confirm live publication uses measured opportunity only and exposes all v2 contract attributes.
+- Do not begin Climate Manager integration until the corrected SigEnergy Optimizer release is installed and validated.
+- After validation, provide Climate Manager the exact `start`/`continue`/`blocked`/`unavailable` consumer contract; Climate Manager must not infer permission from other SigEnergy entities.
+- Do not touch the parked `feature/safety-actuator-refactor` branch as part of this work.
 
 ## 12. Testing/audit checklist
 - Run targeted tests for changed control, forecast, earnings, and state-store paths.
@@ -109,6 +129,10 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Verify helper entities and configured entity IDs exist before diagnosing logic faults.
 - Verify old blueprint automations are disabled when testing live add-on control.
 - Check add-on logs after install/update and after live override testing.
+- Run `tests/test_hvac_solar_permission.py`, `tests/test_negative_fit_pv_curtailment.py`, and `tests/test_remote_ems_control.py` after HVAC permission changes.
+- Run the full repository test suite before commit and again before release.
+- Test restart behavior: measured opportunity from 0.5 kW to below 1.0 kW must remain blocked without a current-process prior permission.
+- Test that missing or stale Solcast remains diagnostic-only.
 
 ## 13. Packaging/release notes
 - Add-on metadata/version lives in sigenergy_optimizer_addon/config.yaml.

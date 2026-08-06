@@ -335,6 +335,13 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
             {
                 "reason_code",
                 "source",
+                "scope",
+                "contract_version",
+                "soc_policy_included",
+                "consumer_safety_overlay_required",
+                "controls_hvac_directly",
+                "estimated_opportunity_usable",
+                "estimated_opportunity_rejection_reason",
                 "export_constraint_active",
                 "control_mode",
                 "data_fresh",
@@ -384,7 +391,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(optimizer.cfg.hvac_solar_start_kw, 1.0)
         self.assertEqual(optimizer.cfg.hvac_solar_continue_kw, 0.5)
         self.assertEqual(result.state, "blocked")
-        self.assertEqual(result.reason_code, "insufficient_solar_opportunity")
+        self.assertEqual(result.reason_code, "insufficient_measured_surplus")
 
     async def test_measured_opportunity_produces_start(self) -> None:
         optimizer = self._optimizer()
@@ -395,23 +402,32 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.source, "measured")
         self.assertEqual(result.measured_opportunity_kw, 1.5)
 
-    async def test_estimated_hidden_opportunity_starts_only_with_safety_evidence(self) -> None:
+
+    async def test_estimated_hidden_opportunity_is_diagnostic_only(self) -> None:
         optimizer = self._optimizer()
-        safe = self._inputs(
+        daylight = self._inputs(
             pv_kw=0.5,
             load_kw=0.5,
             solar_power_now_kw=2.0,
             sun_above_horizon=True,
         )
-        unsafe_daylight = replace(safe, sun_above_horizon=_fresh(False))
+        below_horizon = replace(
+            daylight,
+            sun_above_horizon=_fresh(False),
+        )
 
-        allowed = self._evaluate(optimizer, safe)
-        blocked = self._evaluate(optimizer, unsafe_daylight)
+        for inputs in (daylight, below_horizon):
+            with self.subTest(sun_above_horizon=inputs.sun_above_horizon.value):
+                result = self._evaluate(optimizer, inputs)
 
-        self.assertEqual((allowed.state, allowed.source), ("start", "estimated"))
-        self.assertEqual(allowed.reason_code, "estimated_opportunity_start")
-        self.assertEqual(blocked.state, "blocked")
-        self.assertNotEqual(blocked.reason_code, "estimated_opportunity_start")
+                self.assertEqual(result.state, "blocked")
+                self.assertEqual(
+                    result.reason_code,
+                    "insufficient_measured_surplus",
+                )
+                self.assertEqual(result.source, "none")
+                self.assertEqual(result.measured_opportunity_kw, 0.0)
+                self.assertEqual(result.estimated_opportunity_kw, 1.5)
 
     async def test_previous_successful_permission_continues_at_lower_threshold(self) -> None:
         optimizer = self._optimizer()
@@ -430,7 +446,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         result = self._evaluate(optimizer, inputs)
 
         self.assertEqual(result.state, "blocked")
-        self.assertEqual(result.reason_code, "start_threshold_not_met")
+        self.assertEqual(result.reason_code, "insufficient_measured_surplus")
 
     async def test_opportunity_below_continue_is_blocked(self) -> None:
         optimizer = self._optimizer()
@@ -440,9 +456,10 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         result = self._evaluate(optimizer, inputs, previous=previous)
 
         self.assertEqual(result.state, "blocked")
-        self.assertEqual(result.reason_code, "opportunity_below_continue")
+        self.assertEqual(result.reason_code, "insufficient_measured_surplus")
 
-    async def test_estimated_start_precedes_measured_continue(self) -> None:
+
+    async def test_measured_continue_is_not_promoted_by_estimate(self) -> None:
         optimizer = self._optimizer()
         previous = self._evaluate(optimizer, self._inputs())
         inputs = self._inputs(
@@ -454,9 +471,14 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
 
         result = self._evaluate(optimizer, inputs, previous=previous)
 
-        self.assertEqual(result.state, "start")
-        self.assertEqual(result.source, "estimated")
-        self.assertEqual(result.reason_code, "estimated_opportunity_start")
+        self.assertEqual(result.state, "continue")
+        self.assertEqual(result.source, "measured")
+        self.assertEqual(
+            result.reason_code,
+            "measured_opportunity_continue",
+        )
+        self.assertEqual(result.measured_opportunity_kw, 0.6)
+        self.assertEqual(result.estimated_opportunity_kw, 1.6)
 
     async def test_measured_grants_ignore_missing_or_stale_estimated_evidence(self) -> None:
         optimizer = self._optimizer()
@@ -557,7 +579,10 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(state.hvac_solar_inputs.pv_power.value)
         self.assertFalse(state.hvac_solar_inputs.load_power.value)
 
-    async def test_accepted_300_second_solcast_evidence_can_start_estimated_permission(self) -> None:
+
+    async def test_accepted_300_second_solcast_evidence_is_diagnostic_only(
+        self,
+    ) -> None:
         cfg = Settings(
             _env_file=None,
             hvac_solar_data_max_age_seconds=120.0,
@@ -579,11 +604,19 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         state = await optimizer._read_state()
         result = self._evaluate(optimizer, state.hvac_solar_inputs)
 
-        self.assertEqual(result.state, "start")
-        self.assertEqual(result.source, "estimated")
-        self.assertEqual(result.reason_code, "estimated_opportunity_start")
+        self.assertTrue(state.hvac_solar_inputs.solar_power_now.fresh)
+        self.assertEqual(result.state, "blocked")
+        self.assertEqual(
+            result.reason_code,
+            "insufficient_measured_surplus",
+        )
+        self.assertEqual(result.source, "none")
+        self.assertEqual(result.measured_opportunity_kw, 0.0)
+        self.assertEqual(result.estimated_opportunity_kw, 2.0)
+        self.assertTrue(result.data_fresh)
 
-    async def test_solcast_older_than_forecast_window_is_stale_when_needed(self) -> None:
+
+    async def test_stale_solcast_remains_diagnostic_only(self) -> None:
         cfg = Settings(
             _env_file=None,
             hvac_solar_data_max_age_seconds=120.0,
@@ -606,8 +639,15 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         result = self._evaluate(optimizer, state.hvac_solar_inputs)
 
         self.assertFalse(state.hvac_solar_inputs.solar_power_now.fresh)
-        self.assertEqual(result.state, "unavailable")
-        self.assertEqual(result.reason_code, "required_data_stale")
+        self.assertEqual(result.state, "blocked")
+        self.assertEqual(
+            result.reason_code,
+            "insufficient_measured_surplus",
+        )
+        self.assertEqual(result.source, "none")
+        self.assertEqual(result.measured_opportunity_kw, 0.0)
+        self.assertIsNone(result.estimated_opportunity_kw)
+        self.assertTrue(result.data_fresh)
 
     async def test_recent_last_reported_overrides_old_last_updated(self) -> None:
         cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)
@@ -674,7 +714,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.state, "blocked")
         self.assertEqual(
             result.reason_code,
-            "insufficient_solar_opportunity",
+            "insufficient_measured_surplus",
         )
 
     async def test_old_device_last_reported_remains_stale(self) -> None:
@@ -718,7 +758,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         result = self._evaluate(optimizer, state.hvac_solar_inputs)
 
         self.assertEqual(result.state, "blocked")
-        self.assertEqual(result.reason_code, "insufficient_solar_opportunity")
+        self.assertEqual(result.reason_code, "insufficient_measured_surplus")
         self.assertTrue(result.data_fresh)
 
     async def test_negative_fit_alone_does_not_block_permission(self) -> None:
@@ -752,7 +792,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(with_opportunity.export_constraint_active)
         self.assertEqual(with_opportunity.state, "start")
         self.assertEqual(without_opportunity.state, "blocked")
-        self.assertEqual(without_opportunity.reason_code, "insufficient_solar_opportunity")
+        self.assertEqual(without_opportunity.reason_code, "insufficient_measured_surplus")
 
     async def test_zero_grid_export_alone_neither_blocks_nor_starts(self) -> None:
         optimizer = self._optimizer()
@@ -782,7 +822,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.state, "blocked")
-        self.assertEqual(result.reason_code, "insufficient_solar_opportunity")
+        self.assertEqual(result.reason_code, "insufficient_measured_surplus")
 
     async def test_battery_discharge_above_tolerance_blocks(self) -> None:
         optimizer = self._optimizer()
@@ -1052,7 +1092,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.state, "blocked")
-        self.assertEqual(result.reason_code, "start_threshold_not_met")
+        self.assertEqual(result.reason_code, "insufficient_measured_surplus")
         self.assertEqual(result.previous_permission, "start")
 
     async def test_successful_blocked_or_unavailable_publication_resets_continuation(self) -> None:
@@ -1081,7 +1121,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
                     previous=optimizer._last_published_hvac_solar_permission_result,
                 )
                 self.assertEqual(result.state, "blocked")
-                self.assertEqual(result.reason_code, "start_threshold_not_met")
+                self.assertEqual(result.reason_code, "insufficient_measured_surplus")
 
     async def test_optimizer_cycle_failure_best_effort_publishes_unavailable(self) -> None:
         ha = _PublishingHA()
@@ -1181,6 +1221,174 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("evaluated_at", attrs)
         self.assertIn("expires_at", attrs)
 
+    async def test_confirmed_live_regression_uses_measured_opportunity_only(self) -> None:
+        optimizer = self._optimizer()
+        result = self._evaluate(
+            optimizer,
+            self._inputs(
+                pv_kw=1.7,
+                load_kw=0.9,
+                battery_power_kw=0.8,
+                solar_power_now_kw=5.2,
+            ),
+        )
+
+        self.assertEqual(result.state, "blocked")
+        self.assertEqual(result.reason_code, "insufficient_measured_surplus")
+        self.assertEqual(result.source, "none")
+        self.assertAlmostEqual(result.measured_opportunity_kw or 0.0, 0.8)
+        self.assertAlmostEqual(result.estimated_opportunity_kw or 0.0, 4.3)
+
+        attrs = result.attributes()
+        self.assertFalse(attrs["estimated_opportunity_usable"])
+        self.assertEqual(
+            attrs["estimated_opportunity_rejection_reason"],
+            "diagnostics_only",
+        )
+
+    async def test_solcast_only_opportunity_cannot_authorize_start_or_continue(
+        self,
+    ) -> None:
+        optimizer = self._optimizer()
+        previous = self._evaluate(optimizer, self._inputs())
+
+        start_case = self._evaluate(
+            optimizer,
+            self._inputs(
+                pv_kw=0.9,
+                load_kw=0.9,
+                solar_power_now_kw=5.2,
+            ),
+        )
+        continue_case = self._evaluate(
+            optimizer,
+            self._inputs(
+                pv_kw=0.8,
+                load_kw=0.4,
+                solar_power_now_kw=2.0,
+            ),
+            previous=previous,
+        )
+
+        self.assertEqual(start_case.state, "blocked")
+        self.assertEqual(
+            start_case.reason_code,
+            "insufficient_measured_surplus",
+        )
+        self.assertEqual(continue_case.state, "blocked")
+        self.assertEqual(
+            continue_case.reason_code,
+            "insufficient_measured_surplus",
+        )
+
+    async def test_measured_continue_is_not_promoted_by_solcast(self) -> None:
+        optimizer = self._optimizer()
+        previous = self._evaluate(optimizer, self._inputs())
+
+        result = self._evaluate(
+            optimizer,
+            self._inputs(
+                pv_kw=1.0,
+                load_kw=0.4,
+                solar_power_now_kw=2.0,
+            ),
+            previous=previous,
+        )
+
+        self.assertEqual(result.state, "continue")
+        self.assertEqual(result.reason_code, "measured_opportunity_continue")
+        self.assertEqual(result.source, "measured")
+
+    async def test_missing_or_stale_solcast_remains_diagnostic_only(self) -> None:
+        optimizer = self._optimizer()
+
+        for solar_observation in (
+            HVACObservedValue(),
+            _stale(5.2),
+        ):
+            with self.subTest(solar_observation=solar_observation):
+                inputs = replace(
+                    self._inputs(
+                        pv_kw=1.1,
+                        load_kw=0.9,
+                        solar_power_now_kw=5.2,
+                    ),
+                    solar_power_now=solar_observation,
+                )
+
+                result = self._evaluate(optimizer, inputs)
+
+                self.assertEqual(result.state, "blocked")
+                self.assertEqual(
+                    result.reason_code,
+                    "insufficient_measured_surplus",
+                )
+                self.assertTrue(result.data_fresh)
+
+                attrs = result.attributes()
+                self.assertFalse(attrs["estimated_opportunity_usable"])
+                self.assertEqual(
+                    attrs["estimated_opportunity_rejection_reason"],
+                    "diagnostics_only",
+                )
+
+    async def test_restart_does_not_recreate_continue_from_ha_entity(self) -> None:
+        cfg = Settings(_env_file=None)
+        now = datetime.now(timezone.utc)
+        ha = _BulkStateHA(
+            {
+                cfg.hvac_solar_permission_entity: self._ha_state(
+                    "continue",
+                    now,
+                )
+            }
+        )
+        optimizer = self._optimizer(ha)
+
+        self.assertIsNone(
+            optimizer._last_published_hvac_solar_permission_result
+        )
+
+        result = self._evaluate(
+            optimizer,
+            self._inputs(
+                pv_kw=1.0,
+                load_kw=0.4,
+                solar_power_now_kw=2.0,
+            ),
+        )
+
+        self.assertEqual(result.state, "blocked")
+        self.assertEqual(
+            result.reason_code,
+            "insufficient_measured_surplus",
+        )
+
+    async def test_contract_scope_attributes_are_published_for_all_states(
+        self,
+    ) -> None:
+        optimizer = self._optimizer()
+        expected = {
+            "scope": "solar_target_opportunity_only",
+            "contract_version": "hvac_solar_permission_v2",
+            "soc_policy_included": False,
+            "consumer_safety_overlay_required": True,
+            "controls_hvac_directly": False,
+            "estimated_opportunity_usable": False,
+            "estimated_opportunity_rejection_reason": "diagnostics_only",
+        }
+
+        results = (
+            self._evaluate(optimizer, self._inputs()),
+            optimizer._hvac_solar_cycle_error_result(),
+        )
+
+        for result in results:
+            with self.subTest(state=result.state):
+                attrs = result.attributes()
+                for key, value in expected.items():
+                    self.assertIn(key, attrs)
+                    self.assertEqual(attrs[key], value)
 
 if __name__ == "__main__":
     unittest.main()
