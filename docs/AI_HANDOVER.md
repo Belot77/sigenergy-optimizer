@@ -18,9 +18,9 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - **Authoritative source**: sigenergy_optimizer_addon/config.yaml (version field)
 - **Current live version**: 2.3.33-haos44
 - **Current live source**: commit `3e33088767977da6ba6543074e4129ecf9705e87`, immutable tag `v2.3.33-haos44`.
-- **Current unreleased work**: branch `fix/hvac-measured-solar-permission`, based on the exact live commit above.
+- **Current release candidate**: the measured-solar permission correction is merged on `main` at commit `803980413e155c7389384d2edca52e53a7f84c5e`; add-on metadata is being prepared as `2.3.34-haos45`.
 - **Live release note**: 2.3.33-haos44 fixed HVAC solar-permission freshness when a valid Home Assistant EMS selector had not recently changed.
-- **Pending branch control impact**: HVAC solar permission is corrected so only measured opportunity may authorise `start` or `continue`. Solcast remains published as diagnostic context but cannot authorise permission or make otherwise-fresh measured inputs unavailable.
+- **Release-candidate control impact**: HVAC solar permission is corrected so only measured opportunity may authorise `start` or `continue`. Solcast remains published as diagnostic context but cannot authorise permission or make otherwise-fresh measured inputs unavailable.
 - **Isolation rule**: this permission evaluator and HA publication do not alter inverter commands, export-limit policy, PV MAX behaviour, actuator settlement, Climate Manager profiles, zones, targets, AC0, or AirTouch operation.
 - **Note**: release.sh updates config.yaml but not README.md. Verify all version surfaces manually during release.
 
@@ -113,10 +113,10 @@ Home Assistant add-on and web UI for SigEnergy battery/energy optimization using
 - Local env/test artifact files exist in the repo root but are not source of truth.
 - Daytime full-battery export now clamps to measured PV surplus (not optimistic solar-power-now headroom) when tomorrow forecast is below forecast_safety_charging × battery_capacity_kwh.
 - The general Value Gate flags still control stored-energy advisory/enforcement behaviour, but the actual import-cost guard is a hard automatic protection for optimiser-controlled battery-backed/mixed export. Manual force modes remain exempt, and PV-surplus-only export below the import-cost floor is allowed only after the top-off target is met and export is safely capped to measured surplus or the conservative estimated-surplus initiation probe.
-- Live 2.3.33-haos44 still contains the confirmed advisory HVAC permission defect where Solcast-estimated opportunity can promote measured opportunity below the 1.0 kW start threshold to `start`. The current unreleased branch corrects that defect.
+- Live 2.3.33-haos44 still contains the confirmed advisory HVAC permission defect where Solcast-estimated opportunity can promote measured opportunity below the 1.0 kW start threshold to `start`. The correction is merged on `main` at commit `803980413e155c7389384d2edca52e53a7f84c5e` and is being prepared as 2.3.34-haos45; it is not live until built, installed, and validated.
 
 ## 11. Next likely work
-- Complete final review, commit, push, pull-request, merge, build, release, and live validation of `fix/hvac-measured-solar-permission`.
+- Commit and push the 2.3.34-haos45 release metadata and documentation, create the immutable release tag, run the build, install the add-on in Home Assistant, and validate the corrected entity live.
 - Confirm live publication uses measured opportunity only and exposes all v2 contract attributes.
 - Do not begin Climate Manager integration until the corrected SigEnergy Optimizer release is installed and validated.
 - After validation, provide Climate Manager the exact `start`/`continue`/`blocked`/`unavailable` consumer contract; Climate Manager must not infer permission from other SigEnergy entities.

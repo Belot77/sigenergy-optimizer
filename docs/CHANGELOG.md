@@ -1,6 +1,7 @@
 # Changelog
 
-## Unreleased
+## 2.3.34-haos45 (pending release)
+- Merged measured-solar permission correction at commit `803980413e155c7389384d2edca52e53a7f84c5e`; tagging, build, installation, and live validation remain outstanding.
 - Correct HVAC solar permission so only measured opportunity can authorise `start` or `continue`: `max(actual_pv_kw - ordinary_house_load_kw, 0)`.
 - Remove Solcast-estimated opportunity as permission authority. Solcast values remain available only as diagnostics and are explicitly published with `estimated_opportunity_usable=false` and `estimated_opportunity_rejection_reason=diagnostics_only`.
 - Missing or stale Solcast no longer makes otherwise-fresh measured HVAC permission inputs `unavailable`.
@@ -15,7 +16,7 @@
 
 ## 2026-08-05
 - Added the authoritative Home Assistant entity `sensor.sigenergy_hvac_solar_permission`, publishing `start`, `continue`, `blocked`, or `unavailable`.
-- Added measured solar-opportunity evaluation with separate start/continue hysteresis. The initial implementation also allowed guarded Solcast-estimated opportunity to authorise permission; the later measured-only correction is recorded in the Unreleased section above.
+- Added measured solar-opportunity evaluation with separate start/continue hysteresis. The initial implementation also allowed guarded Solcast-estimated opportunity to authorise permission; the later measured-only correction is recorded in the `2.3.34-haos45` section above.
 - Live inverter evidence and permission expiry use a 120-second freshness window, while Solcast forecast evidence used a separate 600-second evaluator window.
 - Added permission-critical WebSocket triggers so relevant entity changes promptly refresh the published permission.
 - Kept permission publication isolated from existing optimiser inverter decisions and actuator writes.
