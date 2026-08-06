@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+- Correct HVAC solar permission so only measured opportunity can authorise `start` or `continue`: `max(actual_pv_kw - ordinary_house_load_kw, 0)`.
+- Remove Solcast-estimated opportunity as permission authority. Solcast values remain available only as diagnostics and are explicitly published with `estimated_opportunity_usable=false` and `estimated_opportunity_rejection_reason=diagnostics_only`.
+- Missing or stale Solcast no longer makes otherwise-fresh measured HVAC permission inputs `unavailable`.
+- Preserve restart safety: `continue` relies only on a trustworthy, unexpired result published successfully by the current process; Home Assistant's retained entity state cannot recreate continuation.
+- Add v2 contract-scope attributes and regression coverage for the confirmed live case where approximately 0.8 kW measured opportunity was incorrectly promoted to `start` by approximately 4.3 kW estimated opportunity.
+- Existing inverter commands, export-limit policy, PV MAX behaviour, actuator settlement, Home Assistant climate control, and Climate Manager logic remain unchanged.
+
 ## 2026-08-06
 - Release `2.3.33-haos44` fixes HVAC solar permission freshness when the observed Home Assistant EMS selector is present and valid but unchanged, preventing false `required_data_stale` results.
 - Existing inverter commands, export-limit policy, PV MAX behaviour and actuator settlement logic are unchanged.
@@ -7,8 +15,8 @@
 
 ## 2026-08-05
 - Added the authoritative Home Assistant entity `sensor.sigenergy_hvac_solar_permission`, publishing `start`, `continue`, `blocked`, or `unavailable`.
-- Added measured solar-opportunity evaluation with separate start/continue hysteresis; Solcast is used only as separate hidden-opportunity evidence.
-- Live inverter evidence and permission expiry use a 120-second freshness window, while Solcast forecast evidence uses a separate 600-second window.
+- Added measured solar-opportunity evaluation with separate start/continue hysteresis. The initial implementation also allowed guarded Solcast-estimated opportunity to authorise permission; the later measured-only correction is recorded in the Unreleased section above.
+- Live inverter evidence and permission expiry use a 120-second freshness window, while Solcast forecast evidence used a separate 600-second evaluator window.
 - Added permission-critical WebSocket triggers so relevant entity changes promptly refresh the published permission.
 - Kept permission publication isolated from existing optimiser inverter decisions and actuator writes.
 - Bumped add-on metadata, buildstamp, FastAPI metadata, and runtime signature to 2.3.32-haos43.

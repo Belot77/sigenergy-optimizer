@@ -729,24 +729,6 @@ class SigEnergyOptimizer:
                 source="measured",
                 data_fresh=True,
             )
-        estimated_safe = bool(
-            estimated_inputs_available
-            and estimated_inputs_fresh
-            and inputs.sun_above_horizon.value
-            and hidden_opportunity is not None
-            and hidden_opportunity >= cfg.hvac_solar_hidden_margin_kw
-        )
-        if (
-            estimated_safe
-            and estimated_opportunity is not None
-            and estimated_opportunity >= cfg.hvac_solar_start_kw
-        ):
-            return _result(
-                "start",
-                "estimated_opportunity_start",
-                source="estimated",
-                data_fresh=True,
-            )
         if (
             previous_allows_continue
             and measured_opportunity >= cfg.hvac_solar_continue_kw
@@ -757,51 +739,9 @@ class SigEnergyOptimizer:
                 source="measured",
                 data_fresh=True,
             )
-
-        if not estimated_inputs_available:
-            return _result(
-                "unavailable",
-                "required_data_unavailable",
-                data_fresh=False,
-            )
-        if not estimated_inputs_fresh:
-            return _result(
-                "unavailable",
-                "required_data_stale",
-                data_fresh=False,
-            )
-        assert estimated_opportunity is not None
-        assert hidden_opportunity is not None
-        if (
-            estimated_safe
-            and previous_allows_continue
-            and estimated_opportunity >= cfg.hvac_solar_continue_kw
-        ):
-            return _result(
-                "continue",
-                "estimated_opportunity_continue",
-                source="estimated",
-                data_fresh=True,
-            )
-        if previous_allows_continue:
-            return _result(
-                "blocked",
-                "opportunity_below_continue",
-                data_fresh=True,
-            )
-        trustworthy_opportunity = max(
-            measured_opportunity,
-            estimated_opportunity if estimated_safe else 0.0,
-        )
-        if trustworthy_opportunity >= cfg.hvac_solar_continue_kw:
-            return _result(
-                "blocked",
-                "start_threshold_not_met",
-                data_fresh=True,
-            )
         return _result(
             "blocked",
-            "insufficient_solar_opportunity",
+            "insufficient_measured_surplus",
             data_fresh=True,
         )
 

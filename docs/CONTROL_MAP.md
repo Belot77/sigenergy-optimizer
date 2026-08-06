@@ -3,14 +3,17 @@
 Audit date: 2026-06-17  
 Project version/reference: 2.3.14-haos25  
 Reference commit: ac57825 Add estimated PV surplus initiation
+HVAC permission supplement: 2026-08-06, branch `fix/hvac-measured-solar-permission`, based on live commit `3e33088767977da6ba6543074e4129ecf9705e87`.
 
-This document records the sensor, helper, config, derived-signal, algorithm, actuator, and UI/API control map from the read-only catalogue audit. It is intended to prevent duplicated, stale, or contradictory control logic from growing around the Value Gate, PV surplus, Solcast, anti-curtailment, and manual override paths.
+This document records the sensor, helper, config, derived-signal, algorithm, actuator, and UI/API control map from the read-only catalogue audit. It is intended to prevent duplicated, stale, or contradictory control logic from growing around the Value Gate, PV surplus, Solcast, anti-curtailment, manual override, and advisory HVAC solar-permission paths.
 
 ## Scope And Principles
 
 - Control logic is safety-sensitive. Preserve conservative behavior when signals are unknown or contradictory.
 - Proven measured PV surplus and estimated/probe PV surplus are different signals and must stay separate.
 - Hidden PV is diagnostic unless explicitly promoted by guarded logic.
+- For HVAC solar permission, Solcast and estimated opportunity are always diagnostic-only and must never be promoted to permission authority.
+- HVAC solar permission is advisory only and cannot directly operate HVAC, zones, targets, AC0, AirTouch, or inverter actuators.
 - Highest trusted actual optimizer import price is the source of truth for the actual import-cost export floor.
 - Manual and force modes must override automatic optimizer decisions.
 - Final actuator writes in a cycle are the source of truth for what the inverter is asked to do.
@@ -50,7 +53,8 @@ This document records the sensor, helper, config, derived-signal, algorithm, act
 | Price spike | `PRICE_SPIKE_SENSOR` | binary sensor | boolean | boolean parse | `_read_state` | spike export | Live input | Can influence export behavior. |
 | Price forecasts | price/feed-in forecast sensors | sensor attrs | dollars/kWh, timestamps | attr parse | `_read_state` | curves, planning | Advisory/live | Forecasts are not actual-price proof. |
 | Solcast remaining/today/tomorrow | forecast sensors | sensors | kWh | numeric | `_read_state` | holdoff, reserve, poor-tomorrow safeguard | Live input | Forecast, not measured production. |
-| Solcast power now | `SOLAR_POWER_NOW_SENSOR` | sensor | kW | raw `>100` treated as W | `_read_state` | `solar_potential_kw` | Estimated live input | Use only for estimated/probe logic. |
+| Solcast power now | `SOLAR_POWER_NOW_SENSOR` | sensor | kW | raw `>100` treated as W | `_read_state` | `solar_potential_kw` | Estimated live input | Use only for estimated/probe export logic and HVAC diagnostics; never HVAC permission authority. |
+| HVAC solar permission | `HVAC_SOLAR_PERMISSION_ENTITY=sensor.sigenergy_hvac_solar_permission` | sensor publication | `start` / `continue` / `blocked` / `unavailable` | `HVACSolarPermissionResult.attributes()` | evaluator publication path | Climate Manager solar-target opportunity | Advisory only | Does not control HVAC or inverter actuators directly. |
 
 ## Helper Catalogue
 
@@ -73,6 +77,7 @@ This document records the sensor, helper, config, derived-signal, algorithm, act
 | Export thresholds | `EXPORT_THRESHOLD_*`, `EXPORT_LIMIT_*`, `ALLOW_*` | dollars/kWh, kW | `_desired_export_limit` | Live | Price-tier export behavior. |
 | Value Gate | `EXPORT_VALUE_GATE_ENABLED`, `DRY_RUN`, `ENFORCE`, floor/premiums/margins | booleans, dollars/kWh, percent-ish floor | `_export_value_gate_advisory` | Live when enforced; hard guard independent | Keep advisory, enforce, and hard guard distinct. |
 | Estimated PV initiation | `PV_SURPLUS_ESTIMATED_INIT_ENABLED=true` | boolean | decision PV-surplus path | Live small probe | Disables only estimated initiation, not hard import-cost guard. |
+| HVAC solar permission | `HVAC_SOLAR_START_KW=1.0`, `HVAC_SOLAR_CONTINUE_KW=0.5`, discharge tolerance, live max-age, forecast max-age | kW/seconds | HVAC permission evaluator | Advisory HA entity only | Live measured inputs determine authority; forecast settings remain compatibility/diagnostic context. |
 | Import thresholds | `IMPORT_THRESHOLD_*`, `IMPORT_LIMIT_*`, `CAP_TOTAL_IMPORT` | dollars/kWh, kW | `_desired_import_limit` | Live | Cheap import/top-up. |
 | Reserve/top-off | `MIN_SOC_FLOOR`, `NIGHT_RESERVE_SOC`, `SUNRISE_RESERVE_SOC`, `DAYTIME_TOPUP_MAX_SOC` | percent | reserve and PV-only paths | Live | `DAYTIME_TOPUP_MAX_SOC` governs ordinary daytime import/top-up; PV-surplus-only export requires a fixed 100% top-off target. |
 | Negative price/holdoff | standby, slow charge, forecast holdoff, negative lookahead | booleans, hours, kWh, kW | import/export/PV limit paths | Live | Overlaps with anti-curtailment. |
@@ -119,6 +124,7 @@ This document records the sensor, helper, config, derived-signal, algorithm, act
 | Algorithm | Trigger conditions | Inputs | Actuator outputs | Safety guards / priority | Tests / gaps |
 |---|---|---|---|---|---|
 | Automated cycle | mode is `Automated` or blank and HA control available/needed | all state/config | EMS, export/import, ESS, PV max, helpers | Manual mode exits before auto apply | Broad optimizer tests. |
+| HVAC solar permission | supported safe control mode and fresh required measured inputs | actual PV, ordinary house load, battery flow, current-process prior published result | publishes advisory HA sensor only | discharge blocks; start at measured 1.0 kW; continue at measured 0.5 kW only with trustworthy unexpired prior; Solcast diagnostic-only; restart cannot inherit HA entity state | `tests/test_hvac_solar_permission.py`. |
 | Manual mode | mode select not automated, or manual override set | configured mode labels | freezes decision; may reapply manual targets on drift | Highest priority before automatic writes | Manual tests present; add unknown-mode test. |
 | Force Full Export | manual mode | hardware caps/manual values | discharge EMS, export cap, import block | Exempt from hard guard | Covered for hard-guard exemption. |
 | Force Full Import | manual mode | hardware caps/manual values | grid charge EMS, import cap, export block | Manual override | Manual path covered indirectly. |
@@ -148,6 +154,7 @@ This document records the sensor, helper, config, derived-signal, algorithm, act
 | Grid export limit | `_apply`, `_safe_fallback`, manual targets, `/set_ess` | final automatic `Decision.export_limit` unless manual/API | hard guard and Value Gate veto clamp; zero becomes 0.01 setpoint | Central export safety output. |
 | Grid import limit | `_apply`, `_safe_fallback`, manual targets, `/set_ess` | final automatic `Decision.import_limit` unless manual/API | standby holdoff can force near zero | Can conflict with manual/API writes. |
 | PV max power limit | `_apply`, manual targets, `/set_ess` | final `Decision.pv_max_power_limit` unless manual/API | min-change threshold; configured normal cap | Negative-FiT export suppression is handled by export/EMS control rather than a full-battery house-load PV cap. |
+| HVAC solar permission sensor | HVAC permission publication path | published after successful evaluator cycle; prior in-memory result updates only after successful publication | advisory-only contract; failure publishes best-effort `unavailable` | No inverter or HVAC actuator write. |
 | ESS charge limit | `_apply`, manual targets, `/set_ess` | decision/manual/API | retry logic in manual apply | Optional entity but live if configured. |
 | ESS discharge limit | `_apply`, `_safe_fallback`, manual targets, `/set_ess` | decision/manual/API | fallback near zero on failures | Key to battery-backed export prevention. |
 | Mode helper | `apply_manual_mode`, manual drift restore | manual selection | allowed mode validation in API | Source of manual override. |
@@ -244,6 +251,7 @@ Do not delete these without a dedicated cleanup branch and tests:
 | Concern | Source of truth | Must not be replaced by |
 |---|---|---|
 | Proven PV surplus | `measured_pv_surplus_kw = max(pv_kw - load_kw, 0)` | Solcast-only potential, hidden PV diagnostic, estimated surplus |
+| HVAC solar permission authority | fresh `measured_opportunity_kw = max(actual_pv_kw - ordinary_house_load_kw, 0)`, battery-flow safety, supported control mode, and current-process prior result for continuation | Solcast, estimated opportunity, retained HA permission state, SoC thresholds, PV MAX, feed-in price, zero export, export constraint alone |
 | Estimated/probe surplus | `estimated_pv_surplus_kw = max(max(pv_kw, solar_power_now_kw) - load_kw, 0)` | measured proof flags |
 | Hidden PV | `hidden_pv_surplus_kw = max(estimated - measured, 0)` | export permission by itself |
 | PV-only export permission | `pv_surplus_only_proven` or explicitly capped estimated initiation | generic `pv_surplus` |

@@ -59,6 +59,13 @@ class HVACSolarPermissionResult:
         attrs: dict[str, Any] = {
             "reason_code": self.reason_code,
             "source": self.source,
+            "scope": "solar_target_opportunity_only",
+            "contract_version": "hvac_solar_permission_v2",
+            "soc_policy_included": False,
+            "consumer_safety_overlay_required": True,
+            "controls_hvac_directly": False,
+            "estimated_opportunity_usable": False,
+            "estimated_opportunity_rejection_reason": "diagnostics_only",
             "export_constraint_active": self.export_constraint_active,
             "control_mode": self.control_mode,
             "data_fresh": self.data_fresh,
