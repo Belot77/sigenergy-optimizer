@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-22
+- Allow an already-proven full-battery PV-only discovery probe to continue ramping above `EXPORT_LIMIT_LOW` when curtailed solar remains available.
+- The initial measured, estimated, and full-battery breathe probes remain conservatively limited; continuation still increases by at most one configured probe step per cycle and is capped by `EXPORT_LIMIT_HIGH` and the ESS discharge-power ceiling.
+- Existing PV-only safety gates remain required: automatic mode, positive FiT, 100% top-off target met, safe EMS mode, known battery flow within discharge tolerance, plausible live PV, and continuation evidence. Battery discharge, unknown battery flow, unsafe EMS, or loss of the other safety conditions prevents continuation.
+- Added regression coverage for continuation above the low export tier and for the high export ceiling.
+
+
 ## 2.3.34-haos45 (pending release)
 - Merged measured-solar permission correction at commit `803980413e155c7389384d2edca52e53a7f84c5e`; tagging, build, installation, and live validation remain outstanding.
 - Correct HVAC solar permission so only measured opportunity can authorise `start` or `continue`: `max(actual_pv_kw - ordinary_house_load_kw, 0)`.

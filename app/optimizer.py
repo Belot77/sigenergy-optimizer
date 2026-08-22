@@ -1774,7 +1774,7 @@ class SigEnergyOptimizer:
         )
         breathe_probe_static_cap_kw = min(
             float(s.ess_max_discharge_kw or 0.0),
-            float(cfg.export_limit_low),
+            float(cfg.export_limit_high),
         )
         current_export_limit_for_breathe_probe = max(float(s.current_export_limit or 0.0), 0.0)
         measured_grid_export_for_breathe_probe = (
