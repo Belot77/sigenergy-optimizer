@@ -1686,7 +1686,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertEqual(0.0, float(decision.trace_values.get("pv_only_discovery_cap_kw", 0.0)))
         self.assertEqual(0.0, decision.export_limit)
 
-    def test_full_battery_breathe_probe_continuation_capped_by_export_limit_low(self) -> None:
+    def test_full_battery_breathe_probe_continuation_can_ramp_above_export_limit_low(self) -> None:
         now_ts = datetime.now().timestamp()
         optimizer = self._optimizer(
             daytime_topup_max_soc=100.0,
@@ -1710,8 +1710,40 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
 
         self.assertTrue(bool(decision.trace_gates.get("pv_surplus_breathe_probe_continuation_active")))
         self.assertEqual("full_battery_breathe_probe", decision.trace_values.get("pv_surplus_initiation_source"))
-        self.assertLessEqual(decision.export_limit, optimizer.cfg.export_limit_low + 1e-6)
-        self.assertEqual(1.2, decision.export_limit)
+        self.assertGreater(decision.export_limit, optimizer.cfg.export_limit_low)
+        self.assertLessEqual(decision.export_limit, optimizer.cfg.export_limit_high + 1e-6)
+        self.assertLessEqual(
+            decision.export_limit,
+            state.current_export_limit + optimizer.cfg.morning_slow_export_probe_step_kw + 1e-6,
+        )
+        self.assertEqual(2.0, decision.export_limit)
+
+    def test_full_battery_breathe_probe_continuation_caps_at_export_limit_high(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            daytime_topup_max_soc=100.0,
+            export_limit_high=25.0,
+            morning_slow_export_probe_step_kw=1.0,
+        )
+        optimizer._last_decision = self._previous_breathe_probe_decision(export_limit=24.5)
+        self._seed_breathe_probe_state(optimizer, now_ts, export_limit=24.5)
+        optimizer._is_evening_or_night = lambda _now: False
+        optimizer._desired_export_limit = lambda *args, **kwargs: 0.0
+        state = self._breathe_probe_state(
+            now_ts,
+            pv_kw=1.3,
+            solar_power_now_kw=30.0,
+            load_kw=0.9,
+            current_export_limit=24.5,
+            grid_export_power_kw=24.5,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertTrue(bool(decision.trace_gates.get("pv_surplus_breathe_probe_continuation_active")))
+        self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertEqual(25.0, decision.export_limit)
+        self.assertLessEqual(decision.export_limit, optimizer.cfg.export_limit_high + 1e-6)
 
     def test_full_battery_breathe_probe_blocked_when_battery_discharge_measured(self) -> None:
         now_ts = datetime.now().timestamp()
