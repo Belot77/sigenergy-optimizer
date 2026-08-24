@@ -87,7 +87,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.36-haos47"
+_RUNTIME_SIGNATURE = "2.3.37-haos48"
 
 class SigEnergyOptimizer:
     def __init__(self, ha: HAClient, cfg: Settings) -> None:
