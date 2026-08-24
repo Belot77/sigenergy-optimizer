@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-24
+
+- Replace automatic full-battery measured/estimated initiation, hidden-PV breathe probes, and discovery continuation/ramping with a two-stage Maximum Self Consumption transition. Those legacy status fields remain neutral and diagnostic-only; they cannot change the live export ceiling or carry state into a later cycle.
+- Stage 1 requires a genuinely observed `Automated` helper plus the full-battery, FiT, battery-flow, daytime/PV, and conflict guards. If Maximum Self Consumption is not genuinely observed, keep export closed, command Maximum Self Consumption, and wait for a later cycle; no export probe is used.
+- Stage 2 opens the configured high export ceiling directly only when `Automated` and Maximum Self Consumption are both genuinely observed in the same cycle and all other guards still pass. The ceiling is normally 25 kW and is not a request for 25 kW actual export or battery discharge.
+- Bound Stage 2 by `EXPORT_LIMIT_HIGH` and the grid-export number entity's authoritative `max` attribute when available. Quantise downward to actuator precision so a fractional entity maximum is never exceeded; ESS discharge power is not treated as the grid-export cap for this path.
+- Reassert and confirm Maximum Self Consumption immediately before applying the automatic high ceiling. Before changing into a discharge EMS, write and confirm the deliberate export target first, including when the prior export-limit observation is unavailable; a previous high ceiling is therefore reduced before discharge is selected.
+- Keep the narrow Stage 2 state classified as PV-surplus-only even when the ceiling exceeds instantaneous measured surplus. All other battery-backed or mixed export remains subject to ordinary Value Gate and actual import-cost protection.
+- FiT below `$0.01/kWh` (1.0c/kWh) cannot activate or inherit the automatic full-battery PV-only ceiling; exactly `$0.01/kWh` remains eligible. Manual/force and independent battery-backed export policy remain separate.
+- Treat missing or non-finite battery, grid-flow, and battery-SoC telemetry as unknown for this policy. Invalid telemetry cannot satisfy the known-flow or 100% top-off gates.
+- The separate morning slow-charge probe/ramp is unchanged.
+
 ## 2026-08-22
 - Allow an already-proven full-battery PV-only discovery probe to continue ramping above `EXPORT_LIMIT_LOW` when curtailed solar remains available.
 - The initial measured, estimated, and full-battery breathe probes remain conservatively limited; continuation still increases by at most one configured probe step per cycle and is capped by `EXPORT_LIMIT_HIGH` and the ESS discharge-power ceiling.
