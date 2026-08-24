@@ -2190,6 +2190,7 @@ class SigEnergyOptimizer:
             desired_ems_mode == MODE_MAX_SELF
             and desired_export_limit == 0
             and desired_import_limit == 0
+            and not s.demand_window_active
             and (is_evening_or_night or standby_holdoff_active)
         )
         desired_pv_max = self._desired_pv_max_power(
