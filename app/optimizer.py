@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from dataclasses import dataclass
+from decimal import Decimal, ROUND_FLOOR
 import logging
 import math
 import os
@@ -89,36 +89,12 @@ _TRIGGER_ENTITY_ATTRS = [
 _POWER_LIMIT_MAX_KW = 100.0
 _RUNTIME_SIGNATURE = "2.3.36-haos47"
 
-
-@dataclass(frozen=True)
-class PVOnlyDiscoveryDecision:
-    active: bool = False
-    source: str = "none"
-    export_cap_kw: float = 0.0
-    reason: str = "inactive"
-    state_source: str = "none"
-    basis_kw: float = 0.0
-    measured_initiation: bool = False
-    estimated_probe: bool = False
-    breathe_probe: bool = False
-    continuation: bool = False
-
-
 class SigEnergyOptimizer:
     def __init__(self, ha: HAClient, cfg: Settings) -> None:
         self.ha = ha
         self.cfg = cfg
         self._last_state: Optional[SolarState] = None
         self._last_decision: Optional[Decision] = None
-        self._pv_discovery_active: bool = False
-        self._pv_discovery_source: str = "none"
-        self._pv_discovery_cap_kw: float = 0.0
-        self._pv_discovery_last_safe_cap_kw: float = 0.0
-        self._pv_discovery_last_ts: Optional[float] = None
-        self._full_battery_breathe_probe_active: bool = False
-        self._full_battery_breathe_probe_cap_kw: float = 0.0
-        self._full_battery_breathe_probe_source: str = "none"
-        self._full_battery_breathe_probe_last_ts: Optional[float] = None
         self._last_daily_summary_date: Optional[datetime] = None
         self._last_morning_summary_date: Optional[datetime] = None
         self._running = False
@@ -1072,14 +1048,15 @@ class SigEnergyOptimizer:
                 entity_ids.append(candidate)
         bulk = await self.ha.bulk_states(entity_ids)
 
-        def _fv(eid: str, default: float = 0.0) -> float:
+        def _fv(eid: str, default: Optional[float] = 0.0) -> Optional[float]:
             obj = bulk.get(eid)
             if not obj:
                 return default
             try:
-                return float(obj["state"])
+                value = float(obj["state"])
             except (TypeError, ValueError):
                 return default
+            return value if math.isfinite(value) else default
 
         def _sv(eid: str, default: str = "") -> str:
             obj = bulk.get(eid)
@@ -1262,11 +1239,13 @@ class SigEnergyOptimizer:
         load_raw = _fv(cfg.consumed_power_sensor)
         s.load_kw = load_raw / 1000 if load_raw > 100 else load_raw
         if cfg.grid_import_power_sensor:
-            grid_import_raw = _fv(cfg.grid_import_power_sensor)
-            s.grid_import_power_kw = grid_import_raw / 1000 if grid_import_raw > 100 else grid_import_raw
+            grid_import_raw = _fv(cfg.grid_import_power_sensor, None)
+            if grid_import_raw is not None:
+                s.grid_import_power_kw = grid_import_raw / 1000 if grid_import_raw > 100 else grid_import_raw
         if cfg.grid_export_power_sensor:
-            grid_export_raw = _fv(cfg.grid_export_power_sensor)
-            s.grid_export_power_kw = grid_export_raw / 1000 if grid_export_raw > 100 else grid_export_raw
+            grid_export_raw = _fv(cfg.grid_export_power_sensor, None)
+            if grid_export_raw is not None:
+                s.grid_export_power_kw = grid_export_raw / 1000 if grid_export_raw > 100 else grid_export_raw
         if cfg.battery_power_sensor:
             battery_power_raw = _fv(cfg.battery_power_sensor, None)
             if isinstance(battery_power_raw, (int, float)):
@@ -1307,6 +1286,17 @@ class SigEnergyOptimizer:
 
         # ---- Grid limits / EMS mode -----------------------------------
         s.current_export_limit = _fv(cfg.grid_export_limit)
+        try:
+            grid_export_max_attr = _attr(cfg.grid_export_limit, "max")
+            if grid_export_max_attr is not None:
+                grid_export_max_kw = float(grid_export_max_attr)
+                if (
+                    math.isfinite(grid_export_max_kw)
+                    and 0.0 <= grid_export_max_kw <= _POWER_LIMIT_MAX_KW
+                ):
+                    s.grid_export_limit_entity_max_kw = grid_export_max_kw
+        except (TypeError, ValueError):
+            s.grid_export_limit_entity_max_kw = None
         s.current_import_limit = _fv(cfg.grid_import_limit)
         s.current_pv_max_power_limit = _fv(cfg.pv_max_power_limit)
         if cfg.ess_max_charging_limit:
@@ -1325,7 +1315,19 @@ class SigEnergyOptimizer:
                     s.ess_discharge_limit_entity_max_kw = float(max_attr)
             except (TypeError, ValueError):
                 s.ess_discharge_limit_entity_max_kw = None
-        s.current_ems_mode = _sv(cfg.ems_mode_select, MODE_MAX_SELF)
+        # Preserve an unknown/unavailable EMS selector as unknown. Safety-critical
+        # export paths must not infer Maximum Self Consumption from a missing state.
+        ems_mode_obj = bulk.get(cfg.ems_mode_select)
+        ems_mode_raw = (
+            str(ems_mode_obj.get("state", "")).strip()
+            if ems_mode_obj
+            else ""
+        )
+        s.ems_mode_observed = bool(
+            ems_mode_raw
+            and ems_mode_raw.lower() not in unavailable_states
+        )
+        s.current_ems_mode = ems_mode_raw if s.ems_mode_observed else ""
         ha_control_entity = str(cfg.ha_control_switch or "").strip()
         ha_control_obj = bulk.get(ha_control_entity)
         ha_control_raw_state = (
@@ -1457,6 +1459,16 @@ class SigEnergyOptimizer:
         s.last_import_notification = _sv(cfg.last_import_notification, "stopped")
 
         # ---- Mode select ----------------------------------------------
+        sigenergy_mode_obj = bulk.get(cfg.sigenergy_mode_select)
+        sigenergy_mode_raw = (
+            str(sigenergy_mode_obj.get("state", "")).strip()
+            if sigenergy_mode_obj
+            else ""
+        )
+        s.sigenergy_mode_observed = bool(
+            sigenergy_mode_raw
+            and sigenergy_mode_raw.lower() not in unavailable_states
+        )
         last_mode = self._last_state.sigenergy_mode if self._last_state else ""
         mode_default = self._manual_mode_override or last_mode or cfg.automated_option
         s.sigenergy_mode = _sv(cfg.sigenergy_mode_select, mode_default)
@@ -1694,55 +1706,23 @@ class SigEnergyOptimizer:
         pv_surplus_estimated_init_active = False
         pv_surplus_breathe_probe_active = False
         pv_surplus_breathe_probe_continuation_active = False
-        pv_surplus_estimated_init_reason = "inactive"
+        pv_only_msc_stage1_active = False
+        pv_only_msc_transition_ready = False
+        pv_only_msc_high_ceiling_active = False
+        pv_only_msc_high_ceiling_kw = 0.0
+        pv_only_msc_authoritative_cap_kw: Optional[float] = None
+        pv_only_msc_transition_reason = "inactive"
+        pv_only_msc_high_ceiling_reason = "inactive"
+        pv_surplus_estimated_init_reason = (
+            "diagnostic-only: legacy measured/estimated/breathe PV discovery cannot "
+            "change the live export ceiling."
+        )
         pv_surplus_probe_export_cap_kw = 0.0
-        prev_trace_values = (
-            self._last_decision.trace_values
-            if self._last_decision and isinstance(self._last_decision.trace_values, dict)
-            else {}
-        )
-        prev_trace_gates = (
-            self._last_decision.trace_gates
-            if self._last_decision and isinstance(self._last_decision.trace_gates, dict)
-            else {}
-        )
-        if self._full_battery_breathe_probe_active and not self._pv_discovery_active:
-            self._pv_discovery_active = True
-            self._pv_discovery_source = self._full_battery_breathe_probe_source
-            self._pv_discovery_cap_kw = self._full_battery_breathe_probe_cap_kw
-            self._pv_discovery_last_safe_cap_kw = self._full_battery_breathe_probe_cap_kw
-            self._pv_discovery_last_ts = self._full_battery_breathe_probe_last_ts
-
-        pv_discovery_state_age_s = (
-            now_ts - self._pv_discovery_last_ts
-            if self._pv_discovery_last_ts is not None
-            else None
-        )
-        pv_discovery_state_fresh = bool(
-            self._pv_discovery_active
-            and pv_discovery_state_age_s is not None
-            and 0.0 <= pv_discovery_state_age_s <= 300.0
-        )
-        if self._pv_discovery_active and not pv_discovery_state_fresh:
-            self._clear_pv_discovery_state()
-            pv_discovery_state_age_s = None
-        breathe_probe_state_age_s = pv_discovery_state_age_s
-        breathe_probe_state_fresh = pv_discovery_state_fresh
-        breathe_probe_state_source = (
-            self._pv_discovery_source
-            if pv_discovery_state_fresh
-            else "none"
-        )
-        prev_breathe_probe_active = bool(
-            pv_discovery_state_fresh
-        )
-        prev_breathe_probe_cap_kw = max(
-            self._pv_discovery_cap_kw if pv_discovery_state_fresh else 0.0,
-            self._pv_discovery_last_safe_cap_kw if pv_discovery_state_fresh else 0.0,
-            0.0,
-        )
         topoff_target_soc = self._topoff_target_soc()
-        topoff_target_met = s.battery_soc + 1e-6 >= topoff_target_soc
+        topoff_target_met = bool(
+            math.isfinite(float(s.battery_soc))
+            and s.battery_soc + 1e-6 >= topoff_target_soc
+        )
         mode_label = str(s.sigenergy_mode or cfg.automated_option)
         manual_exempt_modes = {
             str(cfg.full_export_option),
@@ -1752,6 +1732,15 @@ class SigEnergyOptimizer:
             str(cfg.manual_option),
         }
         automatic_control_mode = mode_label not in manual_exempt_modes
+        observed_automated_control_mode = bool(
+            s.sigenergy_mode_observed
+            and
+            str(s.sigenergy_mode or "") == str(cfg.automated_option)
+        )
+        observed_max_self_consumption = bool(
+            s.ems_mode_observed
+            and s.current_ems_mode == MODE_MAX_SELF
+        )
         battery_discharge_kw_for_pv_only, battery_flow_source_for_pv_only = (
             self._battery_discharge_kw_for_pv_only_check(s)
         )
@@ -1760,69 +1749,28 @@ class SigEnergyOptimizer:
             battery_discharge_kw_for_pv_only is not None
             and battery_discharge_kw_for_pv_only <= pv_only_discharge_tolerance_kw
         )
-        pv_only_ems_safe = s.current_ems_mode not in DISCHARGE_MODES
-        estimated_pv_surplus_kw_for_init = max(float(pv_surplus), 0.0)
-        estimated_hidden_surplus_kw_for_breathe_probe = max(
-            estimated_pv_surplus_kw_for_init - measured_pv_surplus_kw,
-            0.0,
+        pv_only_ems_safe = s.current_ems_mode in ({MODE_MAX_SELF} | CHARGE_MODES)
+        live_pv_value = float(s.pv_kw or 0.0)
+        live_load_value = float(s.load_kw or 0.0)
+        live_pv_and_load_finite = bool(
+            math.isfinite(live_pv_value) and math.isfinite(live_load_value)
         )
-        live_pv_kw_for_breathe_probe = max(float(s.pv_kw or 0.0), 0.0)
-        live_load_kw_for_breathe_probe = max(float(s.load_kw or 0.0), 0.0)
-        breathe_probe_step_kw = max(
-            float(cfg.morning_slow_export_probe_step_kw or 0.0),
-            float(cfg.min_grid_transfer_kw),
-        )
-        breathe_probe_static_cap_kw = min(
-            float(s.ess_max_discharge_kw or 0.0),
-            float(cfg.export_limit_high),
-        )
-        current_export_limit_for_breathe_probe = max(float(s.current_export_limit or 0.0), 0.0)
-        measured_grid_export_for_breathe_probe = (
-            max(float(s.grid_export_power_kw), 0.0)
-            if s.grid_export_power_kw is not None
-            else 0.0
-        )
-        meaningful_export_open_threshold_kw = max(float(cfg.min_grid_transfer_kw or 0.0), 0.1)
-        meaningful_live_export_open_for_discovery = bool(
-            current_export_limit_for_breathe_probe >= meaningful_export_open_threshold_kw
-            or measured_grid_export_for_breathe_probe >= meaningful_export_open_threshold_kw
-        )
-        export_effectively_closed_for_discovery = not meaningful_live_export_open_for_discovery
-        live_pv_plausible_for_breathe_probe = (
-            live_pv_kw_for_breathe_probe > 0.05
+        live_pv_kw = max(live_pv_value, 0.0) if live_pv_and_load_finite else 0.0
+        live_load_kw = max(live_load_value, 0.0) if live_pv_and_load_finite else 0.0
+        live_pv_plausible_for_msc_ceiling = (
+            live_pv_and_load_finite
+            and
+            live_pv_kw > 0.05
             and (
-                live_pv_kw_for_breathe_probe >= max(float(cfg.productive_solar_threshold_kw or 0.0), 0.0)
-                or live_pv_kw_for_breathe_probe + pv_only_discharge_tolerance_kw >= live_load_kw_for_breathe_probe
+                live_pv_kw >= max(float(cfg.productive_solar_threshold_kw or 0.0), 0.0)
+                or live_pv_kw + pv_only_discharge_tolerance_kw >= live_load_kw
             )
         )
-        export_limit_clamped_for_breathe_probe = float(s.current_export_limit or 0.0) <= 0.05
-        export_open_for_breathe_probe = current_export_limit_for_breathe_probe > 0.05
-        desired_export_open_for_breathe_probe = desired_export_limit > 0.01
-        prior_probe_cap_open_for_breathe_probe = prev_breathe_probe_cap_kw >= cfg.min_grid_transfer_kw
-        breathe_probe_current_or_prior_cap_kw = max(
-            current_export_limit_for_breathe_probe,
-            prev_breathe_probe_cap_kw,
-            float(cfg.min_grid_transfer_kw),
-        )
-        export_still_small_for_breathe_probe = (
-            max(current_export_limit_for_breathe_probe, prev_breathe_probe_cap_kw)
-            <= breathe_probe_static_cap_kw + 1e-6
-        )
-        grid_export_confirms_breathe_probe = (
-            s.grid_export_power_kw is not None
-            and measured_grid_export_for_breathe_probe
-            >= max(0.1, min(cfg.min_grid_transfer_kw, current_export_limit_for_breathe_probe) - 0.1)
-        )
-        estimated_hidden_confirms_breathe_probe = (
-            estimated_hidden_surplus_kw_for_breathe_probe >= cfg.min_grid_transfer_kw
-        )
-        continuation_evidence_for_breathe_probe = (
-            grid_export_confirms_breathe_probe
-            or estimated_hidden_confirms_breathe_probe
-        )
+        feedin_price_for_pv_only = float(s.feedin_price or 0.0)
         pv_surplus_common_conditions = (
             not is_evening_or_night
-            and float(s.feedin_price or 0.0) > 0.0
+            and math.isfinite(feedin_price_for_pv_only)
+            and feedin_price_for_pv_only >= 0.01
             and not s.feedin_is_negative
             and not export_spike_active
             and not morning_dump_active
@@ -1842,214 +1790,73 @@ class SigEnergyOptimizer:
             pv_surplus_base_conditions and not topoff_target_met
         )
 
-        pv_only_discovery_decision = PVOnlyDiscoveryDecision()
-        pv_surplus_only_initiation_eligible = (
-            desired_export_limit <= 0.01
-            and pv_surplus_only_proven
-        )
-        if pv_surplus_only_initiation_eligible:
-            conservative_pv_surplus_cap_kw = min(
-                measured_pv_surplus_kw,
-                float(s.ess_max_discharge_kw or 0.0),
-                float(cfg.export_limit_low),
+        high_ceiling_candidates = [max(float(cfg.export_limit_high), 0.0)]
+        if (
+            s.grid_export_limit_entity_max_kw is not None
+            and math.isfinite(float(s.grid_export_limit_entity_max_kw))
+            and 0.0 <= float(s.grid_export_limit_entity_max_kw) <= _POWER_LIMIT_MAX_KW
+        ):
+            pv_only_msc_authoritative_cap_kw = float(
+                s.grid_export_limit_entity_max_kw
             )
-            if conservative_pv_surplus_cap_kw >= cfg.min_grid_transfer_kw:
-                desired_export_limit = round(conservative_pv_surplus_cap_kw, 1)
-                export_value_gate_pv_surplus_initiated_active = True
-                pv_surplus_initiation_source = "measured"
-                pv_surplus_probe_export_cap_kw = desired_export_limit
-                pv_only_discovery_decision = PVOnlyDiscoveryDecision(
-                    active=True,
-                    source="measured_surplus",
-                    export_cap_kw=desired_export_limit,
-                    reason=(
-                        "PV-only discovery active: measured PV surplus is safely capped "
-                        "and battery discharge remains within tolerance."
-                    ),
-                    state_source="measured_surplus",
-                    basis_kw=measured_pv_surplus_kw,
-                    measured_initiation=True,
-                )
+            high_ceiling_candidates.append(pv_only_msc_authoritative_cap_kw)
+        raw_high_ceiling_kw = min(high_ceiling_candidates)
+        # HAClient serialises number writes to two decimal places. Quantise down so
+        # its later rounding can never lift this decision above the number entity's
+        # authoritative maximum attribute.
+        pv_only_msc_high_ceiling_kw = float(
+            Decimal(str(raw_high_ceiling_kw)).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_FLOOR,
+            )
+        )
+        pv_only_classification_cap_kw = pv_only_msc_high_ceiling_kw
+        pv_only_msc_transition_ready = bool(
+            observed_automated_control_mode
+            and pv_surplus_common_conditions
+            and topoff_target_met
+            and pv_only_discharge_ok
+            and live_pv_plausible_for_msc_ceiling
+            and not s.price_is_negative
+            and not s.demand_window_active
+            and not morning_slow_charge_active
+            and not standby_holdoff_active
+            and not battery_full_safeguard_block
+            and not export_blocked_effective
+            and not export_forecast_guard
+            and not positive_fit_override
+            and pv_only_msc_high_ceiling_kw >= float(cfg.min_grid_transfer_kw)
+        )
+        pv_only_msc_stage1_active = bool(
+            pv_only_msc_transition_ready
+            and not observed_max_self_consumption
+        )
+        pv_only_msc_high_ceiling_active = bool(
+            pv_only_msc_transition_ready
+            and observed_max_self_consumption
+        )
 
-        estimated_init_conditions = (
-            bool(cfg.pv_surplus_estimated_init_enabled)
-            and automatic_control_mode
-            and export_effectively_closed_for_discovery
-            and pv_surplus_common_conditions
-            and topoff_target_met
-            and pv_only_discharge_ok
-            and pv_only_ems_safe
-            and measured_pv_surplus_kw < cfg.min_grid_transfer_kw
-            and estimated_pv_surplus_kw_for_init >= cfg.min_grid_transfer_kw
-        )
-        breathe_probe_conditions = (
-            automatic_control_mode
-            and export_effectively_closed_for_discovery
-            and pv_surplus_common_conditions
-            and topoff_target_met
-            and pv_only_discharge_ok
-            and pv_only_ems_safe
-            and measured_pv_surplus_kw < cfg.min_grid_transfer_kw
-            and estimated_pv_surplus_kw_for_init < cfg.min_grid_transfer_kw
-            and live_pv_plausible_for_breathe_probe
-            and export_limit_clamped_for_breathe_probe
-        )
-        breathe_probe_continuation_conditions = (
-            prev_breathe_probe_active
-            and not export_value_gate_pv_surplus_initiated_active
-            and automatic_control_mode
-            and pv_surplus_common_conditions
-            and topoff_target_met
-            and pv_only_discharge_ok
-            and pv_only_ems_safe
-            and (
-                export_open_for_breathe_probe
-                or desired_export_open_for_breathe_probe
-                or prior_probe_cap_open_for_breathe_probe
+        if pv_only_msc_stage1_active:
+            desired_export_limit = 0.0
+            pv_only_msc_transition_reason = (
+                "stage 1: full-battery PV-only opportunity qualifies, but Maximum "
+                "Self Consumption is not genuinely observed; keep export closed, "
+                "command Maximum Self Consumption, and wait for a later cycle."
             )
-            and export_still_small_for_breathe_probe
-            and continuation_evidence_for_breathe_probe
-            and live_pv_plausible_for_breathe_probe
-        )
-        if breathe_probe_continuation_conditions:
-            prev_trace_full_breathe_probe = bool(
-                prev_trace_values.get("pv_surplus_initiation_source") == "full_battery_breathe_probe"
-                or prev_trace_gates.get("pv_surplus_breathe_probe_active")
+        if pv_only_msc_high_ceiling_active:
+            desired_export_limit = pv_only_msc_high_ceiling_kw
+            export_value_gate_pv_surplus_initiated_active = True
+            pv_surplus_initiation_source = "msc_full_battery_high_ceiling"
+            pv_only_msc_transition_reason = (
+                "stage 2: genuine Automated and Maximum Self Consumption observations "
+                "are present in this cycle; open the configured high export ceiling directly."
             )
-            continuation_source = (
-                "full_battery_breathe_probe"
-                if breathe_probe_state_source == "full_battery_breathe_probe"
-                or prev_trace_full_breathe_probe
-                else "pv_surplus_discovery"
+            pv_only_msc_high_ceiling_reason = (
+                "active: genuinely observed Automated and Maximum Self Consumption with "
+                "the 100% top-off target met, known battery flow within discharge "
+                "tolerance, qualifying daytime PV, and FiT at or above 1c/kWh; the "
+                "export setpoint is a ceiling."
             )
-            breathe_probe_evidence_cap_kw = 0.0
-            if grid_export_confirms_breathe_probe:
-                breathe_probe_evidence_cap_kw = max(
-                    breathe_probe_evidence_cap_kw,
-                    measured_grid_export_for_breathe_probe + breathe_probe_step_kw,
-                )
-            if estimated_hidden_confirms_breathe_probe:
-                breathe_probe_evidence_cap_kw = max(
-                    breathe_probe_evidence_cap_kw,
-                    estimated_pv_surplus_kw_for_init,
-                )
-            breathe_probe_cap_kw = min(
-                breathe_probe_static_cap_kw,
-                breathe_probe_current_or_prior_cap_kw + breathe_probe_step_kw,
-                breathe_probe_evidence_cap_kw,
-            )
-            if breathe_probe_cap_kw >= cfg.min_grid_transfer_kw:
-                desired_export_limit = round(breathe_probe_cap_kw, 1)
-                export_value_gate_pv_surplus_initiated_active = True
-                pv_surplus_breathe_probe_active = True
-                pv_surplus_breathe_probe_continuation_active = True
-                pv_surplus_initiation_source = continuation_source
-                pv_surplus_probe_export_cap_kw = desired_export_limit
-                pv_surplus_estimated_init_reason = (
-                    "continuing PV-surplus/breathe discovery; PV-only discovery/ramp: "
-                    "previous safe PV-only export opened the probe, "
-                    f"estimated hidden surplus is {estimated_hidden_surplus_kw_for_breathe_probe:.1f} kW, "
-                    f"grid export is {measured_grid_export_for_breathe_probe:.1f} kW, "
-                    "battery discharge remains within tolerance, and the cap is held or ramped by one small step."
-                )
-                pv_only_discovery_decision = PVOnlyDiscoveryDecision(
-                    active=True,
-                    source=continuation_source,
-                    export_cap_kw=desired_export_limit,
-                    reason=(
-                        "PV-only discovery active: continuing/ramping export to reveal curtailed solar; "
-                        "battery discharge remains within tolerance."
-                    ),
-                    state_source=continuation_source,
-                    basis_kw=max(
-                        desired_export_limit,
-                        breathe_probe_evidence_cap_kw,
-                        prev_breathe_probe_cap_kw,
-                    ),
-                    breathe_probe=True,
-                    continuation=True,
-                )
-            else:
-                pv_surplus_estimated_init_reason = "inactive: full-battery breathe probe continuation cap is below minimum transfer threshold."
-        elif estimated_init_conditions:
-            estimated_probe_cap_kw = min(
-                estimated_pv_surplus_kw_for_init,
-                float(s.ess_max_discharge_kw or 0.0),
-                float(cfg.export_limit_low),
-                max(float(cfg.morning_slow_export_probe_step_kw or 0.0), float(cfg.min_grid_transfer_kw)),
-            )
-            if estimated_probe_cap_kw >= cfg.min_grid_transfer_kw:
-                desired_export_limit = round(estimated_probe_cap_kw, 1)
-                export_value_gate_pv_surplus_initiated_active = True
-                pv_surplus_estimated_init_active = True
-                pv_surplus_initiation_source = "estimated"
-                pv_surplus_probe_export_cap_kw = desired_export_limit
-                pv_surplus_estimated_init_reason = (
-                    "estimated PV surplus probe: starting hidden-PV discovery because export is effectively closed; "
-                    "a tiny export limit does not count as live export, measured surplus is curtailed/near zero, "
-                    f"and estimated surplus is {estimated_pv_surplus_kw_for_init:.1f} kW."
-                )
-                pv_only_discovery_decision = PVOnlyDiscoveryDecision(
-                    active=True,
-                    source="estimated_probe",
-                    export_cap_kw=desired_export_limit,
-                    reason=(
-                        "PV-only discovery active: opening a small estimated surplus probe to reveal curtailed solar; "
-                        "battery discharge remains within tolerance."
-                    ),
-                    state_source="estimated_probe",
-                    basis_kw=estimated_pv_surplus_kw_for_init,
-                    estimated_probe=True,
-                )
-            else:
-                pv_surplus_estimated_init_reason = "inactive: estimated probe cap is below minimum transfer threshold."
-        elif breathe_probe_conditions:
-            breathe_probe_cap_kw = min(
-                float(s.ess_max_discharge_kw or 0.0),
-                float(cfg.export_limit_low),
-                max(float(cfg.morning_slow_export_probe_step_kw or 0.0), float(cfg.min_grid_transfer_kw)),
-            )
-            if breathe_probe_cap_kw >= cfg.min_grid_transfer_kw:
-                desired_export_limit = round(breathe_probe_cap_kw, 1)
-                export_value_gate_pv_surplus_initiated_active = True
-                pv_surplus_breathe_probe_active = True
-                pv_surplus_initiation_source = "full_battery_breathe_probe"
-                pv_surplus_probe_export_cap_kw = desired_export_limit
-                pv_surplus_estimated_init_reason = (
-                    "full-battery hidden-PV breathe probe: measured and estimated surplus are below threshold, "
-                    "but the battery is topped off, export is clamped near zero, live PV is plausible, "
-                    "and battery discharge is within tolerance; opening a tiny capped probe without discharge EMS."
-                )
-                pv_only_discovery_decision = PVOnlyDiscoveryDecision(
-                    active=True,
-                    source="full_battery_breathe_probe",
-                    export_cap_kw=desired_export_limit,
-                    reason=(
-                        "PV-only discovery active: opening a tiny full-battery hidden-PV breathe probe; "
-                        "battery discharge remains within tolerance."
-                    ),
-                    state_source="full_battery_breathe_probe",
-                    basis_kw=desired_export_limit,
-                    breathe_probe=True,
-                )
-            else:
-                pv_surplus_estimated_init_reason = "inactive: full-battery breathe probe cap is below minimum transfer threshold."
-        elif not bool(cfg.pv_surplus_estimated_init_enabled):
-            pv_surplus_estimated_init_reason = "inactive: estimated PV surplus initiation disabled."
-        elif not automatic_control_mode:
-            pv_surplus_estimated_init_reason = f"inactive: manual mode '{mode_label}' is exempt."
-        elif meaningful_live_export_open_for_discovery:
-            pv_surplus_estimated_init_reason = "inactive: meaningful live export already open."
-        elif not topoff_target_met:
-            pv_surplus_estimated_init_reason = "inactive: top-off target not met."
-        elif not pv_only_discharge_ok:
-            pv_surplus_estimated_init_reason = "inactive: battery discharge cannot be ruled out."
-        elif not pv_surplus_common_conditions:
-            pv_surplus_estimated_init_reason = "inactive: common PV-surplus safety conditions not met."
-        elif measured_pv_surplus_kw >= cfg.min_grid_transfer_kw:
-            pv_surplus_estimated_init_reason = "inactive: measured surplus path is available."
-        elif estimated_pv_surplus_kw_for_init < cfg.min_grid_transfer_kw:
-            pv_surplus_estimated_init_reason = "inactive: estimated surplus below minimum transfer threshold."
 
         def classify_export_type() -> tuple[str, bool, float, str]:
             if desired_export_limit <= 0.01:
@@ -2084,39 +1891,18 @@ class SigEnergyOptimizer:
                     "PV-only safety context not satisfied",
                 )
 
-            pv_only_basis_kw = 0.0
-            pv_only_source = "none"
-            if pv_only_discovery_decision.active:
-                pv_only_basis_kw = max(
-                    pv_only_discovery_decision.basis_kw,
-                    pv_only_discovery_decision.export_cap_kw,
+            if pv_only_msc_high_ceiling_active:
+                return (
+                    "pv_surplus_only",
+                    True,
+                    measured_pv_surplus_kw,
+                    (
+                        "confirmed PV-only Automated Maximum Self Consumption export "
+                        "ceiling; the ceiling is not a request for battery energy"
+                    ),
                 )
-                pv_only_source = pv_only_discovery_decision.source
-            elif pv_surplus_estimated_init_active:
-                pv_only_basis_kw = estimated_pv_surplus_kw_for_init
-                pv_only_source = "estimated_probe"
-            elif pv_surplus_breathe_probe_active:
-                pv_only_basis_kw = pv_surplus_probe_export_cap_kw
-                pv_only_source = "full_battery_breathe_probe"
-            elif pv_surplus_only_proven:
-                pv_only_basis_kw = measured_pv_surplus_kw
-                pv_only_source = "measured_surplus"
-            elif (
-                pv_discovery_state_fresh
-                and self._pv_discovery_source
-                in {
-                    "estimated_probe",
-                    "full_battery_breathe_probe",
-                    "measured_carveout",
-                    "measured_surplus",
-                    "pv_surplus_carveout",
-                    "pv_surplus_discovery",
-                }
-            ):
-                pv_only_basis_kw = prev_breathe_probe_cap_kw
-                pv_only_source = self._pv_discovery_source
 
-            if pv_only_basis_kw <= 0:
+            if not pv_surplus_only_proven:
                 return (
                     "unknown_or_mixed",
                     False,
@@ -2124,19 +1910,19 @@ class SigEnergyOptimizer:
                     "export source is not safely identified as PV-only",
                 )
             if (
-                desired_export_limit <= (pv_only_basis_kw + 0.05)
-                and desired_export_limit <= (breathe_probe_static_cap_kw + 1e-6)
+                desired_export_limit <= (measured_pv_surplus_kw + 0.05)
+                and desired_export_limit <= (pv_only_classification_cap_kw + 1e-6)
             ):
                 return (
                     "pv_surplus_only",
                     True,
-                    pv_only_basis_kw,
-                    f"confirmed PV-only export via {pv_only_source}",
+                    measured_pv_surplus_kw,
+                    "confirmed PV-only export capped to measured surplus",
                 )
             return (
                 "unknown_or_mixed",
                 False,
-                pv_only_basis_kw,
+                measured_pv_surplus_kw,
                 "export cap exceeds confirmed PV-only basis",
             )
 
@@ -2195,7 +1981,7 @@ class SigEnergyOptimizer:
             export_value_gate_block_reason = "topoff_target_not_met"
 
         if (
-            export_value_gate_pv_surplus_initiated_active
+            pv_only_msc_high_ceiling_active
             and d.export_value_gate_would_block
             and export_value_gate_block_reason in {"price_below_floor", "price_below_import_cost_floor", "import_cost_floor_untrusted"}
             and pv_surplus_only_safe_for_export
@@ -2204,9 +1990,11 @@ class SigEnergyOptimizer:
             d.export_value_gate_would_allow = True
             d.export_value_gate_would_block = False
             d.export_value_gate_reason = (
-                "PV-surplus-only export initiated: feed-in price "
-                f"{export_value_gate_fit_cents:.0f}c/kWh is below floor {export_value_gate_floor_cents:.0f}c/kWh, "
-                f"but daytime {pv_surplus_initiation_source} PV surplus {pv_surplus_limit_basis_kw:.1f} kW is exported without battery backing."
+                "PV-surplus-only MSC export ceiling allowed: feed-in price "
+                f"{export_value_gate_fit_cents:.1f}c/kWh is below floor "
+                f"{export_value_gate_floor_cents:.1f}c/kWh, but the "
+                f"{desired_export_limit:.1f} kW Maximum Self Consumption setpoint "
+                "is a ceiling and known battery discharge remains within tolerance."
             )
             export_value_gate_export_type = "pv_surplus_only"
 
@@ -2265,9 +2053,16 @@ class SigEnergyOptimizer:
                 )
             ):
                 pv_surplus_export_allowed_below_import_floor = True
-            actual_import_cost_guard_reason = (
-                "bypassed: confirmed PV-only surplus/discovery export; battery discharge within tolerance."
-            )
+            if pv_only_msc_high_ceiling_active:
+                actual_import_cost_guard_reason = (
+                    "bypassed: confirmed PV-only Maximum Self Consumption export ceiling; "
+                    "the ceiling is not requested battery energy and battery discharge "
+                    "remains within tolerance."
+                )
+            else:
+                actual_import_cost_guard_reason = (
+                    "bypassed: confirmed measured PV-surplus-only export; battery discharge within tolerance."
+                )
         elif not actual_import_cost_guard_applies_to_export_type:
             actual_import_cost_guard_reason = (
                 f"inactive: export type {export_value_gate_export_type} is not subject to the import-cost guard."
@@ -2320,6 +2115,10 @@ class SigEnergyOptimizer:
             )
 
         d.export_limit = desired_export_limit
+        d.requires_verified_msc_before_export = bool(
+            pv_only_msc_high_ceiling_active
+            and desired_export_limit > 0.01
+        )
         export_value_gate_bypassed_for_pv_surplus_only = bool(
             export_value_gate_export_type == "pv_surplus_only"
             and pv_surplus_only_safe_for_export
@@ -2346,7 +2145,20 @@ class SigEnergyOptimizer:
         pv_surplus_only_ems_safety_clamp_reason = (
             f"inactive: final export type is {export_value_gate_export_type}."
         )
-        if (
+        if pv_only_msc_stage1_active or pv_only_msc_high_ceiling_active:
+            pv_surplus_only_ems_safety_clamp = desired_ems_mode != MODE_MAX_SELF
+            if pv_only_msc_stage1_active:
+                pv_surplus_only_ems_safety_clamp_reason = (
+                    "Stage 1 commands Maximum Self Consumption while the automatic "
+                    "PV-only export ceiling remains closed."
+                )
+            else:
+                pv_surplus_only_ems_safety_clamp_reason = (
+                    "Maximum Self Consumption is required for the qualifying "
+                    "full-battery PV-only high export ceiling."
+                )
+            desired_ems_mode = MODE_MAX_SELF
+        elif (
             export_value_gate_export_type == "pv_surplus_only"
             and desired_ems_mode in DISCHARGE_MODES
         ):
@@ -2360,9 +2172,6 @@ class SigEnergyOptimizer:
             pv_surplus_only_ems_safety_clamp_reason = (
                 "inactive: confirmed PV-only export already uses a non-discharge EMS mode."
             )
-        if export_value_gate_pv_surplus_initiated_active and desired_ems_mode in DISCHARGE_MODES:
-            # Keep initiation PV-only by avoiding discharge modes that can export battery energy.
-            desired_ems_mode = MODE_MAX_SELF
         if (
             export_value_gate_pv_surplus_carveout_active
             and (value_gate_enforcement_active or actual_import_cost_guard_active)
@@ -2495,8 +2304,17 @@ class SigEnergyOptimizer:
             d.export_reason = "Export vetoed by actual import-cost guard; export limit forced to 0.0 kW"
         elif export_value_gate_vetoed:
             d.export_reason = "Export vetoed by value gate enforcement; export limit forced to 0.0 kW"
-        elif pv_only_discovery_decision.active:
-            d.export_reason = pv_only_discovery_decision.reason
+        elif pv_only_msc_stage1_active:
+            d.export_reason = (
+                "PV-only MSC transition stage 1: export remains closed while Maximum "
+                "Self Consumption is commanded and must be observed on a later cycle."
+            )
+        elif pv_only_msc_high_ceiling_active:
+            d.export_reason = (
+                "PV-only MSC ceiling active: export limit set directly to "
+                f"{desired_export_limit:.1f} kW; Maximum Self Consumption controls "
+                "actual surplus-PV export without commanded battery discharge."
+            )
         d.import_reason = self._import_reason(
             s, morning_dump_active, standby_holdoff_active,
             sunrise_soc_target, desired_import_limit, pv_surplus_actual
@@ -2519,6 +2337,10 @@ class SigEnergyOptimizer:
             export_branch = "morning_dump"
         elif morning_slow_charge_active:
             export_branch = "morning_slow_charge"
+        elif pv_only_msc_stage1_active:
+            export_branch = "msc_full_battery_stage1_closed"
+        elif pv_only_msc_high_ceiling_active:
+            export_branch = "msc_full_battery_high_ceiling"
         elif export_spike_active:
             export_branch = "export_spike"
         elif export_solar_override:
@@ -2547,46 +2369,6 @@ class SigEnergyOptimizer:
             import_branch = "negative_price_import"
         elif desired_import_limit > 0:
             import_branch = "cheap_topup_import"
-
-        pv_surplus_discovery_state_from_controller = bool(pv_only_discovery_decision.active)
-        pv_surplus_discovery_state_from_breathe_probe = bool(
-            pv_only_discovery_decision.breathe_probe
-        )
-        pv_surplus_discovery_state_from_safe_carveout = bool(
-            export_value_gate_pv_surplus_carveout_active
-            and pv_surplus_export_allowed_below_import_floor
-            and export_value_gate_export_type == "pv_surplus_only"
-            and pv_surplus_only_proven
-            and desired_export_limit <= (measured_pv_surplus_kw + 0.05)
-        )
-        pv_surplus_discovery_state_should_record = (
-            (pv_surplus_discovery_state_from_controller or pv_surplus_discovery_state_from_safe_carveout)
-            and export_value_gate_export_type == "pv_surplus_only"
-            and desired_export_limit > 0.01
-            and automatic_control_mode
-            and pv_surplus_common_conditions
-            and topoff_target_met
-            and pv_only_discharge_ok
-            and pv_only_ems_safe
-            and d.ems_mode not in DISCHARGE_MODES
-            and desired_export_limit <= breathe_probe_static_cap_kw + 1e-6
-        )
-        if pv_surplus_discovery_state_should_record:
-            breathe_probe_state_source = (
-                pv_only_discovery_decision.state_source
-                if pv_surplus_discovery_state_from_controller
-                else "pv_surplus_carveout"
-            )
-            state_cap_kw = max(
-                float(pv_surplus_probe_export_cap_kw or 0.0),
-                float(pv_only_discovery_decision.export_cap_kw or 0.0),
-                float(desired_export_limit or 0.0),
-                float(cfg.min_grid_transfer_kw),
-            )
-            self._record_pv_discovery_state(breathe_probe_state_source, state_cap_kw, now_ts)
-        else:
-            breathe_probe_state_source = "none"
-            self._clear_pv_discovery_state()
 
         d.trace_gates = {
             "is_evening_or_night": is_evening_or_night,
@@ -2631,18 +2413,21 @@ class SigEnergyOptimizer:
             "pv_surplus_estimated_init_active": pv_surplus_estimated_init_active,
             "pv_surplus_breathe_probe_active": pv_surplus_breathe_probe_active,
             "pv_surplus_breathe_probe_continuation_active": pv_surplus_breathe_probe_continuation_active,
-            "pv_only_discovery_active": pv_only_discovery_decision.active,
-            "pv_only_discovery_continuation_active": pv_only_discovery_decision.continuation,
-            "pv_only_discovery_state_active": self._pv_discovery_active,
-            "pv_only_discovery_state_fresh": self._pv_discovery_active,
-            "pv_surplus_breathe_probe_state_active": self._full_battery_breathe_probe_active,
-            "pv_surplus_breathe_probe_state_fresh": self._full_battery_breathe_probe_active,
-            "pv_surplus_breathe_probe_state_from_carveout": (
-                self._pv_discovery_source == "pv_surplus_carveout"
-            ),
-            "pv_surplus_discovery_state_from_controller": pv_surplus_discovery_state_from_controller,
-            "meaningful_live_export_open_for_discovery": meaningful_live_export_open_for_discovery,
-            "export_effectively_closed_for_discovery": export_effectively_closed_for_discovery,
+            "sigenergy_mode_observed": s.sigenergy_mode_observed,
+            "ems_mode_observed": s.ems_mode_observed,
+            "pv_only_msc_transition_ready": pv_only_msc_transition_ready,
+            "pv_only_msc_stage1_active": pv_only_msc_stage1_active,
+            "pv_only_msc_high_ceiling_active": pv_only_msc_high_ceiling_active,
+            "pv_only_discovery_active": False,
+            "pv_only_discovery_continuation_active": False,
+            "pv_only_discovery_state_active": False,
+            "pv_only_discovery_state_fresh": False,
+            "pv_surplus_breathe_probe_state_active": False,
+            "pv_surplus_breathe_probe_state_fresh": False,
+            "pv_surplus_breathe_probe_state_from_carveout": False,
+            "pv_surplus_discovery_state_from_controller": False,
+            "meaningful_live_export_open_for_discovery": False,
+            "export_effectively_closed_for_discovery": True,
             "pv_surplus_topoff_block_active": pv_surplus_topoff_block_active,
             "topoff_target_met": topoff_target_met,
             "import_cost_floor_trusted": import_cost_floor_trusted,
@@ -2695,17 +2480,19 @@ class SigEnergyOptimizer:
             "pv_surplus_initiation_source": pv_surplus_initiation_source,
             "pv_surplus_estimated_init_reason": pv_surplus_estimated_init_reason,
             "pv_surplus_probe_export_cap_kw": pv_surplus_probe_export_cap_kw,
-            "pv_only_discovery_source": pv_only_discovery_decision.source,
-            "pv_only_discovery_reason": pv_only_discovery_decision.reason,
-            "pv_only_discovery_cap_kw": pv_only_discovery_decision.export_cap_kw,
-            "pv_only_discovery_state_source": self._pv_discovery_source,
-            "pv_only_discovery_state_cap_kw": self._pv_discovery_cap_kw,
-            "pv_only_discovery_state_last_safe_cap_kw": self._pv_discovery_last_safe_cap_kw,
-            "pv_surplus_breathe_probe_state_source": breathe_probe_state_source,
-            "pv_surplus_breathe_probe_state_cap_kw": self._full_battery_breathe_probe_cap_kw,
-            "pv_surplus_breathe_probe_state_age_s": (
-                0.0 if self._full_battery_breathe_probe_last_ts is not None else None
-            ),
+            "pv_only_msc_high_ceiling_kw": pv_only_msc_high_ceiling_kw,
+            "pv_only_msc_authoritative_cap_kw": pv_only_msc_authoritative_cap_kw,
+            "pv_only_msc_transition_reason": pv_only_msc_transition_reason,
+            "pv_only_msc_high_ceiling_reason": pv_only_msc_high_ceiling_reason,
+            "pv_only_discovery_source": "none",
+            "pv_only_discovery_reason": pv_surplus_estimated_init_reason,
+            "pv_only_discovery_cap_kw": 0.0,
+            "pv_only_discovery_state_source": "none",
+            "pv_only_discovery_state_cap_kw": 0.0,
+            "pv_only_discovery_state_last_safe_cap_kw": 0.0,
+            "pv_surplus_breathe_probe_state_source": "none",
+            "pv_surplus_breathe_probe_state_cap_kw": 0.0,
+            "pv_surplus_breathe_probe_state_age_s": None,
             "export_value_gate_fit_cents": export_value_gate_fit_cents,
             "export_value_gate_floor_cents": export_value_gate_floor_cents,
             "export_value_gate_difference_cents": export_value_gate_difference_cents,
@@ -2718,7 +2505,7 @@ class SigEnergyOptimizer:
             "battery_discharge_kw_for_pv_only": battery_discharge_kw_for_pv_only,
             "battery_flow_source_for_pv_only": battery_flow_source_for_pv_only,
             "pv_only_discharge_tolerance_kw": pv_only_discharge_tolerance_kw,
-            "meaningful_export_open_threshold_kw": meaningful_export_open_threshold_kw,
+            "meaningful_export_open_threshold_kw": 0.0,
             "pv_cap_reason": pv_cap_reason,
             "current_pv_max_limit_kw": current_pv_max_limit_kw,
             "desired_pv_max_limit_kw": desired_pv_max_limit_kw,
@@ -2786,14 +2573,55 @@ class SigEnergyOptimizer:
     # 3. Apply decisions to Home Assistant
     # ------------------------------------------------------------------
 
+    async def _wait_for_exact_entity_state(
+        self,
+        entity_id: str,
+        expected: str,
+        *,
+        timeout_s: float = 4.0,
+    ) -> bool:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_s
+        while loop.time() < deadline:
+            current = str(await self.ha.get_state_value(entity_id, "") or "")
+            if current == expected:
+                return True
+            await asyncio.sleep(0.3)
+        return False
+
+    async def _wait_for_number_at_most(
+        self,
+        entity_id: str,
+        maximum: float,
+        *,
+        timeout_s: float = 4.0,
+        tolerance: float = 0.011,
+    ) -> bool:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_s
+        while loop.time() < deadline:
+            raw_value = await self.ha.get_state_value(entity_id, None)
+            try:
+                numeric_value = float(raw_value) if raw_value is not None else None
+                if (
+                    numeric_value is not None
+                    and math.isfinite(numeric_value)
+                    and numeric_value <= maximum + tolerance
+                ):
+                    return True
+            except (TypeError, ValueError):
+                pass
+            await asyncio.sleep(0.3)
+        return False
+
     async def _apply(self, s: SolarState, d: Decision) -> None:
         cfg = self.cfg
         ha = self.ha
 
         async def _safe_fallback(reason: str) -> None:
             logger.error("Entering safe fallback: %s", reason)
-            await ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF)
             await ha.set_number(cfg.grid_export_limit, 0.01)
+            await ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF)
             await ha.set_number(cfg.grid_import_limit, 0.01)
             if cfg.ess_max_discharging_limit:
                 await ha.set_number(cfg.ess_max_discharging_limit, 0.01)
@@ -2930,9 +2758,67 @@ class SigEnergyOptimizer:
             return
 
         ems_mode_to_apply = d.ems_mode
+        near_zero = 0.011
+        export_val = d.export_limit if d.export_limit > 0 else 0.01
+        export_turning_on = s.current_export_limit <= near_zero and export_val > near_zero
+        export_turning_off = s.current_export_limit > near_zero and export_val <= near_zero
+        export_write_required = bool(
+            abs(export_val - s.current_export_limit) >= cfg.min_change_threshold
+            or export_turning_on
+            or export_turning_off
+        )
+        export_written = False
+
+        if d.requires_verified_msc_before_export:
+            # The decision snapshot can race an external EMS writer. Reassert and
+            # confirm exact MSC immediately before deliberately opening the high
+            # automatic PV-only ceiling, even when the snapshot already reported MSC.
+            ok_mode = await ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF)
+            if not ok_mode:
+                await _safe_fallback("failed reasserting Maximum Self Consumption before high PV-only export")
+                return
+            if not await self._wait_for_exact_entity_state(
+                cfg.ems_mode_select,
+                MODE_MAX_SELF,
+                timeout_s=3.0,
+            ):
+                await _safe_fallback("Maximum Self Consumption did not settle before high PV-only export")
+                return
+
+        prepare_export_before_discharge = bool(
+            ems_mode_to_apply in DISCHARGE_MODES
+            and (
+                s.current_ems_mode != ems_mode_to_apply
+                or export_val + 1e-6 < float(s.current_export_limit or 0.0)
+            )
+        )
+        if prepare_export_before_discharge:
+            # Never let an unobserved or higher prior export ceiling overlap a newly
+            # selected discharge EMS. Write and confirm the deliberate export target
+            # first; an intentional battery-export target is preserved rather than
+            # replaced with an unrelated blanket low cap.
+            ok_export = await ha.set_number(cfg.grid_export_limit, export_val)
+            if not ok_export:
+                await _safe_fallback(
+                    f"failed lowering export limit to {export_val:.2f}kW before discharge EMS"
+                )
+                return
+            if not await self._wait_for_number_at_most(
+                cfg.grid_export_limit,
+                export_val,
+                timeout_s=3.0,
+            ):
+                await _safe_fallback(
+                    f"export limit did not settle at or below {export_val:.2f}kW before discharge EMS"
+                )
+                return
+            export_written = True
 
         # EMS mode
-        if s.current_ems_mode != ems_mode_to_apply:
+        if (
+            not d.requires_verified_msc_before_export
+            and s.current_ems_mode != ems_mode_to_apply
+        ):
             logger.info("EMS mode: %s → %s", s.current_ems_mode, ems_mode_to_apply)
             ok_mode = await ha.select_option(cfg.ems_mode_select, ems_mode_to_apply)
             if not ok_mode:
@@ -2940,11 +2826,7 @@ class SigEnergyOptimizer:
                 return
 
         # Export limit
-        near_zero = 0.011
-        export_val = d.export_limit if d.export_limit > 0 else 0.01
-        export_turning_on = s.current_export_limit <= near_zero and export_val > near_zero
-        export_turning_off = s.current_export_limit > near_zero and export_val <= near_zero
-        if abs(export_val - s.current_export_limit) >= cfg.min_change_threshold or export_turning_on or export_turning_off:
+        if export_write_required and not export_written:
             ok_export = await ha.set_number(cfg.grid_export_limit, export_val)
             if not ok_export:
                 await _safe_fallback(f"failed setting export limit to {export_val:.2f}kW")
@@ -3104,15 +2986,6 @@ class SigEnergyOptimizer:
         cfg = self.cfg
         ha = self.ha
 
-        async def _wait_for_mode(entity_id: str, expected: str, timeout_s: float = 4.0) -> bool:
-            deadline = asyncio.get_event_loop().time() + timeout_s
-            while asyncio.get_event_loop().time() < deadline:
-                current = str(await ha.get_state_value(entity_id, "") or "")
-                if current == expected:
-                    return True
-                await asyncio.sleep(0.3)
-            return False
-
         async def _set_number_with_retry(entity_id: str, value: float, retries: int = 3) -> bool:
             ok = await ha.set_number(entity_id, value)
             if ok:
@@ -3136,7 +3009,11 @@ class SigEnergyOptimizer:
                 if not ok:
                     await asyncio.sleep(0.5)
                     continue
-                settled = await _wait_for_mode(entity_id, expected, timeout_s=3.0)
+                settled = await self._wait_for_exact_entity_state(
+                    entity_id,
+                    expected,
+                    timeout_s=3.0,
+                )
                 if settled:
                     if attempt > 0:
                         logger.info(
@@ -3516,41 +3393,24 @@ class SigEnergyOptimizer:
         # import top-up remains governed separately by daytime_topup_max_soc.
         return 100.0
 
-    def _record_pv_discovery_state(self, source: str, cap_kw: float, now_ts: float) -> None:
-        cap = max(float(cap_kw or 0.0), 0.0)
-        last_safe_cap = max(cap, self._pv_discovery_last_safe_cap_kw)
-        self._pv_discovery_active = cap > 0.0
-        self._pv_discovery_source = source if self._pv_discovery_active else "none"
-        self._pv_discovery_cap_kw = cap if self._pv_discovery_active else 0.0
-        self._pv_discovery_last_safe_cap_kw = last_safe_cap if self._pv_discovery_active else 0.0
-        self._pv_discovery_last_ts = now_ts if self._pv_discovery_active else None
-
-        # Compatibility aliases for existing tests/UI trace names.
-        self._full_battery_breathe_probe_active = self._pv_discovery_active
-        self._full_battery_breathe_probe_cap_kw = self._pv_discovery_cap_kw
-        self._full_battery_breathe_probe_source = self._pv_discovery_source
-        self._full_battery_breathe_probe_last_ts = self._pv_discovery_last_ts
-
-    def _clear_pv_discovery_state(self) -> None:
-        self._pv_discovery_active = False
-        self._pv_discovery_source = "none"
-        self._pv_discovery_cap_kw = 0.0
-        self._pv_discovery_last_safe_cap_kw = 0.0
-        self._pv_discovery_last_ts = None
-
-        # Compatibility aliases for existing tests/UI trace names.
-        self._full_battery_breathe_probe_active = False
-        self._full_battery_breathe_probe_cap_kw = 0.0
-        self._full_battery_breathe_probe_source = "none"
-        self._full_battery_breathe_probe_last_ts = None
-
     def _battery_discharge_kw_for_pv_only_check(self, s: SolarState) -> tuple[Optional[float], str]:
         if s.battery_power_sensor_kw is not None:
-            return max(0.0, -float(s.battery_power_sensor_kw)), "direct_battery_sensor"
+            direct_battery_power_kw = float(s.battery_power_sensor_kw)
+            if math.isfinite(direct_battery_power_kw):
+                return max(0.0, -direct_battery_power_kw), "direct_battery_sensor"
+            return None, "unknown"
         if s.grid_import_power_kw is not None and s.grid_export_power_kw is not None:
-            measured_import = max(float(s.grid_import_power_kw), 0.0)
-            measured_export = max(float(s.grid_export_power_kw), 0.0)
-            battery_power_kw = s.pv_kw + measured_import - measured_export - s.load_kw
+            derived_inputs = (
+                float(s.grid_import_power_kw),
+                float(s.grid_export_power_kw),
+                float(s.pv_kw),
+                float(s.load_kw),
+            )
+            if not all(math.isfinite(value) for value in derived_inputs):
+                return None, "unknown"
+            measured_import = max(derived_inputs[0], 0.0)
+            measured_export = max(derived_inputs[1], 0.0)
+            battery_power_kw = derived_inputs[2] + measured_import - measured_export - derived_inputs[3]
             return max(0.0, -battery_power_kw), "measured_grid_flow"
         return None, "unknown"
 

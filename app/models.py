@@ -110,9 +110,11 @@ class SolarState:
     current_pv_max_power_limit: float = 25.0
     current_ess_charge_limit: Optional[float] = None
     current_ess_discharge_limit: Optional[float] = None
+    grid_export_limit_entity_max_kw: Optional[float] = None
     ess_charge_limit_entity_max_kw: Optional[float] = None
     ess_discharge_limit_entity_max_kw: Optional[float] = None
     current_ems_mode: str = "Maximum Self Consumption"
+    ems_mode_observed: bool = False
     ha_control_enabled: bool = False
     ha_control_switch_available: bool = False
     ha_control_switch_state: str = "missing"
@@ -162,6 +164,7 @@ class SolarState:
 
     # Mode
     sigenergy_mode: str = "Automated"
+    sigenergy_mode_observed: bool = False
 
     # Permission-only evidence; existing optimiser controls do not read this context.
     hvac_solar_inputs: HVACSolarInputContext = field(default_factory=HVACSolarInputContext)
@@ -208,6 +211,7 @@ class Decision:
     export_value_gate_would_block: bool = False
     export_value_gate_reason: str = ""
     needs_ha_control_switch: bool = False
+    requires_verified_msc_before_export: bool = False
     trace_gates: dict[str, bool] = field(default_factory=dict)
     trace_values: dict[str, float | str | bool | None] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)
