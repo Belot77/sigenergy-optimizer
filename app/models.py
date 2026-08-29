@@ -30,6 +30,9 @@ class HVACSolarInputContext:
     control_mode: HVACObservedValue = field(default_factory=HVACObservedValue)
     observed_ems_mode: HVACObservedValue = field(default_factory=HVACObservedValue)
     observed_export_limit: HVACObservedValue = field(default_factory=HVACObservedValue)
+    # True only for evidence populated by the live HA bulk-state reader. Hand-built
+    # unit states retain the legacy raw-field fallback used by decision tests.
+    live_snapshot: bool = False
 
 
 @dataclass(frozen=True)
@@ -166,7 +169,7 @@ class SolarState:
     sigenergy_mode: str = "Automated"
     sigenergy_mode_observed: bool = False
 
-    # Permission-only evidence; existing optimiser controls do not read this context.
+    # Fresh HA evidence retained separately from control-path defaults.
     hvac_solar_inputs: HVACSolarInputContext = field(default_factory=HVACSolarInputContext)
 
     timestamp: datetime = field(default_factory=datetime.now)
