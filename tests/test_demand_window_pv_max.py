@@ -114,13 +114,16 @@ class DemandWindowPVMaxTests(unittest.TestCase):
         )
         self.assertEqual("demand_window_block", decision.trace_values.get("import_branch"))
 
-    def test_ordinary_evening_battery_only_still_caps_pv_through_decide(self) -> None:
+    def test_ordinary_nighttime_closed_flow_restores_normal_pv_max_through_decide(self) -> None:
         now_ts = datetime.now().timestamp()
         optimizer = self._optimizer()
         state = self._state(
             now_ts,
             demand_window_active=False,
-            near_sunset=True,
+            near_sunset=False,
+            sun_above_horizon=False,
+            next_sunset_ts=now_ts + (20.0 * 3600),
+            hours_to_sunset=20.0,
         )
 
         decision = optimizer._decide(state)
@@ -130,9 +133,13 @@ class DemandWindowPVMaxTests(unittest.TestCase):
         self.assertEqual(0.0, decision.export_limit)
         self.assertEqual(0.0, decision.import_limit)
         self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
-        self.assertTrue(bool(decision.trace_gates.get("battery_only_mode")))
-        self.assertEqual("battery_only_mode", decision.trace_values.get("pv_cap_reason"))
-        self.assertEqual(2.0, decision.pv_max_power_limit)
+        self.assertFalse(bool(decision.trace_gates.get("battery_only_mode")))
+        self.assertEqual("current_pv_max_below_normal", decision.trace_values.get("pv_cap_reason"))
+        self.assertEqual(optimizer.cfg.pv_max_power_normal, decision.pv_max_power_limit)
+        self.assertEqual(
+            optimizer.cfg.pv_max_power_normal,
+            decision.trace_values.get("desired_pv_max_limit_kw"),
+        )
 
     def test_demand_window_does_not_override_standby_holdoff_pv_cap(self) -> None:
         now_ts = datetime.now().timestamp()

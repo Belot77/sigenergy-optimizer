@@ -66,7 +66,6 @@ class NegativeFitPVCurtailmentTests(unittest.TestCase):
         desired_pv_max = optimizer._desired_pv_max_power(
             state,
             standby_holdoff=False,
-            battery_only=False,
             morning_dump=False,
             morning_slow_charge=False,
             desired_export=0.0,

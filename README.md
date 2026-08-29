@@ -199,7 +199,14 @@ EXPORT_LIMIT_MEDIUM=12.0
 EXPORT_LIMIT_HIGH=25.0
 PV_SURPLUS_ESTIMATED_INIT_ENABLED=true
 SUNRISE_RESERVE_SOC=10.0
+MORNING_DUMP_MIN_SOC=30.0
 ```
+
+Morning Dump uses `MORNING_DUMP_HOURS_BEFORE_SUNRISE` as a compatibility key for
+the total window duration ending one hour after sunrise. For example, `0.5`
+starts 30 minutes after sunrise and can run for up to 30 minutes. Morning Dump
+cannot start or continue at or below `MORNING_DUMP_MIN_SOC`, which defaults to
+30%, regardless of forecast refill confidence.
 
 After changing add-on config, restart the add-on.
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-30
+
+- Add a configurable `MORNING_DUMP_MIN_SOC` hard floor, defaulting to 30%; Morning Dump cannot start or continue at or below it even when forecast refill checks pass.
+- Correct the Morning Dump UI and documentation for the compatibility key `MORNING_DUMP_HOURS_BEFORE_SUNRISE`: it is the total window duration ending one hour after sunrise, so `0.5` runs from 30 to 60 minutes after sunrise.
+- Make the Morning Slow Charge minimum feed-in price inclusive, allowing an exact configured boundary while still blocking lower values.
+- Report the nighttime SoC target guard when that SoC-based guard blocks export, rather than describing it as a low-forecast block; export policy is unchanged.
+- Remove ordinary evening/night closed-flow MSC PV-MAX curtailment. Normal configured PV MAX is retained, while the separate Standby Holdoff and negative-price caps remain unchanged.
+
 ## 2026-08-24
 
 - Exclude active demand windows from the generic evening/night battery-only PV MAX classification when import and export are both closed and EMS remains in Maximum Self Consumption. Existing demand-window import, export, and EMS policy is unchanged; normal PV MAX remains available for house load, while explicit standby holdoff and negative-import-price PV caps retain their existing priority.

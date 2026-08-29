@@ -128,6 +128,9 @@ def _validate_config_value(cfg: Any, key: str, value: Any) -> str | None:
     if key.endswith("_threshold") or "threshold" in key:
         if isinstance(value, (int, float)) and not (-10 <= float(value) <= 10):
             return "threshold appears out of expected range"
+    if key == "morning_dump_min_soc":
+        if isinstance(value, (int, float)) and not (0.0 <= float(value) <= 100.0):
+            return "must be between 0 and 100"
     return None
 
 

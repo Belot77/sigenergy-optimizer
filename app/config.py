@@ -253,6 +253,12 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     morning_dump_enabled: bool = Field(False, env="MORNING_DUMP_ENABLED")
     morning_dump_hours_before_sunrise: float = Field(2.0, env="MORNING_DUMP_HOURS_BEFORE_SUNRISE")
+    morning_dump_min_soc: float = Field(
+        30.0,
+        ge=0.0,
+        le=100.0,
+        env="MORNING_DUMP_MIN_SOC",
+    )
 
     # ------------------------------------------------------------------
     # Battery full safeguard

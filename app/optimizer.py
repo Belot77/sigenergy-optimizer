@@ -2367,18 +2367,10 @@ class SigEnergyOptimizer:
             desired_ems_mode = MODE_MAX_SELF
         d.ems_mode = desired_ems_mode
 
-        # ---- Battery-only mode → cap PV max power -------------------
-        battery_only_mode = (
-            desired_ems_mode == MODE_MAX_SELF
-            and desired_export_limit == 0
-            and desired_import_limit == 0
-            and not s.demand_window_active
-            and (is_evening_or_night or standby_holdoff_active)
-        )
+        # ---- PV max power ---------------------------------------------
         desired_pv_max = self._desired_pv_max_power(
-            s, standby_holdoff_active, battery_only_mode,
-            morning_dump_active, morning_slow_charge_active,
-            desired_export_limit,
+            s, standby_holdoff_active, morning_dump_active,
+            morning_slow_charge_active, desired_export_limit,
         )
         d.pv_max_power_limit = desired_pv_max
 
@@ -2397,10 +2389,7 @@ class SigEnergyOptimizer:
 
         pv_cap_active = False
         pv_cap_reason = "none"
-        if battery_only_mode:
-            pv_cap_active = True
-            pv_cap_reason = "battery_only_mode"
-        elif standby_holdoff_active:
+        if standby_holdoff_active:
             pv_cap_active = True
             pv_cap_reason = "standby_holdoff_active"
         elif current_pv_max_limit_kw + 0.05 < normal_pv_max_limit_kw:
@@ -2478,9 +2467,9 @@ class SigEnergyOptimizer:
         # ---- Reason strings -----------------------------------------
         d.export_reason = self._export_reason(
             s, export_spike_active, export_solar_override, morning_dump_active,
-            export_blocked_effective, export_forecast_guard, export_min_soc,
-            pv_safeguard_active, export_tier_limit, morning_slow_charge_active,
-            solar_surplus_bypass, evening_export_boost_active,
+            export_blocked_effective, export_forecast_guard, is_evening_or_night,
+            export_min_soc, pv_safeguard_active, export_tier_limit,
+            morning_slow_charge_active, solar_surplus_bypass, evening_export_boost_active,
             battery_full_safeguard_block, desired_export_limit, positive_fit_override,
         )
         if actual_import_cost_guard_blocking:
@@ -2597,7 +2586,8 @@ class SigEnergyOptimizer:
             "export_blocked_for_forecast": export_blocked_for_forecast,
             "export_forecast_guard": export_forecast_guard,
             "export_blocked_effective": export_blocked_effective,
-            "battery_only_mode": battery_only_mode,
+            # Retained as a compatibility trace field; the legacy PV-MAX mode is removed.
+            "battery_only_mode": False,
             "ha_control_switch_available": s.ha_control_switch_available,
             "needs_ha_control_switch": d.needs_ha_control_switch,
             "demand_window_active": s.demand_window_active,
@@ -4076,6 +4066,8 @@ class SigEnergyOptimizer:
             return False
         if not (dump_start <= now_ts <= dump_end):
             return False
+        if s.battery_soc <= cfg.morning_dump_min_soc:
+            return False
 
         # Check forecast can refill
         ns_total = 0.0
@@ -4107,7 +4099,7 @@ class SigEnergyOptimizer:
             return False
         if not s.sun_above_horizon and now.hour < 7:
             return False
-        if s.feedin_price <= cfg.morning_slow_charge_min_feedin_price:
+        if s.feedin_price < cfg.morning_slow_charge_min_feedin_price:
             return False
 
         # Use remaining-forecast energy from now; this is more robust than requiring
@@ -4573,8 +4565,8 @@ class SigEnergyOptimizer:
         return 0.0
 
     def _desired_pv_max_power(self, s: SolarState, standby_holdoff: bool,
-                               battery_only: bool, morning_dump: bool,
-                               morning_slow_charge: bool, desired_export: float) -> float:
+                               morning_dump: bool, morning_slow_charge: bool,
+                               desired_export: float) -> float:
         cfg = self.cfg
         cover_load = min(s.load_kw * 1.2, cfg.pv_max_power_normal)
         cover_load = max(round(cover_load, 0), 0.1)
@@ -4582,8 +4574,6 @@ class SigEnergyOptimizer:
         if s.price_is_negative and s.current_price <= cfg.import_threshold_low:
             return 0.1
         if standby_holdoff and desired_export == 0:
-            return max(cover_load, 0.1)
-        if battery_only:
             return max(cover_load, 0.1)
         if morning_dump:
             return cfg.pv_max_power_normal
@@ -4664,9 +4654,10 @@ class SigEnergyOptimizer:
 
     def _export_reason(self, s: SolarState, spike: bool, solar_override: bool,
                         morning_dump: bool, export_blocked: bool, forecast_guard: bool,
-                        export_min_soc: float, pv_safeguard: bool, tier_limit: float,
-                        morning_slow_charge: bool, surplus_bypass: bool, evening_boost: bool,
-                        safeguard: bool, desired_export: float,
+                        is_evening_or_night: bool, export_min_soc: float,
+                        pv_safeguard: bool, tier_limit: float, morning_slow_charge: bool,
+                        surplus_bypass: bool, evening_boost: bool, safeguard: bool,
+                        desired_export: float,
                         positive_fit_override: bool) -> str:
         cfg = self.cfg
         fit = s.feedin_price_cents
@@ -4714,11 +4705,13 @@ class SigEnergyOptimizer:
                     return f"Solar bypass active, export settling; measured {actual_export:.1f}kW"
                 return f"Solar bypass active, export currently closed"
             return f"Exporting {export_kw_label}, Solar bypass ({s.forecast_remaining_kwh:.1f}kWh left){est}"
+        effective_floor = cfg.evening_aggressive_floor if evening_boost else cfg.min_export_target_soc
+        if is_evening_or_night and forecast_guard and s.battery_soc < effective_floor:
+            return f"Export blocked, below {effective_floor:.0f}% target"
         if (export_blocked or forecast_guard) and not surplus_bypass:
             return "Export blocked, low forecast"
         if s.battery_soc <= export_min_soc:
             return f"Export blocked, at {export_min_soc:.0f}% floor"
-        effective_floor = cfg.evening_aggressive_floor if evening_boost else cfg.min_export_target_soc
         if s.battery_soc < effective_floor:
             return f"Export blocked, below {effective_floor:.0f}% target"
         poor_tomorrow_forecast = (
