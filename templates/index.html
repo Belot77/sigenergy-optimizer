@@ -3800,7 +3800,8 @@ const _CONFIG_SECTIONS = [
   ]},
   { key:'morning_dump', title:'Morning Dump', fields:[
     ['morning_dump_enabled', 'Morning Dump Enabled', 'bool'],
-    ['morning_dump_hours_before_sunrise', 'Hours Before Sunrise', 'number', '0.1'],
+    ['morning_dump_hours_before_sunrise', 'Window Duration (Ends 1 Hour After Sunrise)', 'number', '0.1'],
+    ['morning_dump_min_soc', 'Hard Minimum SoC %', 'number', '0.1'],
   ]},
   { key:'battery_full_safeguard', title:'Battery Full Safeguard', fields:[
     ['battery_full_safeguard_enabled', 'Battery Full Safeguard Enabled', 'bool'],
@@ -3912,8 +3913,9 @@ function configFieldHelp(key, label, type) {
     solcast_forecast_period_hours: 'Hours represented by each Solcast detailed interval, used when summing interval energy.',
     morning_slow_charge_base_load_kw: 'Affects: load allowance used in Morning Slow Charge forecast feasibility. Lower -> assumes less demand and activates more easily. Higher -> assumes more demand and becomes more conservative.',
     morning_slow_charge_sunset_cutoff: 'Affects: hard stop before sunset for Morning Slow Charge. Lower -> can run closer to sunset. Higher -> stops earlier in the day.',
-    morning_dump_enabled: 'Affects: Morning Dump automation branch. Off -> no pre-sunrise dump behavior. On -> dump branch can activate when forecast refill checks pass.',
-    morning_dump_hours_before_sunrise: 'Affects: start of Morning Dump window before sunrise. Lower -> shorter dump window and less pre-sunrise discharge opportunity. Higher -> longer dump window and earlier discharge opportunity.',
+    morning_dump_enabled: 'Affects: Morning Dump automation branch. Off -> no sunrise-relative dump behavior. On -> dump branch can activate when its SoC, window, and forecast refill checks pass.',
+    morning_dump_hours_before_sunrise: 'Affects: total Morning Dump window duration, counted backward from its fixed end one hour after sunrise. For example, 0.5 starts 30 minutes after sunrise and can run for up to 30 minutes. The existing config key is retained for compatibility.',
+    morning_dump_min_soc: 'Affects: hard Morning Dump battery floor. Morning Dump cannot start or continue at or below this SoC, regardless of forecast. Higher -> preserves more battery. Lower -> permits deeper Morning Dump discharge.',
     battery_full_forecast_multiplier: 'Forecast multiplier used by battery-full safeguard to decide if export should be blocked.',
     solar_surplus_bypass_enabled: 'Affects: Solar Surplus Bypass branch that allows stronger export/discharge when PV is abundant. Off -> bypass never used. On -> bypass can activate when thresholds are met.',
     solar_surplus_start_multiplier: 'Affects: start threshold for Solar Surplus Bypass relative to battery capacity. Lower -> bypass starts more easily. Higher -> bypass requires much stronger forecast surplus.',
