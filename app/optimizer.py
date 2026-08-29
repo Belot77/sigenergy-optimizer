@@ -87,7 +87,19 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.38-haos49"
+_RUNTIME_SIGNATURE = "2.3.39-haos50"
+
+
+class _DesiredExportLimit(float):
+    """Numeric export limit carrying the exact policy branch that produced it."""
+
+    source: str
+
+    def __new__(cls, value: float, source: str) -> "_DesiredExportLimit":
+        result = float.__new__(cls, value)
+        result.source = source
+        return result
+
 
 class SigEnergyOptimizer:
     def __init__(self, ha: HAClient, cfg: Settings) -> None:
@@ -1230,6 +1242,7 @@ class SigEnergyOptimizer:
                 cfg.grid_export_limit,
                 max_age_seconds=live_max_age,
             ),
+            live_snapshot=True,
         )
 
         # ---- PV / battery ---------------------------------------------
@@ -1649,7 +1662,17 @@ class SigEnergyOptimizer:
         # ---- Solar surplus bypass -----------------------------------
         solar_surplus_bypass = self._solar_surplus_bypass(
             s, morning_slow_charge_active, cap, pv_surplus_actual,
-            prev_desired_mode=self._last_decision.ems_mode if self._last_decision else "",
+            previously_active=bool(
+                self._last_decision
+                and self._last_decision.trace_gates.get(
+                    "pv_only_branch_high_ceiling_active"
+                )
+                and self._last_decision.trace_gates.get(
+                    "observed_automated_control_mode"
+                )
+                and self._last_decision.trace_values.get("pv_only_branch_source")
+                == "solar_surplus_bypass"
+            ),
         )
         d.solar_surplus_bypass = solar_surplus_bypass
 
@@ -1670,32 +1693,84 @@ class SigEnergyOptimizer:
         )
         export_blocked_effective = export_blocked_for_forecast
 
-        # ---- Export tier limit (kW cap based on price) --------------
-        export_tier_limit = self._export_tier_limit(
-            s, export_spike_active, export_solar_override,
-            pv_safeguard_active, evening_export_boost_active,
-            solar_surplus_bypass
-        )
-
         # ---- Morning dump limit -------------------------------------
         morning_dump_limit = min(cfg.export_limit_high, s.ess_max_discharge_kw)
 
         # ---- Desired export limit -----------------------------------
-        desired_export_limit = self._desired_export_limit(
-            s, export_spike_active, export_solar_override,
-            export_blocked_effective, export_forecast_guard,
-            export_min_soc, positive_fit_override, solar_surplus_bypass,
-            evening_export_boost_active, morning_dump_active, morning_dump_limit,
-            battery_full_safeguard_block,
-            export_tier_limit, hours_to_sunrise, cap,
-            # Use forecast-based surplus (solar_potential_kw − load) so the morning
-            # slow-charge export branch sees uncurtailed PV potential rather than the
-            # inverter-curtailed measured output, which causes a self-locking feedback
-            # loop where low export limit → low pv_kw reading → low export limit.
-            pv_surplus, is_evening_or_night, morning_slow_charge_active,
-            within_morning_grace,
+        # Keep exact policy provenance with the numeric result. Activity flags can
+        # overlap, but only the branch that produced the limit may claim PV-only
+        # high-ceiling authority.
+        def choose_export_limit(
+            *,
+            surplus_bypass_for_policy: bool,
+            morning_slow_for_policy: bool,
+        ) -> tuple[float, str, float]:
+            tier_limit = self._export_tier_limit(
+                s,
+                export_spike_active,
+                export_solar_override,
+                pv_safeguard_active,
+                evening_export_boost_active,
+                surplus_bypass_for_policy,
+            )
+            raw_choice = self._desired_export_limit(
+                s, export_spike_active, export_solar_override,
+                export_blocked_effective, export_forecast_guard,
+                export_min_soc, positive_fit_override, surplus_bypass_for_policy,
+                evening_export_boost_active, morning_dump_active, morning_dump_limit,
+                battery_full_safeguard_block,
+                tier_limit, hours_to_sunrise, cap,
+                # Forecast potential avoids the old self-curtailed measured-PV loop.
+                pv_surplus, is_evening_or_night, morning_slow_for_policy,
+                within_morning_grace,
+            )
+            return (
+                float(raw_choice),
+                str(getattr(raw_choice, "source", "external_override")),
+                float(tier_limit),
+            )
+
+        (
+            desired_export_limit,
+            desired_export_source,
+            export_tier_limit,
+        ) = choose_export_limit(
+            surplus_bypass_for_policy=solar_surplus_bypass,
+            morning_slow_for_policy=morning_slow_charge_active,
         )
-        desired_export_limit_pre_value_gate = desired_export_limit
+        initial_desired_export_source = desired_export_source
+        # Morning Slow Charge deliberately retains its established priority here:
+        # the hotfix contract requires any export selected by that branch to remain
+        # PV-only under MSC. Solar Bypass is the overlay that can coexist with and
+        # must defer to separately owned discharge/export policies.
+        pv_only_branch_policy_deferred = bool(
+            solar_surplus_bypass
+            and initial_desired_export_source in {
+                "solar_surplus_pv_high",
+                "solar_surplus_pv_closed",
+                "solar_surplus_closed",
+            }
+            and (
+                export_solar_override
+                or s.demand_window_active
+                or evening_export_boost_active
+            )
+        )
+        if pv_only_branch_policy_deferred:
+            (
+                desired_export_limit,
+                desired_export_source,
+                export_tier_limit,
+            ) = choose_export_limit(
+                surplus_bypass_for_policy=False,
+                morning_slow_for_policy=morning_slow_charge_active,
+            )
+            pv_only_branch_policy_deferred_reason = (
+                "Solar Surplus Bypass PV-only ceiling deferred to independently "
+                f"selected policy source {desired_export_source}."
+            )
+        else:
+            pv_only_branch_policy_deferred_reason = "inactive: no competing policy owner"
         export_value_gate_vetoed = False
         measured_pv_surplus_kw = max(s.pv_kw - s.load_kw, 0.0)
         export_value_gate_pv_surplus_initiated_active = False
@@ -1733,7 +1808,8 @@ class SigEnergyOptimizer:
         }
         automatic_control_mode = mode_label not in manual_exempt_modes
         observed_automated_control_mode = bool(
-            s.sigenergy_mode_observed
+            not self._manual_mode_override
+            and s.sigenergy_mode_observed
             and
             str(s.sigenergy_mode or "") == str(cfg.automated_option)
         )
@@ -1749,6 +1825,89 @@ class SigEnergyOptimizer:
             battery_discharge_kw_for_pv_only is not None
             and battery_discharge_kw_for_pv_only <= pv_only_discharge_tolerance_kw
         )
+        # Identify the two PV-only high-ceiling branches from the exact winning
+        # policy source, never from overlapping activity flags.
+        morning_slow_pv_only_high_ceiling_requested = bool(
+            desired_export_source == "morning_slow_pv_high"
+            and desired_export_limit > 0.01
+        )
+        solar_surplus_pv_only_high_ceiling_requested = bool(
+            desired_export_source == "solar_surplus_pv_high"
+            and desired_export_limit > 0.01
+        )
+        pv_only_branch_zero_ceiling = bool(
+            desired_export_source in {
+                "morning_slow_pv_closed",
+                "solar_surplus_pv_closed",
+            }
+            or (
+                desired_export_source == "morning_slow_closed"
+                and observed_automated_control_mode
+            )
+        )
+        pv_only_branch_high_ceiling_requested = bool(
+            morning_slow_pv_only_high_ceiling_requested
+            or solar_surplus_pv_only_high_ceiling_requested
+        )
+        pv_only_branch_source = (
+            "morning_slow_charge"
+            if morning_slow_pv_only_high_ceiling_requested
+            else (
+                "solar_surplus_bypass"
+                if solar_surplus_pv_only_high_ceiling_requested
+                else "none"
+            )
+        )
+        pv_only_branch_battery_safety_blocked = bool(
+            pv_only_branch_high_ceiling_requested and not pv_only_discharge_ok
+        )
+        pv_only_branch_automated_ownership_blocked = bool(
+            pv_only_branch_high_ceiling_requested
+            and not observed_automated_control_mode
+        )
+        pv_only_branch_exception_rejected = bool(
+            pv_only_branch_battery_safety_blocked
+            or pv_only_branch_automated_ownership_blocked
+        )
+        if pv_only_branch_exception_rejected:
+            # Reject only the PV-only high-ceiling exception. Re-run without either
+            # overlay so an independently valid battery-export branch remains
+            # available and still receives normal classification/economic guards.
+            (
+                desired_export_limit,
+                desired_export_source,
+                export_tier_limit,
+            ) = choose_export_limit(
+                surplus_bypass_for_policy=False,
+                morning_slow_for_policy=False,
+            )
+        desired_export_limit_pre_value_gate = desired_export_limit
+        pv_only_branch_high_ceiling_active = bool(
+            pv_only_branch_high_ceiling_requested
+            and not pv_only_branch_exception_rejected
+        )
+        if not pv_only_branch_high_ceiling_requested:
+            pv_only_branch_safety_reason = "inactive: no PV-only operating ceiling requested"
+        elif pv_only_branch_automated_ownership_blocked:
+            pv_only_branch_safety_reason = (
+                f"blocked {pv_only_branch_source}: Automated ownership is unavailable "
+                "or not genuinely observed"
+            )
+        elif battery_discharge_kw_for_pv_only is None:
+            pv_only_branch_safety_reason = (
+                f"blocked {pv_only_branch_source}: battery flow is unknown or untrustworthy"
+            )
+        elif battery_discharge_kw_for_pv_only > pv_only_discharge_tolerance_kw:
+            pv_only_branch_safety_reason = (
+                f"blocked {pv_only_branch_source}: battery discharge "
+                f"{battery_discharge_kw_for_pv_only:.2f} kW exceeds PV-only tolerance "
+                f"{pv_only_discharge_tolerance_kw:.2f} kW"
+            )
+        else:
+            pv_only_branch_safety_reason = (
+                f"active {pv_only_branch_source}: trusted battery discharge "
+                f"{battery_discharge_kw_for_pv_only:.2f} kW is within PV-only tolerance"
+            )
         pv_only_ems_safe = s.current_ems_mode in ({MODE_MAX_SELF} | CHARGE_MODES)
         live_pv_value = float(s.pv_kw or 0.0)
         live_load_value = float(s.load_kw or 0.0)
@@ -1790,26 +1949,10 @@ class SigEnergyOptimizer:
             pv_surplus_base_conditions and not topoff_target_met
         )
 
-        high_ceiling_candidates = [max(float(cfg.export_limit_high), 0.0)]
-        if (
-            s.grid_export_limit_entity_max_kw is not None
-            and math.isfinite(float(s.grid_export_limit_entity_max_kw))
-            and 0.0 <= float(s.grid_export_limit_entity_max_kw) <= _POWER_LIMIT_MAX_KW
-        ):
-            pv_only_msc_authoritative_cap_kw = float(
-                s.grid_export_limit_entity_max_kw
-            )
-            high_ceiling_candidates.append(pv_only_msc_authoritative_cap_kw)
-        raw_high_ceiling_kw = min(high_ceiling_candidates)
-        # HAClient serialises number writes to two decimal places. Quantise down so
-        # its later rounding can never lift this decision above the number entity's
-        # authoritative maximum attribute.
-        pv_only_msc_high_ceiling_kw = float(
-            Decimal(str(raw_high_ceiling_kw)).quantize(
-                Decimal("0.01"),
-                rounding=ROUND_FLOOR,
-            )
-        )
+        (
+            pv_only_msc_high_ceiling_kw,
+            pv_only_msc_authoritative_cap_kw,
+        ) = self._bounded_pv_only_high_ceiling(s)
         pv_only_classification_cap_kw = pv_only_msc_high_ceiling_kw
         pv_only_msc_transition_ready = bool(
             observed_automated_control_mode
@@ -1874,6 +2017,18 @@ class SigEnergyOptimizer:
                     False,
                     0.0,
                     "battery discharge above PV-only tolerance",
+                )
+
+            if pv_only_branch_high_ceiling_active:
+                return (
+                    "pv_surplus_only",
+                    True,
+                    measured_pv_surplus_kw,
+                    (
+                        f"PV-only {pv_only_branch_source} Maximum Self Consumption "
+                        "export ceiling; dispatch requires exact MSC confirmation and "
+                        "known battery discharge remains within tolerance"
+                    ),
                 )
 
             pv_only_context_ok = bool(
@@ -1952,9 +2107,9 @@ class SigEnergyOptimizer:
         effective_battery_export_floor = float(export_value_gate.get("effective_battery_export_floor", d.stored_energy_value_floor) or 0.0)
         import_cost_floor_trusted = bool(export_value_gate.get("import_cost_floor_trusted", True))
         import_cost_floor_unknown = bool(export_value_gate.get("import_cost_floor_unknown", False))
-        value_gate_enforcement_active = bool(
-            cfg.export_value_gate_enabled and cfg.export_value_gate_enforce
-        )
+        # Value Gate is advisory only. It may calculate and report what it would
+        # have blocked, but it has no authority to alter the live export decision.
+        value_gate_enforcement_active = False
         actual_import_cost_guard_active = bool(
             automatic_control_mode
             and (import_cost_floor_unknown or today_highest_actual_import_price is not None)
@@ -2053,7 +2208,7 @@ class SigEnergyOptimizer:
                 )
             ):
                 pv_surplus_export_allowed_below_import_floor = True
-            if pv_only_msc_high_ceiling_active:
+            if pv_only_msc_high_ceiling_active or pv_only_branch_high_ceiling_active:
                 actual_import_cost_guard_reason = (
                     "bypassed: confirmed PV-only Maximum Self Consumption export ceiling; "
                     "the ceiling is not requested battery energy and battery discharge "
@@ -2116,8 +2271,11 @@ class SigEnergyOptimizer:
 
         d.export_limit = desired_export_limit
         d.requires_verified_msc_before_export = bool(
-            pv_only_msc_high_ceiling_active
-            and desired_export_limit > 0.01
+            desired_export_limit > 0.01
+            and (
+                pv_only_msc_high_ceiling_active
+                or pv_only_branch_high_ceiling_active
+            )
         )
         export_value_gate_bypassed_for_pv_surplus_only = bool(
             export_value_gate_export_type == "pv_surplus_only"
@@ -2145,7 +2303,31 @@ class SigEnergyOptimizer:
         pv_surplus_only_ems_safety_clamp_reason = (
             f"inactive: final export type is {export_value_gate_export_type}."
         )
-        if pv_only_msc_stage1_active or pv_only_msc_high_ceiling_active:
+        if (
+            desired_export_limit > 0.01
+            and pv_only_branch_high_ceiling_active
+        ):
+            pv_surplus_only_ems_safety_clamp = desired_ems_mode != MODE_MAX_SELF
+            pv_surplus_only_ems_safety_clamp_reason = (
+                "Maximum Self Consumption is required for Morning Slow Charge "
+                "and Solar Surplus Bypass high export ceilings."
+            )
+            desired_ems_mode = MODE_MAX_SELF
+        elif pv_only_branch_zero_ceiling:
+            pv_surplus_only_ems_safety_clamp = desired_ems_mode != MODE_MAX_SELF
+            if desired_export_source == "morning_slow_closed":
+                pv_surplus_only_ems_safety_clamp_reason = (
+                    "Maximum Self Consumption retained because Morning Slow "
+                    "Charge owns the cycle while export waits for its PV "
+                    "start/continuation threshold."
+                )
+            else:
+                pv_surplus_only_ems_safety_clamp_reason = (
+                    "Maximum Self Consumption retained because the authoritative "
+                    "PV-only export ceiling is effectively closed."
+                )
+            desired_ems_mode = MODE_MAX_SELF
+        elif pv_only_msc_stage1_active or pv_only_msc_high_ceiling_active:
             pv_surplus_only_ems_safety_clamp = desired_ems_mode != MODE_MAX_SELF
             if pv_only_msc_stage1_active:
                 pv_surplus_only_ems_safety_clamp_reason = (
@@ -2305,6 +2487,29 @@ class SigEnergyOptimizer:
             d.export_reason = "Export vetoed by actual import-cost guard; export limit forced to 0.0 kW"
         elif export_value_gate_vetoed:
             d.export_reason = "Export vetoed by value gate enforcement; export limit forced to 0.0 kW"
+        elif pv_only_branch_exception_rejected:
+            if desired_export_limit > 0.01:
+                d.export_reason = (
+                    "PV-only high export ceiling rejected; independent "
+                    f"{desired_export_source} policy selected {desired_export_limit:.1f} kW. "
+                    f"{pv_only_branch_safety_reason}"
+                )
+            else:
+                d.export_reason = (
+                    "PV-only high export ceiling held closed: "
+                    f"{pv_only_branch_safety_reason}"
+                )
+        elif pv_only_branch_zero_ceiling:
+            if desired_export_source == "morning_slow_closed":
+                d.export_reason = (
+                    "Morning Slow Charge remains under MSC; export stays closed "
+                    "until PV potential meets its start/continuation threshold."
+                )
+            else:
+                d.export_reason = (
+                    "PV-only export remains closed because the authoritative high "
+                    "ceiling is at the 0.01 kW closed sentinel; MSC is retained."
+                )
         elif pv_only_msc_stage1_active:
             d.export_reason = (
                 "PV-only MSC transition stage 1: export remains closed while Maximum "
@@ -2333,31 +2538,33 @@ class SigEnergyOptimizer:
             parts.append("*est")
         d.outcome_reason = "; ".join(p for p in parts if p and p != "n/a")
 
-        export_branch = "normal_tier"
-        if morning_dump_active:
+        export_branch_by_source = {
+            "morning_dump": "morning_dump",
+            "morning_slow_closed": "morning_slow_charge",
+            "morning_slow_pv_closed": "morning_slow_charge",
+            "morning_slow_pv_high": "morning_slow_charge",
+            "high_price_or_spike": (
+                "export_spike" if export_spike_active else "high_price"
+            ),
+            "positive_fit_override": "positive_fit_override",
+            "solar_surplus_pv_high": "solar_surplus_bypass",
+            "solar_override": "solar_override",
+            "ordinary_tier": "normal_tier",
+        }
+        export_branch = export_branch_by_source.get(
+            desired_export_source,
+            "blocked_or_zero" if desired_export_limit <= 0 else "normal_tier",
+        )
+        if morning_dump_active and desired_export_source == "morning_dump":
             export_branch = "morning_dump"
-        elif morning_slow_charge_active:
-            export_branch = "morning_slow_charge"
         elif pv_only_msc_stage1_active:
             export_branch = "msc_full_battery_stage1_closed"
         elif pv_only_msc_high_ceiling_active:
             export_branch = "msc_full_battery_high_ceiling"
-        elif export_spike_active:
-            export_branch = "export_spike"
-        elif export_solar_override:
-            export_branch = "solar_override"
-        elif solar_surplus_bypass:
-            export_branch = "solar_surplus_bypass"
-        elif battery_full_safeguard_block:
-            export_branch = "battery_full_safeguard_block"
-        elif export_blocked_effective or export_forecast_guard:
-            export_branch = "forecast_guard_block"
         elif actual_import_cost_guard_blocking:
             export_branch = "actual_import_cost_guard"
         elif export_value_gate_vetoed:
             export_branch = "value_gate_veto"
-        elif desired_export_limit <= 0:
-            export_branch = "blocked_or_zero"
 
         import_branch = "blocked"
         if morning_dump_active:
@@ -2416,9 +2623,19 @@ class SigEnergyOptimizer:
             "pv_surplus_breathe_probe_continuation_active": pv_surplus_breathe_probe_continuation_active,
             "sigenergy_mode_observed": s.sigenergy_mode_observed,
             "ems_mode_observed": s.ems_mode_observed,
+            "observed_automated_control_mode": observed_automated_control_mode,
             "pv_only_msc_transition_ready": pv_only_msc_transition_ready,
             "pv_only_msc_stage1_active": pv_only_msc_stage1_active,
             "pv_only_msc_high_ceiling_active": pv_only_msc_high_ceiling_active,
+            "morning_slow_pv_only_high_ceiling_requested": morning_slow_pv_only_high_ceiling_requested,
+            "solar_surplus_pv_only_high_ceiling_requested": solar_surplus_pv_only_high_ceiling_requested,
+            "pv_only_branch_high_ceiling_requested": pv_only_branch_high_ceiling_requested,
+            "pv_only_branch_high_ceiling_active": pv_only_branch_high_ceiling_active,
+            "pv_only_branch_battery_safety_blocked": pv_only_branch_battery_safety_blocked,
+            "pv_only_branch_automated_ownership_blocked": pv_only_branch_automated_ownership_blocked,
+            "pv_only_branch_exception_rejected": pv_only_branch_exception_rejected,
+            "pv_only_branch_policy_deferred": pv_only_branch_policy_deferred,
+            "pv_only_branch_zero_ceiling": pv_only_branch_zero_ceiling,
             "pv_only_discovery_active": False,
             "pv_only_discovery_continuation_active": False,
             "pv_only_discovery_state_active": False,
@@ -2485,6 +2702,11 @@ class SigEnergyOptimizer:
             "pv_only_msc_authoritative_cap_kw": pv_only_msc_authoritative_cap_kw,
             "pv_only_msc_transition_reason": pv_only_msc_transition_reason,
             "pv_only_msc_high_ceiling_reason": pv_only_msc_high_ceiling_reason,
+            "pv_only_branch_source": pv_only_branch_source,
+            "pv_only_branch_safety_reason": pv_only_branch_safety_reason,
+            "pv_only_branch_policy_deferred_reason": pv_only_branch_policy_deferred_reason,
+            "initial_desired_export_source": initial_desired_export_source,
+            "desired_export_source": desired_export_source,
             "pv_only_discovery_source": "none",
             "pv_only_discovery_reason": pv_surplus_estimated_init_reason,
             "pv_only_discovery_cap_kw": 0.0,
@@ -2763,14 +2985,44 @@ class SigEnergyOptimizer:
         export_val = d.export_limit if d.export_limit > 0 else 0.01
         export_turning_on = s.current_export_limit <= near_zero and export_val > near_zero
         export_turning_off = s.current_export_limit > near_zero and export_val <= near_zero
+        pv_only_over_cap_correction_required = bool(
+            d.requires_verified_msc_before_export
+            and float(s.current_export_limit or 0.0) > export_val + 1e-6
+        )
         export_write_required = bool(
             abs(export_val - s.current_export_limit) >= cfg.min_change_threshold
             or export_turning_on
             or export_turning_off
+            or pv_only_over_cap_correction_required
         )
         export_written = False
 
         if d.requires_verified_msc_before_export:
+            live_ems_mode = str(
+                await ha.get_state_value(cfg.ems_mode_select, "") or ""
+            ).strip()
+            if live_ems_mode != MODE_MAX_SELF:
+                # A previously opened ceiling must never overlap EMS drift into a
+                # discharge mode while MSC is being reasserted. Close and confirm
+                # export first, then reopen only after exact MSC confirmation.
+                ok_close = await ha.set_number(cfg.grid_export_limit, 0.01)
+                if not ok_close:
+                    await _safe_fallback(
+                        "failed closing export before Maximum Self Consumption transition"
+                    )
+                    return
+                if not await self._wait_for_number_at_most(
+                    cfg.grid_export_limit,
+                    0.01,
+                    timeout_s=3.0,
+                    tolerance=0.001,
+                ):
+                    await _safe_fallback(
+                        "export limit did not close before Maximum Self Consumption transition"
+                    )
+                    return
+                export_write_required = True
+
             # The decision snapshot can race an external EMS writer. Reassert and
             # confirm exact MSC immediately before deliberately opening the high
             # automatic PV-only ceiling, even when the snapshot already reported MSC.
@@ -2831,6 +3083,19 @@ class SigEnergyOptimizer:
             ok_export = await ha.set_number(cfg.grid_export_limit, export_val)
             if not ok_export:
                 await _safe_fallback(f"failed setting export limit to {export_val:.2f}kW")
+                return
+            if (
+                pv_only_over_cap_correction_required
+                and not await self._wait_for_number_at_most(
+                    cfg.grid_export_limit,
+                    export_val,
+                    timeout_s=3.0,
+                    tolerance=0.001,
+                )
+            ):
+                await _safe_fallback(
+                    f"PV-only export limit did not settle at or below {export_val:.2f}kW"
+                )
                 return
 
         # Import limit
@@ -2951,6 +3216,21 @@ class SigEnergyOptimizer:
         return None
 
     def _freeze_decision_to_live_mode(self, state: SolarState, decision: Decision, mode_label: str) -> None:
+        if mode_label != self.cfg.automated_option:
+            decision.requires_verified_msc_before_export = False
+            decision.trace_gates["observed_automated_control_mode"] = False
+            decision.trace_gates["pv_only_branch_high_ceiling_active"] = False
+            decision.trace_gates["pv_only_msc_transition_ready"] = False
+            decision.trace_gates["pv_only_msc_stage1_active"] = False
+            decision.trace_gates["pv_only_msc_high_ceiling_active"] = False
+            if decision.trace_gates.get("pv_only_branch_high_ceiling_requested"):
+                decision.trace_gates["pv_only_branch_automated_ownership_blocked"] = True
+                decision.trace_gates["pv_only_branch_exception_rejected"] = True
+                branch_source = decision.trace_values.get("pv_only_branch_source", "PV-only branch")
+                decision.trace_values["pv_only_branch_safety_reason"] = (
+                    f"blocked {branch_source}: Automated ownership is unavailable "
+                    "or not genuinely observed"
+                )
         decision.ems_mode = state.current_ems_mode
         decision.export_limit = state.current_export_limit
         decision.import_limit = state.current_import_limit
@@ -3394,7 +3674,78 @@ class SigEnergyOptimizer:
         # import top-up remains governed separately by daytime_topup_max_soc.
         return 100.0
 
+    def _bounded_pv_only_high_ceiling(
+        self,
+        s: SolarState,
+    ) -> tuple[float, Optional[float]]:
+        authoritative_cap_kw: Optional[float] = None
+        ceiling_candidates = [max(float(self.cfg.export_limit_high), 0.0)]
+        if (
+            s.grid_export_limit_entity_max_kw is not None
+            and math.isfinite(float(s.grid_export_limit_entity_max_kw))
+            and 0.0 <= float(s.grid_export_limit_entity_max_kw) <= _POWER_LIMIT_MAX_KW
+        ):
+            authoritative_cap_kw = float(s.grid_export_limit_entity_max_kw)
+            ceiling_candidates.append(authoritative_cap_kw)
+
+        # HAClient serialises number writes to two decimal places. Quantise down
+        # so later rounding can never lift the command above the entity maximum.
+        bounded_ceiling_kw = float(
+            Decimal(str(min(ceiling_candidates))).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_FLOOR,
+            )
+        )
+        return bounded_ceiling_kw, authoritative_cap_kw
+
     def _battery_discharge_kw_for_pv_only_check(self, s: SolarState) -> tuple[Optional[float], str]:
+        inputs = s.hvac_solar_inputs
+        if inputs.live_snapshot:
+            direct = inputs.battery_power
+            if direct.available and direct.fresh:
+                try:
+                    direct_battery_power_kw = float(direct.value)
+                except (TypeError, ValueError, OverflowError):
+                    direct_battery_power_kw = math.nan
+                if math.isfinite(direct_battery_power_kw):
+                    return max(0.0, -direct_battery_power_kw), "direct_battery_sensor"
+
+            # A present-but-stale/unusable direct sensor is not proof. Derivation is
+            # allowed only when every independent power input is fresh and available;
+            # this prevents unavailable PV/load values defaulted to 0.0 from looking
+            # like a trustworthy zero-discharge measurement.
+            derived_observations = (
+                inputs.grid_import_power,
+                inputs.grid_export_power,
+                inputs.pv_power,
+                inputs.load_power,
+            )
+            if not all(
+                observation.available and observation.fresh
+                for observation in derived_observations
+            ):
+                return None, "unknown"
+            try:
+                measured_import, measured_export, pv_kw, load_kw = (
+                    float(observation.value) for observation in derived_observations
+                )
+            except (TypeError, ValueError, OverflowError):
+                return None, "unknown"
+            if not all(
+                math.isfinite(value)
+                for value in (measured_import, measured_export, pv_kw, load_kw)
+            ):
+                return None, "unknown"
+            battery_power_kw = (
+                pv_kw
+                + max(measured_import, 0.0)
+                - max(measured_export, 0.0)
+                - load_kw
+            )
+            return max(0.0, -battery_power_kw), "measured_grid_flow"
+
+        # Hand-built unit SolarState objects predate the freshness evidence above.
+        # Preserve their finite raw-field behavior without weakening live snapshots.
         if s.battery_power_sensor_kw is not None:
             direct_battery_power_kw = float(s.battery_power_sensor_kw)
             if math.isfinite(direct_battery_power_kw):
@@ -3436,8 +3787,6 @@ class SigEnergyOptimizer:
         fit_cents = fit_price * 100.0
 
         def _mode_text() -> str:
-            if bool(cfg.export_value_gate_enabled and cfg.export_value_gate_enforce):
-                return "Enforcement active"
             if bool(cfg.export_value_gate_enabled or cfg.export_value_gate_dry_run):
                 return "Advisory only"
             return "Disabled"
@@ -3807,7 +4156,8 @@ class SigEnergyOptimizer:
         return no_high_fit and overnight_covered and tomorrow_forecast_meets_minimum and tomorrow_will_refill
 
     def _solar_surplus_bypass(self, s: SolarState, morning_slow_charge_active: bool,
-                               cap: float, pv_surplus: float, prev_desired_mode: str = "") -> bool:
+                               cap: float, pv_surplus: float,
+                               previously_active: bool = False) -> bool:
         cfg = self.cfg
         if not cfg.solar_surplus_bypass_enabled or morning_slow_charge_active:
             return False
@@ -3817,7 +4167,7 @@ class SigEnergyOptimizer:
         start_ok = s.forecast_remaining_kwh >= start_thresh
         continue_ok = (
             s.forecast_remaining_kwh >= stop_thresh
-            and (s.current_ems_mode in DISCHARGE_MODES or prev_desired_mode in DISCHARGE_MODES)
+            and previously_active
         )
         return pv_over_load and (start_ok or continue_ok)
 
@@ -3928,33 +4278,44 @@ class SigEnergyOptimizer:
         fit_cents = s.feedin_price_cents
         bsoc = s.battery_soc
 
+        def choice(limit_kw: float, source: str) -> _DesiredExportLimit:
+            return _DesiredExportLimit(limit_kw, source)
+
         if fit_cents < 1:
-            return 0.0
+            return choice(0.0, "closed_fit_below_minimum")
 
         high_price = s.feedin_price >= cfg.export_threshold_high
 
-        if battery_full_safeguard_block and not (high_price or spike):
-            return 0.0
+        if (
+            battery_full_safeguard_block
+            and not morning_slow_charge_active
+            and not (high_price or spike)
+        ):
+            return choice(0.0, "closed_battery_full_safeguard")
 
         effective_export_floor = cfg.evening_aggressive_floor if evening_boost else cfg.min_export_target_soc
 
         # No PV surplus during daytime → no export
         if (pv_surplus == 0 and not is_evening_or_night and not high_price
                 and not spike and not evening_boost):
-            return 0.0
+            return choice(0.0, "closed_no_daytime_pv")
 
         if morning_dump:
-            return morning_dump_limit
+            return choice(morning_dump_limit, "morning_dump")
 
         if s.price_is_negative or s.feedin_is_negative:
-            return 0.0
+            return choice(0.0, "closed_negative_price")
 
         if (bsoc < effective_export_floor and not within_morning_grace
                 and not morning_slow_charge_active and not surplus_bypass):
-            return 0.0
+            return choice(0.0, "closed_below_export_floor")
 
-        if (export_blocked or forecast_guard) and not surplus_bypass:
-            return 0.0
+        if (
+            (export_blocked or forecast_guard)
+            and not surplus_bypass
+            and not morning_slow_charge_active
+        ):
+            return choice(0.0, "closed_forecast_guard")
 
         poor_tomorrow_forecast = (
             not is_evening_or_night
@@ -3964,7 +4325,7 @@ class SigEnergyOptimizer:
         bypass_min_soc = high_price or spike or surplus_bypass or positive_fit_override
         if not bypass_min_soc and bsoc <= export_min_soc:
             if not (morning_slow_charge_active and pv_surplus >= cfg.morning_slow_charge_rate_kw + cfg.min_grid_transfer_kw):
-                return 0.0
+                return choice(0.0, "closed_below_min_soc")
 
         # When near the export floor, never allow battery-backed export on bypass paths.
         # Keep export limited to measured PV excess so empty batteries cannot sustain large export.
@@ -3984,62 +4345,25 @@ class SigEnergyOptimizer:
                 return min(limit_value, measured_surplus_kw)
             return limit_value
 
-        # Morning slow charge with PV surplus
+        # Morning slow charge: keep the battery charge rate deliberately limited,
+        # but let Maximum Self Consumption balance real PV surplus naturally.
+        # The export setting is a ceiling, not a commanded discharge target.
         if morning_slow_charge_active:
             start_threshold = cfg.morning_slow_charge_rate_kw + cfg.morning_slow_export_start_margin_kw
             stop_threshold = cfg.morning_slow_charge_rate_kw + cfg.morning_slow_export_stop_margin_kw
             current_export = s.current_export_limit if s.current_export_limit > 0.05 else 0.0
-            measured_export = max(0.0, float(s.grid_export_power_kw or 0.0))
-            actual_surplus = max(s.pv_kw - s.load_kw, 0.0)
             export_is_open = current_export >= cfg.min_grid_transfer_kw
-            has_surplus_window = pv_surplus >= start_threshold or (export_is_open and pv_surplus >= stop_threshold)
+            has_surplus_window = (
+                pv_surplus >= start_threshold
+                or (export_is_open and pv_surplus >= stop_threshold)
+            )
             if not has_surplus_window:
-                return 0.0
+                return choice(0.0, "morning_slow_closed")
 
-            # Export can use PV left after honoring slow-charge target; avoid double-subtracting min transfer.
-            available = max(actual_surplus - cfg.morning_slow_charge_rate_kw, 0.0)
-            raw_limit = min(available, s.ess_max_discharge_kw)
-
-            # If measured export is above real PV surplus, battery is assisting export.
-            # Collapse toward PV-only export immediately instead of ramping/probing upward.
-            battery_assist_detected = measured_export > (actual_surplus + 0.3)
-
-            # Anti-curtailment probe: if export is already saturated at its own cap,
-            # gently nudge the cap upward so PV can reveal hidden headroom.
-            probe_enabled = bool(cfg.morning_slow_export_probe_enabled)
-            saturation_margin = max(0.05, cfg.morning_slow_export_probe_saturation_margin_kw)
-            probe_step = max(0.1, cfg.morning_slow_export_probe_step_kw)
-            near_export_cap = measured_export >= max(cfg.min_grid_transfer_kw, current_export - saturation_margin)
-            no_grid_import_pressure = (s.grid_import_power_kw is None) or (float(s.grid_import_power_kw) <= 0.2)
-            if (probe_enabled and export_is_open and near_export_cap and no_grid_import_pressure
-                    and not battery_assist_detected):
-                raw_limit = max(raw_limit, current_export + probe_step)
-
-            # Never allow probe logic to exceed true PV-leftover availability.
-            raw_limit = min(raw_limit, available)
-
-            raw_limit = min(raw_limit, s.ess_max_discharge_kw)
-            if raw_limit <= 0:
-                return 0.0
-            if raw_limit < cfg.min_grid_transfer_kw:
-                raw_limit = cfg.min_grid_transfer_kw
-
-            # If current setpoint is materially above PV-leftover cap, clamp immediately.
-            # This avoids multi-cycle ramp-down while battery is silently supporting export.
-            if current_export > (available + 0.2):
-                return round(raw_limit, 1)
-
-            if battery_assist_detected:
-                return round(raw_limit, 1)
-
-            # Smooth morning slow-charge export setpoint changes to reduce oscillation.
-            if current_export <= 0:
-                return round(raw_limit, 1)
-            if raw_limit > current_export:
-                ramped = min(raw_limit, current_export + cfg.morning_slow_export_ramp_up_step_kw)
-            else:
-                ramped = max(raw_limit, current_export - cfg.morning_slow_export_ramp_down_step_kw)
-            return round(max(ramped, 0.0), 1)
+            ceiling, _authoritative_cap_kw = self._bounded_pv_only_high_ceiling(s)
+            if ceiling <= 0.01:
+                return choice(0.0, "morning_slow_pv_closed")
+            return choice(ceiling, "morning_slow_pv_high")
 
         if high_price or spike:
             cap_val = min(tier_limit, cfg.export_limit_high)
@@ -4048,30 +4372,34 @@ class SigEnergyOptimizer:
             limit = min(cap_val, s.ess_max_discharge_kw)
             limit = cap_near_floor_to_pv(limit)
             limit = cap_full_battery_poor_tomorrow(limit)
-            return max(cfg.min_grid_transfer_kw, round(limit, 1)) if limit > 0 else 0.0
+            return choice(
+                max(cfg.min_grid_transfer_kw, round(limit, 1)) if limit > 0 else 0.0,
+                "high_price_or_spike",
+            )
 
         if positive_fit_override:
             eff_tier = tier_limit if tier_limit > 0 else cfg.export_limit_low
             limit = min(eff_tier, s.ess_max_discharge_kw)
             limit = cap_near_floor_to_pv(limit)
             limit = cap_full_battery_poor_tomorrow(limit)
-            return max(cfg.min_grid_transfer_kw, round(limit, 1)) if limit > 0 else 0.0
+            return choice(
+                max(cfg.min_grid_transfer_kw, round(limit, 1)) if limit > 0 else 0.0,
+                "positive_fit_override",
+            )
 
-        # Solar-surplus bypass should allow exporting real PV excess even when SoC is low.
-        # Keep this PV-only by capping to measured excess so battery energy is not exported.
+        # Solar-surplus bypass still respects the configured export price threshold.
+        # Once export is economically permitted, Maximum Self Consumption receives
+        # the configured high export ceiling and naturally limits actual export to PV.
         if surplus_bypass:
-            raw_surplus = max(s.pv_kw - s.load_kw, 0.0)
-            limit = min(tier_limit, s.ess_max_discharge_kw, raw_surplus)
-            limit = cap_near_floor_to_pv(limit)
-            limit = cap_full_battery_poor_tomorrow(limit)
-            if limit <= 0:
-                return 0.0
-            if limit < cfg.min_grid_transfer_kw:
-                return cfg.min_grid_transfer_kw
-            return round(limit, 1)
+            if tier_limit <= 0:
+                return choice(0.0, "solar_surplus_closed")
+            ceiling, _authoritative_cap_kw = self._bounded_pv_only_high_ceiling(s)
+            if ceiling <= 0.01:
+                return choice(0.0, "solar_surplus_pv_closed")
+            return choice(ceiling, "solar_surplus_pv_high")
 
         if tier_limit <= 0:
-            return 0.0
+            return choice(0.0, "closed_tier")
 
         # Scale by SoC headroom
         diff = bsoc - export_min_soc
@@ -4082,7 +4410,7 @@ class SigEnergyOptimizer:
             surplus_kw = max(s.pv_kw - s.load_kw, 0.0)
             override_cap = min(surplus_kw, cfg.export_limit_high, tier_limit)
             limit = min(override_cap, s.ess_max_discharge_kw)
-            return round(limit, 1) if limit > 0 else 0.0
+            return choice(round(limit, 1) if limit > 0 else 0.0, "solar_override")
 
         hours = max(hours_to_sunrise, 0.01)
         discharge_window = max(cfg.export_discharge_window_hours, 1.0)
@@ -4112,10 +4440,10 @@ class SigEnergyOptimizer:
         limit = cap_full_battery_poor_tomorrow(limit)
 
         if limit <= 0:
-            return 0.0
+            return choice(0.0, "closed_ordinary")
         if limit < cfg.min_grid_transfer_kw:
-            return cfg.min_grid_transfer_kw
-        return round(limit, 1)
+            return choice(cfg.min_grid_transfer_kw, "ordinary_tier")
+        return choice(round(limit, 1), "ordinary_tier")
 
     def _desired_import_limit(self, s: SolarState, morning_dump_active: bool,
                                demand_window_active: bool, standby_holdoff_active: bool,
@@ -4359,7 +4687,11 @@ class SigEnergyOptimizer:
             return f"Export blocked, price is negative ({c_d}¢{est})"
         if s.feedin_price_cents < 1:
             return f"Export blocked, FIT zero/negative ({fit_d}¢{est})"
-        if safeguard and not (s.feedin_price >= cfg.export_threshold_high or spike):
+        if (
+            safeguard
+            and not morning_slow_charge
+            and not (s.feedin_price >= cfg.export_threshold_high or spike)
+        ):
             return f"Export blocked, saving for sunset ({s.battery_soc:.0f}% < 100%)"
         if morning_dump:
             return f"Exporting {export_kw_label}, Morning dump @ {fit_d}¢{est}, {s.battery_soc:.0f}%"
@@ -4373,9 +4705,14 @@ class SigEnergyOptimizer:
             return f"Exporting {export_kw_label}, Slow charge"
         if surplus_bypass:
             if target_export <= 0.01:
+                if s.feedin_price < cfg.export_threshold_low:
+                    return (
+                        f"Solar bypass active; export held because FIT {fit_d}c{est} "
+                        f"is below {ex_low_d}c threshold"
+                    )
                 if actual_export > 0.05:
-                    return f"Solar bypass active, waiting for surplus ({s.forecast_remaining_kwh:.1f}kWh left){est}; measured export {actual_export:.1f}kW is settling"
-                return f"Solar bypass active, waiting for surplus ({s.forecast_remaining_kwh:.1f}kWh left){est}"
+                    return f"Solar bypass active, export settling; measured {actual_export:.1f}kW"
+                return f"Solar bypass active, export currently closed"
             return f"Exporting {export_kw_label}, Solar bypass ({s.forecast_remaining_kwh:.1f}kWh left){est}"
         if (export_blocked or forecast_guard) and not surplus_bypass:
             return "Export blocked, low forecast"
