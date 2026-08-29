@@ -11,6 +11,7 @@ WORKDIR /app
 RUN apk add --no-cache bash ca-certificates git
 
 COPY buildstamp.txt /tmp/buildstamp.txt
+COPY config.yaml /tmp/addon-config.yaml
 
 SHELL ["/bin/sh", "-o", "pipefail", "-c"]
 
@@ -27,7 +28,7 @@ RUN echo "Building source ref: ${SOURCE_REF}" \
     && sed -i 's/^uvicorn\[standard\]/uvicorn/' /app/requirements.txt \
     && python3 -m pip install --upgrade pip \
     && python3 -m pip install --no-cache-dir -r /app/requirements.txt \
-    && rm -rf /tmp/src /tmp/buildstamp.txt
+    && rm -rf /tmp/src /tmp/buildstamp.txt /tmp/addon-config.yaml
 
 COPY run.sh /run.sh
 RUN chmod +x /run.sh

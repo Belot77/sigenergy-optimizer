@@ -41,11 +41,18 @@ def test_release_version_markers_are_consistent() -> None:
     assert re.fullmatch(r"\d+\.\d+\.\d+-haos\d+", release_version)
 
 
-def test_build_stamp_invalidates_source_clone_layer() -> None:
+def test_release_inputs_invalidate_source_clone_layer() -> None:
     dockerfile = (
         ROOT / "sigenergy_optimizer_addon/Dockerfile"
     ).read_text(encoding="utf-8")
 
-    assert "COPY buildstamp.txt /tmp/buildstamp.txt" in dockerfile
+    buildstamp_copy = "COPY buildstamp.txt /tmp/buildstamp.txt"
+    config_copy = "COPY config.yaml /tmp/addon-config.yaml"
+    source_clone = "git clone --depth 1"
+
+    assert buildstamp_copy in dockerfile
+    assert config_copy in dockerfile
     assert 'Build stamp: $(cat /tmp/buildstamp.txt)' in dockerfile
-    assert dockerfile.index("COPY buildstamp.txt") < dockerfile.index("git clone")
+
+    assert dockerfile.index(buildstamp_copy) < dockerfile.index(source_clone)
+    assert dockerfile.index(config_copy) < dockerfile.index(source_clone)
