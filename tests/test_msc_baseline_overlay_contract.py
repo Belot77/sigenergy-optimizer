@@ -4,7 +4,12 @@ import asyncio
 import unittest
 from datetime import datetime, timedelta
 
-from app.optimizer import MODE_CMD_CHARGE_GRID, MODE_CMD_DISCHARGE_PV, MODE_MAX_SELF
+from app.optimizer import (
+    DISCHARGE_MODES,
+    MODE_CMD_CHARGE_GRID,
+    MODE_CMD_DISCHARGE_PV,
+    MODE_MAX_SELF,
+)
 from haos49_characterization_helpers import (
     Haos49CharacterizationCase,
     RecordingHA,
@@ -29,7 +34,7 @@ class ScriptedReadbackHA(RecordingHA):
 
 
 class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
-    """Future MSC-baseline contract; current haos49 is expected to fail some tests."""
+    """Future MSC baseline; current haos53 is expected to fail architecture cases."""
 
     def assert_contract_outputs(
         self,
@@ -44,6 +49,24 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                 decision.import_limit,
                 decision.pv_max_power_limit,
             ),
+        )
+
+    def assert_msc_surplus_permission(
+        self,
+        decision,
+        *,
+        export_ceiling: float,
+    ) -> None:
+        """Assert that an open ceiling is PV permission, not discharge intent."""
+        self.assert_contract_outputs(
+            decision,
+            (MODE_MAX_SELF, export_ceiling, 0.0, 25.0),
+        )
+        self.assertGreater(decision.export_limit, 0.01)
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        self.assertEqual(
+            "pv_surplus_only",
+            decision.trace_values.get("export_value_gate_export_type"),
         )
 
     def _ordinary_state(self, battery_soc: float, **overrides: object):
@@ -79,15 +102,31 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         values.update(overrides)
         return self.state(self.FIXED_AFTERNOON, **values)
 
+    def _poor_forecast_ordinary_surplus(self, battery_soc: float):
+        return self._ordinary_state(
+            battery_soc,
+            feedin_price=0.12,
+            feedin_price_cents=12.0,
+            pv_kw=8.2,
+            solar_power_now_kw=8.2,
+            load_kw=1.0,
+            forecast_remaining_kwh=1.0,
+            forecast_today_kwh=1.0,
+            forecast_tomorrow_kwh=5.0,
+            current_ems_mode=MODE_MAX_SELF,
+            ems_mode_observed=True,
+            current_export_limit=0.01,
+        )
+
     def _assert_normal_baseline(self, battery_soc: float) -> None:
         optimizer = self.optimizer()
         state = self._ordinary_state(battery_soc)
 
         decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
 
-        self.assert_contract_outputs(
+        self.assert_msc_surplus_permission(
             decision,
-            (MODE_MAX_SELF, 25.0, 0.0, 25.0),
+            export_ceiling=25.0,
         )
         self.assertEqual(0.0, state.grid_export_power_kw)
 
@@ -105,14 +144,146 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
 
     def test_normal_msc_baseline_uses_configured_high_ceiling(self) -> None:
         optimizer = self.optimizer(export_limit_high=18.0)
-        state = self._ordinary_state(100.0)
+        state = self._ordinary_state(60.0)
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assert_msc_surplus_permission(
+            decision,
+            export_ceiling=18.0,
+        )
+
+    def test_poor_forecast_ordinary_surplus_has_no_100_percent_discontinuity(
+        self,
+    ) -> None:
+        for battery_soc in (95.7, 100.0):
+            with self.subTest(battery_soc=battery_soc):
+                optimizer = self.optimizer()
+                state = self._poor_forecast_ordinary_surplus(battery_soc)
+
+                decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+                self.assertTrue(state.sigenergy_mode_observed)
+                self.assertTrue(state.ems_mode_observed)
+                self.assertTrue(
+                    bool(decision.trace_gates.get("observed_automated_control_mode"))
+                )
+                self.assertEqual(
+                    battery_soc == 100.0,
+                    bool(decision.trace_gates.get("topoff_target_met")),
+                )
+                for gate in (
+                    "morning_dump_active",
+                    "morning_slow_charge_active",
+                    "evening_export_boost_active",
+                    "export_spike_active",
+                    "positive_fit_override",
+                    "solar_surplus_bypass",
+                    "export_solar_override",
+                ):
+                    self.assertFalse(bool(decision.trace_gates.get(gate)), gate)
+                self.assert_msc_surplus_permission(
+                    decision,
+                    export_ceiling=optimizer.cfg.export_limit_high,
+                )
+                self.assertGreater(
+                    decision.export_limit,
+                    state.pv_kw - state.load_kw,
+                    "The high value is a ceiling; MSC, not the ceiling, controls dispatch.",
+                )
+
+    def test_cheap_fit_at_99_9_percent_preserves_fixed_topoff_contract(self) -> None:
+        optimizer = self.optimizer()
+        state = self._full_opportunity(
+            battery_soc=99.9,
+            available_discharge_energy_kwh=29.97,
+            feedin_price=0.095,
+            feedin_price_cents=9.5,
+            battery_power_sensor_kw=0.0,
+            current_ems_mode=MODE_MAX_SELF,
+            ems_mode_observed=True,
+            current_export_limit=0.01,
+        )
 
         decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
 
         self.assert_contract_outputs(
             decision,
-            (MODE_MAX_SELF, 18.0, 0.0, 25.0),
+            (MODE_MAX_SELF, 0.0, 0.0, 25.0),
         )
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        self.assertEqual(0.0, decision.trace_values.get("export_tier_limit"))
+        self.assertFalse(bool(decision.trace_gates.get("topoff_target_met")))
+        self.assertFalse(
+            bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active"))
+        )
+        self.assertFalse(decision.requires_verified_msc_before_export)
+
+    def test_cheap_fit_at_100_percent_uses_only_verified_msc_stage_2(self) -> None:
+        optimizer = self.optimizer()
+        state = self._full_opportunity(
+            battery_soc=100.0,
+            available_discharge_energy_kwh=30.0,
+            feedin_price=0.095,
+            feedin_price_cents=9.5,
+            battery_power_sensor_kw=0.0,
+            current_ems_mode=MODE_MAX_SELF,
+            ems_mode_observed=True,
+            current_export_limit=0.01,
+        )
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assertEqual(0.0, decision.trace_values.get("export_tier_limit"))
+        self.assertTrue(bool(decision.trace_gates.get("topoff_target_met")))
+        self.assertTrue(bool(decision.trace_gates.get("pv_only_discharge_ok")))
+        self.assertTrue(
+            bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active"))
+        )
+        self.assertEqual(
+            "msc_full_battery_high_ceiling",
+            decision.trace_values.get("pv_surplus_initiation_source"),
+        )
+        self.assert_msc_surplus_permission(
+            decision,
+            export_ceiling=optimizer.cfg.export_limit_high,
+        )
+        self.assertTrue(decision.requires_verified_msc_before_export)
+
+    def test_cheap_fit_at_100_percent_closes_on_material_discharge(self) -> None:
+        optimizer = self.optimizer()
+        state = self._full_opportunity(
+            battery_soc=100.0,
+            available_discharge_energy_kwh=30.0,
+            feedin_price=0.095,
+            feedin_price_cents=9.5,
+            battery_power_sensor_kw=-0.2,
+            current_ems_mode=MODE_MAX_SELF,
+            ems_mode_observed=True,
+            current_export_limit=25.0,
+        )
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assert_contract_outputs(
+            decision,
+            (MODE_MAX_SELF, 0.0, 0.0, 25.0),
+        )
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        self.assertEqual(0.0, decision.trace_values.get("export_tier_limit"))
+        self.assertEqual(
+            0.2,
+            decision.trace_values.get("battery_discharge_kw_for_pv_only"),
+        )
+        self.assertEqual(
+            0.1,
+            decision.trace_values.get("pv_only_discharge_tolerance_kw"),
+        )
+        self.assertFalse(bool(decision.trace_gates.get("pv_only_discharge_ok")))
+        self.assertFalse(
+            bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active"))
+        )
+        self.assertFalse(decision.requires_verified_msc_before_export)
 
     def test_unobserved_automated_mode_cannot_open_normal_ceiling(self) -> None:
         optimizer = self.optimizer()
@@ -178,7 +349,8 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             optimizer.cfg.ems_mode_select: MODE_CMD_DISCHARGE_PV,
             optimizer.cfg.grid_export_limit: 0.01,
         }
-        first_state = self._full_opportunity(
+        first_state = self._ordinary_state(
+            95.7,
             current_ems_mode=MODE_CMD_DISCHARGE_PV,
             ems_mode_observed=True,
             current_export_limit=0.01,
@@ -206,7 +378,8 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         optimizer._last_state = first_state
         optimizer._last_decision = first
 
-        later_unverified = self._full_opportunity(
+        later_unverified = self._ordinary_state(
+            95.7,
             current_ems_mode=MODE_CMD_DISCHARGE_PV,
             ems_mode_observed=True,
             current_export_limit=0.01,
@@ -227,7 +400,8 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             optimizer.cfg.ems_mode_select: MODE_CMD_DISCHARGE_PV,
             optimizer.cfg.grid_export_limit: 12.0,
         }
-        state = self._full_opportunity(
+        state = self._ordinary_state(
+            95.7,
             current_ems_mode=MODE_CMD_DISCHARGE_PV,
             ems_mode_observed=True,
             current_export_limit=12.0,
@@ -253,7 +427,8 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             optimizer.cfg.ems_mode_select: MODE_CMD_DISCHARGE_PV,
             optimizer.cfg.grid_export_limit: 12.0,
         }
-        first_state = self._full_opportunity(
+        first_state = self._ordinary_state(
+            95.7,
             current_ems_mode=MODE_CMD_DISCHARGE_PV,
             ems_mode_observed=True,
             current_export_limit=12.0,
@@ -264,7 +439,8 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         optimizer._last_decision = first
 
         ha.state_values[optimizer.cfg.ems_mode_select] = MODE_MAX_SELF
-        msc_but_still_open = self._full_opportunity(
+        msc_but_still_open = self._ordinary_state(
+            95.7,
             current_ems_mode=MODE_MAX_SELF,
             ems_mode_observed=True,
             current_export_limit=12.0,
@@ -283,7 +459,8 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             optimizer.cfg.ems_mode_select: MODE_CMD_DISCHARGE_PV,
             optimizer.cfg.grid_export_limit: 0.01,
         }
-        first_state = self._full_opportunity(
+        first_state = self._ordinary_state(
+            95.7,
             current_ems_mode=MODE_CMD_DISCHARGE_PV,
             ems_mode_observed=True,
             current_export_limit=0.01,
@@ -298,16 +475,17 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             optimizer.cfg.ems_mode_select: MODE_MAX_SELF,
             optimizer.cfg.grid_export_limit: 0.01,
         }
-        verified = self._full_opportunity(
+        verified = self._ordinary_state(
+            95.7,
             current_ems_mode=MODE_MAX_SELF,
             ems_mode_observed=True,
             current_export_limit=0.01,
         )
         second = self.decide(optimizer, verified, self.FIXED_AFTERNOON)
 
-        self.assert_contract_outputs(
+        self.assert_msc_surplus_permission(
             second,
-            (MODE_MAX_SELF, 25.0, 0.0, 25.0),
+            export_ceiling=25.0,
         )
         second_cycle_start = len(ha.calls)
         asyncio.run(optimizer._apply(verified, second))
@@ -415,11 +593,8 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                 decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
 
                 self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
-                self.assertNotEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
-                self.assertLessEqual(
-                    decision.export_limit,
-                    optimizer.cfg.export_limit_high,
-                )
+                self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+                self.assertLessEqual(decision.export_limit, 0.01)
 
     def _assert_demand_window_baseline(self, pv_kw: float) -> None:
         when = datetime(2026, 1, 15, 17, 30)
@@ -444,9 +619,9 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
 
         decision = self.decide(optimizer, state, when)
 
-        self.assert_contract_outputs(
+        self.assert_msc_surplus_permission(
             decision,
-            (MODE_MAX_SELF, 25.0, 0.0, 25.0),
+            export_ceiling=25.0,
         )
 
     def test_demand_window_with_little_pv_blocks_only_import(self) -> None:
@@ -476,6 +651,8 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
 
         self.assertEqual(MODE_CMD_CHARGE_GRID, decision.ems_mode)
         self.assertEqual(25.0, decision.import_limit)
+        self.assertEqual(0.0, decision.export_limit)
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
 
     def test_negative_or_below_minimum_fit_closes_export_without_discharge(self) -> None:
         for fit, fit_cents in ((-0.01, -1.0), (0.009, 0.9)):
