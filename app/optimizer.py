@@ -4235,8 +4235,8 @@ class SigEnergyOptimizer:
             return cfg.export_limit_high
         if solar_override:
             return cfg.export_limit_high
-        if bsoc >= 99 and fit >= 0.01:
-            return cfg.export_limit_high
+        # Cheap-FiT full-battery export is owned exclusively by the verified
+        # 100% top-off Maximum Self Consumption path in _decide().
         if fit < cfg.export_threshold_low:
             return 0.0
         if fit >= cfg.export_threshold_high:
@@ -4722,8 +4722,6 @@ class SigEnergyOptimizer:
             return "Export blocked, low tomorrow forecast"
         if poor_tomorrow_forecast and target_export > 0.01:
             return f"Exporting {export_kw_label}, PV-only (low tomorrow forecast){est}"
-        if s.battery_soc >= 99 and s.feedin_price >= 0.01:
-            return f"Exporting {export_kw_label}, Full battery @ {fit_d}¢{est}"
         if tier_limit <= 0:
             if pv_safeguard:
                 return "Export blocked, forecast protection"
