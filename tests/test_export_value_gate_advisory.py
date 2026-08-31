@@ -189,6 +189,19 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         values.update(overrides)
         return self._state(**values)
 
+    def _cheap_fit_optimizer(self, **overrides: object) -> SigEnergyOptimizer:
+        values: dict[str, object] = {
+            "export_threshold_low": 0.10,
+            "battery_full_safeguard_enabled": False,
+            "evening_boost_enabled": False,
+            "morning_dump_enabled": False,
+            "morning_slow_charge_enabled": False,
+            "solar_surplus_bypass_enabled": False,
+            "standby_holdoff_enabled": False,
+        }
+        values.update(overrides)
+        return self._optimizer(**values)
+
     def _qualifying_solar_bypass_state(
         self,
         optimizer: SigEnergyOptimizer,
@@ -714,6 +727,167 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
         self.assertFalse(bool(decision.trace_gates.get("pv_surplus_breathe_probe_continuation_active")))
         self.assertIn("ceiling", decision.export_reason.lower())
+
+    def test_cheap_fit_at_99_percent_closes_live_export_and_returns_to_msc(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._cheap_fit_optimizer()
+        state = self._qualifying_full_battery_msc_state(
+            optimizer,
+            now_ts,
+            battery_soc=99.0,
+            feedin_price=0.03,
+            feedin_price_cents=3.0,
+            pv_kw=8.2,
+            solar_power_now_kw=8.2,
+            load_kw=1.0,
+            battery_power_sensor_kw=-1.0,
+            grid_export_power_kw=8.2,
+            current_export_limit=25.0,
+            current_ems_mode=MODE_CMD_DISCHARGE_PV,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertEqual(0.0, decision.export_limit)
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        self.assertEqual(0.0, decision.trace_values.get("export_tier_limit"))
+        self.assertEqual("closed_tier", decision.trace_values.get("desired_export_source"))
+        self.assertFalse(bool(decision.trace_gates.get("topoff_target_met")))
+        self.assertFalse(bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active")))
+        self.assertIn("Export blocked", decision.export_reason)
+        self.assertNotIn("Full battery", decision.export_reason)
+        self.assertNotIn("Full battery", decision.outcome_reason)
+
+    def test_cheap_fit_at_99_9_percent_still_requires_fixed_topoff(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._cheap_fit_optimizer()
+        state = self._qualifying_full_battery_msc_state(
+            optimizer,
+            now_ts,
+            battery_soc=99.9,
+            feedin_price=0.03,
+            feedin_price_cents=3.0,
+            battery_power_sensor_kw=0.0,
+            current_ems_mode=MODE_MAX_SELF,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertEqual(100.0, decision.trace_values.get("topoff_target_soc"))
+        self.assertFalse(bool(decision.trace_gates.get("topoff_target_met")))
+        self.assertEqual(0.0, decision.trace_values.get("export_tier_limit"))
+        self.assertEqual(0.0, decision.export_limit)
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+        self.assertFalse(bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active")))
+        self.assertFalse(decision.requires_verified_msc_before_export)
+        self.assertIn("Export blocked", decision.export_reason)
+        self.assertNotIn("Full battery", decision.export_reason)
+
+    def test_cheap_fit_at_100_percent_opens_only_verified_msc_pv_only_ceiling(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._cheap_fit_optimizer()
+        state = self._qualifying_full_battery_msc_state(
+            optimizer,
+            now_ts,
+            battery_soc=100.0,
+            feedin_price=0.03,
+            feedin_price_cents=3.0,
+            pv_kw=8.2,
+            solar_power_now_kw=8.2,
+            load_kw=1.0,
+            battery_power_sensor_kw=0.0,
+            current_export_limit=0.01,
+            current_ems_mode=MODE_MAX_SELF,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertTrue(state.sigenergy_mode_observed)
+        self.assertTrue(state.ems_mode_observed)
+        self.assertTrue(bool(decision.trace_gates.get("topoff_target_met")))
+        self.assertTrue(bool(decision.trace_gates.get("pv_only_discharge_ok")))
+        self.assertEqual(0.0, decision.trace_values.get("export_tier_limit"))
+        self.assertEqual("closed_tier", decision.trace_values.get("desired_export_source"))
+        self.assertTrue(bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active")))
+        self.assertEqual(
+            "msc_full_battery_high_ceiling",
+            decision.trace_values.get("pv_surplus_initiation_source"),
+        )
+        self.assertEqual("pv_surplus_only", decision.trace_values.get("export_value_gate_export_type"))
+        self.assertEqual(optimizer.cfg.export_limit_high, decision.export_limit)
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        self.assertTrue(decision.requires_verified_msc_before_export)
+
+    def test_cheap_fit_at_100_percent_closes_on_material_battery_discharge(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._cheap_fit_optimizer()
+        state = self._qualifying_full_battery_msc_state(
+            optimizer,
+            now_ts,
+            battery_soc=100.0,
+            feedin_price=0.03,
+            feedin_price_cents=3.0,
+            pv_kw=8.2,
+            solar_power_now_kw=8.2,
+            load_kw=1.0,
+            battery_power_sensor_kw=-1.0,
+            grid_export_power_kw=8.2,
+            current_export_limit=25.0,
+            current_ems_mode=MODE_MAX_SELF,
+        )
+
+        decision = optimizer._decide(state)
+
+        self.assertEqual(1.0, decision.trace_values.get("battery_discharge_kw_for_pv_only"))
+        self.assertEqual(0.1, decision.trace_values.get("pv_only_discharge_tolerance_kw"))
+        self.assertFalse(bool(decision.trace_gates.get("pv_only_discharge_ok")))
+        self.assertEqual(0.0, decision.trace_values.get("export_tier_limit"))
+        self.assertFalse(bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active")))
+        self.assertEqual(0.0, decision.export_limit)
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        self.assertFalse(decision.requires_verified_msc_before_export)
+        self.assertIn("Export blocked", decision.export_reason)
+        self.assertNotIn("Exporting", decision.export_reason)
+        self.assertNotIn("Full battery", decision.export_reason)
+
+    def test_ordinary_export_tier_never_grants_cheap_fit_at_99_or_100_percent(self) -> None:
+        optimizer = self._cheap_fit_optimizer()
+
+        for battery_soc in (99.0, 100.0):
+            with self.subTest(battery_soc=battery_soc, feedin_price=0.03):
+                cheap_state = self._state(
+                    battery_soc=battery_soc,
+                    feedin_price=0.03,
+                    feedin_price_cents=3.0,
+                )
+                cheap_limit = optimizer._export_tier_limit(
+                    cheap_state,
+                    spike=False,
+                    solar_override=False,
+                    pv_safeguard=False,
+                    boost=False,
+                    surplus_bypass=False,
+                )
+                self.assertEqual(0.0, cheap_limit)
+
+            with self.subTest(battery_soc=battery_soc, feedin_price=0.10):
+                threshold_state = self._state(
+                    battery_soc=battery_soc,
+                    feedin_price=0.10,
+                    feedin_price_cents=10.0,
+                )
+                threshold_limit = optimizer._export_tier_limit(
+                    threshold_state,
+                    spike=False,
+                    solar_override=False,
+                    pv_safeguard=False,
+                    boost=False,
+                    surplus_bypass=False,
+                )
+                self.assertEqual(optimizer.cfg.export_limit_low, threshold_limit)
 
     def test_full_battery_msc_high_ceiling_stays_closed_at_evening_or_night(self) -> None:
         now_ts = datetime.now().timestamp()
@@ -3004,8 +3178,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             available_discharge_energy_kwh=30.0,
             current_price=0.30,
             current_price_cents=30.0,
-            feedin_price=0.05,
-            feedin_price_cents=5.0,
+            feedin_price=0.08,
+            feedin_price_cents=8.0,
             pv_kw=3.0,
             solar_power_now_kw=3.0,
             load_kw=0.8,
@@ -3105,8 +3279,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             available_discharge_energy_kwh=30.0,
             current_price=0.30,
             current_price_cents=30.0,
-            feedin_price=0.05,
-            feedin_price_cents=5.0,
+            feedin_price=0.08,
+            feedin_price_cents=8.0,
             pv_kw=3.0,
             solar_power_now_kw=3.0,
             load_kw=0.8,

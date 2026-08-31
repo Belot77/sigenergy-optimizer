@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-31
+
+- Removed the legacy ordinary export-tier shortcut that granted `EXPORT_LIMIT_HIGH` whenever battery SoC was at least 99% and FiT was at least `$0.01/kWh`. The ordinary tier now has no SoC-based cheap-FiT grant.
+- The removed implicit full-battery opportunity no longer qualifies below 100% SoC. At exactly 100%, that cheap-FiT exception may open only through the verified `Automated` plus Maximum Self Consumption Stage 2 PV-only path.
+- Preserved the explicit haos52 `ALLOW_LOW_MEDIUM_EXPORT_POSITIVE_FIT` policy: when enabled, FiT at or above `$0.01/kWh` may still select its separate positive-FiT override below `EXPORT_THRESHOLD_LOW`. `ALLOW_POSITIVE_FIT_BATTERY_DISCHARGING` continues to govern battery discharge for that independent policy.
+- Trusted battery discharge above the existing 0.1 kW PV-only tolerance closes the 100%-top-off MSC PV-only exception. That exception never uses `Command Discharging (PV First)`, and a blocked opportunity no longer reports `Exporting ..., Full battery`.
+- Normal export tiers at or above `EXPORT_THRESHOLD_LOW` and independently gated high-price/spike, Morning Slow Charge, Solar Surplus Bypass, demand-window, and negative-price policies retain their existing authority and safeguards.
+
 ## 2026-08-30
 
 - Add a configurable `MORNING_DUMP_MIN_SOC` hard floor, defaulting to 30%; Morning Dump cannot start or continue at or below it even when forecast refill checks pass.
