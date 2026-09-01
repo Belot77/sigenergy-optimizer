@@ -10,6 +10,7 @@ from app.optimizer import (
     MODE_CMD_DISCHARGE_PV,
     MODE_MAX_SELF,
 )
+from app.models import BATTERY_EXPORT, EXPORT_BLOCKED, MSC_SURPLUS_CEILING
 from haos49_characterization_helpers import (
     Haos49CharacterizationCase,
     RecordingHA,
@@ -68,8 +69,27 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             "pv_surplus_only",
             decision.trace_values.get("export_value_gate_export_type"),
         )
+        self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
+        self.assertEqual(
+            MSC_SURPLUS_CEILING,
+            decision.trace_values.get("requested_export_intent"),
+        )
+        self.assertEqual(
+            MSC_SURPLUS_CEILING,
+            decision.trace_values.get("export_intent"),
+        )
+        self.assertEqual(
+            "none",
+            decision.trace_values.get("battery_export_owner"),
+        )
 
-    def _ordinary_state(self, battery_soc: float, **overrides: object):
+    def _ordinary_state(
+        self,
+        battery_soc: float,
+        *,
+        when: datetime | None = None,
+        **overrides: object,
+    ):
         values: dict[str, object] = {
             "battery_soc": battery_soc,
             "available_discharge_energy_kwh": 30.0 * battery_soc / 100.0,
@@ -85,7 +105,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             "grid_export_power_kw": 0.0,
         }
         values.update(overrides)
-        return self.state(self.FIXED_AFTERNOON, **values)
+        return self.state(when or self.FIXED_AFTERNOON, **values)
 
     def _full_opportunity(self, **overrides: object):
         values: dict[str, object] = {
@@ -153,6 +173,187 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             export_ceiling=18.0,
         )
 
+    def test_ordinary_load_serving_battery_discharge_keeps_daytime_msc_ceiling(
+        self,
+    ) -> None:
+        optimizer = self.optimizer()
+        state = self._ordinary_state(
+            60.0,
+            battery_power_sensor_kw=-1.0,
+            grid_export_power_kw=0.0,
+        )
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assert_msc_surplus_permission(
+            decision,
+            export_ceiling=optimizer.cfg.export_limit_high,
+        )
+        self.assertTrue(bool(decision.trace_gates.get("ordinary_msc_flow_trusted")))
+        self.assertTrue(
+            bool(
+                decision.trace_gates.get(
+                    "ordinary_msc_load_serving_battery_discharge"
+                )
+            )
+        )
+        self.assertFalse(
+            bool(
+                decision.trace_gates.get(
+                    "ordinary_msc_simultaneous_battery_discharge_and_grid_export"
+                )
+            )
+        )
+        self.assertTrue(bool(decision.trace_gates.get("ordinary_msc_flow_safe")))
+        self.assertEqual(
+            "load_serving_battery_discharge",
+            decision.trace_values.get("ordinary_msc_flow_classification"),
+        )
+
+    def test_ordinary_load_serving_battery_discharge_keeps_night_msc_ceiling(
+        self,
+    ) -> None:
+        optimizer = self.optimizer()
+        when = datetime(2026, 1, 15, 2, 0)
+        state = self._ordinary_state(
+            95.0,
+            when=when,
+            sun_above_horizon=False,
+            pv_kw=0.0,
+            solar_power_now_kw=0.0,
+            load_kw=1.0,
+            battery_power_sensor_kw=-1.0,
+            grid_export_power_kw=0.0,
+        )
+
+        decision = self.decide(optimizer, state, when)
+
+        self.assertTrue(bool(decision.trace_gates.get("is_evening_or_night")))
+        self.assert_msc_surplus_permission(
+            decision,
+            export_ceiling=optimizer.cfg.export_limit_high,
+        )
+        self.assertTrue(
+            bool(
+                decision.trace_gates.get(
+                    "ordinary_msc_load_serving_battery_discharge"
+                )
+            )
+        )
+        self.assertEqual(
+            "load_serving_battery_discharge",
+            decision.trace_values.get("ordinary_msc_flow_classification"),
+        )
+
+    def test_ordinary_simultaneous_battery_discharge_and_export_closes_ceiling(
+        self,
+    ) -> None:
+        optimizer = self.optimizer()
+        state = self._ordinary_state(
+            60.0,
+            battery_power_sensor_kw=-1.0,
+            grid_export_power_kw=1.0,
+        )
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assert_contract_outputs(
+            decision,
+            (MODE_MAX_SELF, 0.0, 0.0, 25.0),
+        )
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertTrue(bool(decision.trace_gates.get("ordinary_msc_flow_trusted")))
+        self.assertTrue(
+            bool(
+                decision.trace_gates.get(
+                    "ordinary_msc_simultaneous_battery_discharge_and_grid_export"
+                )
+            )
+        )
+        self.assertFalse(bool(decision.trace_gates.get("ordinary_msc_flow_safe")))
+        self.assertEqual(
+            "simultaneous_battery_discharge_and_grid_export",
+            decision.trace_values.get("ordinary_msc_flow_classification"),
+        )
+
+    def test_unknown_ordinary_battery_or_grid_flow_closes_ceiling(self) -> None:
+        cases = (
+            (
+                "unknown_battery",
+                {
+                    "battery_power_sensor_kw": None,
+                    "grid_import_power_kw": None,
+                    "grid_export_power_kw": 0.0,
+                },
+            ),
+            (
+                "unknown_grid_export",
+                {
+                    "battery_power_sensor_kw": 0.0,
+                    "grid_export_power_kw": None,
+                },
+            ),
+        )
+        for name, overrides in cases:
+            with self.subTest(name=name):
+                optimizer = self.optimizer()
+                state = self._ordinary_state(60.0, **overrides)
+
+                decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+                self.assert_contract_outputs(
+                    decision,
+                    (MODE_MAX_SELF, 0.0, 0.0, 25.0),
+                )
+                self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                self.assertFalse(
+                    bool(decision.trace_gates.get("ordinary_msc_flow_trusted"))
+                )
+                self.assertFalse(
+                    bool(decision.trace_gates.get("ordinary_msc_flow_safe"))
+                )
+                self.assertEqual(
+                    "unknown",
+                    decision.trace_values.get("ordinary_msc_flow_classification"),
+                )
+
+    def test_generic_ordinary_tier_remains_msc_surplus_ceiling_at_night(
+        self,
+    ) -> None:
+        when = datetime(2026, 1, 15, 2, 0)
+        for battery_soc in (95.0, 100.0):
+            with self.subTest(battery_soc=battery_soc):
+                optimizer = self.optimizer()
+                state = self._ordinary_state(
+                    battery_soc,
+                    when=when,
+                    sun_above_horizon=False,
+                    pv_kw=0.0,
+                    solar_power_now_kw=0.0,
+                    load_kw=1.0,
+                )
+
+                decision = self.decide(optimizer, state, when)
+
+                self.assertTrue(bool(decision.trace_gates.get("is_evening_or_night")))
+                self.assertEqual(
+                    "ordinary_tier",
+                    decision.trace_values.get("initial_desired_export_source"),
+                )
+                self.assertEqual(
+                    "ordinary_msc_surplus_ceiling",
+                    decision.trace_values.get("desired_export_source"),
+                )
+                self.assertEqual(
+                    "none",
+                    decision.trace_values.get("battery_export_owner"),
+                )
+                self.assert_msc_surplus_permission(
+                    decision,
+                    export_ceiling=optimizer.cfg.export_limit_high,
+                )
+                self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
+
     def test_poor_forecast_ordinary_surplus_has_no_100_percent_discontinuity(
         self,
     ) -> None:
@@ -218,6 +419,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active"))
         )
         self.assertFalse(decision.requires_verified_msc_before_export)
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
 
     def test_cheap_fit_at_100_percent_uses_only_verified_msc_stage_2(self) -> None:
         optimizer = self.optimizer()
@@ -284,6 +486,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active"))
         )
         self.assertFalse(decision.requires_verified_msc_before_export)
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
 
     def test_unobserved_automated_mode_cannot_open_normal_ceiling(self) -> None:
         optimizer = self.optimizer()
@@ -536,6 +739,11 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             decision,
             (MODE_CMD_DISCHARGE_PV, 12.0, 0.0, 25.0),
         )
+        self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual(
+            "high_price",
+            decision.trace_values.get("battery_export_owner"),
+        )
         asyncio.run(optimizer._apply(state, decision))
 
         export_call = ("set_number", optimizer.cfg.grid_export_limit, 12.0)
@@ -654,6 +862,53 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         self.assertEqual(0.0, decision.export_limit)
         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
 
+    def test_value_gate_enforce_setting_is_actuator_neutral_for_msc_baseline(
+        self,
+    ) -> None:
+        advisory_optimizer = self.optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=False,
+        )
+        enforced_optimizer = self.optimizer(
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=True,
+        )
+        state = self._ordinary_state(60.0)
+
+        advisory = self.decide(advisory_optimizer, state, self.FIXED_AFTERNOON)
+        enforced = self.decide(enforced_optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assertEqual(
+            (
+                advisory.ems_mode,
+                advisory.export_limit,
+                advisory.import_limit,
+                advisory.pv_max_power_limit,
+                advisory.ess_charge_limit,
+                advisory.ess_discharge_limit,
+                advisory.export_intent,
+            ),
+            (
+                enforced.ems_mode,
+                enforced.export_limit,
+                enforced.import_limit,
+                enforced.pv_max_power_limit,
+                enforced.ess_charge_limit,
+                enforced.ess_discharge_limit,
+                enforced.export_intent,
+            ),
+        )
+        self.assertFalse(
+            bool(enforced.trace_gates.get("export_value_gate_enforcement_active"))
+        )
+        self.assertFalse(bool(enforced.trace_gates.get("export_value_gate_vetoed")))
+        self.assert_msc_surplus_permission(
+            enforced,
+            export_ceiling=enforced_optimizer.cfg.export_limit_high,
+        )
+
     def test_negative_or_below_minimum_fit_closes_export_without_discharge(self) -> None:
         for fit, fit_cents in ((-0.01, -1.0), (0.009, 0.9)):
             with self.subTest(fit_cents=fit_cents):
@@ -734,20 +989,236 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         )
 
         cases = (
-            ("morning_dump", morning_optimizer, morning_state, morning_when),
-            ("evening_boost", evening_optimizer, evening_state, evening_when),
-            ("price_spike", spike_optimizer, spike_state, spike_when),
+            (
+                "morning_dump",
+                morning_optimizer,
+                morning_state,
+                morning_when,
+                "morning_dump",
+            ),
+            (
+                "evening_boost",
+                evening_optimizer,
+                evening_state,
+                evening_when,
+                "evening_export_boost",
+            ),
+            (
+                "price_spike",
+                spike_optimizer,
+                spike_state,
+                spike_when,
+                "export_spike",
+            ),
         )
-        for name, optimizer, state, when in cases:
+        for name, optimizer, state, when, owner in cases:
             with self.subTest(name=name):
                 decision = self.decide(optimizer, state, when)
 
                 self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
                 self.assertGreater(decision.export_limit, 0.01)
+                self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+                self.assertEqual(
+                    owner,
+                    decision.trace_values.get("battery_export_owner"),
+                )
                 self.assertLessEqual(
                     decision.export_limit,
                     optimizer.cfg.export_limit_high,
                 )
+
+    def test_exact_full_soc_does_not_override_high_price_battery_export_owner(
+        self,
+    ) -> None:
+        optimizer = self.optimizer()
+        state = self._ordinary_state(
+            100.0,
+            feedin_price=1.10,
+            feedin_price_cents=110.0,
+            battery_power_sensor_kw=0.0,
+            pv_kw=6.0,
+            solar_power_now_kw=6.0,
+            load_kw=1.0,
+        )
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assertTrue(bool(decision.trace_gates.get("topoff_target_met")))
+        self.assertFalse(
+            bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active"))
+        )
+        self.assertEqual(
+            "high_price_or_spike",
+            decision.trace_values.get("desired_export_source"),
+        )
+        self.assertEqual("high_price", decision.trace_values.get("battery_export_owner"))
+        self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+        self.assertGreater(decision.export_limit, 0.01)
+
+    def test_explicit_positive_fit_battery_discharge_override_remains_deliberate(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            allow_low_medium_export_positive_fit=True,
+            allow_positive_fit_battery_discharging=True,
+        )
+        state = self._ordinary_state(
+            90.0,
+            feedin_price=0.05,
+            feedin_price_cents=5.0,
+            pv_kw=4.0,
+            solar_power_now_kw=4.0,
+            load_kw=1.0,
+        )
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assertEqual(
+            "positive_fit_override",
+            decision.trace_values.get("desired_export_source"),
+        )
+        self.assertEqual(
+            "positive_fit_override",
+            decision.trace_values.get("battery_export_owner"),
+        )
+        self.assertTrue(
+            bool(
+                decision.trace_gates.get(
+                    "positive_fit_battery_export_authorized"
+                )
+            )
+        )
+        self.assertFalse(
+            bool(
+                decision.trace_gates.get(
+                    "positive_fit_msc_surplus_policy_active"
+                )
+            )
+        )
+        self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual(
+            BATTERY_EXPORT,
+            decision.trace_values.get("requested_export_intent"),
+        )
+        self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+        self.assertEqual(5.0, decision.export_limit)
+        self.assertEqual(25.0, decision.ess_discharge_limit)
+
+    def test_positive_fit_policy_without_battery_discharge_uses_verified_msc_ceiling(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            allow_low_medium_export_positive_fit=True,
+            allow_positive_fit_battery_discharging=False,
+        )
+        state = self._ordinary_state(
+            90.0,
+            feedin_price=0.05,
+            feedin_price_cents=5.0,
+            pv_kw=4.0,
+            solar_power_now_kw=4.0,
+            load_kw=1.0,
+        )
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assertEqual(
+            "positive_fit_override",
+            decision.trace_values.get("initial_desired_export_source"),
+        )
+        self.assertEqual(
+            "ordinary_msc_surplus_ceiling",
+            decision.trace_values.get("desired_export_source"),
+        )
+        self.assertTrue(bool(decision.trace_gates.get("positive_fit_override")))
+        self.assertFalse(
+            bool(
+                decision.trace_gates.get(
+                    "positive_fit_battery_export_authorized"
+                )
+            )
+        )
+        self.assertTrue(
+            bool(
+                decision.trace_gates.get(
+                    "positive_fit_msc_surplus_policy_active"
+                )
+            )
+        )
+        self.assert_msc_surplus_permission(
+            decision,
+            export_ceiling=optimizer.cfg.export_limit_high,
+        )
+        self.assertEqual(0.01, decision.ess_discharge_limit)
+
+    def test_positive_fit_policy_without_battery_discharge_fails_closed_when_unverified(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "automated_unobserved",
+                {"sigenergy_mode_observed": False},
+            ),
+            (
+                "msc_unobserved",
+                {"ems_mode_observed": False},
+            ),
+            (
+                "battery_flow_unknown",
+                {
+                    "battery_power_sensor_kw": None,
+                    "grid_import_power_kw": None,
+                },
+            ),
+            (
+                "grid_export_flow_unknown",
+                {"grid_export_power_kw": None},
+            ),
+        )
+        for name, overrides in cases:
+            with self.subTest(name=name):
+                optimizer = self.optimizer(
+                    allow_low_medium_export_positive_fit=True,
+                    allow_positive_fit_battery_discharging=False,
+                )
+                state = self._ordinary_state(
+                    90.0,
+                    feedin_price=0.05,
+                    feedin_price_cents=5.0,
+                    pv_kw=4.0,
+                    solar_power_now_kw=4.0,
+                    load_kw=1.0,
+                    **overrides,
+                )
+
+                decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+                self.assertEqual(
+                    "positive_fit_override",
+                    decision.trace_values.get("initial_desired_export_source"),
+                )
+                self.assert_contract_outputs(
+                    decision,
+                    (MODE_MAX_SELF, 0.0, 0.0, 25.0),
+                )
+                self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                self.assertEqual(
+                    EXPORT_BLOCKED,
+                    decision.trace_values.get("requested_export_intent"),
+                )
+                self.assertEqual(
+                    "none",
+                    decision.trace_values.get("battery_export_owner"),
+                )
+                self.assertFalse(
+                    bool(
+                        decision.trace_gates.get(
+                            "positive_fit_battery_export_authorized"
+                        )
+                    )
+                )
+                self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
 
 
 if __name__ == "__main__":

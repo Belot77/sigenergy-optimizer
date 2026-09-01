@@ -175,6 +175,11 @@ class SolarState:
     timestamp: datetime = field(default_factory=datetime.now)
 
 
+EXPORT_BLOCKED = "EXPORT_BLOCKED"
+MSC_SURPLUS_CEILING = "MSC_SURPLUS_CEILING"
+BATTERY_EXPORT = "BATTERY_EXPORT"
+
+
 @dataclass
 class Decision:
     """What the optimizer wants to do this cycle."""
@@ -184,6 +189,7 @@ class Decision:
     pv_max_power_limit: float = 25.0
     ess_charge_limit: float = 21.0
     ess_discharge_limit: float = 24.0
+    export_intent: str = EXPORT_BLOCKED
 
     export_reason: str = ""
     import_reason: str = ""

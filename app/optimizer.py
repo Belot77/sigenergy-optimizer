@@ -33,10 +33,13 @@ from .forecast_utils import (
 )
 from .ha_client import HAClient
 from .models import (
+    BATTERY_EXPORT,
     Decision,
+    EXPORT_BLOCKED,
     HVACObservedValue,
     HVACSolarInputContext,
     HVACSolarPermissionResult,
+    MSC_SURPLUS_CEILING,
     SolarState,
 )
 from .state_store import StateStore
@@ -1624,6 +1627,10 @@ class SigEnergyOptimizer:
             cfg.allow_low_medium_export_positive_fit
             and s.feedin_price >= 0.01
         )
+        positive_fit_battery_export_authorized = bool(
+            positive_fit_override
+            and cfg.allow_positive_fit_battery_discharging
+        )
 
         solar_potential_kw = max(s.pv_kw, s.solar_power_now_kw)
         pv_surplus = max(solar_potential_kw - s.load_kw, 0.0)
@@ -1660,6 +1667,14 @@ class SigEnergyOptimizer:
         d.pv_safeguard_active = pv_safeguard_active
 
         # ---- Solar surplus bypass -----------------------------------
+        previous_cycle_solar_surplus_policy_owned = bool(
+            self._last_decision
+            and (
+                self._last_decision.solar_surplus_bypass
+                or self._last_decision.trace_values.get("pv_only_branch_source")
+                == "solar_surplus_bypass"
+            )
+        )
         solar_surplus_bypass = self._solar_surplus_bypass(
             s, morning_slow_charge_active, cap, pv_surplus_actual,
             previously_active=bool(
@@ -1788,6 +1803,9 @@ class SigEnergyOptimizer:
         pv_only_msc_authoritative_cap_kw: Optional[float] = None
         pv_only_msc_transition_reason = "inactive"
         pv_only_msc_high_ceiling_reason = "inactive"
+        ordinary_msc_surplus_context = False
+        ordinary_msc_surplus_ceiling_active = False
+        ordinary_msc_surplus_ceiling_reason = "inactive"
         pv_surplus_estimated_init_reason = (
             "diagnostic-only: legacy measured/estimated/breathe PV discovery cannot "
             "change the live export ceiling."
@@ -1825,6 +1843,39 @@ class SigEnergyOptimizer:
             battery_discharge_kw_for_pv_only is not None
             and battery_discharge_kw_for_pv_only <= pv_only_discharge_tolerance_kw
         )
+        (
+            ordinary_grid_export_kw,
+            ordinary_grid_export_flow_source,
+        ) = self._grid_export_kw_for_ordinary_msc_check(s)
+        meaningful_grid_export_threshold_kw = float(cfg.min_grid_transfer_kw)
+        ordinary_msc_flow_trusted = bool(
+            battery_discharge_kw_for_pv_only is not None
+            and ordinary_grid_export_kw is not None
+        )
+        ordinary_load_serving_battery_discharge = bool(
+            ordinary_msc_flow_trusted
+            and battery_discharge_kw_for_pv_only > pv_only_discharge_tolerance_kw
+            and ordinary_grid_export_kw < meaningful_grid_export_threshold_kw
+        )
+        ordinary_simultaneous_battery_grid_export = bool(
+            ordinary_msc_flow_trusted
+            and battery_discharge_kw_for_pv_only > pv_only_discharge_tolerance_kw
+            and ordinary_grid_export_kw >= meaningful_grid_export_threshold_kw
+        )
+        ordinary_msc_flow_ok = bool(
+            ordinary_msc_flow_trusted
+            and not ordinary_simultaneous_battery_grid_export
+        )
+        if not ordinary_msc_flow_trusted:
+            ordinary_msc_flow_classification = "unknown"
+        elif ordinary_simultaneous_battery_grid_export:
+            ordinary_msc_flow_classification = (
+                "simultaneous_battery_discharge_and_grid_export"
+            )
+        elif ordinary_load_serving_battery_discharge:
+            ordinary_msc_flow_classification = "load_serving_battery_discharge"
+        else:
+            ordinary_msc_flow_classification = "battery_within_tolerance"
         # Identify the two PV-only high-ceiling branches from the exact winning
         # policy source, never from overlapping activity flags.
         morning_slow_pv_only_high_ceiling_requested = bool(
@@ -1946,7 +1997,9 @@ class SigEnergyOptimizer:
             and pv_only_ems_safe
         )
         pv_surplus_topoff_block_active = bool(
-            pv_surplus_base_conditions and not topoff_target_met
+            pv_surplus_base_conditions
+            and feedin_price_for_pv_only < cfg.export_threshold_low
+            and not topoff_target_met
         )
 
         (
@@ -1954,6 +2007,133 @@ class SigEnergyOptimizer:
             pv_only_msc_authoritative_cap_kw,
         ) = self._bounded_pv_only_high_ceiling(s)
         pv_only_classification_cap_kw = pv_only_msc_high_ceiling_kw
+        positive_fit_msc_surplus_policy_active = bool(
+            positive_fit_override
+            and not positive_fit_battery_export_authorized
+            and desired_export_source == "positive_fit_override"
+            and desired_export_limit > 0.01
+        )
+        ordinary_msc_economic_policy_active = bool(
+            (
+                feedin_price_for_pv_only >= cfg.export_threshold_low
+                and not positive_fit_override
+            )
+            or positive_fit_msc_surplus_policy_active
+        )
+        ordinary_msc_surplus_context = bool(
+            automatic_control_mode
+            and math.isfinite(feedin_price_for_pv_only)
+            and ordinary_msc_economic_policy_active
+            and feedin_price_for_pv_only < cfg.export_threshold_high
+            and not s.feedin_is_negative
+            and not s.price_is_negative
+            and not (
+                is_evening_or_night
+                and (export_blocked_effective or export_forecast_guard)
+            )
+            and not export_spike_active
+            and not morning_dump_active
+            and not morning_slow_charge_active
+            and not evening_export_boost_active
+            and not export_solar_override
+            and (not solar_surplus_bypass or pv_only_branch_policy_deferred)
+            and (
+                not previous_cycle_solar_surplus_policy_owned
+                or pv_only_branch_policy_deferred
+            )
+            and not standby_holdoff_active
+            and not battery_full_safeguard_block
+            and desired_export_source != "external_override"
+            and math.isfinite(float(s.battery_soc))
+        )
+        ordinary_msc_surplus_ceiling_active = bool(
+            ordinary_msc_surplus_context
+            and observed_automated_control_mode
+            and observed_max_self_consumption
+            and ordinary_msc_flow_ok
+            and pv_only_msc_high_ceiling_kw >= float(cfg.min_grid_transfer_kw)
+        )
+        if ordinary_msc_surplus_ceiling_active:
+            desired_export_limit = pv_only_msc_high_ceiling_kw
+            desired_export_source = "ordinary_msc_surplus_ceiling"
+            export_value_gate_pv_surplus_initiated_active = True
+            pv_surplus_initiation_source = "ordinary_msc_surplus_ceiling"
+            if positive_fit_msc_surplus_policy_active:
+                ordinary_msc_surplus_ceiling_reason = (
+                    "active: configured positive-FiT export permission has battery "
+                    "discharging disabled and is a bounded Maximum Self Consumption "
+                    "PV-surplus ceiling, not stored-battery export intent; trusted flow "
+                    "does not show meaningful simultaneous battery discharge and grid export."
+                )
+            else:
+                ordinary_msc_surplus_ceiling_reason = (
+                    "active: ordinary economic export permission is a bounded Maximum "
+                    "Self Consumption PV-surplus ceiling, not stored-battery export intent; "
+                    "trusted flow does not show meaningful simultaneous battery discharge "
+                    "and grid export."
+                )
+        elif ordinary_msc_surplus_context:
+            # Phase 1 deliberately does not attempt a multi-cycle EMS transition.
+            # A plain ordinary tier cannot retain a live ceiling while its MSC
+            # ownership or battery-flow evidence is unverified.
+            desired_export_limit = 0.0
+            desired_export_source = "ordinary_msc_surplus_closed"
+            if not observed_automated_control_mode:
+                ordinary_msc_surplus_ceiling_reason = (
+                    "blocked: Automated control is not genuinely observed."
+                )
+            elif not observed_max_self_consumption:
+                ordinary_msc_surplus_ceiling_reason = (
+                    "blocked: exact Maximum Self Consumption is not genuinely observed."
+                )
+            elif battery_discharge_kw_for_pv_only is None:
+                ordinary_msc_surplus_ceiling_reason = (
+                    "blocked: battery flow is unknown or untrustworthy."
+                )
+            elif ordinary_grid_export_kw is None:
+                ordinary_msc_surplus_ceiling_reason = (
+                    "blocked: grid export flow is unknown or untrustworthy."
+                )
+            elif ordinary_simultaneous_battery_grid_export:
+                ordinary_msc_surplus_ceiling_reason = (
+                    "blocked: meaningful battery discharge and grid export are "
+                    "simultaneously observed."
+                )
+            else:
+                ordinary_msc_surplus_ceiling_reason = (
+                    "blocked: ordinary MSC flow evidence is not safely established."
+                )
+        battery_export_owner_by_source = {
+            "morning_dump": "morning_dump",
+            "high_price_or_spike": (
+                "export_spike" if export_spike_active else "high_price"
+            ),
+            "positive_fit_override": (
+                "positive_fit_override"
+                if positive_fit_battery_export_authorized
+                else "none"
+            ),
+            "solar_override": "solar_override",
+            # Unit-level policy overrides retain their established deliberate
+            # target semantics; live manual modes are handled separately.
+            "external_override": "external_override",
+        }
+        battery_export_owner = battery_export_owner_by_source.get(
+            desired_export_source,
+            "none",
+        )
+        if (
+            desired_export_source == "ordinary_tier"
+            and evening_export_boost_active
+        ):
+            # Evening Boost currently shares the legacy numeric tier source, so
+            # retain its explicit ownership without granting that source generic
+            # battery-export authority.
+            battery_export_owner = "evening_export_boost"
+        explicit_battery_export_owner_active = bool(
+            desired_export_limit > 0.01
+            and battery_export_owner != "none"
+        )
         pv_only_msc_transition_ready = bool(
             observed_automated_control_mode
             and pv_surplus_common_conditions
@@ -1968,6 +2148,7 @@ class SigEnergyOptimizer:
             and not export_blocked_effective
             and not export_forecast_guard
             and not positive_fit_override
+            and not explicit_battery_export_owner_active
             and pv_only_msc_high_ceiling_kw >= float(cfg.min_grid_transfer_kw)
         )
         pv_only_msc_stage1_active = bool(
@@ -2001,9 +2182,86 @@ class SigEnergyOptimizer:
                 "export setpoint is a ceiling."
             )
 
+        unowned_ordinary_tier_blocked = bool(
+            desired_export_limit > 0.01
+            and desired_export_source == "ordinary_tier"
+            and battery_export_owner == "none"
+            and not pv_only_msc_high_ceiling_active
+        )
+        if unowned_ordinary_tier_blocked:
+            desired_export_limit = 0.0
+            desired_export_source = "ordinary_msc_surplus_closed"
+            if ordinary_msc_surplus_ceiling_reason == "inactive":
+                ordinary_msc_surplus_ceiling_reason = (
+                    "blocked: the ordinary tier has no explicit stored-battery "
+                    "export owner and MSC surplus-ceiling readiness is unavailable."
+                )
+
+        unowned_positive_fit_override_blocked = bool(
+            desired_export_limit > 0.01
+            and desired_export_source == "positive_fit_override"
+            and not positive_fit_battery_export_authorized
+        )
+        if unowned_positive_fit_override_blocked:
+            desired_export_limit = 0.0
+            desired_export_source = "positive_fit_msc_surplus_closed"
+            if ordinary_msc_surplus_ceiling_reason == "inactive":
+                ordinary_msc_surplus_ceiling_reason = (
+                    "blocked: configured positive-FiT export permission has battery "
+                    "discharging disabled, and verified MSC surplus-ceiling readiness "
+                    "is unavailable."
+                )
+
+        msc_surplus_ceiling_requested = bool(
+            desired_export_limit > 0.01
+            and (
+                ordinary_msc_surplus_ceiling_active
+                or pv_only_branch_high_ceiling_active
+                or pv_only_msc_high_ceiling_active
+            )
+        )
+        deliberate_battery_export_requested = bool(
+            desired_export_limit > 0.01
+            and battery_export_owner != "none"
+        )
+        if msc_surplus_ceiling_requested:
+            requested_export_intent = MSC_SURPLUS_CEILING
+        elif deliberate_battery_export_requested:
+            requested_export_intent = BATTERY_EXPORT
+        else:
+            requested_export_intent = EXPORT_BLOCKED
+
         def classify_export_type() -> tuple[str, bool, float, str]:
             if desired_export_limit <= 0.01:
                 return "no_live_export", False, 0.0, "export limit closed"
+            if requested_export_intent == MSC_SURPLUS_CEILING:
+                return (
+                    "pv_surplus_only",
+                    True,
+                    measured_pv_surplus_kw,
+                    (
+                        "Maximum Self Consumption export ceiling; the ceiling is "
+                        "permission for inverter-controlled PV surplus, not a request "
+                        "for stored battery energy"
+                    ),
+                )
+            if requested_export_intent == BATTERY_EXPORT:
+                if battery_discharge_kw_for_pv_only is None:
+                    return (
+                        "unknown_or_mixed",
+                        False,
+                        0.0,
+                        "explicit stored-battery export intent with unknown battery flow",
+                    )
+                return (
+                    "battery_backed",
+                    False,
+                    0.0,
+                    (
+                        "explicit stored-battery export intent owned by "
+                        f"{battery_export_owner}"
+                    ),
+                )
             if battery_discharge_kw_for_pv_only is None:
                 return (
                     "unknown_or_mixed",
@@ -2136,7 +2394,7 @@ class SigEnergyOptimizer:
             export_value_gate_block_reason = "topoff_target_not_met"
 
         if (
-            pv_only_msc_high_ceiling_active
+            (pv_only_msc_high_ceiling_active or ordinary_msc_surplus_ceiling_active)
             and d.export_value_gate_would_block
             and export_value_gate_block_reason in {"price_below_floor", "price_below_import_cost_floor", "import_cost_floor_untrusted"}
             and pv_surplus_only_safe_for_export
@@ -2144,13 +2402,23 @@ class SigEnergyOptimizer:
             pv_surplus_export_allowed_below_import_floor = True
             d.export_value_gate_would_allow = True
             d.export_value_gate_would_block = False
-            d.export_value_gate_reason = (
-                "PV-surplus-only MSC export ceiling allowed: feed-in price "
-                f"{export_value_gate_fit_cents:.1f}c/kWh is below floor "
-                f"{export_value_gate_floor_cents:.1f}c/kWh, but the "
-                f"{desired_export_limit:.1f} kW Maximum Self Consumption setpoint "
-                "is a ceiling and known battery discharge remains within tolerance."
-            )
+            if ordinary_msc_surplus_ceiling_active:
+                d.export_value_gate_reason = (
+                    "Ordinary PV-surplus-only MSC export ceiling allowed: feed-in price "
+                    f"{export_value_gate_fit_cents:.1f}c/kWh is below floor "
+                    f"{export_value_gate_floor_cents:.1f}c/kWh, but the "
+                    f"{desired_export_limit:.1f} kW Maximum Self Consumption setpoint "
+                    "is a ceiling and trusted flow does not show meaningful simultaneous "
+                    "battery discharge and grid export."
+                )
+            else:
+                d.export_value_gate_reason = (
+                    "PV-surplus-only MSC export ceiling allowed: feed-in price "
+                    f"{export_value_gate_fit_cents:.1f}c/kWh is below floor "
+                    f"{export_value_gate_floor_cents:.1f}c/kWh, but the "
+                    f"{desired_export_limit:.1f} kW Maximum Self Consumption setpoint "
+                    "is a ceiling and known battery discharge remains within tolerance."
+                )
             export_value_gate_export_type = "pv_surplus_only"
 
         if (
@@ -2158,6 +2426,7 @@ class SigEnergyOptimizer:
             and
             d.export_value_gate_would_block
             and export_value_gate_block_reason in {"price_below_floor", "price_below_import_cost_floor", "import_cost_floor_untrusted"}
+            and requested_export_intent != BATTERY_EXPORT
             and pv_surplus_only_proven
             and desired_export_limit <= (measured_pv_surplus_kw + 0.05)
             and d.export_surplus_soc > 0.05
@@ -2208,7 +2477,13 @@ class SigEnergyOptimizer:
                 )
             ):
                 pv_surplus_export_allowed_below_import_floor = True
-            if pv_only_msc_high_ceiling_active or pv_only_branch_high_ceiling_active:
+            if ordinary_msc_surplus_ceiling_active:
+                actual_import_cost_guard_reason = (
+                    "bypassed: ordinary Maximum Self Consumption PV-surplus ceiling; "
+                    "the ceiling is not requested battery energy and trusted flow does "
+                    "not show meaningful simultaneous battery discharge and grid export."
+                )
+            elif pv_only_msc_high_ceiling_active or pv_only_branch_high_ceiling_active:
                 actual_import_cost_guard_reason = (
                     "bypassed: confirmed PV-only Maximum Self Consumption export ceiling; "
                     "the ceiling is not requested battery energy and battery discharge "
@@ -2270,12 +2545,14 @@ class SigEnergyOptimizer:
             )
 
         d.export_limit = desired_export_limit
+        d.export_intent = (
+            requested_export_intent
+            if desired_export_limit > 0.01
+            else EXPORT_BLOCKED
+        )
         d.requires_verified_msc_before_export = bool(
             desired_export_limit > 0.01
-            and (
-                pv_only_msc_high_ceiling_active
-                or pv_only_branch_high_ceiling_active
-            )
+            and d.export_intent == MSC_SURPLUS_CEILING
         )
         export_value_gate_bypassed_for_pv_surplus_only = bool(
             export_value_gate_export_type == "pv_surplus_only"
@@ -2295,10 +2572,18 @@ class SigEnergyOptimizer:
         # ---- Desired EMS mode ---------------------------------------
         desired_ems_mode = self._desired_ems_mode(
             s, morning_dump_active, standby_holdoff_active, export_solar_override,
-            desired_export_limit, desired_import_limit, export_min_soc,
+            desired_export_limit, d.export_intent, desired_import_limit,
             sunrise_soc_target, within_morning_grace,
-            export_blocked_for_forecast, is_evening_or_night,
         )
+        if (
+            morning_slow_charge_active
+            and desired_export_source == "morning_slow_closed"
+            and not observed_automated_control_mode
+            and s.current_ems_mode in DISCHARGE_MODES
+        ):
+            # Without genuinely observed Automated ownership, a closed Morning Slow
+            # decision must not pretend that it has authority to change the live EMS.
+            desired_ems_mode = s.current_ems_mode
         pv_surplus_only_ems_safety_clamp = False
         pv_surplus_only_ems_safety_clamp_reason = (
             f"inactive: final export type is {export_value_gate_export_type}."
@@ -2510,6 +2795,27 @@ class SigEnergyOptimizer:
                 f"{desired_export_limit:.1f} kW; Maximum Self Consumption controls "
                 "actual surplus-PV export without commanded battery discharge."
             )
+        elif ordinary_msc_surplus_ceiling_active:
+            d.export_reason = (
+                "Ordinary MSC surplus ceiling active: export limit set directly to "
+                f"{desired_export_limit:.1f} kW; Maximum Self Consumption controls "
+                "actual surplus-PV export without stored-battery export intent."
+            )
+        elif ordinary_msc_surplus_context:
+            d.export_reason = (
+                "Ordinary MSC surplus ceiling held closed: "
+                f"{ordinary_msc_surplus_ceiling_reason}"
+            )
+        elif unowned_ordinary_tier_blocked:
+            d.export_reason = (
+                "Ordinary export held closed: no explicit stored-battery export "
+                "owner is active."
+            )
+        elif unowned_positive_fit_override_blocked:
+            d.export_reason = (
+                "Positive-FiT export held closed: battery discharging is disabled "
+                "and verified MSC surplus-ceiling readiness is unavailable."
+            )
         d.import_reason = self._import_reason(
             s, morning_dump_active, standby_holdoff_active,
             sunrise_soc_target, desired_import_limit, pv_surplus_actual
@@ -2539,6 +2845,7 @@ class SigEnergyOptimizer:
             "solar_surplus_pv_high": "solar_surplus_bypass",
             "solar_override": "solar_override",
             "ordinary_tier": "normal_tier",
+            "ordinary_msc_surplus_ceiling": "ordinary_msc_surplus_ceiling",
         }
         export_branch = export_branch_by_source.get(
             desired_export_source,
@@ -2579,9 +2886,12 @@ class SigEnergyOptimizer:
             "evening_export_boost_active": evening_export_boost_active,
             "export_spike_active": export_spike_active,
             "positive_fit_override": positive_fit_override,
+            "positive_fit_battery_export_authorized": positive_fit_battery_export_authorized,
+            "positive_fit_msc_surplus_policy_active": positive_fit_msc_surplus_policy_active,
             "export_solar_override": export_solar_override,
             "pv_safeguard_active": pv_safeguard_active,
             "solar_surplus_bypass": solar_surplus_bypass,
+            "previous_cycle_solar_surplus_policy_owned": previous_cycle_solar_surplus_policy_owned,
             "battery_full_safeguard_block": battery_full_safeguard_block,
             "export_blocked_for_forecast": export_blocked_for_forecast,
             "export_forecast_guard": export_forecast_guard,
@@ -2617,6 +2927,15 @@ class SigEnergyOptimizer:
             "pv_only_msc_transition_ready": pv_only_msc_transition_ready,
             "pv_only_msc_stage1_active": pv_only_msc_stage1_active,
             "pv_only_msc_high_ceiling_active": pv_only_msc_high_ceiling_active,
+            "ordinary_msc_surplus_context": ordinary_msc_surplus_context,
+            "ordinary_msc_surplus_ceiling_active": ordinary_msc_surplus_ceiling_active,
+            "ordinary_msc_flow_trusted": ordinary_msc_flow_trusted,
+            "ordinary_msc_load_serving_battery_discharge": ordinary_load_serving_battery_discharge,
+            "ordinary_msc_simultaneous_battery_discharge_and_grid_export": ordinary_simultaneous_battery_grid_export,
+            "ordinary_msc_flow_safe": ordinary_msc_flow_ok,
+            "explicit_battery_export_owner_active": explicit_battery_export_owner_active,
+            "unowned_ordinary_tier_blocked": unowned_ordinary_tier_blocked,
+            "unowned_positive_fit_override_blocked": unowned_positive_fit_override_blocked,
             "morning_slow_pv_only_high_ceiling_requested": morning_slow_pv_only_high_ceiling_requested,
             "solar_surplus_pv_only_high_ceiling_requested": solar_surplus_pv_only_high_ceiling_requested,
             "pv_only_branch_high_ceiling_requested": pv_only_branch_high_ceiling_requested,
@@ -2685,6 +3004,9 @@ class SigEnergyOptimizer:
             "pv_surplus_only_ems_safety_clamp_reason": pv_surplus_only_ems_safety_clamp_reason,
             "export_value_gate_export_type": export_value_gate_export_type,
             "export_classification_reason": export_classification_reason,
+            "requested_export_intent": requested_export_intent,
+            "export_intent": d.export_intent,
+            "battery_export_owner": battery_export_owner,
             "pv_surplus_initiation_source": pv_surplus_initiation_source,
             "pv_surplus_estimated_init_reason": pv_surplus_estimated_init_reason,
             "pv_surplus_probe_export_cap_kw": pv_surplus_probe_export_cap_kw,
@@ -2692,6 +3014,7 @@ class SigEnergyOptimizer:
             "pv_only_msc_authoritative_cap_kw": pv_only_msc_authoritative_cap_kw,
             "pv_only_msc_transition_reason": pv_only_msc_transition_reason,
             "pv_only_msc_high_ceiling_reason": pv_only_msc_high_ceiling_reason,
+            "ordinary_msc_surplus_ceiling_reason": ordinary_msc_surplus_ceiling_reason,
             "pv_only_branch_source": pv_only_branch_source,
             "pv_only_branch_safety_reason": pv_only_branch_safety_reason,
             "pv_only_branch_policy_deferred_reason": pv_only_branch_policy_deferred_reason,
@@ -2718,6 +3041,10 @@ class SigEnergyOptimizer:
             "battery_discharge_kw_for_pv_only": battery_discharge_kw_for_pv_only,
             "battery_flow_source_for_pv_only": battery_flow_source_for_pv_only,
             "pv_only_discharge_tolerance_kw": pv_only_discharge_tolerance_kw,
+            "ordinary_msc_grid_export_kw": ordinary_grid_export_kw,
+            "ordinary_msc_grid_export_source": ordinary_grid_export_flow_source,
+            "ordinary_msc_flow_classification": ordinary_msc_flow_classification,
+            "ordinary_msc_meaningful_export_threshold_kw": meaningful_grid_export_threshold_kw,
             "meaningful_export_open_threshold_kw": 0.0,
             "pv_cap_reason": pv_cap_reason,
             "current_pv_max_limit_kw": current_pv_max_limit_kw,
@@ -3207,6 +3534,7 @@ class SigEnergyOptimizer:
 
     def _freeze_decision_to_live_mode(self, state: SolarState, decision: Decision, mode_label: str) -> None:
         if mode_label != self.cfg.automated_option:
+            decision.export_intent = EXPORT_BLOCKED
             decision.requires_verified_msc_before_export = False
             decision.trace_gates["observed_automated_control_mode"] = False
             decision.trace_gates["pv_only_branch_high_ceiling_active"] = False
@@ -3221,6 +3549,7 @@ class SigEnergyOptimizer:
                     f"blocked {branch_source}: Automated ownership is unavailable "
                     "or not genuinely observed"
                 )
+            decision.trace_values["export_intent"] = EXPORT_BLOCKED
         decision.ems_mode = state.current_ems_mode
         decision.export_limit = state.current_export_limit
         decision.import_limit = state.current_import_limit
@@ -3755,6 +4084,35 @@ class SigEnergyOptimizer:
             battery_power_kw = derived_inputs[2] + measured_import - measured_export - derived_inputs[3]
             return max(0.0, -battery_power_kw), "measured_grid_flow"
         return None, "unknown"
+
+    def _grid_export_kw_for_ordinary_msc_check(
+        self,
+        s: SolarState,
+    ) -> tuple[Optional[float], str]:
+        """Return trusted non-negative grid export for ordinary MSC flow safety."""
+        inputs = s.hvac_solar_inputs
+        if inputs.live_snapshot:
+            observed = inputs.grid_export_power
+            if not (observed.available and observed.fresh):
+                return None, "unknown"
+            try:
+                grid_export_kw = float(observed.value)
+            except (TypeError, ValueError, OverflowError):
+                return None, "unknown"
+            if not math.isfinite(grid_export_kw):
+                return None, "unknown"
+            return max(grid_export_kw, 0.0), "direct_grid_export_sensor"
+
+        # Hand-built unit SolarState objects predate the freshness evidence above.
+        if s.grid_export_power_kw is None:
+            return None, "unknown"
+        try:
+            grid_export_kw = float(s.grid_export_power_kw)
+        except (TypeError, ValueError, OverflowError):
+            return None, "unknown"
+        if not math.isfinite(grid_export_kw):
+            return None, "unknown"
+        return max(grid_export_kw, 0.0), "raw_grid_export_field"
 
     def _optimizer_import_topup_summary_today(self) -> dict[str, Any]:
         return self._state_store.optimizer_import_topup_summary(
@@ -4480,13 +4838,10 @@ class SigEnergyOptimizer:
 
     def _desired_ems_mode(self, s: SolarState, morning_dump: bool, standby_holdoff: bool,
                            export_solar_override: bool, desired_export: float,
-                           desired_import: float, export_min_soc: float,
-                           sunrise_soc_target: float, within_morning_grace: bool,
-                           export_blocked_forecast: bool,
-                           is_evening_or_night: bool) -> str:
+                           export_intent: str, desired_import: float,
+                           sunrise_soc_target: float, within_morning_grace: bool) -> str:
         cfg = self.cfg
         bsoc = s.battery_soc
-        currently_discharging = s.current_ems_mode in DISCHARGE_MODES
         currently_charging = s.current_ems_mode in CHARGE_MODES
 
         def _charge_mode():
@@ -4497,30 +4852,29 @@ class SigEnergyOptimizer:
         if morning_dump:
             return MODE_CMD_DISCHARGE_PV
         if s.demand_window_active:
-            return MODE_CMD_DISCHARGE_PV if desired_export > 0 else MODE_MAX_SELF
+            return (
+                MODE_CMD_DISCHARGE_PV
+                if export_intent == BATTERY_EXPORT and desired_export > 0.01
+                else MODE_MAX_SELF
+            )
         if standby_holdoff and desired_export == 0:
             # Use stored floor from holdoff entry to avoid drift from forecast updates
             holdoff_discharge_floor = self._holdoff_entry_floor or (sunrise_soc_target + cfg.soc_hysteresis)
             return MODE_MAX_SELF if bsoc < holdoff_discharge_floor else MODE_CMD_DISCHARGE_PV
         if desired_import > 0 and not s.price_is_negative:
             return _charge_mode()
-        if export_solar_override:
+        if (
+            export_solar_override
+            and export_intent == BATTERY_EXPORT
+            and desired_export > 0.01
+        ):
             return MODE_CMD_DISCHARGE_PV
         if s.price_is_negative and s.current_price <= cfg.import_threshold_low:
             return MODE_CMD_CHARGE_GRID
         if s.feedin_is_negative:
             return MODE_MAX_SELF
-        if desired_export > 0:
+        if export_intent == BATTERY_EXPORT and desired_export > 0.01:
             return MODE_CMD_DISCHARGE_PV
-        if not export_blocked_forecast and bsoc > export_min_soc + cfg.soc_hysteresis:
-            pv_surplus = max(s.pv_kw - s.load_kw, 0.0)
-            if pv_surplus == 0 and not is_evening_or_night:
-                return MODE_MAX_SELF
-            if currently_discharging and s.feedin_price >= cfg.export_threshold_low * cfg.export_hysteresis_percent:
-                return MODE_CMD_DISCHARGE_PV
-            if s.feedin_price >= cfg.export_threshold_low:
-                return MODE_CMD_DISCHARGE_PV
-            return MODE_MAX_SELF
         # Cheap import conditions
         grid_limit_base = self._grid_limit_base(s, standby_holdoff)
         if (grid_limit_base > 0
