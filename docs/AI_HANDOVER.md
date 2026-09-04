@@ -1,150 +1,107 @@
-# SigEnergy Optimizer - AI Handover
+# SigEnergy Optimizer AI Handover
 
-## 1. Project purpose
-Home Assistant add-on and web UI for SigEnergy battery/energy optimization using Home Assistant state, Amber pricing, and solar forecast inputs. The project is safety-first and intended to replace older SigEnergy blueprint automations.
+Last consolidated: 2026-09-04
 
-## 2. Current source-of-truth files
-- Root guidance: AGENTS.md and README.md
-- Add-on version/package metadata: sigenergy_optimizer_addon/config.yaml
-- Main runtime configuration and entity assumptions: app/config.py
-- Core optimizer logic: app/optimizer.py
-- Control-map/audit reference: docs/CONTROL_MAP.md
-- API/UI entry points: app/main.py and app/routers/
-- Forecast, earnings, and persistence helpers: app/forecast_utils.py, app/earnings.py, app/state_store.py
-- Tests: tests/
-- Source of truth is this project folder, not ZIPs, generated outputs, local env files, caches, or test artifacts.
+Keep this handover concise and current. Update it at meaningful checkpoints, phase transitions, and before handing work to a new ChatGPT/Codex session. Do not retain obsolete historical state merely because it once appeared here; `CURRENT_STATE.md` is the first place to look for present state.
 
-## 3. Current version
-- **Authoritative source**: sigenergy_optimizer_addon/config.yaml (version field)
-- **Current live version**: 2.3.33-haos44
-- **Current live source**: commit `3e33088767977da6ba6543074e4129ecf9705e87`, immutable tag `v2.3.33-haos44`.
-- **Current release candidate**: the measured-solar permission correction is merged on `main` at commit `803980413e155c7389384d2edca52e53a7f84c5e`; add-on metadata is being prepared as `2.3.34-haos45`.
-- **Live release note**: 2.3.33-haos44 fixed HVAC solar-permission freshness when a valid Home Assistant EMS selector had not recently changed.
-- **Release-candidate control impact**: HVAC solar permission is corrected so only measured opportunity may authorise `start` or `continue`. Solcast remains published as diagnostic context but cannot authorise permission or make otherwise-fresh measured inputs unavailable.
-- **Isolation rule**: this permission evaluator and HA publication do not alter inverter commands, export-limit policy, PV MAX behaviour, actuator settlement, Climate Manager profiles, zones, targets, AC0, or AirTouch operation.
-- **Note**: release.sh updates config.yaml but not README.md. Verify all version surfaces manually during release.
+This is the minimum engineering context needed to continue safely. Read in this order:
 
-## 4. Main features
-- Event-driven optimizer with 60-second heartbeat fallback.
-- Home Assistant add-on with ingress web UI and REST/WebSocket integration.
-- Amber price and feed-in driven import/export decisions.
-- Value Gate and actual import-cost protection block automatic battery-backed or mixed export below today's highest trusted actual optimiser import/top-up price. True PV-surplus-only export may still be allowed after the fixed 100% export top-off requirement is met and measured surplus is proven; separate guarded estimated/probe export paths remain narrowly capped. Manual and force modes remain exempt.
-- Solar forecast-aware battery/export planning.
-- Authoritative advisory entity `sensor.sigenergy_hvac_solar_permission`, publishing `start`, `continue`, `blocked`, or `unavailable` for Climate Manager solar-target opportunity.
-- HVAC measured opportunity is `max(actual_pv_kw - ordinary_house_load_kw, 0)`, using `sensor.sigen_plant_pv_power` and `sensor.sigen_plant_consumed_power`.
-- Solcast HVAC opportunity attributes are diagnostic-only and are explicitly marked unusable for permission authority.
-- Earnings/session tracking and reporting.
-- Manual override controls via HA helper mode select and UI.
-- Non-live simulation/preview/overlay tools documented in README.
-- Runtime tuning through dashboard controls plus advanced extra_env overrides.
+1. root and project `AGENTS.md`;
+2. `docs/CURRENT_STATE.md` for the volatile checkpoint and exact next action;
+3. `docs/CONTROL_CONTRACT.md` for durable semantics;
+4. `docs/ROADMAP.md` for phase gates;
+5. `docs/DECISIONS.md` for approved rationale.
 
-## 5. Important design decisions
-- Safety is more important than aggressiveness.
-- Keep control logic centralized in app/optimizer.py.
-- Keep entity IDs and thresholds configurable through app/config.py and add-on options.
-- Separate non-live simulation/inspection tools from live control actions.
-- Changes to control logic should be small, explicit, and accompanied by before/after reasoning and test notes.
-- SigEnergy Optimizer owns only measured energy-opportunity and energy-safety evaluation for the HVAC permission contract.
-- Climate Manager remains the sole owner of sessions, profiles, zones, temperature targets, battery-policy overlays, AC0, and AirTouch commands.
-- Do not scan .git, .venv, ZIP/release artifacts, backups, caches, generated files, local DBs, or unrelated files unless explicitly required.
+Use `docs/CHANGELOG.md` only when release history is needed. Do not reconstruct current state from old changelog entries.
 
-## 6. Safety rules / do-not-break rules
-- Be conservative with battery, grid, solar, import/export, and live-control assumptions.
-- Preserve manual override and safety behaviour.
-- Do not assume grid sign conventions from a single signed sensor if separate import/export sensors are configured.
-- Do not assume export/import semantics, battery SoC meaning, inverter state behaviour, or tariff interpretation without checking current config/docs.
-- Document entity and integration assumptions for any logic change.
-- HVAC permission `start` may create or retain a Climate Manager solar target session.
-- HVAC permission `continue` may retain an already-active session only; it must never create or recreate one.
-- `blocked` and `unavailable` remove only the solar-target overlay. They do not directly turn HVAC, zones, or AC0 off.
-- A prior permission must not survive an uncertain restart boundary. Continuation relies only on a trustworthy, unexpired result published successfully by the current process.
-- Solcast, estimated opportunity, PV MAX, zero export, feed-in price, export-constraint state, diagnostic prose, and Home Assistant's retained prior entity state must not independently authorise HVAC permission.
-- Material battery discharge blocks permission. SigEnergy Optimizer must not add Climate Manager SoC thresholds to this contract.
-- Do not run old SigEnergy blueprint automations alongside this add-on.
+## Project and live baseline
 
-## 7. Control mode behaviour
-- Documented HA helper mode options are:
-  - Automated
-  - Force Full Export
-  - Force Full Import
-  - Force Full Import + PV
-  - Prevent Import & Export
-  - Manual
-- README distinguishes non-live tools from live actions:
-  - Verified non-live paths are Simulate Automated, Preview, Overlay This, and Clear Simulation.
-  - Verified live-control paths are Run Cycle Now and manual override actions.
-  - Manual override controls exist in the UI and should be returned to Automated after testing when appropriate.
-- Needs confirmation: whether current UI/runtime explicitly exposes a separately named "monitor-only" mode beyond the documented non-live simulation tools.
+SigEnergy Optimizer is a safety-first Home Assistant add-on that coordinates SigEnergy battery, grid import/export, PV, tariff, and forecast-aware decisions.
 
-## 8. Battery/grid/solar/import/export assumptions
-- Default config uses separate import and export power sensors, separate energy sensors, and separate Amber import/export value entities.
-- Battery SoC, reserve floors, sunrise reserve, export thresholds, import thresholds, and cap values are configurable in app/config.py.
-- Grid import/export limit entities, ESS charge/discharge limits, and PV max power limits are live-controlled surfaces.
-- reason_text_helper and sigenergy_mode helper entities are part of the operator-facing control/reporting path.
-- Avoid changing logic that depends on SoC floors, reserve buffers, forecast safety, or export/import thresholds without test notes.
-- HVAC permission start threshold is 1.0 kW measured opportunity; continuation threshold is 0.5 kW.
-- Required live measurements use the existing 120-second freshness/expiry boundary.
-- Missing or stale Solcast does not make otherwise-valid measured HVAC permission inputs unavailable.
-- Published v2 contract attributes include `scope=solar_target_opportunity_only`, `soc_policy_included=false`, `consumer_safety_overlay_required=true`, `controls_hvac_directly=false`, and `contract_version=hvac_solar_permission_v2`.
+The known-good live and rollback release is `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`. A later development checkpoint is not a live baseline until it has been deliberately released, installed, and proven.
 
-## 9. Key files and folders
-- AGENTS.md
-- README.md
-- docker-compose.yml
-- Dockerfile
-- requirements.txt
-- release.sh
-- sigenergy_optimizer_addon/config.yaml
-- app/config.py
-- app/main.py
-- app/optimizer.py
-- app/forecast_utils.py
-- app/earnings.py
-- app/ha_client.py
-- app/ha_ws_client.py
-- app/state_store.py
-- app/routers/
-- tests/
+## Worktree boundaries
 
-## 10. Known issues or watch items
-- Old blueprint automation coexistence is explicitly unsafe.
-- Control-path regressions can come from wrong entity assumptions, wrong tariff interpretation, or mistaken import/export sign handling.
-- Note: release.sh updates config.yaml version but not README.md, so ensure README.md is manually updated when releasing new versions.
-- Local env/test artifact files exist in the repo root but are not source of truth.
-- Daytime full-battery export now clamps to measured PV surplus (not optimistic solar-power-now headroom) when tomorrow forecast is below forecast_safety_charging × battery_capacity_kwh.
-- The general Value Gate flags still control stored-energy advisory/enforcement behaviour, but the actual import-cost guard is a hard automatic protection for optimiser-controlled battery-backed/mixed export. Manual force modes remain exempt, and PV-surplus-only export below the import-cost floor is allowed only after the top-off target is met and export is safely capped to measured surplus or the conservative estimated-surplus initiation probe.
-- Live 2.3.33-haos44 still contains the confirmed advisory HVAC permission defect where Solcast-estimated opportunity can promote measured opportunity below the 1.0 kW start threshold to `start`. The correction is merged on `main` at commit `803980413e155c7389384d2edca52e53a7f84c5e` and is being prepared as 2.3.34-haos45; it is not live until built, installed, and validated.
+Only the explicitly assigned worktree is writable for a task. Current development uses:
 
-## 11. Next likely work
-- Commit and push the 2.3.34-haos45 release metadata and documentation, create the immutable release tag, run the build, install the add-on in Home Assistant, and validate the corrected entity live.
-- Confirm live publication uses measured opportunity only and exposes all v2 contract attributes.
-- Do not begin Climate Manager integration until the corrected SigEnergy Optimizer release is installed and validated.
-- After validation, provide Climate Manager the exact `start`/`continue`/`blocked`/`unavailable` consumer contract; Climate Manager must not infer permission from other SigEnergy entities.
-- Do not touch the parked `feature/safety-actuator-refactor` branch as part of this work.
+- `C:\Projects\sigenergy_optimizer-haos53-refactor`
+- branch `refactor/msc-baseline-overlays-haos53`
 
-## 12. Testing/audit checklist
-- Run targeted tests for changed control, forecast, earnings, and state-store paths.
-- For any control logic change, document before/after reasoning and include test notes.
-- Manually verify behaviour for non-live simulation tools versus live actions.
-- Verify helper entities and configured entity IDs exist before diagnosing logic faults.
-- Verify old blueprint automations are disabled when testing live add-on control.
-- Check add-on logs after install/update and after live override testing.
-- Run `tests/test_hvac_solar_permission.py`, `tests/test_negative_fit_pv_curtailment.py`, and `tests/test_remote_ems_control.py` after HVAC permission changes.
-- Run the full repository test suite before commit and again before release.
-- Test restart behavior: measured opportunity from 0.5 kW to below 1.0 kW must remain blocked without a current-process prior permission.
-- Test that missing or stale Solcast remains diagnostic-only.
+Protected references:
 
-## 13. Packaging/release notes
-- Add-on metadata/version lives in sigenergy_optimizer_addon/config.yaml.
-- README documents release.sh for version bump/tag/release flow.
-- Keep add-on config, app config defaults, and README setup instructions aligned.
-- Exclude local env files, caches, coverage, test outputs, ZIPs, and other generated artifacts from releases.
+- `C:\Projects\sigenergy_optimizer` contains intentional dirty legacy work. Never modify, reset, or stash it.
+- `C:\Projects\sigenergy_optimizer-pv-hotfix` is the clean haos53/main release reference. Never modify it.
+- The old `feature/safety-actuator-refactor` branch is conceptual reference only. Never wholesale merge it.
 
-## 14. How a future AI should start work on this project
-1. Read AGENTS.md first.
-2. Read this handover, then README.md and sigenergy_optimizer_addon/config.yaml.
-3. Check app/config.py before assuming entity IDs, thresholds, or mode labels.
-4. Touch only the minimum files needed; keep control changes small and explicit.
-5. Treat battery/grid/solar/import/export logic as safety-sensitive.
-6. If a requested change affects live control, record before/after reasoning and validate with targeted tests.
-7. If version or behaviour documentation conflicts, write Needs confirmation rather than guessing.
+Always verify branch, HEAD, and expected cleanliness against `CURRENT_STATE.md` before editing. Stop on a material mismatch.
+
+## Current architecture
+
+Phase 1 separates export capacity from stored-battery export authority:
+
+- `EXPORT_BLOCKED`: no live export permission;
+- `MSC_SURPLUS_CEILING`: a ceiling for genuine inverter-controlled surplus while remaining in Maximum Self Consumption;
+- `BATTERY_EXPORT`: explicit deliberate stored-energy sale owned by an authorized policy.
+
+A positive export ceiling is not a battery-discharge command. Ordinary Automated operation uses MSC, normal PV MAX, and the configured high export ceiling unless a specific overlay or safety condition owns a different actuator.
+
+Import, export, charging, battery-export intent, PV curtailment, and safety/manual ownership are independent. Generic ordinary tariff eligibility cannot produce `BATTERY_EXPORT`.
+
+Deliberate owners such as qualifying Morning Dump, high-price export, spike, Evening Export Boost, enabled positive-FiT battery discharge, and established solar/external overrides keep their existing safeguards.
+
+## Current Phase 1 gap
+
+Morning Slow Charge still has a legacy measured-PV export-ceiling gate. It can hold export at the 0.01 kW closed sentinel until PV exceeds the slow-charge rate plus an old start margin.
+
+The approved correction is narrow:
+
+- Morning Slow owns the ESS charge rate;
+- remain in Maximum Self Consumption;
+- retain normal configured PV MAX;
+- retain the configured high export ceiling;
+- allow only genuine MSC surplus to export;
+- never create `BATTERY_EXPORT` intent.
+
+Do not implement persistent transition or settlement state as part of this fix. After it passes the focused protections, production freezes and the obsolete haos49 characterization failures are reconciled tests-only. Stop if a characterization failure exposes a real production defect.
+
+## Safety contracts to preserve
+
+- Cheap-FiT implicit export remains closed below 100% SoC.
+- Exact 100% cheap-FiT export uses only the verified Automated plus exact-MSC PV-only path.
+- Material or unknown battery flow cannot broaden that exception.
+- The separate positive-FiT export policy and its battery-discharge enable are independent.
+- Battery serving house load with negligible grid export is not automatically battery-to-grid sale.
+- Meaningful simultaneous battery discharge and grid export closes conservatively when no deliberate owner exists.
+- Unknown or stale evidence fails closed where safety or ownership cannot be proven.
+- Demand Window primarily owns import blocking and does not reduce normal PV MAX by implication.
+- Morning Dump remains deliberate battery export with its existing floor and window.
+- Value Gate remains advisory-only; the actual import-cost guard remains independent.
+- Negative-price, standby, reserve, forecast, freshness, remote-control, manual, and force behavior must not be casually redesigned.
+
+## Phase boundaries
+
+Phase 1 establishes decision and ownership semantics only.
+
+Phase 2 implements the multi-cycle deliberate-export-to-MSC sequence:
+
+1. close export;
+2. observe it closed later;
+3. request MSC;
+4. observe exact MSC later;
+5. reopen the normal high ceiling.
+
+Service-call success is not observed inverter state. Do not begin Phase 2 until Phase 1 is test-complete and live-proven.
+
+Climate Manager integration follows Phase 2 plus a short stabilisation audit. The intended stable interface is `sensor.sigenergy_hvac_solar_permission` with states `start`, `continue`, `blocked`, and `unavailable`. SigEnergy Optimizer owns energy opportunity and safety; Climate Manager owns HVAC profiles, zones, targets, comfort/manual behavior, AC0, and AirTouch commands. Climate Manager is not yet consuming this entity.
+
+## Working method
+
+- Inspect only the minimum files relevant to the assigned change.
+- Keep control changes narrow, reviewable, and accompanied by focused regressions.
+- Never modify Home Assistant directly from repository work.
+- Do not change software defaults to match live operator tuning.
+- Run focused architecture and protection suites before the complete suite.
+- Run `python -m compileall -q app tests` and `git diff --check`.
+- Keep release, build, install, and live validation as separately approved actions.
+
+The exact current test counts, operator tuning, commit IDs, and next task live in `CURRENT_STATE.md`, not here.
