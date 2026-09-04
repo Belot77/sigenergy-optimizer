@@ -6,7 +6,7 @@
 - Morning Slow Charge now retains the normal high MSC export ceiling while limiting ESS charging to its configured slow rate, instead of using the legacy measured-PV start/stop/export-margin gate.
 - When Automated ownership is unobserved, a requested Morning Slow high ceiling is rejected, export remains closed with `EXPORT_BLOCKED`, and the existing live EMS is preserved without an MSC selection solely from Morning Slow.
 - Prepared the Phase 1 release-candidate identity as `2.3.43-haos54`; the known-good live rollback remains `2.3.42-haos53`.
-- This is an unreleased development checkpoint. It does not include the Phase 2 multi-cycle settlement sequence and has not been built, installed, deployed, or live-proven.
+- `v2.3.43-haos54` was successfully built and published from commit `174136280ed1c516b7666b4600622ce9544bb8e0`, and `main` now points to that candidate. It has not yet been installed or live-proven; `2.3.42-haos53` remains the known-good live rollback.
 
 ## 2026-08-31
 

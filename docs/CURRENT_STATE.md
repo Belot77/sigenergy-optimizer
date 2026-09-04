@@ -1,6 +1,6 @@
 # Current State
 
-Last consolidated: 2026-09-04
+Last consolidated: 2026-09-05
 
 **CURRENT TRUTH ONLY:** this file records the current operational and development checkpoint, not historical record. Durable control semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`.
 
@@ -57,7 +57,7 @@ No live proof is claimed. Phase 2 remains blocked until Phase 1 build/install/li
 
 ## Exact next action
 
-The Phase 1 release candidate is being prepared as `2.3.43-haos54`. The known-good rollback remains `2.3.42-haos53` / `19f3c70d24dc086737d5956a1c66cad230287edd`. The next gate is to commit and push the metadata-only haos54 candidate preparation, then separately approve and perform its build before any installation or live acceptance. Keep production frozen and do not begin Phase 2 until live acceptance passes.
+Phase 1 release candidate `2.3.43-haos54` is committed at `174136280ed1c516b7666b4600622ce9544bb8e0`, tagged `v2.3.43-haos54`, successfully built and published by GitHub Actions run `33922100095`, and GitHub `main` now points to that commit. The known-good live rollback remains `2.3.42-haos53` / `19f3c70d24dc086737d5956a1c66cad230287edd`. The next gate is Home Assistant repository refresh, then separately approved installation/start and Phase 1 live acceptance. No live proof is yet claimed. Keep Phase 2 blocked until live acceptance passes.
 
 ## Morning Slow Charge correction
 

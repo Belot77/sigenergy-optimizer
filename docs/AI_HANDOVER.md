@@ -1,6 +1,6 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-09-04
+Last consolidated: 2026-09-05
 
 Keep this handover concise and current. Update it at meaningful checkpoints, phase transitions, and before handing work to a new ChatGPT/Codex session. Do not retain obsolete historical state merely because it once appeared here; `CURRENT_STATE.md` is the first place to look for present state.
 
@@ -66,7 +66,7 @@ Production is frozen after that Stage A change and its narrow ownership safeguar
 
 Phase 1 implementation and automated validation are complete for this committed checkpoint, and independent read-only safety review passed. The full suite has exactly the two untouched Phase 2 settlement failures recorded in `CURRENT_STATE.md`; all other tests pass.
 
-No live proof is claimed. The next action is separately approved Phase 1 build/install/live acceptance from `e82ca50abc4b758038228f065ec7ba94c3bc4c1b`. Phase 2 remains blocked until that live acceptance passes.
+Phase 1 release candidate `2.3.43-haos54` is committed at `174136280ed1c516b7666b4600622ce9544bb8e0`, tagged `v2.3.43-haos54`, and its GitHub Actions multi-architecture build/publish passed in run `33922100095`. GitHub `main` now points to `174136280ed1c516b7666b4600622ce9544bb8e0`. The known-good live rollback remains `2.3.42-haos53` at `19f3c70d24dc086737d5956a1c66cad230287edd`; haos54 has not yet been installed or live-proven. The next gate is Home Assistant repository refresh followed by separately approved installation/start and Phase 1 live acceptance. Phase 2 remains blocked until that live acceptance passes.
 
 ## Safety contracts to preserve
 
