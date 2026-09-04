@@ -2577,12 +2577,12 @@ class SigEnergyOptimizer:
         )
         if (
             morning_slow_charge_active
-            and desired_export_source == "morning_slow_closed"
-            and not observed_automated_control_mode
+            and morning_slow_pv_only_high_ceiling_requested
+            and pv_only_branch_automated_ownership_blocked
             and s.current_ems_mode in DISCHARGE_MODES
         ):
-            # Without genuinely observed Automated ownership, a closed Morning Slow
-            # decision must not pretend that it has authority to change the live EMS.
+            # A rejected Morning Slow ceiling does not grant authority to change the
+            # live EMS when Automated ownership was not genuinely observed.
             desired_ems_mode = s.current_ems_mode
         pv_surplus_only_ems_safety_clamp = False
         pv_surplus_only_ems_safety_clamp_reason = (
@@ -4699,17 +4699,6 @@ class SigEnergyOptimizer:
         # but let Maximum Self Consumption balance real PV surplus naturally.
         # The export setting is a ceiling, not a commanded discharge target.
         if morning_slow_charge_active:
-            start_threshold = cfg.morning_slow_charge_rate_kw + cfg.morning_slow_export_start_margin_kw
-            stop_threshold = cfg.morning_slow_charge_rate_kw + cfg.morning_slow_export_stop_margin_kw
-            current_export = s.current_export_limit if s.current_export_limit > 0.05 else 0.0
-            export_is_open = current_export >= cfg.min_grid_transfer_kw
-            has_surplus_window = (
-                pv_surplus >= start_threshold
-                or (export_is_open and pv_surplus >= stop_threshold)
-            )
-            if not has_surplus_window:
-                return choice(0.0, "morning_slow_closed")
-
             ceiling, _authoritative_cap_kw = self._bounded_pv_only_high_ceiling(s)
             if ceiling <= 0.01:
                 return choice(0.0, "morning_slow_pv_closed")

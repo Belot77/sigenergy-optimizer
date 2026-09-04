@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-04 (unreleased development)
+
+- Separated ordinary Automated export permission from deliberate stored-battery export intent. Ordinary economically eligible operation remains in Maximum Self Consumption with normal PV MAX and the configured high export ceiling; only an explicit authorized policy owns `BATTERY_EXPORT`.
+- Morning Slow Charge now retains the normal high MSC export ceiling while limiting ESS charging to its configured slow rate, instead of using the legacy measured-PV start/stop/export-margin gate.
+- When Automated ownership is unobserved, a requested Morning Slow high ceiling is rejected, export remains closed with `EXPORT_BLOCKED`, and the existing live EMS is preserved without an MSC selection solely from Morning Slow.
+- This is an unreleased development checkpoint. It does not include the Phase 2 multi-cycle settlement sequence and has not been built, installed, deployed, or live-proven.
+
 ## 2026-08-31
 
 - Removed the legacy ordinary export-tier shortcut that granted `EXPORT_LIMIT_HIGH` whenever battery SoC was at least 99% and FiT was at least `$0.01/kWh`. The ordinary tier now has no SoC-based cheap-FiT grant.

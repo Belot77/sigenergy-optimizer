@@ -108,7 +108,7 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
             decision.trace_values["export_branch"],
         )
 
-    def test_high_ceiling_apply_reasserts_and_observes_exact_msc(self) -> None:
+    def test_high_ceiling_apply_preflights_drift_then_reasserts_exact_msc(self) -> None:
         ha = RecordingHA()
         optimizer = self.optimizer(ha)
         ha.state_values = {
@@ -125,9 +125,16 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
 
         mode_call = ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
         read_call = ("get_state_value", optimizer.cfg.ems_mode_select, "")
+        close_call = ("set_number", optimizer.cfg.grid_export_limit, 0.01)
         export_call = ("set_number", optimizer.cfg.grid_export_limit, 25.0)
-        self.assertLess(ha.calls.index(mode_call), ha.calls.index(read_call))
-        self.assertLess(ha.calls.index(read_call), ha.calls.index(export_call))
+        read_indices = [
+            index for index, call in enumerate(ha.calls) if call == read_call
+        ]
+        self.assertGreaterEqual(len(read_indices), 2)
+        self.assertLess(read_indices[0], ha.calls.index(close_call))
+        self.assertLess(ha.calls.index(close_call), ha.calls.index(mode_call))
+        self.assertLess(ha.calls.index(mode_call), read_indices[-1])
+        self.assertLess(read_indices[-1], ha.calls.index(export_call))
 
     def test_transition_into_discharge_settles_target_before_mode(self) -> None:
         ha = RecordingHA()

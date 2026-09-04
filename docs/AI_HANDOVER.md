@@ -33,7 +33,7 @@ Protected references:
 - `C:\Projects\sigenergy_optimizer-pv-hotfix` is the clean haos53/main release reference. Never modify it.
 - The old `feature/safety-actuator-refactor` branch is conceptual reference only. Never wholesale merge it.
 
-Always verify branch, HEAD, and expected cleanliness against `CURRENT_STATE.md` before editing. Stop on a material mismatch.
+Always verify the exact branch, HEAD, and cleanliness directly with Git in the assigned worktree before editing. Use `CURRENT_STATE.md` only for the relevant checkpoint/base SHA and expected logical working set; stop on a material mismatch.
 
 ## Current architecture
 
@@ -49,11 +49,11 @@ Import, export, charging, battery-export intent, PV curtailment, and safety/manu
 
 Deliberate owners such as qualifying Morning Dump, high-price export, spike, Evening Export Boost, enabled positive-FiT battery discharge, and established solar/external overrides keep their existing safeguards.
 
-## Current Phase 1 gap
+## Current Phase 1 checkpoint
 
-Morning Slow Charge still has a legacy measured-PV export-ceiling gate. It can hold export at the 0.01 kW closed sentinel until PV exceeds the slow-charge rate plus an old start margin.
+The narrow Morning Slow Charge correction is implemented but uncommitted and unreleased. Its legacy measured-PV start/stop/export-margin gate no longer owns export-ceiling opening.
 
-The approved correction is narrow:
+When Morning Slow is legitimately active under safe Automated/MSC ownership:
 
 - Morning Slow owns the ESS charge rate;
 - remain in Maximum Self Consumption;
@@ -62,7 +62,11 @@ The approved correction is narrow:
 - allow only genuine MSC surplus to export;
 - never create `BATTERY_EXPORT` intent.
 
-Do not implement persistent transition or settlement state as part of this fix. After it passes the focused protections, production freezes and the obsolete haos49 characterization failures are reconciled tests-only. Stop if a characterization failure exposes a real production defect.
+Production is frozen after that Stage A change and its narrow ownership safeguard. The two affected Value Gate expectations now distinguish safe low-surplus MSC permission from unobserved Automated ownership. Rejected unobserved ownership leaves export closed, preserves the existing live EMS, and causes no MSC write solely for Morning Slow. All 24 obsolete haos49 characterization failures were reconciled tests-only to the approved Phase 1 architecture.
+
+Phase 1 implementation and automated validation are complete for this checkpoint, and independent read-only safety review passed. The full suite has exactly the two untouched Phase 2 settlement failures recorded in `CURRENT_STATE.md`; all other tests pass.
+
+No live proof is claimed. The next action is review and approval of the checkpoint commit, followed by separately approved build/install/live acceptance. Phase 2 remains blocked until that live acceptance passes.
 
 ## Safety contracts to preserve
 
@@ -104,4 +108,4 @@ Climate Manager integration follows Phase 2 plus a short stabilisation audit. Th
 - Run `python -m compileall -q app tests` and `git diff --check`.
 - Keep release, build, install, and live validation as separately approved actions.
 
-The exact current test counts, operator tuning, commit IDs, and next task live in `CURRENT_STATE.md`, not here.
+Current test counts, operator tuning, checkpoint/base SHAs, and the next task live in `CURRENT_STATE.md`. Exact local branch, HEAD, and cleanliness must still be verified directly with Git.

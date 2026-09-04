@@ -68,13 +68,13 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
 
         decision = self.decide(optimizer, state, when)
 
-        self.assert_outputs(decision, (MODE_MAX_SELF, 0.0, 0.0, 1.0, 25.0, 25.0))
+        self.assert_outputs(decision, (MODE_MAX_SELF, 0.0, 0.0, 25.0, 25.0, 25.0))
         self.assertFalse(decision.trace_gates["morning_dump_active"])
-        self.assertTrue(decision.trace_gates["battery_only_mode"])
-        self.assertEqual("forecast_guard_block", decision.trace_values["export_branch"])
+        self.assertFalse(decision.trace_gates["battery_only_mode"])
+        self.assertEqual("blocked_or_zero", decision.trace_values["export_branch"])
         self.assertEqual("blocked", decision.trace_values["import_branch"])
 
-    def test_morning_slow_charge_ramps_export_and_limits_ess_charge(self) -> None:
+    def test_morning_slow_charge_uses_msc_ceiling_and_limits_ess_charge(self) -> None:
         when = datetime(2026, 1, 15, 9, 0)
         optimizer = self.optimizer(
             morning_slow_charge_enabled=True,
@@ -99,17 +99,17 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
 
         self.assert_outputs(
             decision,
-            (MODE_CMD_DISCHARGE_PV, 1.8, 0.0, 25.0, 2.0, 25.0),
+            (MODE_MAX_SELF, 25.0, 0.0, 25.0, 2.0, 25.0),
         )
         self.assertTrue(decision.trace_gates["morning_slow_charge_active"])
         self.assertEqual("morning_slow_charge", decision.trace_values["export_branch"])
         self.assertEqual("blocked", decision.trace_values["import_branch"])
         self.assertEqual(2.0, decision.trace_values["ess_charge_limit"])
 
-    def test_morning_slow_exit_needs_fit_below_hysteresis_to_recover_msc(self) -> None:
+    def test_morning_slow_exit_recovers_to_closed_msc(self) -> None:
         when = datetime(2026, 1, 15, 9, 0)
         cases = (
-            ("same_fit", 0.15, 15.0, MODE_CMD_DISCHARGE_PV),
+            ("same_fit", 0.15, 15.0, MODE_MAX_SELF),
             ("below_hysteresis", 0.07, 7.0, MODE_MAX_SELF),
         )
         for name, fit, fit_cents, expected_mode in cases:
@@ -250,11 +250,11 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
         self.assertEqual("normal_tier", decision.trace_values["export_branch"])
         self.assertEqual(8.5, decision.trace_values["export_tier_limit"])
 
-    def test_evening_boost_exit_needs_fit_below_hysteresis_to_recover_msc(self) -> None:
+    def test_evening_boost_exit_recovers_to_closed_msc_with_normal_pv_max(self) -> None:
         when = datetime(2026, 1, 15, 17, 30)
         cases = (
-            ("same_fit", 0.15, 15.0, MODE_CMD_DISCHARGE_PV, 25.0),
-            ("below_hysteresis", 0.07, 7.0, MODE_MAX_SELF, 0.1),
+            ("same_fit", 0.15, 15.0, MODE_MAX_SELF, 25.0),
+            ("below_hysteresis", 0.07, 7.0, MODE_MAX_SELF, 25.0),
         )
         for name, fit, fit_cents, expected_mode, expected_pv_max in cases:
             with self.subTest(name=name):
@@ -279,10 +279,7 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
                 )
                 self.assertFalse(decision.trace_gates["evening_export_boost_active"])
                 self.assertEqual("blocked_or_zero", decision.trace_values["export_branch"])
-                self.assertEqual(
-                    expected_mode == MODE_MAX_SELF,
-                    decision.trace_gates["battery_only_mode"],
-                )
+                self.assertFalse(decision.trace_gates["battery_only_mode"])
 
     def test_real_morning_dump_window_activates_then_expires(self) -> None:
         active_when = datetime(2026, 1, 15, 6, 0)
@@ -358,7 +355,7 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
 
         self.assert_outputs(
             active,
-            (MODE_CMD_DISCHARGE_PV, 1.8, 0.0, 25.0, 2.0, 25.0),
+            (MODE_MAX_SELF, 25.0, 0.0, 25.0, 2.0, 25.0),
         )
         self.assertTrue(active.trace_gates["morning_slow_charge_active"])
 
@@ -374,7 +371,7 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
 
         self.assert_outputs(
             exited,
-            (MODE_CMD_DISCHARGE_PV, 0.0, 0.0, 25.0, 25.0, 25.0),
+            (MODE_MAX_SELF, 0.0, 0.0, 25.0, 25.0, 25.0),
         )
         self.assertFalse(exited.trace_gates["morning_slow_charge_active"])
 
@@ -423,7 +420,7 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
 
         self.assert_outputs(
             exited,
-            (MODE_CMD_DISCHARGE_PV, 0.0, 0.0, 25.0, 25.0, 25.0),
+            (MODE_MAX_SELF, 0.0, 0.0, 25.0, 25.0, 25.0),
         )
         self.assertFalse(exited.trace_gates["evening_export_boost_active"])
 

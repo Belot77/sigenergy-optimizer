@@ -2276,7 +2276,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertTrue(decision.requires_verified_msc_before_export)
         self.assertNotIn("saving for sunset", decision.export_reason.lower())
 
-    def test_below_threshold_morning_slow_charge_stays_closed_under_msc(self) -> None:
+    def test_below_threshold_morning_slow_charge_uses_msc_surplus_ceiling(self) -> None:
         now_ts = datetime.now().timestamp()
         optimizer = self._optimizer(
             battery_full_safeguard_enabled=False,
@@ -2296,7 +2296,6 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             current_export_limit=0.01,
             grid_export_power_kw=0.0,
             battery_power_sensor_kw=-0.1,
-            current_ems_mode=MODE_CMD_DISCHARGE_PV,
         )
 
         decision = optimizer._decide(state)
@@ -2312,23 +2311,36 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             float(decision.trace_values.get("export_min_soc", 0.0))
             + optimizer.cfg.soc_hysteresis,
         )
+        self.assertLess(
+            float(decision.trace_values.get("pv_surplus_actual", 0.0)),
+            optimizer.cfg.morning_slow_charge_rate_kw
+            + optimizer.cfg.morning_slow_export_start_margin_kw,
+        )
         self.assertEqual(
-            "morning_slow_closed",
+            "morning_slow_pv_high",
             decision.trace_values.get("initial_desired_export_source"),
         )
-        self.assertEqual(0.0, decision.export_limit)
-        self.assertTrue(bool(decision.trace_gates.get("pv_only_branch_zero_ceiling")))
+        self.assertEqual(optimizer.cfg.export_limit_high, decision.export_limit)
+        self.assertEqual(optimizer.cfg.pv_max_power_normal, decision.pv_max_power_limit)
+        self.assertTrue(
+            bool(decision.trace_gates.get("pv_only_branch_high_ceiling_active"))
+        )
         self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
         self.assertEqual(
             optimizer.cfg.morning_slow_charge_rate_kw,
             decision.ess_charge_limit,
         )
-        self.assertFalse(decision.requires_verified_msc_before_export)
+        self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
+        self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+        self.assertTrue(decision.requires_verified_msc_before_export)
 
     def test_unobserved_automated_cannot_claim_closed_morning_msc_ownership(self) -> None:
         now_ts = datetime.now().timestamp()
+        ha = _RecordingHA()
         optimizer = self._optimizer(
+            ha=ha,
             battery_full_safeguard_enabled=False,
             max_battery_soc=100.0,
             morning_slow_charge_rate_kw=3.7,
@@ -2340,14 +2352,17 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             sigenergy_mode_observed=False,
             battery_soc=72.0,
             available_discharge_energy_kwh=21.6,
-            pv_kw=3.0,
-            solar_power_now_kw=3.0,
+            pv_kw=7.0,
+            solar_power_now_kw=7.0,
             load_kw=1.0,
             forecast_remaining_kwh=100.0,
             current_export_limit=0.01,
             grid_export_power_kw=0.0,
             battery_power_sensor_kw=-0.1,
             current_ems_mode=MODE_CMD_DISCHARGE_PV,
+            ha_control_enabled=True,
+            ha_control_switch_available=True,
+            ha_control_switch_state="on",
         )
 
         decision = optimizer._decide(state)
@@ -2355,9 +2370,26 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertFalse(
             bool(decision.trace_gates.get("observed_automated_control_mode"))
         )
+        self.assertGreater(
+            float(decision.trace_values.get("pv_surplus_actual", 0.0)),
+            optimizer.cfg.morning_slow_charge_rate_kw
+            + optimizer.cfg.morning_slow_export_start_margin_kw,
+        )
         self.assertEqual(
-            "morning_slow_closed",
+            "morning_slow_pv_high",
             decision.trace_values.get("initial_desired_export_source"),
+        )
+        self.assertTrue(
+            bool(decision.trace_gates.get("pv_only_branch_high_ceiling_requested"))
+        )
+        self.assertTrue(
+            bool(decision.trace_gates.get("pv_only_branch_automated_ownership_blocked"))
+        )
+        self.assertTrue(
+            bool(decision.trace_gates.get("pv_only_branch_exception_rejected"))
+        )
+        self.assertFalse(
+            bool(decision.trace_gates.get("pv_only_branch_high_ceiling_active"))
         )
         self.assertEqual(0.0, decision.export_limit)
         self.assertFalse(bool(decision.trace_gates.get("pv_only_branch_zero_ceiling")))
@@ -2365,7 +2397,16 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             bool(decision.trace_gates.get("pv_surplus_only_ems_safety_clamp"))
         )
         self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
         self.assertFalse(decision.requires_verified_msc_before_export)
+
+        asyncio.run(optimizer._apply(state, decision))
+
+        self.assertNotIn(
+            ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF),
+            ha.calls,
+        )
 
     def test_negative_import_price_retains_priority_over_morning_slow_charge(self) -> None:
         now_ts = datetime.now().timestamp()

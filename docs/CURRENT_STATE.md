@@ -15,6 +15,8 @@ Authority depends on the subject:
 
 If this file conflicts with an authoritative source, the authoritative source wins. Report the stale documentation and correct this file at the next permitted documentation write boundary.
 
+Exact local branch, HEAD, and cleanliness must always be verified directly with Git in the relevant worktree. Any SHA or working-set list recorded here describes a checkpoint for comparison; this file is not authoritative for its own current committed state.
+
 ## Live release and rollback
 
 - Known-good live release: `2.3.42-haos53`
@@ -28,8 +30,18 @@ Active writable worktree:
 
 - Path: `C:\Projects\sigenergy_optimizer-haos53-refactor`
 - Branch: `refactor/msc-baseline-overlays-haos53`
-- HEAD: `8309c5e6644c74f7aeb5ba613f983e0b7d2fe4c2`
-- Expected status: clean before the next production task
+- Relevant committed checkpoint/base SHA: `23ddb1b4e7c7081bbd92bcbced183f51ae36c57f`
+- Phase 1 production checkpoint beneath the documentation layer: `8309c5e6644c74f7aeb5ba613f983e0b7d2fe4c2`
+- Checkpoint working set (verify directly with Git before relying on it):
+  - `app/optimizer.py`
+  - `docs/AI_HANDOVER.md`
+  - `docs/CHANGELOG.md`
+  - `docs/CURRENT_STATE.md`
+  - `tests/test_export_value_gate_advisory.py`
+  - `tests/test_haos49_normal_characterization.py`
+  - `tests/test_haos49_special_mode_characterization.py`
+  - `tests/test_haos49_transition_characterization.py`
+  - `tests/test_msc_baseline_overlay_contract.py`
 
 Protected worktrees:
 
@@ -48,19 +60,23 @@ Phase 1, MSC baseline and overlay architecture, is the active phase. The committ
 - distinction between battery serving house load and simultaneous battery discharge plus grid export;
 - preserved haos53 exact-full cheap-FiT protection.
 
-Phase 1 is not ready for a test release. The Morning Slow Charge ceiling correction and haos49 characterization reconciliation remain mandatory, followed by a production freeze and live proof.
+The Phase 1 implementation and automated validation are complete for this checkpoint. Independent read-only safety review passed. The Morning Slow Charge ceiling correction is implemented but uncommitted and unreleased, and production is frozen. The two conflicting Value Gate Morning Slow expectations and all 24 obsolete haos49 characterization failures are reconciled tests-only; unobserved Automated ownership rejects the ceiling, leaves export closed, and preserves the existing live EMS without an MSC write.
 
-## Exact next production action
+No live proof is claimed. Phase 2 remains blocked until Phase 1 build/install/live acceptance passes.
 
-Correct the remaining Morning Slow Charge legacy export-ceiling gate.
+## Exact next action
 
-Observed on 2026-09-04:
+The next gate is review and approval of the Phase 1 checkpoint commit. Build/package, installation, and live acceptance require separate approval after that checkpoint. Keep production frozen and do not begin Phase 2 until live acceptance passes.
+
+## Morning Slow Charge correction
+
+The 2026-09-04 live evidence was:
 
 - about 3.2 kW PV and 1.1 kW load left the export ceiling at 0.01 kW;
 - later, about 4.4 kW PV and 1.1 kW load opened the ceiling to 25 kW;
 - the battery continued charging at about 2 kW and MSC exported genuine surplus correctly once the ceiling opened.
 
-Approved result:
+Implemented result:
 
 - Morning Slow owns the ESS charging rate;
 - EMS remains Maximum Self Consumption;
@@ -69,25 +85,23 @@ Approved result:
 - actual export remains genuine inverter-controlled MSC surplus;
 - Morning Slow never creates `BATTERY_EXPORT` intent.
 
-Do not implement the Phase 2 transition state machine as part of this correction.
+The legacy measured-PV start/stop/export-margin gate no longer owns the Morning Slow export ceiling. When that ceiling is rejected because Automated ownership is unobserved, the existing live EMS is preserved and no MSC write is issued solely for Morning Slow.
 
-## Test checkpoint before the Morning Slow correction
+## Current test checkpoint
 
-- Architecture contract: 30 passed, 2 intentionally deferred Phase 2 failures.
-- Value Gate: 89 passed.
-- `test_pv_surplus_hotfix.py`: 7 passed.
-- `test_haos52_control_cleanup.py`: 7 passed.
-- `test_demand_window_pv_max.py`: 3 passed.
-- `test_negative_fit_pv_curtailment.py`: 2 passed.
-- Full suite: 269 passed, 26 failed.
-  - 24 failures are obsolete haos49 characterization expectations awaiting tests-only reconciliation.
-  - 2 failures are the deferred Phase 2 transition tests.
+- Two directly reconciled Value Gate Morning Slow tests: 2 passed.
+- Full Value Gate advisory suite: 89 passed, 62 subtests passed.
+- Architecture contract: 31 passed, 21 subtests passed, 2 intentionally deferred Phase 2 failures.
+- Required protection suites combined: 108 passed, 68 subtests passed.
+- haos49 characterization suites: 46 passed, 49 subtests passed.
+- Full suite: 280 passed, 169 subtests passed, exactly 2 failures.
+  - `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`
+  - `test_exact_msc_does_not_reopen_before_export_is_observed_closed`
 - `python -m compileall -q app tests`: passed.
 - `git diff --check`: passed.
+- Independent read-only safety review: passed.
 
-After the Morning Slow production fix, reconcile the 24 haos49 failures without changing production. If any supposedly obsolete characterization failure reveals a real production defect, stop instead of rewriting that test.
-
-Target pre-live automated result: everything green except exactly the two deferred Phase 2 transition tests.
+Those two failures are the untouched Phase 2 close-observe-MSC-observe-reopen settlement contract. Do not weaken them during Phase 1 review.
 
 ## Current operator tuning
 

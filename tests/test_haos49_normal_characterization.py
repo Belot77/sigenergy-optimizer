@@ -57,14 +57,14 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
         values.update(overrides)
         return values
 
-    def test_overnight_pre_sunrise_and_sunrise_boundary_are_night_policy(self) -> None:
+    def test_overnight_pre_sunrise_and_sunrise_boundary_keep_ordinary_msc_ceiling(self) -> None:
         cases = (
-            ("overnight", datetime(2026, 1, 15, 2, 0), 0.0, 7.7, 5.0),
-            ("pre_sunrise", datetime(2026, 1, 15, 6, 30), 0.0, 7.7, 0.5),
-            ("sunrise_boundary", datetime(2026, 1, 15, 7, 0), 1.5, 5.3, 24.0),
+            ("overnight", datetime(2026, 1, 15, 2, 0), 0.0, 5.0),
+            ("pre_sunrise", datetime(2026, 1, 15, 6, 30), 0.0, 0.5),
+            ("sunrise_boundary", datetime(2026, 1, 15, 7, 0), 1.5, 24.0),
         )
 
-        for name, when, pv_kw, expected_export, hours_to_sunrise in cases:
+        for name, when, pv_kw, hours_to_sunrise in cases:
             with self.subTest(name=name):
                 optimizer = self.optimizer()
                 state = self.state(
@@ -80,16 +80,16 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
 
                 self.assert_control_outputs(
                     decision,
-                    ems_mode=MODE_CMD_DISCHARGE_PV,
-                    export_limit=expected_export,
+                    ems_mode=MODE_MAX_SELF,
+                    export_limit=25.0,
                     import_limit=0.0,
                 )
                 self.assertTrue(decision.trace_gates["is_evening_or_night"])
                 self.assertFalse(decision.trace_gates["close_to_sunset"])
-                self.assertEqual("normal_tier", decision.trace_values["export_branch"])
+                self.assertEqual("ordinary_msc_surplus_ceiling", decision.trace_values["export_branch"])
                 self.assertEqual("blocked", decision.trace_values["import_branch"])
                 self.assertEqual(8.5, decision.trace_values["export_tier_limit"])
-                self.assertEqual(expected_export, decision.trace_values["desired_export_limit"])
+                self.assertEqual(25.0, decision.trace_values["desired_export_limit"])
                 self.assertEqual(hours_to_sunrise, decision.trace_values["hours_to_sunrise"])
 
     def test_sunrise_plus_one_hour_enters_day_policy(self) -> None:
@@ -107,23 +107,23 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
 
         self.assert_control_outputs(
             decision,
-            ems_mode=MODE_CMD_DISCHARGE_PV,
-            export_limit=1.0,
+            ems_mode=MODE_MAX_SELF,
+            export_limit=25.0,
             import_limit=0.0,
         )
         self.assertFalse(decision.trace_gates["is_evening_or_night"])
         self.assertFalse(decision.trace_gates["close_to_sunset"])
-        self.assertEqual("normal_tier", decision.trace_values["export_branch"])
+        self.assertEqual("ordinary_msc_surplus_ceiling", decision.trace_values["export_branch"])
         self.assertEqual(3.0, decision.trace_values["pv_surplus_actual"])
-        self.assertEqual(1.0, decision.trace_values["desired_export_limit"])
+        self.assertEqual(25.0, decision.trace_values["desired_export_limit"])
 
-    def test_afternoon_and_approaching_sunset_pin_day_window_exit(self) -> None:
+    def test_afternoon_and_approaching_sunset_keep_ordinary_msc_ceiling(self) -> None:
         cases = (
-            ("afternoon", datetime(2026, 1, 15, 14, 0), 4.0, 1.0, False, False),
-            ("approaching_sunset", datetime(2026, 1, 15, 17, 30), 1.5, 5.3, True, True),
+            ("afternoon", datetime(2026, 1, 15, 14, 0), 4.0, False, False),
+            ("approaching_sunset", datetime(2026, 1, 15, 17, 30), 1.5, True, True),
         )
 
-        for name, when, pv_kw, expected_export, is_night, close_to_sunset in cases:
+        for name, when, pv_kw, is_night, close_to_sunset in cases:
             with self.subTest(name=name):
                 optimizer = self.optimizer()
                 state = self.state(
@@ -138,21 +138,21 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
 
                 self.assert_control_outputs(
                     decision,
-                    ems_mode=MODE_CMD_DISCHARGE_PV,
-                    export_limit=expected_export,
+                    ems_mode=MODE_MAX_SELF,
+                    export_limit=25.0,
                     import_limit=0.0,
                 )
                 self.assertEqual(is_night, decision.trace_gates["is_evening_or_night"])
                 self.assertEqual(close_to_sunset, decision.trace_gates["close_to_sunset"])
-                self.assertEqual("normal_tier", decision.trace_values["export_branch"])
-                self.assertEqual(expected_export, decision.trace_values["desired_export_limit"])
+                self.assertEqual("ordinary_msc_surplus_ceiling", decision.trace_values["export_branch"])
+                self.assertEqual(25.0, decision.trace_values["desired_export_limit"])
                 self.assertEqual(4.0 if name == "afternoon" else 0.5, decision.trace_values["hours_to_sunset"])
 
-    def test_low_medium_and_high_soc_pin_zero_export_ems_divergence(self) -> None:
+    def test_low_medium_and_high_soc_share_ordinary_msc_baseline(self) -> None:
         cases = (
-            ("low", 20.0, 6.0, MODE_MAX_SELF, 0.0, 0.0),
-            ("medium", 60.0, 18.0, MODE_CMD_DISCHARGE_PV, 0.0, 0.0),
-            ("high", 95.0, 28.5, MODE_CMD_DISCHARGE_PV, 1.0, 8.5),
+            ("low", 20.0, 6.0, MODE_MAX_SELF, 25.0, 0.0),
+            ("medium", 60.0, 18.0, MODE_MAX_SELF, 25.0, 0.0),
+            ("high", 95.0, 28.5, MODE_MAX_SELF, 25.0, 8.5),
         )
 
         for name, soc, available_kwh, ems_mode, export_limit, tier_limit in cases:
@@ -177,7 +177,7 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
                     export_limit=export_limit,
                     import_limit=0.0,
                 )
-                self.assertEqual("normal_tier" if export_limit else "blocked_or_zero", decision.trace_values["export_branch"])
+                self.assertEqual("ordinary_msc_surplus_ceiling", decision.trace_values["export_branch"])
                 self.assertEqual(tier_limit, decision.trace_values["export_tier_limit"])
                 self.assertEqual(ems_mode, decision.trace_values["desired_ems_mode"])
                 self.assertEqual(export_limit, decision.trace_values["desired_export_limit"])
@@ -288,19 +288,19 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
 
         self.assert_control_outputs(
             decision,
-            ems_mode=MODE_CMD_DISCHARGE_PV,
-            export_limit=1.0,
+            ems_mode=MODE_MAX_SELF,
+            export_limit=25.0,
             import_limit=0.0,
         )
-        self.assertEqual("normal_tier", decision.trace_values["export_branch"])
+        self.assertEqual("ordinary_msc_surplus_ceiling", decision.trace_values["export_branch"])
         self.assertEqual(5.0, decision.trace_values["export_tier_limit"])
-        self.assertEqual(1.0, decision.trace_values["desired_export_limit"])
+        self.assertEqual(25.0, decision.trace_values["desired_export_limit"])
         self.assertFalse(decision.trace_gates["export_spike_active"])
 
     def test_high_price_battery_export_and_spike_use_full_limit(self) -> None:
         when = datetime(2026, 1, 15, 2, 0)
         cases = (
-            ("high_price", 1.00, 100.0, False, "normal_tier"),
+            ("high_price", 1.00, 100.0, False, "high_price"),
             ("spike", 0.65, 65.0, True, "export_spike"),
         )
 
@@ -336,7 +336,7 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
     def test_high_price_and_spike_do_not_export_battery_at_reserve_floor(self) -> None:
         for name, fit, fit_cents, spike, branch in (
             ("high_price", 1.10, 110.0, False, "blocked_or_zero"),
-            ("spike", 0.65, 65.0, True, "export_spike"),
+            ("spike", 0.65, 65.0, True, "blocked_or_zero"),
         ):
             with self.subTest(name=name):
                 optimizer = self.optimizer(export_spike_threshold=0.60)
@@ -425,7 +425,7 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
         )
         self.assertFalse(decision.trace_gates["price_is_negative"])
         self.assertTrue(decision.trace_gates["export_forecast_guard"])
-        self.assertEqual("forecast_guard_block", decision.trace_values["export_branch"])
+        self.assertEqual("blocked_or_zero", decision.trace_values["export_branch"])
         self.assertEqual("cheap_topup_import", decision.trace_values["import_branch"])
         self.assertEqual(2.0, decision.trace_values["desired_import_limit"])
         self.assertEqual(2.0, decision.trace_values["ess_charge_limit"])
@@ -454,7 +454,7 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
             export_limit=0.0,
             import_limit=0.0,
         )
-        self.assertEqual("forecast_guard_block", decision.trace_values["export_branch"])
+        self.assertEqual("blocked_or_zero", decision.trace_values["export_branch"])
         self.assertEqual("blocked", decision.trace_values["import_branch"])
         self.assertEqual(4.0, decision.trace_values["pv_surplus_actual"])
         self.assertEqual(0.0, decision.trace_values["desired_import_limit"])
@@ -462,7 +462,7 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
 
     def test_poor_tomorrow_forecast_differs_at_99_and_100_percent_soc(self) -> None:
         cases = (
-            ("ninety_nine", 99.0, 29.7, -0.2, MODE_CMD_DISCHARGE_PV, 5.0, False, "normal_tier"),
+            ("ninety_nine", 99.0, 29.7, -0.2, MODE_MAX_SELF, 25.0, False, "ordinary_msc_surplus_ceiling"),
             ("full", 100.0, 30.0, 0.0, MODE_MAX_SELF, 25.0, True, "msc_full_battery_high_ceiling"),
         )
 
@@ -494,7 +494,7 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
                 self.assertEqual(high_ceiling, decision.trace_gates["pv_only_msc_high_ceiling_active"])
                 self.assertEqual(branch, decision.trace_values["export_branch"])
                 self.assertEqual(
-                    "pv_surplus_only" if high_ceiling else "battery_backed",
+                    "pv_surplus_only",
                     decision.trace_values["export_value_gate_export_type"],
                 )
                 self.assertEqual(5.0, decision.trace_values["pv_surplus_actual"])
@@ -502,7 +502,7 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
                 if high_ceiling:
                     self.assertIn("PV-only MSC ceiling active", decision.export_reason)
                 else:
-                    self.assertIn("PV-only (low tomorrow forecast)", decision.export_reason)
+                    self.assertIn("Ordinary MSC surplus ceiling active", decision.export_reason)
 
     def test_demand_window_little_and_strong_pv_keep_normal_pv_max(self) -> None:
         when = datetime(2026, 1, 15, 17, 30)
@@ -578,13 +578,13 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
             ems_mode=MODE_MAX_SELF,
             export_limit=0.0,
             import_limit=0.0,
-            pv_max_power_limit=1.0,
+            pv_max_power_limit=25.0,
         )
         self.assertFalse(decision.trace_gates["demand_window_active"])
-        self.assertTrue(decision.trace_gates["battery_only_mode"])
+        self.assertFalse(decision.trace_gates["battery_only_mode"])
         self.assertEqual("blocked", decision.trace_values["import_branch"])
-        self.assertEqual("battery_only_mode", decision.trace_values["pv_cap_reason"])
-        self.assertEqual(1.0, decision.trace_values["desired_pv_max_limit_kw"])
+        self.assertEqual("none", decision.trace_values["pv_cap_reason"])
+        self.assertEqual(25.0, decision.trace_values["desired_pv_max_limit_kw"])
 
 
 if __name__ == "__main__":

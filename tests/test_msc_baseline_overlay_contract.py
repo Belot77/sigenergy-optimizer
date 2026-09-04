@@ -909,6 +909,44 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             export_ceiling=enforced_optimizer.cfg.export_limit_high,
         )
 
+    def test_morning_slow_owns_charge_rate_not_export_ceiling_gating(self) -> None:
+        when = datetime(2026, 1, 15, 9, 0)
+        optimizer = self.optimizer(
+            morning_slow_charge_enabled=True,
+            morning_slow_charge_rate_kw=2.0,
+            morning_slow_export_start_margin_kw=1.0,
+        )
+        state = self.state(
+            when,
+            battery_soc=95.0,
+            available_discharge_energy_kwh=28.5,
+            feedin_price=0.15,
+            feedin_price_cents=15.0,
+            pv_kw=3.2,
+            solar_power_now_kw=3.2,
+            load_kw=1.1,
+            forecast_remaining_kwh=100.0,
+            current_export_limit=0.01,
+            grid_export_power_kw=0.0,
+        )
+
+        decision = self.decide(optimizer, state, when)
+
+        self.assertTrue(bool(decision.trace_gates.get("morning_slow_charge_active")))
+        self.assertLess(
+            decision.trace_values.get("pv_surplus_actual"),
+            optimizer.cfg.morning_slow_charge_rate_kw
+            + optimizer.cfg.morning_slow_export_start_margin_kw,
+        )
+        self.assert_msc_surplus_permission(
+            decision,
+            export_ceiling=optimizer.cfg.export_limit_high,
+        )
+        self.assertEqual(optimizer.cfg.morning_slow_charge_rate_kw, decision.ess_charge_limit)
+        self.assertEqual("morning_slow_charge", decision.trace_values.get("export_branch"))
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+        self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
+
     def test_negative_or_below_minimum_fit_closes_export_without_discharge(self) -> None:
         for fit, fit_cents in ((-0.01, -1.0), (0.009, 0.9)):
             with self.subTest(fit_cents=fit_cents):
