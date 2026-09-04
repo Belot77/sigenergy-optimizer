@@ -57,7 +57,7 @@ No live proof is claimed. Phase 2 remains blocked until Phase 1 build/install/li
 
 ## Exact next action
 
-The next gate is Phase 1 build/install/live acceptance from committed checkpoint `e82ca50abc4b758038228f065ec7ba94c3bc4c1b`, under separately approved build and deployment boundaries. Keep production frozen and do not begin Phase 2 until live acceptance passes.
+The Phase 1 release candidate is being prepared as `2.3.43-haos54`. The known-good rollback remains `2.3.42-haos53` / `19f3c70d24dc086737d5956a1c66cad230287edd`. The next gate is to commit and push the metadata-only haos54 candidate preparation, then separately approve and perform its build before any installation or live acceptance. Keep production frozen and do not begin Phase 2 until live acceptance passes.
 
 ## Morning Slow Charge correction
 
