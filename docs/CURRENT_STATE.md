@@ -30,18 +30,9 @@ Active writable worktree:
 
 - Path: `C:\Projects\sigenergy_optimizer-haos53-refactor`
 - Branch: `refactor/msc-baseline-overlays-haos53`
-- Relevant committed checkpoint/base SHA: `23ddb1b4e7c7081bbd92bcbced183f51ae36c57f`
-- Phase 1 production checkpoint beneath the documentation layer: `8309c5e6644c74f7aeb5ba613f983e0b7d2fe4c2`
-- Checkpoint working set (verify directly with Git before relying on it):
-  - `app/optimizer.py`
-  - `docs/AI_HANDOVER.md`
-  - `docs/CHANGELOG.md`
-  - `docs/CURRENT_STATE.md`
-  - `tests/test_export_value_gate_advisory.py`
-  - `tests/test_haos49_normal_characterization.py`
-  - `tests/test_haos49_special_mode_characterization.py`
-  - `tests/test_haos49_transition_characterization.py`
-  - `tests/test_msc_baseline_overlay_contract.py`
+- Committed Phase 1 checkpoint SHA: `e82ca50abc4b758038228f065ec7ba94c3bc4c1b`
+- Checkpoint commit: `Complete Phase 1 MSC ownership checkpoint`
+- Checkpoint condition: worktree was clean immediately after the commit; verify exact current Git state directly.
 
 Protected worktrees:
 
@@ -60,13 +51,13 @@ Phase 1, MSC baseline and overlay architecture, is the active phase. The committ
 - distinction between battery serving house load and simultaneous battery discharge plus grid export;
 - preserved haos53 exact-full cheap-FiT protection.
 
-The Phase 1 implementation and automated validation are complete for this checkpoint. Independent read-only safety review passed. The Morning Slow Charge ceiling correction is implemented but uncommitted and unreleased, and production is frozen. The two conflicting Value Gate Morning Slow expectations and all 24 obsolete haos49 characterization failures are reconciled tests-only; unobserved Automated ownership rejects the ceiling, leaves export closed, and preserves the existing live EMS without an MSC write.
+The Phase 1 implementation and automated validation are complete and committed at `e82ca50abc4b758038228f065ec7ba94c3bc4c1b`. Independent read-only safety review passed, and production is frozen. The two conflicting Value Gate Morning Slow expectations and all 24 obsolete haos49 characterization failures are reconciled tests-only; unobserved Automated ownership rejects the ceiling, leaves export closed, and preserves the existing live EMS without an MSC write.
 
 No live proof is claimed. Phase 2 remains blocked until Phase 1 build/install/live acceptance passes.
 
 ## Exact next action
 
-The next gate is review and approval of the Phase 1 checkpoint commit. Build/package, installation, and live acceptance require separate approval after that checkpoint. Keep production frozen and do not begin Phase 2 until live acceptance passes.
+The next gate is Phase 1 build/install/live acceptance from committed checkpoint `e82ca50abc4b758038228f065ec7ba94c3bc4c1b`, under separately approved build and deployment boundaries. Keep production frozen and do not begin Phase 2 until live acceptance passes.
 
 ## Morning Slow Charge correction
 

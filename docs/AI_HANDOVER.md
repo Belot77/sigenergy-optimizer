@@ -51,7 +51,7 @@ Deliberate owners such as qualifying Morning Dump, high-price export, spike, Eve
 
 ## Current Phase 1 checkpoint
 
-The narrow Morning Slow Charge correction is implemented but uncommitted and unreleased. Its legacy measured-PV start/stop/export-margin gate no longer owns export-ceiling opening.
+The Phase 1 checkpoint was committed successfully at `e82ca50abc4b758038228f065ec7ba94c3bc4c1b` (`Complete Phase 1 MSC ownership checkpoint`). Its Morning Slow Charge correction removes legacy measured-PV start/stop/export-margin ownership of export-ceiling opening.
 
 When Morning Slow is legitimately active under safe Automated/MSC ownership:
 
@@ -64,9 +64,9 @@ When Morning Slow is legitimately active under safe Automated/MSC ownership:
 
 Production is frozen after that Stage A change and its narrow ownership safeguard. The two affected Value Gate expectations now distinguish safe low-surplus MSC permission from unobserved Automated ownership. Rejected unobserved ownership leaves export closed, preserves the existing live EMS, and causes no MSC write solely for Morning Slow. All 24 obsolete haos49 characterization failures were reconciled tests-only to the approved Phase 1 architecture.
 
-Phase 1 implementation and automated validation are complete for this checkpoint, and independent read-only safety review passed. The full suite has exactly the two untouched Phase 2 settlement failures recorded in `CURRENT_STATE.md`; all other tests pass.
+Phase 1 implementation and automated validation are complete for this committed checkpoint, and independent read-only safety review passed. The full suite has exactly the two untouched Phase 2 settlement failures recorded in `CURRENT_STATE.md`; all other tests pass.
 
-No live proof is claimed. The next action is review and approval of the checkpoint commit, followed by separately approved build/install/live acceptance. Phase 2 remains blocked until that live acceptance passes.
+No live proof is claimed. The next action is separately approved Phase 1 build/install/live acceptance from `e82ca50abc4b758038228f065ec7ba94c3bc4c1b`. Phase 2 remains blocked until that live acceptance passes.
 
 ## Safety contracts to preserve
 
