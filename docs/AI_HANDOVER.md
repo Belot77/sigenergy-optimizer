@@ -1,6 +1,6 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-09-05
+Last consolidated: 2026-09-06
 
 Keep this handover concise and current. Update it at meaningful checkpoints, phase transitions, and before handing work to a new ChatGPT/Codex session. Do not retain obsolete historical state merely because it once appeared here; `CURRENT_STATE.md` is the first place to look for present state.
 
@@ -18,7 +18,7 @@ Use `docs/CHANGELOG.md` only when release history is needed. Do not reconstruct 
 
 SigEnergy Optimizer is a safety-first Home Assistant add-on that coordinates SigEnergy battery, grid import/export, PV, tariff, and forecast-aware decisions.
 
-The known-good live and rollback release is `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`. A later development checkpoint is not a live baseline until it has been deliberately released, installed, and proven.
+The current live and Phase 1 accepted release is `2.3.43-haos54`. Live runtime reported `2.3.43-haos54` with container source commit `083b1fcc241b0d86271f5da80538d4e224fc6433`, the docs-only child of tagged/tested production candidate `174136280ed1c516b7666b4600622ce9544bb8e0`. Emergency rollback remains `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`.
 
 ## Worktree boundaries
 
@@ -66,7 +66,11 @@ Production is frozen after that Stage A change and its narrow ownership safeguar
 
 Phase 1 implementation and automated validation are complete for this committed checkpoint, and independent read-only safety review passed. The full suite has exactly the two untouched Phase 2 settlement failures recorded in `CURRENT_STATE.md`; all other tests pass.
 
-Phase 1 release candidate `2.3.43-haos54` is committed at `174136280ed1c516b7666b4600622ce9544bb8e0`, tagged `v2.3.43-haos54`, and its GitHub Actions multi-architecture build/publish passed in run `33922100095`. GitHub `main` now points to `174136280ed1c516b7666b4600622ce9544bb8e0`. The known-good live rollback remains `2.3.42-haos53` at `19f3c70d24dc086737d5956a1c66cad230287edd`; haos54 has not yet been installed or live-proven. The next gate is Home Assistant repository refresh followed by separately approved installation/start and Phase 1 live acceptance. Phase 2 remains blocked until that live acceptance passes.
+`2.3.43-haos54` is installed and Phase 1 live acceptance passed on 2026-09-06. Captured evidence proved Automated/MSC ownership, PV MAX 25 kW, negative-FiT blocking, Demand Window import ownership, Value Gate advisory behavior, and the central Phase 1 safety case: an ordinary positive-FiT 25 kW `MSC_SURPLUS_CEILING` with no battery-export owner did not cause stored-battery grid export even while the battery was actively serving house load with zero PV.
+
+The operator also observed a natural Morning Slow solar case in haos54: about the configured 2 kW battery charging rate, Maximum Self Consumption, normal PV MAX, high export ceiling, and genuine PV surplus exported after house load plus charging demand. That Morning Slow case is operator-observed rather than retained in the diagnostic capture.
+
+Phase 1 is complete. The next engineering phase is the already-approved Phase 2 multi-cycle deliberate-export-to-MSC settlement sequence. The two existing Phase 2 transition tests remain intentional protection tests and must not be weakened.
 
 ## Safety contracts to preserve
 
@@ -94,7 +98,7 @@ Phase 2 implements the multi-cycle deliberate-export-to-MSC sequence:
 4. observe exact MSC later;
 5. reopen the normal high ceiling.
 
-Service-call success is not observed inverter state. Do not begin Phase 2 until Phase 1 is test-complete and live-proven.
+Service-call success is not observed inverter state. Phase 1 is now test-complete and live-proven; Phase 2 may begin only through its explicit multi-cycle observed-state contract.
 
 Climate Manager integration follows Phase 2 plus a short stabilisation audit. The intended stable interface is `sensor.sigenergy_hvac_solar_permission` with states `start`, `continue`, `blocked`, and `unavailable`. SigEnergy Optimizer owns energy opportunity and safety; Climate Manager owns HVAC profiles, zones, targets, comfort/manual behavior, AC0, and AirTouch commands. Climate Manager is not yet consuming this entity.
 

@@ -1,12 +1,14 @@
 # Changelog
 
-## 2026-09-04 (unreleased development)
+## 2026-09-04 — 2.3.43-haos54
 
 - Separated ordinary Automated export permission from deliberate stored-battery export intent. Ordinary economically eligible operation remains in Maximum Self Consumption with normal PV MAX and the configured high export ceiling; only an explicit authorized policy owns `BATTERY_EXPORT`.
 - Morning Slow Charge now retains the normal high MSC export ceiling while limiting ESS charging to its configured slow rate, instead of using the legacy measured-PV start/stop/export-margin gate.
 - When Automated ownership is unobserved, a requested Morning Slow high ceiling is rejected, export remains closed with `EXPORT_BLOCKED`, and the existing live EMS is preserved without an MSC selection solely from Morning Slow.
 - Prepared the Phase 1 release-candidate identity as `2.3.43-haos54`; the known-good live rollback remains `2.3.42-haos53`.
-- `v2.3.43-haos54` was successfully built and published from commit `174136280ed1c516b7666b4600622ce9544bb8e0`, and `main` now points to that candidate. It has not yet been installed or live-proven; `2.3.42-haos53` remains the known-good live rollback.
+- `v2.3.43-haos54` was successfully built and published from production candidate `174136280ed1c516b7666b4600622ce9544bb8e0`; Home Assistant subsequently ran source commit `083b1fcc241b0d86271f5da80538d4e224fc6433`, its docs-only child.
+- Phase 1 live acceptance passed on 2026-09-06. Live evidence confirmed the 25 kW MSC surplus ceiling does not create stored-battery export authority, including a zero-PV case with battery discharge serving house load; Demand Window retained normal PV MAX, and an operator-observed Morning Slow solar case charged at about 2 kW while genuine excess PV exported under MSC.
+- `2.3.42-haos53` remains the emergency rollback.
 
 ## 2026-08-31
 

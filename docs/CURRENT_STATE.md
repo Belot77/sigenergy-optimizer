@@ -1,6 +1,6 @@
 # Current State
 
-Last consolidated: 2026-09-05
+Last consolidated: 2026-09-06
 
 **CURRENT TRUTH ONLY:** this file records the current operational and development checkpoint, not historical record. Durable control semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`.
 
@@ -19,10 +19,13 @@ Exact local branch, HEAD, and cleanliness must always be verified directly with 
 
 ## Live release and rollback
 
-- Known-good live release: `2.3.42-haos53`
-- Tag: `v2.3.42-haos53`
-- Release commit: `19f3c70d24dc086737d5956a1c66cad230287edd`
-- Treat this release as the rollback baseline until a later release is explicitly proven live.
+- Current live release: `2.3.43-haos54`
+- Runtime signature observed live: `2.3.43-haos54`
+- Live container source commit: `083b1fcc241b0d86271f5da80538d4e224fc6433`
+- Tagged/tested production candidate: `174136280ed1c516b7666b4600622ce9544bb8e0`; `083b1fc` is its docs-only child, so production behavior is unchanged.
+- Emergency rollback release: `2.3.42-haos53`
+- Rollback tag: `v2.3.42-haos53`
+- Rollback commit: `19f3c70d24dc086737d5956a1c66cad230287edd`
 
 ## Development worktrees
 
@@ -41,7 +44,7 @@ Protected worktrees:
 
 ## Current phase and gate
 
-Phase 1, MSC baseline and overlay architecture, is the active phase. The committed checkpoint already provides:
+Phase 1, MSC baseline and overlay architecture, is complete and live-proven. Phase 2 transition safety is now the next active phase; no Phase 2 production change has yet been started. The committed checkpoint already provides:
 
 - first-class `EXPORT_BLOCKED`, `MSC_SURPLUS_CEILING`, and `BATTERY_EXPORT` intents;
 - ordinary positive-FiT export without implicit stored-battery discharge;
@@ -53,11 +56,26 @@ Phase 1, MSC baseline and overlay architecture, is the active phase. The committ
 
 The Phase 1 implementation and automated validation are complete and committed at `e82ca50abc4b758038228f065ec7ba94c3bc4c1b`. Independent read-only safety review passed, and production is frozen. The two conflicting Value Gate Morning Slow expectations and all 24 obsolete haos49 characterization failures are reconciled tests-only; unobserved Automated ownership rejects the ceiling, leaves export closed, and preserves the existing live EMS without an MSC write.
 
-No live proof is claimed. Phase 2 remains blocked until Phase 1 build/install/live acceptance passes.
+Phase 1 live acceptance passed on 2026-09-06.
+
+Captured haos54 evidence proved:
+
+- Automated ownership with exact Maximum Self Consumption;
+- normal PV MAX remained 25 kW;
+- negative-FiT export remained blocked;
+- Demand Window blocked import without reducing normal PV MAX;
+- ordinary positive-FiT operation opened the 25 kW `MSC_SURPLUS_CEILING` with `battery_export_owner=none`;
+- with zero PV and the battery discharging to serve house load, the open 25 kW ceiling did not cause meaningful battery-to-grid export;
+- trusted flow remained classified as load-serving battery discharge rather than simultaneous battery discharge plus grid export;
+- Value Gate remained advisory-only.
+
+The operator also observed a natural haos54 Morning Slow period with sufficient PV: the battery charged at about the configured 2 kW rate while remaining in Maximum Self Consumption with normal PV MAX and the high export ceiling, and PV beyond house load plus charging exported to grid as genuine surplus. That Morning Slow/genuine-surplus case is operator-observed rather than preserved in the diagnostic capture.
+
+Phase 1 is therefore accepted live. `2.3.43-haos54` remains live and `2.3.42-haos53` remains the emergency rollback.
 
 ## Exact next action
 
-Phase 1 release candidate `2.3.43-haos54` is committed at `174136280ed1c516b7666b4600622ce9544bb8e0`, tagged `v2.3.43-haos54`, successfully built and published by GitHub Actions run `33922100095`, and GitHub `main` now points to that commit. The known-good live rollback remains `2.3.42-haos53` / `19f3c70d24dc086737d5956a1c66cad230287edd`. The next gate is Home Assistant repository refresh, then separately approved installation/start and Phase 1 live acceptance. No live proof is yet claimed. Keep Phase 2 blocked until live acceptance passes.
+Commit and publish this docs-only Phase 1 live-acceptance checkpoint. After that checkpoint is clean and authoritative, begin Phase 2 transition-safety work. Phase 2 must implement the already-approved close export -> later observe closed -> request MSC -> later observe exact MSC -> reopen high ceiling sequence and make the two intentionally failing transition tests pass without weakening them.
 
 ## Morning Slow Charge correction
 
