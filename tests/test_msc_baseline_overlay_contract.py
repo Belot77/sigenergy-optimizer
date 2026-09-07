@@ -947,6 +947,127 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
         self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
 
+    def _morning_slow_low_soc_decision(
+        self,
+        pv_surplus_kw: float,
+        **state_overrides: object,
+    ):
+        when = datetime(2026, 1, 15, 9, 0)
+        optimizer = self.optimizer(
+            morning_slow_charge_enabled=True,
+            morning_slow_charge_rate_kw=2.0,
+            min_grid_transfer_kw=1.0,
+        )
+        load_kw = 1.0
+        state_values: dict[str, object] = {
+            "battery_soc": 14.5,
+            "available_discharge_energy_kwh": 4.35,
+            "battery_power_sensor_kw": 2.0,
+            "feedin_price": 0.15,
+            "feedin_price_cents": 15.0,
+            "pv_kw": load_kw + pv_surplus_kw,
+            "solar_power_now_kw": load_kw + pv_surplus_kw,
+            "load_kw": load_kw,
+            "forecast_remaining_kwh": 100.0,
+            "current_export_limit": 0.01,
+            "grid_import_power_kw": 0.0,
+            "grid_export_power_kw": 0.0,
+        }
+        state_values.update(state_overrides)
+        state = self.state(when, **state_values)
+        return optimizer, self.decide(optimizer, state, when)
+
+    def _assert_morning_slow_low_soc_contract(self, optimizer, decision) -> None:
+        self.assertTrue(bool(decision.trace_gates.get("morning_slow_charge_active")))
+        self.assert_msc_surplus_permission(
+            decision,
+            export_ceiling=optimizer.cfg.export_limit_high,
+        )
+        self.assertEqual(2.0, decision.ess_charge_limit)
+        self.assertEqual(optimizer.cfg.pv_max_power_normal, decision.pv_max_power_limit)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+        self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
+
+    def test_morning_slow_low_soc_below_legacy_three_kw_gate_keeps_msc_ceiling(
+        self,
+    ) -> None:
+        optimizer, decision = self._morning_slow_low_soc_decision(2.9)
+
+        self.assertAlmostEqual(
+            2.9,
+            decision.trace_values.get("pv_surplus_estimated"),
+        )
+        self.assertLess(
+            decision.trace_values.get("pv_surplus_estimated"),
+            optimizer.cfg.morning_slow_charge_rate_kw
+            + optimizer.cfg.min_grid_transfer_kw,
+        )
+        self._assert_morning_slow_low_soc_contract(optimizer, decision)
+
+    def test_morning_slow_low_soc_above_legacy_three_kw_gate_keeps_same_msc_ceiling(
+        self,
+    ) -> None:
+        optimizer, decision = self._morning_slow_low_soc_decision(3.1)
+
+        self.assertAlmostEqual(
+            3.1,
+            decision.trace_values.get("pv_surplus_estimated"),
+        )
+        self.assertGreater(
+            decision.trace_values.get("pv_surplus_estimated"),
+            optimizer.cfg.morning_slow_charge_rate_kw
+            + optimizer.cfg.min_grid_transfer_kw,
+        )
+        self._assert_morning_slow_low_soc_contract(optimizer, decision)
+
+    def test_morning_slow_low_soc_unobserved_automated_remains_blocked(self) -> None:
+        _optimizer, decision = self._morning_slow_low_soc_decision(
+            3.1,
+            sigenergy_mode_observed=False,
+        )
+
+        self.assertTrue(
+            bool(decision.trace_gates.get("pv_only_branch_high_ceiling_requested"))
+        )
+        self.assertTrue(
+            bool(decision.trace_gates.get("pv_only_branch_automated_ownership_blocked"))
+        )
+        self.assertEqual(0.0, decision.export_limit)
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+        self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
+
+    def test_morning_slow_low_soc_unsafe_battery_flow_remains_blocked(self) -> None:
+        cases = (
+            ("material_discharge", {"battery_power_sensor_kw": -0.2}),
+            (
+                "unknown_flow",
+                {
+                    "battery_power_sensor_kw": None,
+                    "grid_import_power_kw": None,
+                    "grid_export_power_kw": None,
+                },
+            ),
+        )
+
+        for name, state_overrides in cases:
+            with self.subTest(name=name):
+                _optimizer, decision = self._morning_slow_low_soc_decision(
+                    3.1,
+                    **state_overrides,
+                )
+
+                self.assertTrue(
+                    bool(decision.trace_gates.get("pv_only_branch_high_ceiling_requested"))
+                )
+                self.assertTrue(
+                    bool(decision.trace_gates.get("pv_only_branch_battery_safety_blocked"))
+                )
+                self.assertEqual(0.0, decision.export_limit)
+                self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+                self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
+
     def test_negative_or_below_minimum_fit_closes_export_without_discharge(self) -> None:
         for fit, fit_cents in ((-0.01, -1.0), (0.009, 0.9)):
             with self.subTest(fit_cents=fit_cents):

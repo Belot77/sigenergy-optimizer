@@ -4758,9 +4758,8 @@ class SigEnergyOptimizer:
         )
 
         bypass_min_soc = high_price or spike or surplus_bypass or positive_fit_override
-        if not bypass_min_soc and bsoc <= export_min_soc:
-            if not (morning_slow_charge_active and pv_surplus >= cfg.morning_slow_charge_rate_kw + cfg.min_grid_transfer_kw):
-                return choice(0.0, "closed_below_min_soc")
+        if not bypass_min_soc and bsoc <= export_min_soc and not morning_slow_charge_active:
+            return choice(0.0, "closed_below_min_soc")
 
         # When near the export floor, never allow battery-backed export on bypass paths.
         # Keep export limited to measured PV excess so empty batteries cannot sustain large export.
