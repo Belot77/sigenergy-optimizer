@@ -7,8 +7,8 @@ This roadmap is ordered by dependency. Later work must not bypass the stated val
 Status: **active**. Phase 1 was reopened after a proven live Morning Slow defect and broader control-authority audit. Complete in this order:
 
 1. Characterization tests. Complete.
-2. Authority and fail-closed remediation. Implemented and automated-validated; uncommitted and awaiting the repository checkpoint decision.
-3. Morning control repair, including separation of Morning Slow policy from grid-transfer deadband. Next after the Package 1 checkpoint.
+2. Authority and fail-closed remediation. Complete, automated-validated, committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`, and pushed to `origin/fix/phase1-audit-remediation`; not yet live-tested.
+3. Morning control repair, including separation of Morning Slow policy from grid-transfer deadband. **NEXT.**
 4. Battery-export safety.
 5. Telemetry trust.
 6. Actuator and fallback hardening.

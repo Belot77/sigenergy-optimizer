@@ -24,22 +24,10 @@ Active remediation worktree:
 
 - Path: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
-- HEAD: `c624f0b4392634cf19276186ba46f4b80268627b`
-- Expected dirty state:
+- Package 1 production checkpoint: `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`; verify the exact active HEAD directly with Git because later docs-only commits may be children of this checkpoint.
+- Worktree state: clean after Package 1 checkpoint commit and verified push.
 
-```text
- M app/models.py
- M app/optimizer.py
- M docs/AI_HANDOVER.md
- M docs/CONTROL_CONTRACT.md
- M docs/CURRENT_STATE.md
- M docs/DECISIONS.md
- M docs/ROADMAP.md
- M tests/test_haos49_failure_characterization.py
-?? tests/test_phase1_authority_fail_closed_characterization.py
-```
-
-The production and test changes are uncommitted. Package 1 has not been released, deployed, or live-tested.
+Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. The worktree was clean after the verified push. Package 1 has not been merged, released, deployed, or live-tested.
 
 Protected/reference worktrees:
 
@@ -57,7 +45,7 @@ All audit remediation, full validation, and Phase 1 live acceptance must finish 
 
 ## Production Remediation Package 1
 
-The authority/fail-closed package is implemented in `app/models.py` and `app/optimizer.py`, automated-validated, and uncommitted. Its test artifacts are the corrected tracked legacy test `tests/test_haos49_failure_characterization.py` and the untracked characterization package `tests/test_phase1_authority_fail_closed_characterization.py`. Nothing from this package has been released, deployed, or live-tested.
+The authority/fail-closed package is implemented in `app/models.py` and `app/optimizer.py`, automated-validated, committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`, and pushed to `origin/fix/phase1-audit-remediation`. Its test artifacts are `tests/test_haos49_failure_characterization.py` and `tests/test_phase1_authority_fail_closed_characterization.py`. Nothing from this package has been merged, released, deployed, or live-tested.
 
 The package implements four bounded contracts:
 
@@ -144,4 +132,4 @@ Protect the two existing expected Phase 2 failures:
 
 ## Exact next action
 
-Decide the repository checkpoint for the completed, automated-validated, uncommitted Production Remediation Package 1. After that checkpoint is explicitly authorized, begin the separate Morning control repair package. Do not begin Phase 2.
+Production Remediation Package 1 is checkpointed and pushed. The exact next engineering package is Morning control repair. Preserve the Package 1 checkpoint, do not change `MIN_GRID_TRANSFER_KW` as a workaround, and do not begin Phase 2.

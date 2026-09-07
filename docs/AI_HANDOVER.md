@@ -18,10 +18,10 @@ Active remediation:
 
 - `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - branch `fix/phase1-audit-remediation`
-- HEAD `c624f0b4392634cf19276186ba46f4b80268627b`
-- expected dirty state: modified `app/models.py`, `app/optimizer.py`, `docs/AI_HANDOVER.md`, `docs/CONTROL_CONTRACT.md`, `docs/CURRENT_STATE.md`, `docs/DECISIONS.md`, `docs/ROADMAP.md`, and `tests/test_haos49_failure_characterization.py`; untracked `tests/test_phase1_authority_fail_closed_characterization.py`.
+- Package 1 production checkpoint `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`; verify exact current HEAD directly with Git because docs-only commits may be children of it.
+- worktree clean after Package 1 checkpoint commit and verified push.
 
-The production and test changes are uncommitted. Do not reset, stash, discard, or overwrite them.
+Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. Preserve that checkpoint; it has not been merged, released, deployed, or live-tested.
 
 Protected: never modify/reset/stash `C:\Projects\sigenergy_optimizer` (intentionally dirty `refactor/msc-baseline-overlays` at `bce8411d5274fe17fb8d883e8e7faf43e9ce8d43`) or `C:\Projects\sigenergy_optimizer-pv-hotfix` (clean haos53 reference at `19f3c70d24dc086737d5956a1c66cad230287edd`). Phase 2 worktree `C:\Projects\sigenergy_optimizer-phase2-transition`, branch `phase2/msc-transition-settlement`, is frozen at `c624f0b4392634cf19276186ba46f4b80268627b` and was clean when last verified.
 
@@ -33,7 +33,7 @@ The Morning Slow defect comes from the production gate `morning_slow_charge_rate
 
 ## Production Remediation Package 1 checkpoint
 
-Package 1 is implemented in `app/models.py` and `app/optimizer.py`, automated-validated, uncommitted, and not deployed or live-tested. Its test artifacts are the corrected tracked legacy HA-control test `tests/test_haos49_failure_characterization.py` and the untracked characterization package `tests/test_phase1_authority_fail_closed_characterization.py`.
+Package 1 is implemented in `app/models.py` and `app/optimizer.py`, automated-validated, committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`, pushed to `origin/fix/phase1-audit-remediation`, and not deployed or live-tested. Its test artifacts are `tests/test_haos49_failure_characterization.py` and `tests/test_phase1_authority_fail_closed_characterization.py`.
 
 The completed contracts require observed Automated ownership, fail Demand Window closed for import when untrustworthy, treat HA-control service success as a request rather than observation, and prevent unknown current grid limits from suppressing required closure or authorizing permissive opening. Manual and Force remain protected.
 
@@ -69,4 +69,4 @@ Future return from deliberate battery export: close export -> later observe clos
 
 Recommended next session: Codex in the active remediation worktree, high reasoning, normal/standard speed; use a fresh thread with this handover loaded. Inspect narrowly, stage one remediation package at a time, and keep release/live actions separately authorized.
 
-Exact next action: obtain the user's repository checkpoint decision for the completed uncommitted Package 1. Only after that checkpoint, begin the separate Morning control repair package. Do not begin Phase 2.
+Exact next action: begin the separate Morning control repair package from the clean pushed Package 1 checkpoint. Do not change `MIN_GRID_TRANSFER_KW` as a workaround and do not begin Phase 2.
