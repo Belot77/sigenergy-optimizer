@@ -25,9 +25,12 @@ Active remediation worktree:
 - Path: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
 - Package 1 production checkpoint: `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`; verify the exact active HEAD directly with Git because later docs-only commits may be children of this checkpoint.
-- Worktree state: clean after Package 1 checkpoint commit and verified push.
+- Package 2 production/test checkpoint: `d3294cb`; verify the exact active HEAD directly with Git because a later docs-only commit may be a child of this checkpoint.
+- Worktree state: clean after the local Package 2 checkpoint commit, before this documentation update.
 
 Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. The worktree was clean after the verified push. Package 1 has not been merged, released, deployed, or live-tested.
+
+Package 2 is committed locally at `d3294cb` and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
 
 Protected/reference worktrees:
 
@@ -66,11 +69,17 @@ Targeted protection results were 37 passed for authority, Demand Window, HA cont
 
 The broader suite result was **291 passed, 2 failed, 191 warnings**. The only failures were the two deliberately deferred Phase 2 transition-settlement tests named below. `python -m compileall -q app` and `git diff --check` passed.
 
-## Known live defect
+## Production Remediation Package 2
 
-Morning Slow was observed active at approximately 14.2-14.5% SoC with MSC observed, PV MAX 25 kW, ESS charging about 2 kW, export closed, and no deliberate battery-export owner.
+The Morning control repair is implemented in `app/optimizer.py`, characterized in `tests/test_msc_baseline_overlay_contract.py`, automated-validated, and committed locally at `d3294cb`. It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
 
-Production gates Morning Slow using `morning_slow_charge_rate_kw + min_grid_transfer_kw`. The live values create a hidden `2 + 1 = 3 kW` PV-surplus threshold, violating the approved Morning Slow contract. Do not tune `MIN_GRID_TRANSFER_KW` around this defect; split grid-transfer deadband from Morning Slow policy.
+The proven live defect occurred at approximately 14.2-14.5% SoC with Morning Slow active, MSC observed, PV MAX 25 kW, ESS charging about 2 kW, export closed, and no deliberate battery-export owner. The old low-SoC path required the configured 2 kW slow charge plus the 1 kW `MIN_GRID_TRANSFER_KW`, creating an unintended 3 kW PV-surplus threshold.
+
+Package 2 makes below-minimum-SoC export closure apply only when Morning Slow is inactive. Active Morning Slow no longer depends on `morning_slow_charge_rate_kw + min_grid_transfer_kw`; unrelated uses of `MIN_GRID_TRANSFER_KW` are unchanged. Morning Slow continues to own only the ESS charge rate, remains in Maximum Self Consumption with normal PV MAX, does not own export permission, retains `MSC_SURPLUS_CEILING` intent through independently owned ordinary MSC-surplus permission, and creates no battery-export owner. Package 1 authority and fail-closed protections remain intact.
+
+Characterization results were **4 passed, 33 deselected**: safe 2.9 kW and 3.1 kW surplus cases both received the same 25 kW MSC ceiling, while unobserved Automated ownership and material or unknown battery flow remained blocked. Focused Morning Slow/MSC protection results were **24 passed, 120 deselected**. Package 1 authority/fail-closed characterization was **11 passed**; focused Remote EMS, Manual, Force, and unavailable-mode protection was **8 passed, 4 deselected**; and Value Gate, positive-FiT, negative-price, MSC-intent, and battery-export protection was **95 passed, 31 deselected**.
+
+The final complete suite result was **295 passed, 2 failed, 191 warnings** from 297 collected tests. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed. No additional regression was found.
 
 ## Remaining audit findings requiring remediation
 
@@ -132,4 +141,4 @@ Protect the two existing expected Phase 2 failures:
 
 ## Exact next action
 
-Production Remediation Package 1 is checkpointed and pushed. The exact next engineering package is Morning control repair. Preserve the Package 1 checkpoint, do not change `MIN_GRID_TRANSFER_KW` as a workaround, and do not begin Phase 2.
+Production Remediation Packages 1 and 2 are complete and automated-validated. Package 2 is committed locally at `d3294cb` but is not yet pushed, deployed, or live-tested. The exact next engineering package is Battery-export safety. Preserve both checkpoints and do not begin Phase 2.

@@ -19,17 +19,18 @@ Active remediation:
 - `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - branch `fix/phase1-audit-remediation`
 - Package 1 production checkpoint `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`; verify exact current HEAD directly with Git because docs-only commits may be children of it.
-- worktree clean after Package 1 checkpoint commit and verified push.
+- Package 2 production/test checkpoint `d3294cb`; verify exact current HEAD directly with Git because a docs-only commit may be a child of it.
+- worktree clean after the local Package 2 checkpoint commit, before this documentation update.
 
 Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. Preserve that checkpoint; it has not been merged, released, deployed, or live-tested.
+
+Package 2 is committed locally at `d3294cb` and has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
 
 Protected: never modify/reset/stash `C:\Projects\sigenergy_optimizer` (intentionally dirty `refactor/msc-baseline-overlays` at `bce8411d5274fe17fb8d883e8e7faf43e9ce8d43`) or `C:\Projects\sigenergy_optimizer-pv-hotfix` (clean haos53 reference at `19f3c70d24dc086737d5956a1c66cad230287edd`). Phase 2 worktree `C:\Projects\sigenergy_optimizer-phase2-transition`, branch `phase2/msc-transition-settlement`, is frozen at `c624f0b4392634cf19276186ba46f4b80268627b` and was clean when last verified.
 
 ## Phase and gate
 
-Phase 1 is reopened for audit remediation after a proven live Morning Slow low-SoC defect and broader fail-closed/control-authority findings. All remediation, validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is paused/frozen, not active.
-
-The Morning Slow defect comes from the production gate `morning_slow_charge_rate_kw + min_grid_transfer_kw`: live tuning creates a hidden `2 + 1 = 3 kW` PV-surplus threshold. Split these concepts; do not tune `MIN_GRID_TRANSFER_KW` as a workaround.
+Phase 1 is reopened for audit remediation after a proven live Morning Slow low-SoC defect and broader fail-closed/control-authority findings. Packages 1 and 2 are complete and automated-validated, but all remediation, validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is paused/frozen, not active.
 
 ## Production Remediation Package 1 checkpoint
 
@@ -39,7 +40,15 @@ The completed contracts require observed Automated ownership, fail Demand Window
 
 Validation: characterization **11 passed, 191 warnings**; authority/Demand Window/HA/manual-force **37 passed**; MSC/export/Value Gate/positive-FiT **120 passed, 2 Phase 2 deselected**; Evening Boost **5 passed**; corrected legacy HA-control test **1 passed**. The broader suite was **291 passed, 2 failed, 191 warnings**, with exactly `test_return_from_discharge_waits_for_observed_close_before_requesting_msc` and `test_exact_msc_does_not_reopen_before_export_is_observed_closed` deferred to Phase 2. `python -m compileall -q app` and `git diff --check` passed.
 
-The next engineering package is Morning control repair. Separate Morning Slow policy from the overloaded grid-transfer threshold while preserving MSC, the configured slow charge rate, normal PV MAX, independently owned ordinary MSC surplus export, and no battery-export authority. Do not change `MIN_GRID_TRANSFER_KW` as the repair.
+## Production Remediation Package 2 checkpoint
+
+Package 2 repairs Morning Slow low-SoC export gating in `app/optimizer.py` and adds its characterization to `tests/test_msc_baseline_overlay_contract.py`. It is automated-validated and committed locally at `d3294cb`, but is not yet pushed, deployed, installed, or live-tested.
+
+Below-minimum-SoC export closure now applies only when Morning Slow is inactive. Active Morning Slow no longer requires the legacy `morning_slow_charge_rate_kw + min_grid_transfer_kw` surplus threshold; unrelated uses of `MIN_GRID_TRANSFER_KW` are unchanged. Morning Slow still owns only the ESS charge rate, remains in Maximum Self Consumption with normal PV MAX, relies on independently owned ordinary MSC-surplus permission with `MSC_SURPLUS_CEILING` intent, and creates no battery-export owner. Unobserved Automated ownership and unsafe or unknown battery flow remain blocked, and Package 1 protections remain intact.
+
+Validation: new characterization **4 passed, 33 deselected**; focused Morning Slow/MSC **24 passed, 120 deselected**; Package 1 authority/fail-closed **11 passed**; Remote EMS/Manual/Force/unavailable mode **8 passed, 4 deselected**; Value Gate/positive-FiT/negative-price/MSC-intent/battery-export **95 passed, 31 deselected**. The complete suite collected 297 tests and finished **295 passed, 2 failed, 191 warnings**, with only the two frozen Phase 2 transition tests failing. `python -m compileall -q app tests` and `git diff --check` passed.
+
+The next engineering package is Battery-export safety.
 
 ## Protected behavior
 
@@ -69,4 +78,4 @@ Future return from deliberate battery export: close export -> later observe clos
 
 Recommended next session: Codex in the active remediation worktree, high reasoning, normal/standard speed; use a fresh thread with this handover loaded. Inspect narrowly, stage one remediation package at a time, and keep release/live actions separately authorized.
 
-Exact next action: begin the separate Morning control repair package from the clean pushed Package 1 checkpoint. Do not change `MIN_GRID_TRANSFER_KW` as a workaround and do not begin Phase 2.
+Exact next action: begin the Battery-export safety package from the local Package 2 checkpoint. Verify the exact active HEAD directly with Git, and do not begin Phase 2.

@@ -8,8 +8,8 @@ Status: **active**. Phase 1 was reopened after a proven live Morning Slow defect
 
 1. Characterization tests. Complete.
 2. Authority and fail-closed remediation. Complete, automated-validated, committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`, and pushed to `origin/fix/phase1-audit-remediation`; not yet live-tested.
-3. Morning control repair, including separation of Morning Slow policy from grid-transfer deadband. **NEXT.**
-4. Battery-export safety.
+3. Morning control repair, including separation of Morning Slow policy from grid-transfer deadband. Complete and automated-validated; committed locally at `d3294cb`, not yet pushed, deployed, or live-tested.
+4. Battery-export safety. **NEXT.**
 5. Telemetry trust.
 6. Actuator and fallback hardening.
 7. Capability model with separate domains and no configured enlargement of observed caps.
