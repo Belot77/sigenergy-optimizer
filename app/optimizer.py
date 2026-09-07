@@ -1301,7 +1301,11 @@ class SigEnergyOptimizer:
             self._last_hw_discharge_cap_kw = float(s.ess_max_discharge_kw)
 
         # ---- Grid limits / EMS mode -----------------------------------
-        s.current_export_limit = _fv(cfg.grid_export_limit)
+        current_export_limit = _fv(cfg.grid_export_limit, None)
+        s.current_export_limit_observed = current_export_limit is not None
+        s.current_export_limit = (
+            float(current_export_limit) if current_export_limit is not None else 0.0
+        )
         try:
             grid_export_max_attr = _attr(cfg.grid_export_limit, "max")
             if grid_export_max_attr is not None:
@@ -1313,7 +1317,11 @@ class SigEnergyOptimizer:
                     s.grid_export_limit_entity_max_kw = grid_export_max_kw
         except (TypeError, ValueError):
             s.grid_export_limit_entity_max_kw = None
-        s.current_import_limit = _fv(cfg.grid_import_limit)
+        current_import_limit = _fv(cfg.grid_import_limit, None)
+        s.current_import_limit_observed = current_import_limit is not None
+        s.current_import_limit = (
+            float(current_import_limit) if current_import_limit is not None else 0.0
+        )
         s.current_pv_max_power_limit = _fv(cfg.pv_max_power_limit)
         if cfg.ess_max_charging_limit:
             s.current_ess_charge_limit = _fv(cfg.ess_max_charging_limit)
@@ -1403,7 +1411,19 @@ class SigEnergyOptimizer:
         s.price_is_negative = s.price_is_actual and s.current_price < 0
         s.feedin_is_negative = fit_available and s.feedin_price < 0
         s.price_spike_active = _bv(cfg.price_spike_sensor)
-        s.demand_window_active = _bv(cfg.demand_window_sensor)
+        demand_window_obj = bulk.get(cfg.demand_window_sensor)
+        demand_window_state = (
+            str(demand_window_obj.get("state", "")).strip().lower()
+            if demand_window_obj
+            else ""
+        )
+        s.demand_window_observed = demand_window_state in {"on", "off"}
+        # The existing active flag is the import-blocking input throughout decision
+        # logic. Untrustworthy observation therefore fails closed here, while the
+        # separate observed flag preserves the distinction from an observed ON state.
+        s.demand_window_active = (
+            demand_window_state == "on" or not s.demand_window_observed
+        )
 
         # ---- Forecasts ------------------------------------------------
         s.forecast_remaining_kwh = _fv(cfg.forecast_remaining_sensor)
@@ -3245,6 +3265,7 @@ class SigEnergyOptimizer:
 
             logger.debug("Manual mode active (%s); optimizer decisions paused", effective_mode)
             return
+
         if cfg.auto_enable_ha_control and not s.ha_control_switch_available:
             now_ts = datetime.now().timestamp()
             warning_key = (str(cfg.ha_control_switch), s.ha_control_switch_state)
@@ -3291,26 +3312,73 @@ class SigEnergyOptimizer:
                     cfg.ha_control_switch,
                 )
                 return
-            logger.info("Remote EMS control switch enable requested successfully: %s", cfg.ha_control_switch)
-            effective_ha_control = True
+            logger.info(
+                "Remote EMS control switch enable requested successfully: %s; "
+                "awaiting an observed ON state before inverter writes",
+                cfg.ha_control_switch,
+            )
+            return
 
         if not effective_ha_control:
             return
 
+        if not (
+            s.sigenergy_mode_observed
+            and str(effective_mode) == str(cfg.automated_option)
+        ):
+            logger.debug(
+                "Automatic inverter writes paused: SigEnergy Optimizer ownership "
+                "is not observed as %s",
+                cfg.automated_option,
+            )
+            return
+
         ems_mode_to_apply = d.ems_mode
         near_zero = 0.011
+
+        def _grid_limit_is_observed(value: float, observed: Optional[bool]) -> bool:
+            try:
+                finite = math.isfinite(float(value))
+            except (TypeError, ValueError, OverflowError):
+                return False
+            if observed is None:
+                # Legacy/hand-built states have no provenance. Zero was historically
+                # the unavailable fallback; do not let it prove a safety closure.
+                return finite and float(value) != 0.0
+            return bool(observed) and finite
+
+        export_limit_observed = _grid_limit_is_observed(
+            s.current_export_limit,
+            s.current_export_limit_observed,
+        )
+        import_limit_observed = _grid_limit_is_observed(
+            s.current_import_limit,
+            s.current_import_limit_observed,
+        )
         export_val = d.export_limit if d.export_limit > 0 else 0.01
-        export_turning_on = s.current_export_limit <= near_zero and export_val > near_zero
-        export_turning_off = s.current_export_limit > near_zero and export_val <= near_zero
+        export_turning_on = bool(
+            export_limit_observed
+            and s.current_export_limit <= near_zero
+            and export_val > near_zero
+        )
+        export_turning_off = bool(
+            export_limit_observed
+            and s.current_export_limit > near_zero
+            and export_val <= near_zero
+        )
         pv_only_over_cap_correction_required = bool(
             d.requires_verified_msc_before_export
             and float(s.current_export_limit or 0.0) > export_val + 1e-6
         )
         export_write_required = bool(
-            abs(export_val - s.current_export_limit) >= cfg.min_change_threshold
-            or export_turning_on
-            or export_turning_off
-            or pv_only_over_cap_correction_required
+            export_val <= near_zero
+            if not export_limit_observed
+            else (
+                abs(export_val - s.current_export_limit) >= cfg.min_change_threshold
+                or export_turning_on
+                or export_turning_off
+                or pv_only_over_cap_correction_required
+            )
         )
         export_written = False
 
@@ -3419,9 +3487,26 @@ class SigEnergyOptimizer:
         import_val = 0.01 if d.import_limit == 0 else d.import_limit
         if standby := d.standby_holdoff_active:
             import_val = 0.01
-        import_turning_on = s.current_import_limit <= near_zero and import_val > near_zero
-        import_turning_off = s.current_import_limit > near_zero and import_val <= near_zero
-        if abs(import_val - s.current_import_limit) >= cfg.min_change_threshold or import_turning_on or import_turning_off:
+        import_turning_on = bool(
+            import_limit_observed
+            and s.current_import_limit <= near_zero
+            and import_val > near_zero
+        )
+        import_turning_off = bool(
+            import_limit_observed
+            and s.current_import_limit > near_zero
+            and import_val <= near_zero
+        )
+        import_write_required = bool(
+            import_val <= near_zero
+            if not import_limit_observed
+            else (
+                abs(import_val - s.current_import_limit) >= cfg.min_change_threshold
+                or import_turning_on
+                or import_turning_off
+            )
+        )
+        if import_write_required:
             ok_import = await ha.set_number(cfg.grid_import_limit, import_val)
             if not ok_import:
                 await _safe_fallback(f"failed setting import limit to {import_val:.2f}kW")

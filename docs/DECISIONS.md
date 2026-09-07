@@ -75,3 +75,55 @@ Rationale: The permission interface needs a stable upstream control foundation; 
 Decision: Develop any dynamic solar charge scheduler on a separate branch and require historical replay, shadow mode, and a bounded controlled live trial before considering merge.
 
 Rationale: Economic optimization must be demonstrated against the live-proven safety baseline before gaining production authority.
+
+## 2026-09-07 - Complete all audit remediation before Phase 2
+
+Decision: Reopen Phase 1 and complete every audit-remediation package, full validation, and renewed live acceptance before beginning Phase 2. Phase 2 remains frozen until that gate passes.
+
+Rationale: The live Morning Slow defect and broader authority/fail-closed findings invalidate the earlier Phase 1-complete gate.
+
+## 2026-09-07 - Unknown operator ownership is not Automated authority
+
+Decision: Permissive automatic actions require observed Automated ownership. Missing, unknown, unavailable, stale, or cached-only ownership does not grant Automated authority. Manual and Force remain user-owned.
+
+Rationale: Automatic writes must not proceed when the operator's ownership state cannot be proven.
+
+## 2026-09-07 - Demand Window fails closed for import
+
+Decision: Observed Demand Window ON blocks import and observed OFF permits ordinary policy, subject to other safeguards. Unknown, unavailable, missing, stale, or otherwise untrustworthy state also blocks import until trustworthy observation resumes.
+
+Rationale: Loss of the higher-priority import-block signal must not silently enable economic import.
+
+## 2026-09-07 - HA-control service success is not authority
+
+Decision: A successful HA-control `turn_on` service call does not grant same-cycle control authority. Observed HA-control ON is required.
+
+Rationale: Service acceptance proves only that a request was accepted, not that control state changed.
+
+## 2026-09-07 - Split Morning Slow policy from grid-transfer deadband
+
+Decision: Do not tune `MIN_GRID_TRANSFER_KW` to repair Morning Slow. Separate the grid-transfer deadband from Morning Slow charging eligibility and ownership.
+
+Rationale: Combining the configured 2 kW slow-charge rate with the 1 kW transfer threshold creates an unintended 3 kW PV-surplus gate and overloads an unrelated setting.
+
+## 2026-09-07 - Preserve Evening Boost
+
+Decision: Evening Boost behavior is intentional and must remain unchanged during audit remediation unless separately reviewed and approved.
+
+Rationale: The audit did not establish Evening Boost as a defect, so remediation must not broaden into an unrelated policy redesign.
+
+## 2026-09-07 - Trusted non-positive import is a charging owner
+
+Decision: Once implemented, trusted actual import price `<= 0 $/kWh` is an explicit high-priority charging owner. It selects Grid First and the maximum safe/permitted grid-import and ESS-charge capabilities in separate domains; overrides Morning Slow charging/EMS ownership and Morning Dump; remains subordinate to Demand Window, Manual/Force, and hardware/safety limits; returns to MSC plus slow charge when price becomes positive and Morning Slow is eligible; and does not itself imply PV curtailment. Positive price must not steal Morning Slow ownership.
+
+Rationale: Non-positive import has distinct economic intent, but still requires explicit ownership, separated capabilities, and preserved safety priority.
+
+Unresolved: exact-zero import when FiT/export is extremely valuable, and PV MAX behavior during non-positive import. These are not settled by this decision.
+
+## 2026-09-08 - Unknown current grid limits provide asymmetric evidence
+
+Decision: Missing, unavailable, unknown, stale, or non-finite current grid-import/export limit telemetry cannot suppress a required safety-close command and cannot itself authorize permissive opening. Opening requires a trusted finite current-limit observation; trusted finite values retain normal deadband behavior.
+
+Rationale: Untrusted actuator telemetry cannot prove that an actuator is safely closed. Safety therefore permits an idempotent closure request but withholds broader permission until trustworthy finite state is observed.
+
+Implementation status: Production Remediation Package 1 satisfies this decision in automated validation only. It remains uncommitted, undeployed, and not live-accepted; Phase 1 is not complete.

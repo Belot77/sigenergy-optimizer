@@ -110,6 +110,10 @@ class SolarState:
     # Grid
     current_export_limit: float = 0.0
     current_import_limit: float = 0.0
+    # Live reads always set these explicitly. None means observation provenance was
+    # not supplied (for example by a hand-built state in a decision test).
+    current_export_limit_observed: Optional[bool] = None
+    current_import_limit_observed: Optional[bool] = None
     current_pv_max_power_limit: float = 25.0
     current_ess_charge_limit: Optional[float] = None
     current_ess_discharge_limit: Optional[float] = None
@@ -133,6 +137,7 @@ class SolarState:
     feedin_is_negative: bool = False
     price_spike_active: bool = False
     demand_window_active: bool = False
+    demand_window_observed: bool = False
 
     # Forecasts
     forecast_remaining_kwh: float = 0.0

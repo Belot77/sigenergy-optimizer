@@ -193,7 +193,7 @@ class Haos49FailureCharacterizationTests(Haos49CharacterizationCase):
 
         self.assertEqual([], ha.calls)
 
-    def test_remote_ems_off_success_is_treated_as_same_cycle_authority(self) -> None:
+    def test_remote_ems_off_success_waits_for_observed_on_before_actuator_writes(self) -> None:
         ha = RecordingHA(settle_switch=False, turn_on_result=True)
         optimizer = self.optimizer(ha)
         state = self._negative_import_state(
@@ -212,15 +212,28 @@ class Haos49FailureCharacterizationTests(Haos49CharacterizationCase):
         asyncio.run(optimizer._apply(state, decision))
 
         enable_call = ("turn_on", optimizer.cfg.ha_control_switch, True)
-        mode_call = ("select_option", optimizer.cfg.ems_mode_select, MODE_CMD_CHARGE_GRID)
-        self.assertLess(ha.calls.index(enable_call), ha.calls.index(mode_call))
-        self.assertFalse(
-            any(
-                call[0] == "get_state_value" and call[1] == optimizer.cfg.ha_control_switch
-                for call in ha.calls
+        inverter_number_entities = {
+            optimizer.cfg.grid_export_limit,
+            optimizer.cfg.grid_import_limit,
+            optimizer.cfg.ess_max_charging_limit,
+            optimizer.cfg.ess_max_discharging_limit,
+            optimizer.cfg.pv_max_power_limit,
+        }
+        inverter_actuator_calls = [
+            call
+            for call in ha.calls
+            if (
+                call[0] == "select_option"
+                and call[1] == optimizer.cfg.ems_mode_select
             )
-        )
-        self.assertIn(("set_number", optimizer.cfg.grid_import_limit, 25.0), ha.calls)
+            or (
+                call[0] == "set_number"
+                and call[1] in inverter_number_entities
+            )
+        ]
+
+        self.assertIn(enable_call, ha.calls)
+        self.assertEqual([], inverter_actuator_calls)
 
     def test_remote_ems_on_writes_without_turn_on(self) -> None:
         ha = RecordingHA()

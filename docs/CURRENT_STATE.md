@@ -1,135 +1,147 @@
 # Current State
 
-Last consolidated: 2026-09-06
+Last consolidated: 2026-09-08
 
 **CURRENT TRUTH ONLY:** this file records the current operational and development checkpoint, not historical record. Durable control semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`.
 
-Update this file whenever the live release or rollback baseline, active worktree/branch/HEAD/cleanliness, phase or gate, material test state or expected failures, exact next action, protected worktrees/items, or relevant operator tuning materially changes. Verify it against authoritative sources before a handover and before relying on it after substantive work.
-
-Authority depends on the subject:
-
-- committed repository state: GitHub;
-- local uncommitted state: the relevant worktree, inspected through the current Codex session or PowerShell;
-- live behavior: Home Assistant/Sigenergy observations and logs;
-- operator configuration: actual Home Assistant/add-on settings.
-
-If this file conflicts with an authoritative source, the authoritative source wins. Report the stale documentation and correct this file at the next permitted documentation write boundary.
-
-Exact local branch, HEAD, and cleanliness must always be verified directly with Git in the relevant worktree. Any SHA or working-set list recorded here describes a checkpoint for comparison; this file is not authoritative for its own current committed state.
+Authority depends on the subject: GitHub for committed repository state; the relevant verified worktree for local uncommitted state; Home Assistant/Sigenergy observations and logs for live behavior; and actual Home Assistant/add-on settings for operator configuration. If this file conflicts with an authoritative source, report and correct the stale documentation at the next permitted documentation boundary.
 
 ## Live release and rollback
 
-- Current live release: `2.3.43-haos54`
-- Runtime signature observed live: `2.3.43-haos54`
-- Live container source commit: `083b1fcc241b0d86271f5da80538d4e224fc6433`
-- Tagged/tested production candidate: `174136280ed1c516b7666b4600622ce9544bb8e0`; `083b1fc` is its docs-only child, so production behavior is unchanged.
-- Emergency rollback release: `2.3.42-haos53`
-- Rollback tag: `v2.3.42-haos53`
-- Rollback commit: `19f3c70d24dc086737d5956a1c66cad230287edd`
+- Current live release: `2.3.43-haos54`.
+- Runtime source observed from Home Assistant: `083b1fcc241b0d86271f5da80538d4e224fc6433`.
+- Tagged haos54 candidate: `174136280ed1c516b7666b4600622ce9544bb8e0`.
+- Production code in `083b1fc` is identical to the tagged candidate.
+- Known-good emergency rollback: `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`.
 
-## Development worktrees
+Rollback, if separately authorized, means stop the add-on, restore Sig Opt only, then verify EMS, PV MAX, export, and Home Assistant control. No rollback is currently being performed.
 
-Active writable worktree:
+GitHub `main` remains at `c624f0b4392634cf19276186ba46f4b80268627b` (`Record Phase 1 live acceptance`). That committed documentation is stale because Phase 1 was subsequently reopened after a proven live defect and broader control-authority audit.
 
-- Path: `C:\Projects\sigenergy_optimizer-haos53-refactor`
-- Branch: `refactor/msc-baseline-overlays-haos53`
-- Committed Phase 1 checkpoint SHA: `e82ca50abc4b758038228f065ec7ba94c3bc4c1b`
-- Checkpoint commit: `Complete Phase 1 MSC ownership checkpoint`
-- Checkpoint condition: worktree was clean immediately after the commit; verify exact current Git state directly.
+## Worktrees
 
-Protected worktrees:
+Active remediation worktree:
 
-- `C:\Projects\sigenergy_optimizer`: intentional dirty legacy refactor on `refactor/msc-baseline-overlays` at `bce8411d5274fe17fb8d883e8e7faf43e9ce8d43`. Do not modify, reset, or stash it.
-- `C:\Projects\sigenergy_optimizer-pv-hotfix`: clean release reference on `main` at `19f3c70d24dc086737d5956a1c66cad230287edd`. Do not modify it.
+- Path: `C:\Projects\sigenergy_optimizer-phase1-remediation`
+- Branch: `fix/phase1-audit-remediation`
+- HEAD: `c624f0b4392634cf19276186ba46f4b80268627b`
+- Expected dirty state:
+
+```text
+ M app/models.py
+ M app/optimizer.py
+ M docs/AI_HANDOVER.md
+ M docs/CONTROL_CONTRACT.md
+ M docs/CURRENT_STATE.md
+ M docs/DECISIONS.md
+ M docs/ROADMAP.md
+ M tests/test_haos49_failure_characterization.py
+?? tests/test_phase1_authority_fail_closed_characterization.py
+```
+
+The production and test changes are uncommitted. Package 1 has not been released, deployed, or live-tested.
+
+Protected/reference worktrees:
+
+- `C:\Projects\sigenergy_optimizer`: branch `refactor/msc-baseline-overlays`, HEAD `bce8411d5274fe17fb8d883e8e7faf43e9ce8d43`, intentionally dirty. Never modify, reset, or stash it.
+- `C:\Projects\sigenergy_optimizer-pv-hotfix`: clean haos53 reference at `19f3c70d24dc086737d5956a1c66cad230287edd`. Never modify it.
+- `C:\Projects\sigenergy_optimizer-phase2-transition`: branch `phase2/msc-transition-settlement`, HEAD `c624f0b4392634cf19276186ba46f4b80268627b`, clean when last verified. Phase 2 is paused/frozen.
+
+Always verify branch, HEAD, and cleanliness directly before editing.
 
 ## Current phase and gate
 
-Phase 1, MSC baseline and overlay architecture, is complete and live-proven. Phase 2 transition safety is now the next active phase; no Phase 2 production change has yet been started. The committed checkpoint already provides:
+Phase 1 was previously declared complete and live-accepted. That is no longer true. Phase 1 is **reopened for audit remediation** because a live Morning Slow low-SoC defect was proven and the broader audit found additional fail-closed and control-authority defects.
 
-- first-class `EXPORT_BLOCKED`, `MSC_SURPLUS_CEILING`, and `BATTERY_EXPORT` intents;
-- ordinary positive-FiT export without implicit stored-battery discharge;
-- explicit deliberate battery-export ownership;
-- independent Demand Window import ownership;
-- independent positive-FiT export-policy and battery-discharge controls;
-- distinction between battery serving house load and simultaneous battery discharge plus grid export;
-- preserved haos53 exact-full cheap-FiT protection.
+All audit remediation, full validation, and Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not the active phase.
 
-The Phase 1 implementation and automated validation are complete and committed at `e82ca50abc4b758038228f065ec7ba94c3bc4c1b`. Independent read-only safety review passed, and production is frozen. The two conflicting Value Gate Morning Slow expectations and all 24 obsolete haos49 characterization failures are reconciled tests-only; unobserved Automated ownership rejects the ceiling, leaves export closed, and preserves the existing live EMS without an MSC write.
+## Production Remediation Package 1
 
-Phase 1 live acceptance passed on 2026-09-06.
+The authority/fail-closed package is implemented in `app/models.py` and `app/optimizer.py`, automated-validated, and uncommitted. Its test artifacts are the corrected tracked legacy test `tests/test_haos49_failure_characterization.py` and the untracked characterization package `tests/test_phase1_authority_fail_closed_characterization.py`. Nothing from this package has been released, deployed, or live-tested.
 
-Captured haos54 evidence proved:
+The package implements four bounded contracts:
 
-- Automated ownership with exact Maximum Self Consumption;
-- normal PV MAX remained 25 kW;
-- negative-FiT export remained blocked;
-- Demand Window blocked import without reducing normal PV MAX;
-- ordinary positive-FiT operation opened the 25 kW `MSC_SURPLUS_CEILING` with `battery_export_owner=none`;
-- with zero PV and the battery discharging to serve house load, the open 25 kW ceiling did not cause meaningful battery-to-grid export;
-- trusted flow remained classified as load-serving battery discharge rather than simultaneous battery discharge plus grid export;
-- Value Gate remained advisory-only.
+- permissive automatic action requires genuinely observed Automated ownership; missing, unavailable, unknown, stale, or cached-only ownership is not authority, while Manual and Force remain protected;
+- Demand Window observed ON or untrustworthy blocks import, while observed OFF retains ordinary import policy;
+- successful HA-control `turn_on` is only a request; inverter actuator writes wait for a later trustworthy observation of HA control ON;
+- unknown, unavailable, missing, or non-finite current grid-import/export limits cannot suppress a required safety close or authorize a permissive open; opening requires trusted finite observation, while ordinary deadband behavior remains for trusted finite values.
 
-The operator also observed a natural haos54 Morning Slow period with sufficient PV: the battery charged at about the configured 2 kW rate while remaining in Maximum Self Consumption with normal PV MAX and the high export ceiling, and PV beyond house load plus charging exported to grid as genuine surplus. That Morning Slow/genuine-surplus case is operator-observed rather than preserved in the diagnostic capture.
+Final automated results:
 
-Phase 1 is therefore accepted live. `2.3.43-haos54` remains live and `2.3.42-haos53` remains the emergency rollback.
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+python -m pytest -p no:cacheprovider tests/test_phase1_authority_fail_closed_characterization.py
+# 11 passed, 191 warnings
+```
+
+Targeted protection results were 37 passed for authority, Demand Window, HA control, and Manual/Force; 120 passed with the two Phase 2 tests deselected for MSC/export safety, Value Gate, and positive-FiT behavior; 5 passed for Evening Boost; and 1 passed for the corrected legacy HA-control test.
+
+The broader suite result was **291 passed, 2 failed, 191 warnings**. The only failures were the two deliberately deferred Phase 2 transition-settlement tests named below. `python -m compileall -q app` and `git diff --check` passed.
+
+## Known live defect
+
+Morning Slow was observed active at approximately 14.2-14.5% SoC with MSC observed, PV MAX 25 kW, ESS charging about 2 kW, export closed, and no deliberate battery-export owner.
+
+Production gates Morning Slow using `morning_slow_charge_rate_kw + min_grid_transfer_kw`. The live values create a hidden `2 + 1 = 3 kW` PV-surplus threshold, violating the approved Morning Slow contract. Do not tune `MIN_GRID_TRANSFER_KW` around this defect; split grid-transfer deadband from Morning Slow policy.
+
+## Remaining audit findings requiring remediation
+
+High/proven static findings unless noted otherwise:
+
+- export-spike minimum SoC does not enforce a real spike floor;
+- configured baselines can enlarge an observed capability cap, and capability domains are conflated;
+- failed cycles lack a reliable settled safe fallback, fallback results are unchecked, and partial actuator failures are asymmetric;
+- `/set_ess` can report success despite failed service calls;
+- non-finite prices can create permissive decisions;
+- some paths accept core PV/load telemetry without equivalent freshness proof.
+
+Medium findings:
+
+- unavailable or non-finite SoC becomes a fake 0%;
+- cheap-positive import can steal Morning Slow EMS ownership;
+- Morning Dump and negative-price paths can issue internally conflicting intent;
+- positive-FiT no-battery-export logic can suppress battery-to-house discharge.
+
+Policy/test items still requiring decisions:
+
+- Morning Dump post-window grace is based on time/enablement rather than proof that a dump occurred;
+- Battery Full Safeguard suppresses the ordinary MSC surplus ceiling; final policy remains unresolved.
+
+Preserve intentional behavior: Morning Dump's 15% floor, Evening Boost, advisory-only Value Gate, no implicit battery export from ordinary positive-FiT export, and user ownership of Manual/Force modes.
+
+## Approved non-positive import policy
+
+Approved but **not yet implemented**: trusted actual import price `<= 0 $/kWh` becomes an explicit high-priority charging owner. It requests Grid First, the maximum safe/permitted grid-import capability, and the maximum safe/permitted ESS-charge capability using separate capability domains.
+
+It overrides Morning Slow charging/EMS ownership and Morning Dump. Demand Window remains higher priority and blocks import; Manual/Force and hardware/safety limits remain protected. A positive price must not steal Morning Slow ownership, and transition back to positive while Morning Slow is eligible returns to MSC plus slow charge. Non-positive import does not itself imply PV curtailment.
+
+Still unresolved: exact-zero import when FiT/export is extremely valuable, and PV MAX policy during non-positive import.
+
+## Relevant operator tuning
+
+These are operator settings, not software-default policy:
+
+- normal PV MAX and high export ceiling: 25 kW;
+- `MIN_SOC_FLOOR`: 20%; `MIN_EXPORT_TARGET_SOC`: 90%;
+- Morning Slow: enabled, 2 kW, until 11:00, minimum FiT `0.01`, base load 2 kW;
+- Morning Dump: enabled, 15% floor;
+- Evening Boost: enabled, 35% floor, safety multiplier 1.1, minimum tomorrow forecast 100 kWh;
+- `MIN_GRID_TRANSFER_KW`: 1 kW;
+- Forecast Safety Charging: 1.35; Forecast Safety Export: 1.1;
+- Solar Surplus Bypass: enabled at 2.0 / 1.25 / 0.5;
+- spike minimum SoC: 60%, although current implementation does not enforce it;
+- cheap-positive threshold: `0.015 $/kWh`; daytime top-up maximum SoC: 50%; target battery charge: 2 kW;
+- Demand Window remains the higher-priority import block; Value Gate remains advisory-only.
+
+## Frozen Phase 2 contract
+
+Future Phase 2 returns from deliberate battery export by closing export, later observing it closed, requesting MSC, later observing exact MSC, and only then reopening the normal 25 kW export ceiling. Entry into deliberate battery export must settle the export target before selecting discharge EMS. Service-call success is not observed inverter state.
+
+Protect the two existing expected Phase 2 failures:
+
+- `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`
+- `test_exact_msc_does_not_reopen_before_export_is_observed_closed`
 
 ## Exact next action
 
-Commit and publish this docs-only Phase 1 live-acceptance checkpoint. After that checkpoint is clean and authoritative, begin Phase 2 transition-safety work. Phase 2 must implement the already-approved close export -> later observe closed -> request MSC -> later observe exact MSC -> reopen high ceiling sequence and make the two intentionally failing transition tests pass without weakening them.
-
-## Morning Slow Charge correction
-
-The 2026-09-04 live evidence was:
-
-- about 3.2 kW PV and 1.1 kW load left the export ceiling at 0.01 kW;
-- later, about 4.4 kW PV and 1.1 kW load opened the ceiling to 25 kW;
-- the battery continued charging at about 2 kW and MSC exported genuine surplus correctly once the ceiling opened.
-
-Implemented result:
-
-- Morning Slow owns the ESS charging rate;
-- EMS remains Maximum Self Consumption;
-- PV MAX remains the configured normal maximum, normally 25 kW;
-- the export ceiling remains the configured high ceiling, normally 25 kW;
-- actual export remains genuine inverter-controlled MSC surplus;
-- Morning Slow never creates `BATTERY_EXPORT` intent.
-
-The legacy measured-PV start/stop/export-margin gate no longer owns the Morning Slow export ceiling. When that ceiling is rejected because Automated ownership is unobserved, the existing live EMS is preserved and no MSC write is issued solely for Morning Slow.
-
-## Current test checkpoint
-
-- Two directly reconciled Value Gate Morning Slow tests: 2 passed.
-- Full Value Gate advisory suite: 89 passed, 62 subtests passed.
-- Architecture contract: 31 passed, 21 subtests passed, 2 intentionally deferred Phase 2 failures.
-- Required protection suites combined: 108 passed, 68 subtests passed.
-- haos49 characterization suites: 46 passed, 49 subtests passed.
-- Full suite: 280 passed, 169 subtests passed, exactly 2 failures.
-  - `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`
-  - `test_exact_msc_does_not_reopen_before_export_is_observed_closed`
-- `python -m compileall -q app tests`: passed.
-- `git diff --check`: passed.
-- Independent read-only safety review: passed.
-
-Those two failures are the untouched Phase 2 close-observe-MSC-observe-reopen settlement contract. Do not weaken them during Phase 1 review.
-
-## Current operator tuning
-
-These are live operator settings, not software defaults:
-
-- Forecast Safety Charging: 1.30, changed from 1.25.
-- Morning Slow Charge Base Load: 2.0 kW, changed from 1.0 kW.
-
-Do not change software defaults merely to match these observations.
-
-## Protected contracts and parked work
-
-Preserve the exact-100% cheap-FiT contract, explicit battery-export ownership, Demand Window PV MAX behavior, Value Gate advisory-only behavior, actual import-cost guard, negative-price behavior, and manual/force ownership.
-
-Parked until their roadmap phase:
-
-- Phase 2 close-observe-MSC-observe-reopen transition safety;
-- hard forecast floors for Morning Dump or Morning Slow, which are not approved;
-- required/sunrise SoC presentation as 100% plus an energy shortfall;
-- load/forecast-model changes without supporting live evidence;
-- the old `feature/safety-actuator-refactor` branch, which is reference only;
-- the experimental dynamic solar scheduler and its replay/shadow/live-trial tooling.
+Decide the repository checkpoint for the completed, automated-validated, uncommitted Production Remediation Package 1. After that checkpoint is explicitly authorized, begin the separate Morning control repair package. Do not begin Phase 2.

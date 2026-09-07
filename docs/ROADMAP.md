@@ -1,79 +1,56 @@
 # Roadmap
 
-This roadmap is ordered by dependency. Later work must not bypass the stated live-proof gates.
+This roadmap is ordered by dependency. Later work must not bypass the stated validation and live-proof gates.
 
-Update it whenever approved phase order, scope, dependencies, or gates change. Parked ideas do not become approved roadmap work merely because they are documented.
+## Phase 1 audit remediation and renewed acceptance
 
-## 1. Finish and live-prove Phase 1
+Status: **active**. Phase 1 was reopened after a proven live Morning Slow defect and broader control-authority audit. Complete in this order:
 
-Status: current.
+1. Characterization tests. Complete.
+2. Authority and fail-closed remediation. Implemented and automated-validated; uncommitted and awaiting the repository checkpoint decision.
+3. Morning control repair, including separation of Morning Slow policy from grid-transfer deadband. Next after the Package 1 checkpoint.
+4. Battery-export safety.
+5. Telemetry trust.
+6. Actuator and fallback hardening.
+7. Capability model with separate domains and no configured enlargement of observed caps.
+8. `/set_ess` hardening.
+9. Configuration validation and persistence.
+10. Settings and UI cleanup.
+11. Outstanding policy decisions, including Morning Dump grace and Battery Full Safeguard behavior.
+12. Documentation checkpoint.
+13. Full validation and renewed Phase 1 live acceptance.
+14. Phase 2 transition implementation.
+15. Phase 2 live acceptance.
+16. Final control-ownership audit.
+17. Climate Manager integration.
 
-Committed Phase 1 work already separates MSC surplus permission, deliberate battery export, and blocked export; establishes explicit owners; separates Demand Window import ownership; separates positive-FiT export and battery-discharge controls; distinguishes load-serving battery flow; and preserves the exact-full cheap-FiT path.
+Gate after package 13: all audit remediation must be complete, validated, and live-accepted before package 14 begins. Packages 14-17 remain frozen or queued as described below.
 
-Mandatory remaining work:
+## Phase 2 transition-settlement safety
 
-1. Correct Morning Slow Charge so it owns charging rate but retains MSC, normal PV MAX, and the normal high export ceiling without `BATTERY_EXPORT` intent.
-2. Run the architecture, Value Gate, haos50-53 protection, compile, and diff validations.
-3. Freeze production code.
-4. Reconcile the 24 obsolete haos49 characterization failures as tests-only work. Stop if a failure reveals a production defect.
-5. Reach the pre-live target: all automated tests green except exactly the two deferred Phase 2 transition tests.
-6. Build and install a Phase 1 test release, then prove its control behavior live.
+Status: **paused/frozen before production implementation**.
 
-Gate: do not start Phase 2 until Phase 1 is test-complete and live-proven.
+Implement the observed close -> later observe closed -> request MSC -> later observe exact MSC -> reopen sequence in `CONTROL_CONTRACT.md`. Entering deliberate battery export must settle its export target before discharge EMS. Service-call success never counts as observation.
 
-## 2. Implement and live-prove Phase 2
+Protect the two existing expected Phase 2 failures. Then run targeted transition tests, complete regression testing, a test release, and controlled live proof.
 
-Implement the observed close -> observe closed -> request MSC -> observe exact MSC -> reopen sequence defined in `CONTROL_CONTRACT.md`.
+Gate: Phase 2 must be stable and live-accepted before downstream integration.
 
-Use targeted transition tests, complete regression testing, a test release, and controlled live proof. Service-call success must never count as inverter observation.
+## Short final control-ownership audit
 
-Gate: Phase 2 must be stable and live-proven before downstream integration.
+After Phase 2, confirm that every owner changes only its own actuator domains and that manual, force, freshness, price, reserve, and import-cost protections compose correctly. Resolve material findings before Climate Manager integration.
 
-## 3. Stabilisation and control-ownership audit
+## Climate Manager integration
 
-Perform a short, bounded audit after Phase 2. Confirm that each overlay changes only the actuators it owns and that manual, force, freshness, negative-price, reserve, and import-cost protections still compose correctly.
+Integrate the stable `sensor.sigenergy_hvac_solar_permission` interface (`start`, `continue`, `blocked`, `unavailable`). SigEnergy Optimizer owns energy opportunity and safety; Climate Manager owns HVAC profiles, zones, targets, comfort/manual behavior, AC0, and AirTouch commands.
 
-Gate: resolve material ownership defects before Climate Manager integration.
+## Later work
 
-## 4. Climate Manager integration
+Only after the preceding gates:
 
-Integrate the stable SigEnergy Optimizer permission entity only after Phase 2 and stabilisation:
+- operator diagnostics and ownership visibility improvements;
+- deterministic replay tooling;
+- evidence-driven load and forecast modelling;
+- experimental dynamic solar scheduling on a separate branch, proved through replay, shadow comparison, and a bounded live trial before any merge.
 
-- entity: `sensor.sigenergy_hvac_solar_permission`;
-- states: `start`, `continue`, `blocked`, `unavailable`;
-- SigEnergy Optimizer owns energy-opportunity and energy-safety determination;
-- Climate Manager owns HVAC profiles, zones, targets, manual behavior, comfort policy, AC0, and AirTouch commands.
-
-Climate Manager is not currently consuming this entity. Do not redesign Climate Manager before the upstream contract is stable.
-
-## 5. Operator diagnostics and bounded cleanup
-
-Improve operator-facing diagnostics, control ownership visibility, and UI clarity without broad control-policy redesign.
-
-## 6. Required-SoC presentation cleanup
-
-Preserve internal energy-shortfall information when required or sunrise SoC exceeds 100%. Prefer presenting 100% plus the remaining energy shortfall rather than hiding information through a simple clamp.
-
-## 7. Historical replay framework
-
-Build deterministic replay tooling before experimental scheduling or model changes. Replay must preserve production safety assumptions and support comparison against the live-proven baseline.
-
-## 8. Evidence-driven load and forecast modelling
-
-Investigate load assumptions or forecast modelling only if live evidence shows current configured behavior is inadequate. Do not add speculative complexity or a hard 80 kWh Morning Dump/Morning Slow forecast floor.
-
-## 9. Experimental dynamic solar charge scheduler
-
-Use a separate experimental branch. Objective: maximize economically useful positive-FiT solar export while retaining a forecast-safe trajectory to 100% battery by the end of productive solar.
-
-This work must not block Climate Manager integration and must never be wholesale-merged from the old `feature/safety-actuator-refactor` reference branch.
-
-## 10. Prove the scheduler before any merge
-
-Require, in order:
-
-1. historical replay;
-2. shadow-mode comparison;
-3. bounded controlled live trial;
-4. explicit review of safety and economic results;
-5. only then, consideration for merge.
+These later items must not delay the Phase 1 remediation gate or bypass Phase 2 and the final ownership audit.

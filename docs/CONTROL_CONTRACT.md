@@ -15,6 +15,8 @@ Normal Automated operation is deliberately uneventful:
 
 Typical configured values are 25 kW for both PV MAX and the high export ceiling. Configuration and trusted live hardware authority remain definitive.
 
+Permissive automatic actions require observed Automated operator ownership. Missing, unknown, unavailable, stale, or merely cached ownership is not Automated authority. Manual and Force remain user-owned and must not be displaced by automatic control.
+
 An export ceiling is permission for the inverter to export genuine surplus. It is not a request to export at that power and must never, by itself, select a battery-discharge EMS mode.
 
 ## First-class export intents
@@ -30,6 +32,8 @@ A positive numeric export target is not proof of `BATTERY_EXPORT`. Deliberate st
 ## Actuator ownership
 
 Import permission, export permission, battery-export intent, ESS charging rate, PV curtailment, and manual/safety control are independent decisions. An overlay changes only the actuators it genuinely owns.
+
+Grid-import, grid-export, ESS-charge, ESS-discharge, and PV capability are separate domains. A configured baseline must not enlarge a smaller trusted observed hardware cap.
 
 - The baseline owns ordinary MSC operation, normal PV MAX, and the high surplus ceiling.
 - Import overlays may change import or charging without manufacturing battery-sale intent.
@@ -74,7 +78,7 @@ Morning Slow is a charging policy:
 - it owns the configured ESS charging rate;
 - EMS remains Maximum Self Consumption;
 - PV MAX remains the normal configured maximum;
-- the export ceiling remains the configured high ceiling;
+- it does not own export permission; under observed Automated baseline authority, the independently owned export ceiling remains the configured high ceiling;
 - actual export is genuine MSC surplus;
 - it never owns `BATTERY_EXPORT` merely because Morning Slow is active.
 
@@ -84,7 +88,23 @@ Morning Slow must not retain legacy measured-PV start/ramp/probe gates for its e
 
 Demand Window primarily owns import blocking. It does not implicitly own battery export, lower ordinary PV MAX, or convert ordinary economic export permission into deliberate discharge.
 
-Unless another explicit overlay or safety rule owns a different value, normal PV MAX and the MSC surplus ceiling remain available.
+Observed ON blocks import. Observed OFF permits ordinary policy, subject to all other owners and safeguards. Missing, unknown, unavailable, stale, or otherwise untrustworthy Demand Window state also blocks import until trustworthy observation resumes.
+
+Unless another explicit overlay or safety rule owns a different value, normal PV MAX and the MSC surplus ceiling remain available; failing Demand Window closed for import does not itself curtail PV or authorize battery export.
+
+## Trusted non-positive import price
+
+The following policy is approved but not yet implemented. Trusted actual import price `<= 0 $/kWh` is an explicit high-priority charging owner:
+
+- request Grid First;
+- request the maximum safe/permitted grid-import capability;
+- request the maximum safe/permitted ESS-charge capability in its separate domain;
+- override Morning Slow charging and EMS ownership and override Morning Dump;
+- remain subordinate to Demand Window import blocking, Manual/Force ownership, and hardware/safety limits;
+- return to MSC plus slow charge when price becomes positive and Morning Slow is eligible;
+- do not infer PV curtailment from non-positive import price alone.
+
+A positive price must not take Morning Slow EMS or charging ownership through this policy. Exact-zero behavior when export value is extremely high and PV MAX behavior during non-positive import remain unresolved and are not defined here.
 
 ## Cheap-FiT exact-full exception
 
@@ -101,7 +121,9 @@ An independently configured positive-FiT policy remains separate and follows its
 
 ## Telemetry and ownership safety
 
-Where safety depends on observed state, service-call success is not observation. Required observations must be available, fresh, finite, and from trusted sources. Unknown evidence fails closed when the safe export type or actuator ownership cannot be proven.
+Where safety depends on observed state, service-call success is not observation. A successful HA-control `turn_on` call does not grant control authority; observed HA-control ON is required. Required observations must be available, fresh, finite, and from trusted sources. Unknown evidence fails closed when the safe export type or actuator ownership cannot be proven.
+
+Unavailable, missing, unknown, stale, or non-finite actuator-state telemetry is not proof that import or export is safely closed. Deadband or a numeric default must not suppress a required safety-close request when the present actuator state is untrusted. Untrusted current grid-limit telemetry also cannot authorize a permissive opening; opening requires a trusted finite observation. Trusted finite current limits retain ordinary deadband behavior.
 
 Manual and Force modes remain user-owned. Automated logic must not silently reinterpret them as ordinary MSC or deliberate battery export.
 
@@ -116,5 +138,7 @@ Returning from deliberate battery export to an MSC surplus ceiling requires a mu
 3. Request Maximum Self Consumption.
 4. On a later trusted observation, confirm exact Maximum Self Consumption.
 5. Only then reopen the normal high export ceiling.
+
+Entering deliberate battery export must settle the export target before selecting a discharge EMS mode.
 
 No service-call result, cached request, or assumed inverter response may replace an observed state. This settlement sequence is Phase 2 work and must not be partially improvised inside Phase 1 policy logic.

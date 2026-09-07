@@ -1,115 +1,72 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-09-06
+Last consolidated: 2026-09-08
 
-Keep this handover concise and current. Update it at meaningful checkpoints, phase transitions, and before handing work to a new ChatGPT/Codex session. Do not retain obsolete historical state merely because it once appeared here; `CURRENT_STATE.md` is the first place to look for present state.
+This is concise continuation context for a new ChatGPT/Codex thread. Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md`, `ROADMAP.md`, and `DECISIONS.md`. Verify Git state directly before editing.
 
-This is the minimum engineering context needed to continue safely. Read in this order:
+## Live baseline and rollback
 
-1. root and project `AGENTS.md`;
-2. `docs/CURRENT_STATE.md` for the volatile checkpoint and exact next action;
-3. `docs/CONTROL_CONTRACT.md` for durable semantics;
-4. `docs/ROADMAP.md` for phase gates;
-5. `docs/DECISIONS.md` for approved rationale.
+Live is `2.3.43-haos54`. Home Assistant observed runtime source `083b1fcc241b0d86271f5da80538d4e224fc6433`; its production code is identical to tagged candidate `174136280ed1c516b7666b4600622ce9544bb8e0`.
 
-Use `docs/CHANGELOG.md` only when release history is needed. Do not reconstruct current state from old changelog entries.
+Known-good emergency rollback is `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`. If separately authorized, rollback means stop the add-on, restore Sig Opt only, then verify EMS, PV MAX, export, and HA control. No rollback is underway.
 
-## Project and live baseline
+GitHub `main` remains `c624f0b4392634cf19276186ba46f4b80268627b` (`Record Phase 1 live acceptance`), whose phase-status documentation is now stale.
 
-SigEnergy Optimizer is a safety-first Home Assistant add-on that coordinates SigEnergy battery, grid import/export, PV, tariff, and forecast-aware decisions.
+## Active and protected worktrees
 
-The current live and Phase 1 accepted release is `2.3.43-haos54`. Live runtime reported `2.3.43-haos54` with container source commit `083b1fcc241b0d86271f5da80538d4e224fc6433`, the docs-only child of tagged/tested production candidate `174136280ed1c516b7666b4600622ce9544bb8e0`. Emergency rollback remains `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`.
+Active remediation:
 
-## Worktree boundaries
+- `C:\Projects\sigenergy_optimizer-phase1-remediation`
+- branch `fix/phase1-audit-remediation`
+- HEAD `c624f0b4392634cf19276186ba46f4b80268627b`
+- expected dirty state: modified `app/models.py`, `app/optimizer.py`, `docs/AI_HANDOVER.md`, `docs/CONTROL_CONTRACT.md`, `docs/CURRENT_STATE.md`, `docs/DECISIONS.md`, `docs/ROADMAP.md`, and `tests/test_haos49_failure_characterization.py`; untracked `tests/test_phase1_authority_fail_closed_characterization.py`.
 
-Only the explicitly assigned worktree is writable for a task. Current development uses:
+The production and test changes are uncommitted. Do not reset, stash, discard, or overwrite them.
 
-- `C:\Projects\sigenergy_optimizer-haos53-refactor`
-- branch `refactor/msc-baseline-overlays-haos53`
+Protected: never modify/reset/stash `C:\Projects\sigenergy_optimizer` (intentionally dirty `refactor/msc-baseline-overlays` at `bce8411d5274fe17fb8d883e8e7faf43e9ce8d43`) or `C:\Projects\sigenergy_optimizer-pv-hotfix` (clean haos53 reference at `19f3c70d24dc086737d5956a1c66cad230287edd`). Phase 2 worktree `C:\Projects\sigenergy_optimizer-phase2-transition`, branch `phase2/msc-transition-settlement`, is frozen at `c624f0b4392634cf19276186ba46f4b80268627b` and was clean when last verified.
 
-Protected references:
+## Phase and gate
 
-- `C:\Projects\sigenergy_optimizer` contains intentional dirty legacy work. Never modify, reset, or stash it.
-- `C:\Projects\sigenergy_optimizer-pv-hotfix` is the clean haos53/main release reference. Never modify it.
-- The old `feature/safety-actuator-refactor` branch is conceptual reference only. Never wholesale merge it.
+Phase 1 is reopened for audit remediation after a proven live Morning Slow low-SoC defect and broader fail-closed/control-authority findings. All remediation, validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is paused/frozen, not active.
 
-Always verify the exact branch, HEAD, and cleanliness directly with Git in the assigned worktree before editing. Use `CURRENT_STATE.md` only for the relevant checkpoint/base SHA and expected logical working set; stop on a material mismatch.
+The Morning Slow defect comes from the production gate `morning_slow_charge_rate_kw + min_grid_transfer_kw`: live tuning creates a hidden `2 + 1 = 3 kW` PV-surplus threshold. Split these concepts; do not tune `MIN_GRID_TRANSFER_KW` as a workaround.
 
-## Current architecture
+## Production Remediation Package 1 checkpoint
 
-Phase 1 separates export capacity from stored-battery export authority:
+Package 1 is implemented in `app/models.py` and `app/optimizer.py`, automated-validated, uncommitted, and not deployed or live-tested. Its test artifacts are the corrected tracked legacy HA-control test `tests/test_haos49_failure_characterization.py` and the untracked characterization package `tests/test_phase1_authority_fail_closed_characterization.py`.
 
-- `EXPORT_BLOCKED`: no live export permission;
-- `MSC_SURPLUS_CEILING`: a ceiling for genuine inverter-controlled surplus while remaining in Maximum Self Consumption;
-- `BATTERY_EXPORT`: explicit deliberate stored-energy sale owned by an authorized policy.
+The completed contracts require observed Automated ownership, fail Demand Window closed for import when untrustworthy, treat HA-control service success as a request rather than observation, and prevent unknown current grid limits from suppressing required closure or authorizing permissive opening. Manual and Force remain protected.
 
-A positive export ceiling is not a battery-discharge command. Ordinary Automated operation uses MSC, normal PV MAX, and the configured high export ceiling unless a specific overlay or safety condition owns a different actuator.
+Validation: characterization **11 passed, 191 warnings**; authority/Demand Window/HA/manual-force **37 passed**; MSC/export/Value Gate/positive-FiT **120 passed, 2 Phase 2 deselected**; Evening Boost **5 passed**; corrected legacy HA-control test **1 passed**. The broader suite was **291 passed, 2 failed, 191 warnings**, with exactly `test_return_from_discharge_waits_for_observed_close_before_requesting_msc` and `test_exact_msc_does_not_reopen_before_export_is_observed_closed` deferred to Phase 2. `python -m compileall -q app` and `git diff --check` passed.
 
-Import, export, charging, battery-export intent, PV curtailment, and safety/manual ownership are independent. Generic ordinary tariff eligibility cannot produce `BATTERY_EXPORT`.
+The next engineering package is Morning control repair. Separate Morning Slow policy from the overloaded grid-transfer threshold while preserving MSC, the configured slow charge rate, normal PV MAX, independently owned ordinary MSC surplus export, and no battery-export authority. Do not change `MIN_GRID_TRANSFER_KW` as the repair.
 
-Deliberate owners such as qualifying Morning Dump, high-price export, spike, Evening Export Boost, enabled positive-FiT battery discharge, and established solar/external overrides keep their existing safeguards.
+## Protected behavior
 
-## Current Phase 1 checkpoint
+- Manual and Force remain user-owned; unknown ownership is not Automated authority.
+- Morning Slow owns ESS charge rate only, remains MSC, retains normal PV MAX, and never owns export permission or deliberate battery export.
+- Morning Dump's 15% floor and Evening Boost behavior are intentional.
+- Demand Window is the higher-priority import block.
+- Value Gate remains advisory-only.
+- Ordinary positive-FiT export must not implicitly create battery export.
+- Unavailable actuator-state telemetry and service-call success are not proof of settled state.
 
-The Phase 1 checkpoint was committed successfully at `e82ca50abc4b758038228f065ec7ba94c3bc4c1b` (`Complete Phase 1 MSC ownership checkpoint`). Its Morning Slow Charge correction removes legacy measured-PV start/stop/export-margin ownership of export-ceiling opening.
+## Material operator tuning
 
-When Morning Slow is legitimately active under safe Automated/MSC ownership:
+Operator tuning, not software defaults: PV MAX/high export ceiling 25 kW; minimum SoC floor 20%; minimum export target SoC 90%; Morning Slow enabled at 2 kW until 11:00, minimum FiT 0.01, base load 2 kW; Morning Dump enabled with 15% floor; Evening Boost enabled with 35% floor, 1.1 safety multiplier, and 100 kWh minimum tomorrow forecast; `MIN_GRID_TRANSFER_KW` 1 kW; Forecast Safety Charging 1.35; Forecast Safety Export 1.1; Solar Surplus Bypass enabled 2.0/1.25/0.5; spike minimum SoC configured 60% but not enforced; cheap-positive threshold 0.015 $/kWh; daytime top-up maximum SoC 50%; target battery charge 2 kW.
 
-- Morning Slow owns the ESS charge rate;
-- remain in Maximum Self Consumption;
-- retain normal configured PV MAX;
-- retain the configured high export ceiling;
-- allow only genuine MSC surplus to export;
-- never create `BATTERY_EXPORT` intent.
+## Approved non-positive import policy
 
-Production is frozen after that Stage A change and its narrow ownership safeguard. The two affected Value Gate expectations now distinguish safe low-surplus MSC permission from unobserved Automated ownership. Rejected unobserved ownership leaves export closed, preserves the existing live EMS, and causes no MSC write solely for Morning Slow. All 24 obsolete haos49 characterization failures were reconciled tests-only to the approved Phase 1 architecture.
+Approved but not implemented: trusted actual import price `<= 0 $/kWh` is an explicit high-priority charging owner. Use Grid First plus maximum safe/permitted grid-import and ESS-charge capabilities in separate domains. It overrides Morning Slow charging/EMS ownership and Morning Dump; Demand Window, Manual/Force, and hardware/safety limits remain higher protections. Positive price must not steal Morning Slow; transition back to positive while eligible returns to MSC plus slow charge. Non-positive import does not imply PV curtailment.
 
-Phase 1 implementation and automated validation are complete for this committed checkpoint, and independent read-only safety review passed. The full suite has exactly the two untouched Phase 2 settlement failures recorded in `CURRENT_STATE.md`; all other tests pass.
+Do not invent the unresolved exact-zero/high-FiT choice or PV MAX behavior during non-positive import.
 
-`2.3.43-haos54` is installed and Phase 1 live acceptance passed on 2026-09-06. Captured evidence proved Automated/MSC ownership, PV MAX 25 kW, negative-FiT blocking, Demand Window import ownership, Value Gate advisory behavior, and the central Phase 1 safety case: an ordinary positive-FiT 25 kW `MSC_SURPLUS_CEILING` with no battery-export owner did not cause stored-battery grid export even while the battery was actively serving house load with zero PV.
+## Frozen Phase 2 contract
 
-The operator also observed a natural Morning Slow solar case in haos54: about the configured 2 kW battery charging rate, Maximum Self Consumption, normal PV MAX, high export ceiling, and genuine PV surplus exported after house load plus charging demand. That Morning Slow case is operator-observed rather than retained in the diagnostic capture.
+Future return from deliberate battery export: close export -> later observe closed -> request MSC -> later observe exact MSC -> reopen the normal 25 kW ceiling. Entering deliberate battery export must settle its export target before discharge EMS. Service-call success is not observation. Preserve the two existing expected tests named in `CURRENT_STATE.md`.
 
-Phase 1 is complete. The next engineering phase is the already-approved Phase 2 multi-cycle deliberate-export-to-MSC settlement sequence. The two existing Phase 2 transition tests remain intentional protection tests and must not be weakened.
+## Continuation method
 
-## Safety contracts to preserve
+Recommended next session: Codex in the active remediation worktree, high reasoning, normal/standard speed; use a fresh thread with this handover loaded. Inspect narrowly, stage one remediation package at a time, and keep release/live actions separately authorized.
 
-- Cheap-FiT implicit export remains closed below 100% SoC.
-- Exact 100% cheap-FiT export uses only the verified Automated plus exact-MSC PV-only path.
-- Material or unknown battery flow cannot broaden that exception.
-- The separate positive-FiT export policy and its battery-discharge enable are independent.
-- Battery serving house load with negligible grid export is not automatically battery-to-grid sale.
-- Meaningful simultaneous battery discharge and grid export closes conservatively when no deliberate owner exists.
-- Unknown or stale evidence fails closed where safety or ownership cannot be proven.
-- Demand Window primarily owns import blocking and does not reduce normal PV MAX by implication.
-- Morning Dump remains deliberate battery export with its existing floor and window.
-- Value Gate remains advisory-only; the actual import-cost guard remains independent.
-- Negative-price, standby, reserve, forecast, freshness, remote-control, manual, and force behavior must not be casually redesigned.
-
-## Phase boundaries
-
-Phase 1 establishes decision and ownership semantics only.
-
-Phase 2 implements the multi-cycle deliberate-export-to-MSC sequence:
-
-1. close export;
-2. observe it closed later;
-3. request MSC;
-4. observe exact MSC later;
-5. reopen the normal high ceiling.
-
-Service-call success is not observed inverter state. Phase 1 is now test-complete and live-proven; Phase 2 may begin only through its explicit multi-cycle observed-state contract.
-
-Climate Manager integration follows Phase 2 plus a short stabilisation audit. The intended stable interface is `sensor.sigenergy_hvac_solar_permission` with states `start`, `continue`, `blocked`, and `unavailable`. SigEnergy Optimizer owns energy opportunity and safety; Climate Manager owns HVAC profiles, zones, targets, comfort/manual behavior, AC0, and AirTouch commands. Climate Manager is not yet consuming this entity.
-
-## Working method
-
-- Inspect only the minimum files relevant to the assigned change.
-- Keep control changes narrow, reviewable, and accompanied by focused regressions.
-- Never modify Home Assistant directly from repository work.
-- Do not change software defaults to match live operator tuning.
-- Run focused architecture and protection suites before the complete suite.
-- Run `python -m compileall -q app tests` and `git diff --check`.
-- Keep release, build, install, and live validation as separately approved actions.
-
-Current test counts, operator tuning, checkpoint/base SHAs, and the next task live in `CURRENT_STATE.md`. Exact local branch, HEAD, and cleanliness must still be verified directly with Git.
+Exact next action: obtain the user's repository checkpoint decision for the completed uncommitted Package 1. Only after that checkpoint, begin the separate Morning control repair package. Do not begin Phase 2.
