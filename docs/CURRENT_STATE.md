@@ -27,13 +27,16 @@ Active remediation worktree:
 - Package 1 production checkpoint: `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`; verify the exact active HEAD directly with Git because later docs-only commits may be children of this checkpoint.
 - Package 2 production/test checkpoint: `d3294cb`; verify the exact active HEAD directly with Git because a later docs-only commit may be a child of this checkpoint.
 - Package 3 production/test checkpoint: `91b0075`; verify the exact active HEAD directly with Git because a future docs-only commit may be a child of this checkpoint.
-- Worktree state: clean after the local Package 3 checkpoint commit, before this documentation update.
+- Package 4A production/test checkpoint: `d3e1d56`; verify the exact active HEAD directly with Git because a future docs-only commit may be a child of this checkpoint.
+- Worktree state: clean after the local Package 4A checkpoint commit, before this documentation update.
 
 Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. The worktree was clean after the verified push. Package 1 has not been merged, released, deployed, or live-tested.
 
 Package 2 is committed locally at `d3294cb` and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
 
 Package 3 is committed locally at `91b0075` and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
+
+Package 4A is committed locally at `d3e1d56` and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
 
 Protected/reference worktrees:
 
@@ -47,7 +50,7 @@ Always verify branch, HEAD, and cleanliness directly before editing.
 
 Phase 1 was previously declared complete and live-accepted. That is no longer true. Phase 1 is **reopened for audit remediation** because a live Morning Slow low-SoC defect was proven and the broader audit found additional fail-closed and control-authority defects.
 
-Production Remediation Packages 1, 2, and 3 are complete and automated-validated. All remaining audit remediation, full validation, and Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not the active phase.
+Production Remediation Packages 1, 2, 3, and 4A are complete and automated-validated. Package 4 telemetry trust is intentionally split into 4A Tariff trust, 4B SoC/battery-energy trust, 4C Live PV/load trust, and 4D Forecast/solar-clock trust. All remaining audit remediation, full validation, and Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not the active phase.
 
 ## Production Remediation Package 1
 
@@ -96,6 +99,24 @@ Targeted validation passed: Package 3 characterization **8 passed, 7 subtests pa
 
 The final complete suite collected 303 tests and finished **301 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed. No unexpected regression was found.
 
+## Production Remediation Package 4A
+
+Tariff telemetry trust is implemented in `app/optimizer.py` and `app/state_store.py`, characterized in `tests/test_phase1_tariff_telemetry_trust_characterization.py`, automated-validated, and committed locally at `d3e1d56` (`Harden tariff telemetry trust`). It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
+
+NaN and infinite import prices cannot establish tariff-dependent import or charging authority, and non-finite or unavailable FiT cannot establish permissive FiT-dependent export authority. Missing or untrusted import price cannot establish Standby Holdoff; missing or untrusted FiT cannot establish cheap-positive import; and non-finite optimizer import-cost evidence is excluded from trusted persistence and summary use. Finite estimated positive-price policy, actual negative-price Grid Charge, positive-FiT ownership, Package 2 Morning Slow behavior, Package 3 battery-export ownership, and the trusted negative-price `0.01 kW` discharge clamp remain preserved. Trust gates are branch-specific: invalid tariff telemetry does not globally seize or block unrelated controls.
+
+Validation passed for the Package 4A characterization (**23 passed**), existing tariff/import-cost reference set (**14 passed, 4 subtests passed**), Package 1 protections (**23 passed, 61 subtests passed**), Package 2 focused protections (**15 passed, 6 subtests passed, 124 deselected**), Package 3 protections (**13 passed, 10 subtests passed**), and broader tariff regression (**131 passed, 89 subtests passed**). The final complete suite collected 326 tests and finished **324 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed. No unexpected regression remained.
+
+Package 4 is split into 4A Tariff trust (complete and automated-validated), 4B SoC/battery-energy trust (next), 4C Live PV/load trust, and 4D Forecast/solar-clock trust.
+
+## Parked live defect: PV-only export-ceiling flapping
+
+A live `2.3.43-haos54` observation on 2026-09-08 showed repeated PV-only MSC export-ceiling oscillation between 25 kW and closed (`0.01 kW`). Automated ownership, Maximum Self Consumption, 100% battery SoC, and 25 kW PV MAX remained observed; no deliberate battery-export owner was active, and import price and FiT were essentially stable. The direct battery sensor remained near zero discharge at approximately `-0.006 kW`, while the derived battery-discharge value used by the PV-only safety classification intermittently indicated approximately `0.7-1.43 kW`. Those cycles were classified as simultaneous battery discharge plus grid export and failed export closed; subsequent settled-looking cycles returned within flow tolerance and reopened the 25 kW MSC ceiling.
+
+The root cause is not proven. Cross-sensor timing or snapshot incoherence and/or post-actuation settlement lag may temporarily make PV/load/grid-flow arithmetic disagree with the direct battery-power sensor. The observed response appears fail-safe because export closes when battery-backed export cannot be disproven, but it is unstable: it creates repeated `0.01 <-> 25 kW` actuator chatter, interrupts legitimate PV-surplus export, and destabilizes control reasons. There is no evidence from this observation of an actual deliberate battery dump.
+
+Do not weaken the simultaneous battery-discharge plus grid-export fail-closed rule to suppress the flapping. This issue is parked for the 4C/Package 5 boundary: 4C must first characterize and, if appropriate, repair telemetry-coherence/trust causes; any remaining reopen-before-settlement, actuator-readback timing, or transition-settling defect belongs in Package 5. Package 4B SoC/battery-energy trust remains the immediate next engineering task.
+
 ## Remaining audit findings requiring remediation
 
 High/proven static findings unless noted otherwise:
@@ -104,7 +125,6 @@ High/proven static findings unless noted otherwise:
 - configured baselines can enlarge an observed capability cap, and capability domains are conflated;
 - failed cycles lack a reliable settled safe fallback, fallback results are unchecked, and partial actuator failures are asymmetric;
 - `/set_ess` can report success despite failed service calls;
-- non-finite prices can create permissive decisions;
 - some paths accept core PV/load telemetry without equivalent freshness proof.
 
 Medium findings:
@@ -155,4 +175,4 @@ Protect the two existing expected Phase 2 failures:
 
 ## Exact next action
 
-Production Remediation Packages 1, 2, and 3 are complete and automated-validated. Package 3 is committed locally at `91b0075` but is not yet pushed, deployed, or live-tested. The exact next engineering package is Telemetry trust. Preserve all three checkpoints and do not begin Phase 2.
+Production Remediation Packages 1, 2, 3, and 4A are complete and automated-validated. Package 4A is committed locally at `d3e1d56` but is not pushed, deployed, or live-tested. The exact next engineering subpackage is 4B SoC/battery-energy trust. Preserve all completed checkpoints and do not begin Phase 2. Verify the exact active HEAD directly with Git after any documentation commit rather than hard-coding that future child commit here.
