@@ -11,11 +11,17 @@ Status: **active**. Phase 1 was reopened after a proven live Morning Slow defect
 3. Morning control repair, including separation of Morning Slow policy from grid-transfer deadband. Complete and automated-validated; committed locally at `d3294cb`, not yet pushed, deployed, or live-tested.
 4. Battery-export safety. Complete and automated-validated; committed locally at `91b0075`, not yet pushed, deployed, or live-tested.
 5. Telemetry trust.
-   - 4A Tariff trust — **complete and automated-validated**; committed locally at `d3e1d56`, not pushed, deployed, or live-tested.
-   - 4B SoC/battery-energy trust — **complete and automated-validated**; committed locally at `19a6279`, not pushed, deployed, or live-tested.
-   - 4C Live PV/load trust — **complete and automated-validated**; committed locally at `85cfb1d`, not pushed, deployed, or live-tested. Static PV/load trust defects are repaired without weakening the fail-closed battery-export rule; genuine fresh zero PV/load remains trusted.
-   - 4D Forecast/solar-clock trust — **NEXT**.
-6. Actuator and fallback hardening. Before completion, investigate and address the remaining within-window `25.0 kW -> 0.0 kW -> 25.0 kW` export-ceiling chatter after Package 4C telemetry hardening, including possible settlement/readback timing or transition settling. Do not assume a specific delay or hysteresis mechanism is approved.
+   - 4A Tariff trust — **complete, automated-validated, and pushed** at `d3e1d56`; not deployed or live-tested.
+   - 4B SoC/battery-energy trust — **complete, automated-validated, and pushed** at `19a6279`; not deployed or live-tested.
+   - 4C Live PV/load trust — **complete, automated-validated, and pushed** at `85cfb1d`; not deployed or live-tested. Static PV/load trust defects are repaired without weakening fail-closed battery-export protection; genuine fresh zero PV/load remains trusted.
+   - 4D Forecast/solar-clock trust — **complete and automated-validated locally** at `44c63e8`; not pushed, deployed, or live-tested. Existing forecast/sun freshness bases are retained; no new horizon, intended-day, issue-age, or sun-tolerance policy was created.
+6. Actuator and fallback hardening — **NEXT**. Characterize and address, without preselecting a control policy:
+   - export-ceiling chatter after telemetry-trust hardening, including the observed/reproduced `25.0 kW -> closed -> 25.0 kW` sequence;
+   - fresh direct battery-discharge threshold chatter around `0.10 kW`, distinct from derived-flow/coherence defects;
+   - actuator/readback/flow settlement behavior without treating service-call success as observed inverter state;
+   - failed-cycle fallback reliability, fallback command checking, and partial/asymmetric actuator failures.
+
+   The eventual solution must preserve fail-closed protection for simultaneous battery discharge plus grid export and must not implicitly authorize battery export from ordinary positive FiT. No larger threshold, specific deadband, fixed timer, N-cycle hysteresis, or exact settlement duration is yet approved.
 7. Capability model with separate domains and no configured enlargement of observed caps.
 8. `/set_ess` hardening.
 9. Configuration validation and persistence.
