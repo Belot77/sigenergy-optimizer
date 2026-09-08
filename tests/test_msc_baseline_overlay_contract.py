@@ -1309,7 +1309,69 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             decision,
             export_ceiling=optimizer.cfg.export_limit_high,
         )
-        self.assertEqual(0.01, decision.ess_discharge_limit)
+        expected_discharge_cap = optimizer.get_power_caps_kw(state)[1]
+        self.assertGreater(expected_discharge_cap, 0.01)
+        self.assertEqual(expected_discharge_cap, decision.ess_discharge_limit)
+
+    def test_positive_fit_policy_without_battery_discharge_preserves_load_serving_discharge(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            allow_low_medium_export_positive_fit=True,
+            allow_positive_fit_battery_discharging=False,
+        )
+        state = self._ordinary_state(
+            90.0,
+            feedin_price=0.05,
+            feedin_price_cents=5.0,
+            battery_power_sensor_kw=-1.0,
+            grid_export_power_kw=0.2,
+        )
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assert_msc_surplus_permission(
+            decision,
+            export_ceiling=optimizer.cfg.export_limit_high,
+        )
+        self.assertEqual(
+            "load_serving_battery_discharge",
+            decision.trace_values.get("ordinary_msc_flow_classification"),
+        )
+        expected_discharge_cap = optimizer.get_power_caps_kw(state)[1]
+        self.assertGreater(expected_discharge_cap, 0.01)
+        self.assertEqual(expected_discharge_cap, decision.ess_discharge_limit)
+
+    def test_positive_fit_policy_without_battery_discharge_closes_simultaneous_export_without_clamping_discharge(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            allow_low_medium_export_positive_fit=True,
+            allow_positive_fit_battery_discharging=False,
+        )
+        state = self._ordinary_state(
+            90.0,
+            feedin_price=0.05,
+            feedin_price_cents=5.0,
+            battery_power_sensor_kw=-1.0,
+            grid_export_power_kw=optimizer.cfg.min_grid_transfer_kw,
+        )
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assert_contract_outputs(
+            decision,
+            (MODE_MAX_SELF, 0.0, 0.0, optimizer.cfg.pv_max_power_normal),
+        )
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+        self.assertEqual(
+            "simultaneous_battery_discharge_and_grid_export",
+            decision.trace_values.get("ordinary_msc_flow_classification"),
+        )
+        expected_discharge_cap = optimizer.get_power_caps_kw(state)[1]
+        self.assertGreater(expected_discharge_cap, 0.01)
+        self.assertEqual(expected_discharge_cap, decision.ess_discharge_limit)
 
     def test_positive_fit_policy_without_battery_discharge_fails_closed_when_unverified(
         self,
@@ -1378,6 +1440,237 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                     )
                 )
                 self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+                expected_discharge_cap = optimizer.get_power_caps_kw(state)[1]
+                self.assertGreater(expected_discharge_cap, 0.01)
+                self.assertEqual(
+                    expected_discharge_cap,
+                    decision.ess_discharge_limit,
+                )
+
+    def test_actual_import_cost_veto_does_not_inherit_positive_fit_discharge_clamp(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            allow_low_medium_export_positive_fit=True,
+            allow_positive_fit_battery_discharging=False,
+        )
+        state = self._ordinary_state(
+            95.0,
+            feedin_price=1.10,
+            feedin_price_cents=110.0,
+            battery_power_sensor_kw=-0.2,
+            pv_kw=0.0,
+            solar_power_now_kw=0.0,
+            load_kw=1.0,
+        )
+        original_advisory = optimizer._export_value_gate_advisory
+
+        def import_cost_veto_advisory(*args, **kwargs):
+            result = original_advisory(*args, **kwargs)
+            result.update(
+                {
+                    "today_import_topup_kwh": 1.0,
+                    "today_highest_actual_import_price": 1.20,
+                    "import_cost_export_floor": 1.20,
+                    "import_cost_floor_trusted": True,
+                    "import_cost_floor_unknown": False,
+                }
+            )
+            return result
+
+        optimizer._export_value_gate_advisory = import_cost_veto_advisory
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assertTrue(bool(decision.trace_gates.get("positive_fit_override")))
+        self.assertTrue(
+            bool(decision.trace_gates.get("actual_import_cost_guard_blocking"))
+        )
+        self.assertEqual("high_price", decision.trace_values.get("battery_export_owner"))
+        self.assert_contract_outputs(
+            decision,
+            (MODE_MAX_SELF, 0.0, 0.0, optimizer.cfg.pv_max_power_normal),
+        )
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        expected_discharge_cap = optimizer.get_power_caps_kw(state)[1]
+        self.assertGreater(expected_discharge_cap, 0.01)
+        self.assertEqual(expected_discharge_cap, decision.ess_discharge_limit)
+
+    def test_other_deliberate_export_owners_ignore_disabled_positive_fit_discharge(
+        self,
+    ) -> None:
+        morning_when = datetime(2026, 1, 15, 6, 0)
+        morning_optimizer = self.optimizer(
+            morning_dump_enabled=True,
+            allow_low_medium_export_positive_fit=True,
+            allow_positive_fit_battery_discharging=False,
+        )
+        morning_state = self.state(
+            morning_when,
+            sun_above_horizon=False,
+            battery_soc=80.0,
+            available_discharge_energy_kwh=24.0,
+            feedin_price=0.05,
+            feedin_price_cents=5.0,
+            load_kw=1.0,
+            solcast_detailed=[
+                {
+                    "period_start": (morning_when + timedelta(hours=hours)).isoformat(),
+                    "pv_estimate": 10.0,
+                }
+                for hours in (3, 5, 7, 9, 11)
+            ],
+        )
+
+        high_price_optimizer = self.optimizer(
+            allow_low_medium_export_positive_fit=True,
+            allow_positive_fit_battery_discharging=False,
+        )
+        high_price_state = self._ordinary_state(
+            95.0,
+            feedin_price=1.10,
+            feedin_price_cents=110.0,
+            battery_power_sensor_kw=-0.2,
+            pv_kw=0.0,
+            solar_power_now_kw=0.0,
+            load_kw=1.0,
+        )
+
+        spike_when = datetime(2026, 1, 15, 2, 0)
+        spike_optimizer = self.optimizer(
+            export_spike_threshold=0.60,
+            allow_low_medium_export_positive_fit=True,
+            allow_positive_fit_battery_discharging=False,
+        )
+        spike_state = self.state(
+            spike_when,
+            sun_above_horizon=False,
+            battery_soc=95.0,
+            available_discharge_energy_kwh=28.5,
+            battery_power_sensor_kw=-0.2,
+            feedin_price=0.65,
+            feedin_price_cents=65.0,
+            price_spike_active=True,
+            pv_kw=0.0,
+            solar_power_now_kw=0.0,
+            load_kw=1.0,
+        )
+
+        cases = (
+            (
+                "morning_dump",
+                morning_optimizer,
+                morning_state,
+                morning_when,
+                "morning_dump",
+            ),
+            (
+                "high_price",
+                high_price_optimizer,
+                high_price_state,
+                self.FIXED_AFTERNOON,
+                "high_price",
+            ),
+            (
+                "export_spike",
+                spike_optimizer,
+                spike_state,
+                spike_when,
+                "export_spike",
+            ),
+        )
+        for name, optimizer, state, when, expected_owner in cases:
+            with self.subTest(owner=name):
+                decision = self.decide(optimizer, state, when)
+
+                self.assertTrue(bool(decision.trace_gates.get("positive_fit_override")))
+                self.assertFalse(
+                    bool(
+                        decision.trace_gates.get(
+                            "positive_fit_battery_export_authorized"
+                        )
+                    )
+                )
+                self.assertEqual(expected_owner, decision.trace_values.get("battery_export_owner"))
+                self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+                self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+                self.assertGreater(decision.export_limit, 0.01)
+                expected_discharge_cap = optimizer.get_power_caps_kw(state)[1]
+                self.assertGreater(expected_discharge_cap, 0.01)
+                self.assertEqual(
+                    expected_discharge_cap,
+                    decision.ess_discharge_limit,
+                )
+
+    def test_morning_slow_positive_fit_overlap_retains_package2_flow_safety(
+        self,
+    ) -> None:
+        when = datetime(2026, 1, 15, 9, 0)
+        optimizer = self.optimizer(
+            morning_slow_charge_enabled=True,
+            morning_slow_charge_rate_kw=2.0,
+            min_grid_transfer_kw=1.0,
+            allow_low_medium_export_positive_fit=True,
+            allow_positive_fit_battery_discharging=False,
+        )
+        state = self.state(
+            when,
+            battery_soc=14.5,
+            available_discharge_energy_kwh=4.35,
+            battery_power_sensor_kw=-0.2,
+            feedin_price=0.15,
+            feedin_price_cents=15.0,
+            pv_kw=4.1,
+            solar_power_now_kw=4.1,
+            load_kw=1.0,
+            forecast_remaining_kwh=100.0,
+            current_export_limit=0.01,
+            grid_import_power_kw=0.0,
+            grid_export_power_kw=0.0,
+        )
+
+        decision = self.decide(optimizer, state, when)
+
+        self.assertTrue(bool(decision.trace_gates.get("morning_slow_charge_active")))
+        self.assertTrue(
+            bool(decision.trace_gates.get("pv_only_branch_battery_safety_blocked"))
+        )
+        self.assert_contract_outputs(
+            decision,
+            (MODE_MAX_SELF, 0.0, 0.0, optimizer.cfg.pv_max_power_normal),
+        )
+        self.assertEqual(optimizer.cfg.morning_slow_charge_rate_kw, decision.ess_charge_limit)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+
+    def test_positive_fit_battery_export_enabled_retains_low_soc_export_guard(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            allow_low_medium_export_positive_fit=True,
+            allow_positive_fit_battery_discharging=True,
+        )
+        state = self._ordinary_state(
+            89.0,
+            feedin_price=0.05,
+            feedin_price_cents=5.0,
+        )
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assertTrue(
+            bool(
+                decision.trace_gates.get(
+                    "positive_fit_battery_export_authorized"
+                )
+            )
+        )
+        self.assert_contract_outputs(
+            decision,
+            (MODE_MAX_SELF, 0.0, 0.0, optimizer.cfg.pv_max_power_normal),
+        )
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
 
 
 if __name__ == "__main__":

@@ -2730,8 +2730,12 @@ class SigEnergyOptimizer:
             s, desired_import_limit, morning_slow_charge_active,
             desired_export_limit, pv_surplus_actual
         )
+        positive_fit_owns_live_battery_export = bool(
+            d.export_intent == BATTERY_EXPORT
+            and battery_export_owner == "positive_fit_override"
+        )
         d.ess_discharge_limit = self._desired_ess_discharge_limit(
-            s, standby_holdoff_active, positive_fit_override,
+            s, standby_holdoff_active, positive_fit_owns_live_battery_export,
             evening_export_boost_active
         )
 
@@ -5025,17 +5029,18 @@ class SigEnergyOptimizer:
         return max_charge
 
     def _desired_ess_discharge_limit(self, s: SolarState, standby_holdoff: bool,
-                                      positive_fit_override: bool, evening_boost: bool) -> float:
+                                      positive_fit_owns_live_battery_export: bool,
+                                      evening_boost: bool) -> float:
         cfg = self.cfg
         _, hw_discharge = self.get_power_caps_kw(s)
         max_dis = max(0.1, hw_discharge)
         if s.price_is_negative and s.current_price <= cfg.import_threshold_low:
             return 0.01
-        if positive_fit_override and s.battery_soc < cfg.min_export_target_soc:
+        if positive_fit_owns_live_battery_export and s.battery_soc < cfg.min_export_target_soc:
             if evening_boost and s.battery_soc >= cfg.evening_aggressive_floor:
                 return max_dis
             return 0.01
-        if positive_fit_override:
+        if positive_fit_owns_live_battery_export:
             return max_dis if cfg.allow_positive_fit_battery_discharging else 0.01
         return max_dis
 
