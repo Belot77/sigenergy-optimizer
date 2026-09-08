@@ -1278,23 +1278,78 @@ class SigEnergyOptimizer:
                     battery_power_kw = -battery_power_kw
                 s.battery_power_sensor_kw = battery_power_kw
 
-        s.battery_soc = max(0.0, min(100.0, _fv(cfg.battery_soc_sensor)))
+        soc_observation = _observed_number(
+            cfg.battery_soc_sensor,
+            max_age_seconds=live_max_age,
+        )
+        soc_raw = soc_observation.value if soc_observation.available else None
+        soc_in_range = bool(
+            soc_raw is not None and 0.0 <= float(soc_raw) <= 100.0
+        )
+        s.battery_soc = (
+            max(0.0, min(100.0, float(soc_raw)))
+            if soc_raw is not None
+            else 0.0
+        )
+        s.battery_soc_trusted = bool(soc_in_range and soc_observation.fresh)
 
-        cap_raw = _fv(cfg.rated_capacity_sensor, 10.0)
+        capacity_observation = _observed_number(
+            cfg.rated_capacity_sensor,
+            max_age_seconds=live_max_age,
+        )
+        cap_raw = (
+            float(capacity_observation.value)
+            if capacity_observation.available
+            else None
+        )
         cap_uom = (_attr(cfg.rated_capacity_sensor, "unit_of_measurement") or "kwh").lower()
-        if cap_uom == "wh":
-            s.battery_capacity_kwh = cap_raw / 1000
-        elif cap_raw < 1.0 and cap_raw > 0:
-            s.battery_capacity_kwh = cap_raw * 1000
+        if cap_raw is None:
+            normalized_capacity_kwh = 10.0
+        elif cap_uom == "wh":
+            normalized_capacity_kwh = cap_raw / 1000
+        elif 0 < cap_raw < 1.0:
+            normalized_capacity_kwh = cap_raw * 1000
         else:
-            s.battery_capacity_kwh = cap_raw if cap_raw > 0 else 10.0
+            normalized_capacity_kwh = cap_raw
+        capacity_usable = bool(
+            math.isfinite(normalized_capacity_kwh)
+            and normalized_capacity_kwh > 0.0
+        )
+        s.battery_capacity_kwh = (
+            normalized_capacity_kwh if capacity_usable else 10.0
+        )
+        s.battery_capacity_trusted = bool(
+            capacity_usable and capacity_observation.fresh
+        )
 
-        avail_raw = _fv(cfg.available_discharge_sensor)
+        available_energy_observation = _observed_number(
+            cfg.available_discharge_sensor,
+            max_age_seconds=live_max_age,
+        )
+        avail_raw = (
+            float(available_energy_observation.value)
+            if available_energy_observation.available
+            else None
+        )
         avail_uom = (_attr(cfg.available_discharge_sensor, "unit_of_measurement") or "kwh").lower()
-        if avail_uom == "wh":
-            s.available_discharge_energy_kwh = avail_raw / 1000
+        if avail_raw is None:
+            normalized_available_energy_kwh = 0.0
+        elif avail_uom == "wh":
+            normalized_available_energy_kwh = avail_raw / 1000
         else:
-            s.available_discharge_energy_kwh = avail_raw
+            normalized_available_energy_kwh = avail_raw
+        available_energy_usable = bool(
+            math.isfinite(normalized_available_energy_kwh)
+            and normalized_available_energy_kwh >= 0.0
+        )
+        s.available_discharge_energy_kwh = (
+            normalized_available_energy_kwh if available_energy_usable else 0.0
+        )
+        s.available_discharge_energy_trusted = bool(
+            available_energy_observation.available
+            and available_energy_usable
+            and available_energy_observation.fresh
+        )
 
         def _kw_from_sensor(raw: float) -> float:
             if raw <= 0:
@@ -1593,6 +1648,43 @@ class SigEnergyOptimizer:
             feedin_price_trusted and s.feedin_price < 0
         )
 
+        # Live state reads carry explicit provenance. Finite hand-built states with
+        # None provenance retain the legacy unit-level calling contract.
+        try:
+            battery_soc_value = float(s.battery_soc)
+        except (TypeError, ValueError, OverflowError):
+            battery_soc_value = float("nan")
+        battery_soc_valid = bool(
+            math.isfinite(battery_soc_value)
+            and 0.0 <= battery_soc_value <= 100.0
+        )
+        battery_soc_trusted = bool(
+            battery_soc_valid and s.battery_soc_trusted is not False
+        )
+
+        try:
+            battery_capacity_value = float(s.battery_capacity_kwh)
+        except (TypeError, ValueError, OverflowError):
+            battery_capacity_value = float("nan")
+        battery_capacity_valid = bool(
+            math.isfinite(battery_capacity_value) and battery_capacity_value > 0.0
+        )
+        battery_capacity_trusted = bool(
+            battery_capacity_valid and s.battery_capacity_trusted is not False
+        )
+
+        try:
+            available_energy_value = float(s.available_discharge_energy_kwh)
+        except (TypeError, ValueError, OverflowError):
+            available_energy_value = float("nan")
+        available_discharge_energy_valid = bool(
+            math.isfinite(available_energy_value) and available_energy_value >= 0.0
+        )
+        available_discharge_energy_trusted = bool(
+            available_discharge_energy_valid
+            and s.available_discharge_energy_trusted is not False
+        )
+
         # ---- Battery capacity helpers --------------------------------
         cap = s.battery_capacity_kwh
         bat_fill_need_kwh = max(0.0, cap - s.available_discharge_energy_kwh)
@@ -1613,9 +1705,14 @@ class SigEnergyOptimizer:
 
         # ---- Morning dump -------------------------------------------
         morning_dump_start_ts, morning_dump_end_ts = self._morning_dump_window(s, actual_sunrise_ts)
-        morning_dump_active = self._morning_dump_active(
-            s, morning_dump_start_ts, morning_dump_end_ts,
-            productive_solar_end_ts, bat_fill_need_kwh, now_ts
+        morning_dump_active = bool(
+            battery_soc_trusted
+            and battery_capacity_trusted
+            and available_discharge_energy_trusted
+            and self._morning_dump_active(
+                s, morning_dump_start_ts, morning_dump_end_ts,
+                productive_solar_end_ts, bat_fill_need_kwh, now_ts
+            )
         )
         within_morning_grace = (
             cfg.morning_dump_enabled
@@ -1631,12 +1728,16 @@ class SigEnergyOptimizer:
             (sunset_ts - cfg.morning_slow_charge_sunset_cutoff * 3600)
             if sunset_ts else now_ts
         )
-        morning_slow_charge_active = self._morning_slow_charge_active(
-            s,
-            now,
-            now_ts,
-            morning_slow_charge_end_ts,
-            feedin_price_trusted=feedin_price_trusted,
+        morning_slow_charge_active = bool(
+            battery_capacity_trusted
+            and available_discharge_energy_trusted
+            and self._morning_slow_charge_active(
+                s,
+                now,
+                now_ts,
+                morning_slow_charge_end_ts,
+                feedin_price_trusted=feedin_price_trusted,
+            )
         )
         d.morning_slow_charge_active = morning_slow_charge_active
 
@@ -1646,6 +1747,8 @@ class SigEnergyOptimizer:
         )
         standby_holdoff_active = (
             cfg.standby_holdoff_enabled
+            and battery_soc_trusted
+            and battery_capacity_trusted
             and s.forecast_today_kwh >= cfg.pv_forecast_holdoff_kwh
             and negative_price_before_cutoff
             and now < self._today_at(cfg.standby_holdoff_end_time)
@@ -1667,8 +1770,13 @@ class SigEnergyOptimizer:
             self._holdoff_entry_floor = None
 
         # ---- Evening boost ------------------------------------------
-        evening_export_boost_active = self._evening_export_boost_active(
-            s, now_ts, productive_solar_end_ts, sunrise_soc_target, bat_fill_need_kwh
+        evening_export_boost_active = bool(
+            battery_soc_trusted
+            and battery_capacity_trusted
+            and available_discharge_energy_trusted
+            and self._evening_export_boost_active(
+                s, now_ts, productive_solar_end_ts, sunrise_soc_target, bat_fill_need_kwh
+            )
         )
         d.evening_export_boost_active = evening_export_boost_active
 
@@ -1708,6 +1816,9 @@ class SigEnergyOptimizer:
 
         export_solar_override = (
             feedin_price_trusted
+            and battery_soc_trusted
+            and battery_capacity_trusted
+            and available_discharge_energy_trusted
             and s.feedin_price > 0
             and s.feedin_price >= cfg.export_threshold_medium
             and s.battery_soc >= cfg.max_battery_soc
@@ -1721,7 +1832,8 @@ class SigEnergyOptimizer:
 
         # ---- PV safeguard -------------------------------------------
         full_export_override_check = (
-            s.battery_soc >= cfg.max_battery_soc
+            battery_soc_trusted
+            and s.battery_soc >= cfg.max_battery_soc
             and not is_evening_or_night
             and pv_surplus > cfg.min_grid_transfer_kw
         )
@@ -1828,6 +1940,16 @@ class SigEnergyOptimizer:
             surplus_bypass_for_policy=solar_surplus_bypass,
             morning_slow_for_policy=morning_slow_charge_active,
         )
+        deliberate_source_requires_soc = bool(
+            desired_export_source in {"morning_dump", "high_price_or_spike", "solar_override"}
+            or (
+                desired_export_source == "positive_fit_override"
+                and positive_fit_battery_export_authorized
+            )
+        )
+        if deliberate_source_requires_soc and not battery_soc_trusted:
+            desired_export_limit = 0.0
+            desired_export_source = "closed_untrusted_battery_soc"
         initial_desired_export_source = desired_export_source
         # Morning Slow Charge deliberately retains its established priority here:
         # the hotfix contract requires any export selected by that branch to remain
@@ -1888,7 +2010,7 @@ class SigEnergyOptimizer:
         pv_surplus_probe_export_cap_kw = 0.0
         topoff_target_soc = self._topoff_target_soc()
         topoff_target_met = bool(
-            math.isfinite(float(s.battery_soc))
+            battery_soc_trusted
             and s.battery_soc + 1e-6 >= topoff_target_soc
         )
         mode_label = str(s.sigenergy_mode or cfg.automated_option)
@@ -2121,7 +2243,6 @@ class SigEnergyOptimizer:
             and not standby_holdoff_active
             and not battery_full_safeguard_block
             and desired_export_source != "external_override"
-            and math.isfinite(float(s.battery_soc))
         )
         ordinary_msc_surplus_ceiling_active = bool(
             ordinary_msc_surplus_context
@@ -2648,6 +2769,8 @@ class SigEnergyOptimizer:
                 and s.feedin_price >= cfg.export_threshold_low
             ),
             pv_surplus=pv_surplus_actual,
+            battery_soc_trusted=battery_soc_trusted,
+            battery_capacity_trusted=battery_capacity_trusted,
         )
         d.import_limit = desired_import_limit
 
@@ -2658,6 +2781,8 @@ class SigEnergyOptimizer:
             sunrise_soc_target, within_morning_grace,
             import_price_trusted=import_price_trusted,
             feedin_price_trusted=feedin_price_trusted,
+            battery_soc_trusted=battery_soc_trusted,
+            battery_capacity_trusted=battery_capacity_trusted,
         )
         if (
             morning_slow_charge_active
@@ -3045,6 +3170,9 @@ class SigEnergyOptimizer:
             "export_effectively_closed_for_discovery": True,
             "pv_surplus_topoff_block_active": pv_surplus_topoff_block_active,
             "topoff_target_met": topoff_target_met,
+            "battery_soc_trusted": battery_soc_trusted,
+            "battery_capacity_trusted": battery_capacity_trusted,
+            "available_discharge_energy_trusted": available_discharge_energy_trusted,
             "import_cost_floor_trusted": import_cost_floor_trusted,
             "import_cost_floor_unknown": import_cost_floor_unknown,
             "import_cost_floor_block_active": export_value_gate_block_reason in {
@@ -4983,7 +5111,9 @@ class SigEnergyOptimizer:
                                demand_window_active: bool, standby_holdoff_active: bool,
                                import_price_trusted: bool,
                                feedin_price_trusted: bool, feedin_price_ok: bool,
-                               pv_surplus: float) -> float:
+                               pv_surplus: float, *,
+                               battery_soc_trusted: bool,
+                               battery_capacity_trusted: bool) -> float:
         cfg = self.cfg
         if morning_dump_active or demand_window_active:
             return 0.0
@@ -5010,6 +5140,9 @@ class SigEnergyOptimizer:
         if s.current_price > cfg.max_price_threshold:
             return 0.0
 
+        if not battery_soc_trusted or not battery_capacity_trusted:
+            return 0.0
+
         # Battery full for topup
         if s.battery_soc >= cfg.daytime_topup_max_soc:
             return 0.0
@@ -5032,7 +5165,9 @@ class SigEnergyOptimizer:
                            export_intent: str, desired_import: float,
                            sunrise_soc_target: float, within_morning_grace: bool,
                            *, import_price_trusted: bool,
-                           feedin_price_trusted: bool) -> str:
+                           feedin_price_trusted: bool,
+                           battery_soc_trusted: bool,
+                           battery_capacity_trusted: bool) -> str:
         cfg = self.cfg
         bsoc = s.battery_soc
         currently_charging = s.current_ems_mode in CHARGE_MODES
@@ -5074,6 +5209,8 @@ class SigEnergyOptimizer:
             standby_holdoff,
             import_price_trusted=import_price_trusted,
             feedin_price_trusted=feedin_price_trusted,
+            battery_soc_trusted=battery_soc_trusted,
+            battery_capacity_trusted=battery_capacity_trusted,
         )
         if (grid_limit_base > 0
                 and s.feedin_price < cfg.export_threshold_low - cfg.price_hysteresis
@@ -5092,6 +5229,8 @@ class SigEnergyOptimizer:
         *,
         import_price_trusted: bool,
         feedin_price_trusted: bool,
+        battery_soc_trusted: bool,
+        battery_capacity_trusted: bool,
     ) -> float:
         """Determines base import limit before adjustments."""
         cfg = self.cfg
@@ -5117,6 +5256,8 @@ class SigEnergyOptimizer:
         if fit >= cfg.export_threshold_low:
             return 0.0
         if not feedin_price_trusted:
+            return 0.0
+        if not battery_soc_trusted or not battery_capacity_trusted:
             return 0.0
         # Cheap topup
         if (price <= cfg.max_price_threshold

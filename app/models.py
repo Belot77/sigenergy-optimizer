@@ -104,6 +104,11 @@ class SolarState:
     battery_soc: float = 0.0
     battery_capacity_kwh: float = 10.0
     available_discharge_energy_kwh: float = 0.0
+    # Live reads set battery telemetry trust explicitly. None preserves finite,
+    # hand-built decision states used by unit-level callers as legacy observations.
+    battery_soc_trusted: Optional[bool] = None
+    battery_capacity_trusted: Optional[bool] = None
+    available_discharge_energy_trusted: Optional[bool] = None
     ess_max_discharge_kw: float = 999.0
     ess_max_charge_kw: float = 999.0
 
