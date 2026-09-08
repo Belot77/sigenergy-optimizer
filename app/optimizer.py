@@ -1100,25 +1100,34 @@ class SigEnergyOptimizer:
         observed_at = datetime.now(timezone.utc)
         unavailable_states = {"unknown", "unavailable", "none", ""}
 
-        def _metadata_is_fresh(
-            obj: dict[str, Any],
-            max_age_seconds: float,
-        ) -> bool:
+        def _metadata_timestamp(obj: dict[str, Any]) -> Optional[datetime]:
             raw_timestamp = (
                 obj.get("last_reported")
                 if "last_reported" in obj
                 else obj.get("last_updated")
             )
             if not raw_timestamp:
-                return False
+                return None
             try:
                 updated_at = datetime.fromisoformat(
                     str(raw_timestamp).replace("Z", "+00:00")
                 )
                 if updated_at.tzinfo is None:
-                    return False
+                    return None
+                return updated_at.astimezone(timezone.utc)
+            except (TypeError, ValueError):
+                return None
+
+        def _metadata_is_fresh(
+            obj: dict[str, Any],
+            max_age_seconds: float,
+        ) -> bool:
+            updated_at = _metadata_timestamp(obj)
+            if updated_at is None:
+                return False
+            try:
                 age_seconds = (
-                    observed_at - updated_at.astimezone(timezone.utc)
+                    observed_at - updated_at
                 ).total_seconds()
                 return -5.0 <= age_seconds <= max_age_seconds
             except (TypeError, ValueError):
@@ -1211,32 +1220,70 @@ class SigEnergyOptimizer:
         ):
             control_mode_observation = HVACObservedValue()
 
-        s.hvac_solar_inputs = HVACSolarInputContext(
-            pv_power=_observed_number(
+        pv_power_observation = _observed_number(
+            cfg.pv_power_sensor,
+            _positive_power_kw,
+            max_age_seconds=live_max_age,
+        )
+        load_power_observation = _observed_number(
+            cfg.consumed_power_sensor,
+            _positive_power_kw,
+            max_age_seconds=live_max_age,
+        )
+        battery_power_observation = _observed_number(
+            cfg.battery_power_sensor,
+            _battery_power_kw,
+            max_age_seconds=live_max_age,
+        )
+        grid_import_power_observation = _observed_number(
+            cfg.grid_import_power_sensor,
+            _positive_power_kw,
+            max_age_seconds=live_max_age,
+        )
+        grid_export_power_observation = _observed_number(
+            cfg.grid_export_power_sensor,
+            _positive_power_kw,
+            max_age_seconds=live_max_age,
+        )
+        derived_power_observations = (
+            pv_power_observation,
+            load_power_observation,
+            grid_import_power_observation,
+            grid_export_power_observation,
+        )
+        derived_power_timestamps = tuple(
+            _metadata_timestamp(bulk.get(entity_id) or {})
+            for entity_id in (
                 cfg.pv_power_sensor,
-                _positive_power_kw,
-                max_age_seconds=live_max_age,
-            ),
-            load_power=_observed_number(
                 cfg.consumed_power_sensor,
-                _positive_power_kw,
-                max_age_seconds=live_max_age,
-            ),
-            battery_power=_observed_number(
-                cfg.battery_power_sensor,
-                _battery_power_kw,
-                max_age_seconds=live_max_age,
-            ),
-            grid_import_power=_observed_number(
                 cfg.grid_import_power_sensor,
-                _positive_power_kw,
-                max_age_seconds=live_max_age,
-            ),
-            grid_export_power=_observed_number(
                 cfg.grid_export_power_sensor,
-                _positive_power_kw,
-                max_age_seconds=live_max_age,
-            ),
+            )
+        )
+        if all(timestamp is not None for timestamp in derived_power_timestamps):
+            usable_timestamps = tuple(
+                timestamp
+                for timestamp in derived_power_timestamps
+                if timestamp is not None
+            )
+            s.derived_power_flow_span_seconds = (
+                max(usable_timestamps) - min(usable_timestamps)
+            ).total_seconds()
+        s.derived_power_flow_coherent = bool(
+            all(
+                observation.available and observation.fresh
+                for observation in derived_power_observations
+            )
+            and s.derived_power_flow_span_seconds is not None
+            and s.derived_power_flow_span_seconds <= live_max_age
+        )
+
+        s.hvac_solar_inputs = HVACSolarInputContext(
+            pv_power=pv_power_observation,
+            load_power=load_power_observation,
+            battery_power=battery_power_observation,
+            grid_import_power=grid_import_power_observation,
+            grid_export_power=grid_export_power_observation,
             solar_power_now=_observed_number(
                 cfg.solar_power_now_sensor,
                 _positive_power_kw,
@@ -1259,9 +1306,21 @@ class SigEnergyOptimizer:
         # ---- PV / battery ---------------------------------------------
         pv_raw = _fv(cfg.pv_power_sensor)
         s.pv_kw = pv_raw / 1000 if pv_raw > 100 else pv_raw
+        s.pv_power_trusted = bool(
+            pv_power_observation.available
+            and pv_power_observation.fresh
+            and pv_power_observation.value is not None
+            and float(pv_power_observation.value) >= 0.0
+        )
 
         load_raw = _fv(cfg.consumed_power_sensor)
         s.load_kw = load_raw / 1000 if load_raw > 100 else load_raw
+        s.load_power_trusted = bool(
+            load_power_observation.available
+            and load_power_observation.fresh
+            and load_power_observation.value is not None
+            and float(load_power_observation.value) >= 0.0
+        )
         if cfg.grid_import_power_sensor:
             grid_import_raw = _fv(cfg.grid_import_power_sensor, None)
             if grid_import_raw is not None:
@@ -1685,6 +1744,28 @@ class SigEnergyOptimizer:
             and s.available_discharge_energy_trusted is not False
         )
 
+        try:
+            pv_power_value = float(s.pv_kw)
+        except (TypeError, ValueError, OverflowError):
+            pv_power_value = float("nan")
+        pv_power_valid = bool(
+            math.isfinite(pv_power_value) and pv_power_value >= 0.0
+        )
+        pv_power_trusted = bool(
+            pv_power_valid and s.pv_power_trusted is not False
+        )
+
+        try:
+            load_power_value = float(s.load_kw)
+        except (TypeError, ValueError, OverflowError):
+            load_power_value = float("nan")
+        load_power_valid = bool(
+            math.isfinite(load_power_value) and load_power_value >= 0.0
+        )
+        load_power_trusted = bool(
+            load_power_valid and s.load_power_trusted is not False
+        )
+
         # ---- Battery capacity helpers --------------------------------
         cap = s.battery_capacity_kwh
         bat_fill_need_kwh = max(0.0, cap - s.available_discharge_energy_kwh)
@@ -1860,6 +1941,8 @@ class SigEnergyOptimizer:
         )
         solar_surplus_bypass = bool(
             feedin_price_trusted
+            and pv_power_trusted
+            and load_power_trusted
             and self._solar_surplus_bypass(
                 s, morning_slow_charge_active, cap, pv_surplus_actual,
                 previously_active=bool(
@@ -2165,7 +2248,9 @@ class SigEnergyOptimizer:
         live_pv_kw = max(live_pv_value, 0.0) if live_pv_and_load_finite else 0.0
         live_load_kw = max(live_load_value, 0.0) if live_pv_and_load_finite else 0.0
         live_pv_plausible_for_msc_ceiling = (
-            live_pv_and_load_finite
+            pv_power_trusted
+            and load_power_trusted
+            and live_pv_and_load_finite
             and
             live_pv_kw > 0.05
             and (
@@ -2187,6 +2272,8 @@ class SigEnergyOptimizer:
         )
         pv_surplus_base_conditions = (
             pv_surplus_common_conditions
+            and pv_power_trusted
+            and load_power_trusted
             and measured_pv_surplus_kw >= cfg.min_grid_transfer_kw
         )
         pv_surplus_only_proven = (
@@ -3173,6 +3260,9 @@ class SigEnergyOptimizer:
             "battery_soc_trusted": battery_soc_trusted,
             "battery_capacity_trusted": battery_capacity_trusted,
             "available_discharge_energy_trusted": available_discharge_energy_trusted,
+            "pv_power_trusted": pv_power_trusted,
+            "load_power_trusted": load_power_trusted,
+            "derived_power_flow_coherent": s.derived_power_flow_coherent is not False,
             "import_cost_floor_trusted": import_cost_floor_trusted,
             "import_cost_floor_unknown": import_cost_floor_unknown,
             "import_cost_floor_block_active": export_value_gate_block_reason in {
@@ -3256,6 +3346,7 @@ class SigEnergyOptimizer:
             "topoff_target_soc": topoff_target_soc,
             "battery_discharge_kw_for_pv_only": battery_discharge_kw_for_pv_only,
             "battery_flow_source_for_pv_only": battery_flow_source_for_pv_only,
+            "derived_power_flow_span_seconds": s.derived_power_flow_span_seconds,
             "pv_only_discharge_tolerance_kw": pv_only_discharge_tolerance_kw,
             "ordinary_msc_grid_export_kw": ordinary_grid_export_kw,
             "ordinary_msc_grid_export_source": ordinary_grid_export_flow_source,
@@ -4324,6 +4415,8 @@ class SigEnergyOptimizer:
                 observation.available and observation.fresh
                 for observation in derived_observations
             ):
+                return None, "unknown"
+            if s.derived_power_flow_coherent is False:
                 return None, "unknown"
             try:
                 measured_import, measured_export, pv_kw, load_kw = (

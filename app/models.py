@@ -98,9 +98,17 @@ class SolarState:
     """Live readings from SigEnergy and Solcast."""
     pv_kw: float = 0.0
     load_kw: float = 0.0
+    # Live reads set PV/load trust explicitly. None preserves finite, hand-built
+    # decision states used by unit-level callers as legacy observations.
+    pv_power_trusted: Optional[bool] = None
+    load_power_trusted: Optional[bool] = None
     grid_import_power_kw: Optional[float] = None
     grid_export_power_kw: Optional[float] = None
     battery_power_sensor_kw: Optional[float] = None
+    # Coherence of the PV/load/grid observations used only for derived battery
+    # flow. The timestamp span is retained without exposing a generic framework.
+    derived_power_flow_coherent: Optional[bool] = None
+    derived_power_flow_span_seconds: Optional[float] = None
     battery_soc: float = 0.0
     battery_capacity_kwh: float = 10.0
     available_discharge_energy_kwh: float = 0.0
