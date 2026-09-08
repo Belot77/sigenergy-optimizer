@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 import threading
 from collections import defaultdict
@@ -167,6 +168,16 @@ class StateStore:
         import_price: float | None,
         price_trusted: bool,
     ) -> None:
+        stored_import_price: float | None = None
+        if import_price is not None:
+            try:
+                price_candidate = float(import_price)
+                if math.isfinite(price_candidate):
+                    stored_import_price = price_candidate
+            except (TypeError, ValueError, OverflowError):
+                pass
+        stored_price_trusted = bool(price_trusted and stored_import_price is not None)
+
         with self._lock:
             self._conn.execute(
                 """
@@ -178,8 +189,8 @@ class StateStore:
                     date,
                     ts,
                     max(0.0, float(import_kwh or 0.0)),
-                    import_price,
-                    1 if price_trusted else 0,
+                    stored_import_price,
+                    1 if stored_price_trusted else 0,
                 ),
             )
             self._conn.commit()
@@ -214,7 +225,14 @@ class StateStore:
             if import_price_raw is None:
                 has_untrusted_import = True
                 continue
-            import_price = float(import_price_raw)
+            try:
+                import_price = float(import_price_raw)
+            except (TypeError, ValueError, OverflowError):
+                has_untrusted_import = True
+                continue
+            if not math.isfinite(import_price):
+                has_untrusted_import = True
+                continue
             if highest_actual_import_price is None or import_price > highest_actual_import_price:
                 highest_actual_import_price = import_price
 

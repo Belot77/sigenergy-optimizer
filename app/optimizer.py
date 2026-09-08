@@ -849,8 +849,16 @@ class SigEnergyOptimizer:
         self._last_optimizer_import_daily_kwh = current_daily_import_kwh
         self._last_optimizer_import_track_at = now
 
-        price_trusted = bool(s.price_is_actual and s.current_price is not None)
-        import_price = float(s.current_price) if price_trusted else None
+        try:
+            import_price_candidate = float(s.current_price)
+        except (TypeError, ValueError, OverflowError):
+            import_price_candidate = None
+        price_trusted = bool(
+            s.price_is_actual
+            and import_price_candidate is not None
+            and math.isfinite(import_price_candidate)
+        )
+        import_price = import_price_candidate if price_trusted else None
         self._state_store.record_optimizer_import_topup(
             date=now.date().isoformat(),
             ts=now.isoformat(timespec="seconds"),
@@ -1381,6 +1389,8 @@ class SigEnergyOptimizer:
         if price_available:
             try:
                 raw_price = float(price_state)
+                if not math.isfinite(raw_price):
+                    raise ValueError("non-finite price")
                 s.price_is_actual = not price_is_estimate
                 s.price_is_estimated = price_is_estimate
                 s.current_price = raw_price
@@ -1397,7 +1407,10 @@ class SigEnergyOptimizer:
         fit_available = fit_state != ""
         if fit_available:
             try:
-                s.feedin_price = float(fit_state)
+                raw_feedin_price = float(fit_state)
+                if not math.isfinite(raw_feedin_price):
+                    raise ValueError("non-finite FIT")
+                s.feedin_price = raw_feedin_price
                 s.feedin_price_cents = s.feedin_price * cfg.price_multiplier
             except (TypeError, ValueError):
                 self._warn_parse_issue(cfg.feedin_sensor, str(fit_state), "FIT")
@@ -1546,9 +1559,39 @@ class SigEnergyOptimizer:
         close_to_sunset = hours_to_sunset <= cfg.sunset_export_grace_hours
         d.hours_to_sunrise = hours_to_sunrise
 
-        # ---- Re-derive price flags (in case s came from a test, not _read_state) ----
-        s.price_is_negative = s.price_is_actual and s.current_price < 0
-        s.feedin_is_negative = s.feedin_price not in (-999.0,) and s.feedin_price < 0
+        # ---- Re-derive price trust/flags (hand-built test states may bypass _read_state) ----
+        try:
+            current_price = float(s.current_price)
+        except (TypeError, ValueError, OverflowError):
+            current_price = float("nan")
+        current_price_finite = math.isfinite(current_price)
+        s.price_is_actual = bool(s.price_is_actual and current_price_finite)
+        s.price_is_estimated = bool(s.price_is_estimated and current_price_finite)
+        import_price_trusted = bool(
+            current_price_finite and (s.price_is_actual or s.price_is_estimated)
+        )
+        if not current_price_finite:
+            s.current_price = 1.0
+            s.current_price_cents = 1.0 * cfg.price_multiplier
+        s.price_is_negative = bool(s.price_is_actual and s.current_price < 0)
+
+        try:
+            feedin_price = float(s.feedin_price)
+        except (TypeError, ValueError, OverflowError):
+            feedin_price = float("nan")
+        # Live reads retain availability provenance in feedin_is_negative. This
+        # disambiguates a genuinely observed -999 tariff from the legacy -999
+        # diagnostic fallback without adding sentinel-based permission.
+        feedin_price_trusted = bool(
+            math.isfinite(feedin_price)
+            and (feedin_price != -999.0 or s.feedin_is_negative)
+        )
+        if not feedin_price_trusted:
+            s.feedin_price = -999.0
+            s.feedin_price_cents = -999.0
+        s.feedin_is_negative = bool(
+            feedin_price_trusted and s.feedin_price < 0
+        )
 
         # ---- Battery capacity helpers --------------------------------
         cap = s.battery_capacity_kwh
@@ -1589,7 +1632,11 @@ class SigEnergyOptimizer:
             if sunset_ts else now_ts
         )
         morning_slow_charge_active = self._morning_slow_charge_active(
-            s, now, now_ts, morning_slow_charge_end_ts
+            s,
+            now,
+            now_ts,
+            morning_slow_charge_end_ts,
+            feedin_price_trusted=feedin_price_trusted,
         )
         d.morning_slow_charge_active = morning_slow_charge_active
 
@@ -1602,6 +1649,7 @@ class SigEnergyOptimizer:
             and s.forecast_today_kwh >= cfg.pv_forecast_holdoff_kwh
             and negative_price_before_cutoff
             and now < self._today_at(cfg.standby_holdoff_end_time)
+            and import_price_trusted
             and s.current_price > cfg.import_threshold_low
             and battery_can_reach_from_pv
         )
@@ -1638,13 +1686,15 @@ class SigEnergyOptimizer:
 
         # ---- Export flags -------------------------------------------
         export_spike_active = (
-            s.price_spike_active
+            feedin_price_trusted
+            and s.price_spike_active
             and s.feedin_price >= cfg.export_spike_threshold
         )
         d.export_spike_active = export_spike_active
 
         positive_fit_override = (
-            cfg.allow_low_medium_export_positive_fit
+            feedin_price_trusted
+            and cfg.allow_low_medium_export_positive_fit
             and s.feedin_price >= 0.01
         )
         positive_fit_battery_export_authorized = bool(
@@ -1657,7 +1707,8 @@ class SigEnergyOptimizer:
         pv_surplus_actual = max(s.pv_kw - s.load_kw, 0.0)
 
         export_solar_override = (
-            s.feedin_price > 0
+            feedin_price_trusted
+            and s.feedin_price > 0
             and s.feedin_price >= cfg.export_threshold_medium
             and s.battery_soc >= cfg.max_battery_soc
             and not is_evening_or_night
@@ -1695,19 +1746,22 @@ class SigEnergyOptimizer:
                 == "solar_surplus_bypass"
             )
         )
-        solar_surplus_bypass = self._solar_surplus_bypass(
-            s, morning_slow_charge_active, cap, pv_surplus_actual,
-            previously_active=bool(
-                self._last_decision
-                and self._last_decision.trace_gates.get(
-                    "pv_only_branch_high_ceiling_active"
-                )
-                and self._last_decision.trace_gates.get(
-                    "observed_automated_control_mode"
-                )
-                and self._last_decision.trace_values.get("pv_only_branch_source")
-                == "solar_surplus_bypass"
-            ),
+        solar_surplus_bypass = bool(
+            feedin_price_trusted
+            and self._solar_surplus_bypass(
+                s, morning_slow_charge_active, cap, pv_surplus_actual,
+                previously_active=bool(
+                    self._last_decision
+                    and self._last_decision.trace_gates.get(
+                        "pv_only_branch_high_ceiling_active"
+                    )
+                    and self._last_decision.trace_gates.get(
+                        "observed_automated_control_mode"
+                    )
+                    and self._last_decision.trace_values.get("pv_only_branch_source")
+                    == "solar_surplus_bypass"
+                ),
+            )
         )
         d.solar_surplus_bypass = solar_surplus_bypass
 
@@ -1747,6 +1801,7 @@ class SigEnergyOptimizer:
                 pv_safeguard_active,
                 evening_export_boost_active,
                 surplus_bypass_for_policy,
+                feedin_price_trusted=feedin_price_trusted,
             )
             raw_choice = self._desired_export_limit(
                 s, export_spike_active, export_solar_override,
@@ -1757,7 +1812,7 @@ class SigEnergyOptimizer:
                 tier_limit, hours_to_sunrise, cap,
                 # Forecast potential avoids the old self-curtailed measured-PV loop.
                 pv_surplus, is_evening_or_night, morning_slow_for_policy,
-                within_morning_grace,
+                within_morning_grace, feedin_price_trusted,
             )
             return (
                 float(raw_choice),
@@ -1996,7 +2051,9 @@ class SigEnergyOptimizer:
                 or live_pv_kw + pv_only_discharge_tolerance_kw >= live_load_kw
             )
         )
-        feedin_price_for_pv_only = float(s.feedin_price or 0.0)
+        feedin_price_for_pv_only = (
+            float(s.feedin_price) if feedin_price_trusted else 0.0
+        )
         pv_surplus_common_conditions = (
             not is_evening_or_night
             and math.isfinite(feedin_price_for_pv_only)
@@ -2584,7 +2641,12 @@ class SigEnergyOptimizer:
         desired_import_limit = self._desired_import_limit(
             s, morning_dump_active, demand_window_active=s.demand_window_active,
             standby_holdoff_active=standby_holdoff_active,
-            feedin_price_ok=(s.feedin_price >= cfg.export_threshold_low),
+            import_price_trusted=import_price_trusted,
+            feedin_price_trusted=feedin_price_trusted,
+            feedin_price_ok=(
+                feedin_price_trusted
+                and s.feedin_price >= cfg.export_threshold_low
+            ),
             pv_surplus=pv_surplus_actual,
         )
         d.import_limit = desired_import_limit
@@ -2594,6 +2656,8 @@ class SigEnergyOptimizer:
             s, morning_dump_active, standby_holdoff_active, export_solar_override,
             desired_export_limit, d.export_intent, desired_import_limit,
             sunrise_soc_target, within_morning_grace,
+            import_price_trusted=import_price_trusted,
+            feedin_price_trusted=feedin_price_trusted,
         )
         if (
             morning_slow_charge_active
@@ -4531,8 +4595,15 @@ class SigEnergyOptimizer:
         load_need = ((productive_solar_end_ts or now_ts + 86400) - dump_end) / 3600 * s.load_kw
         return ns_total >= (bat_fill_need_kwh + load_need) * cfg.forecast_safety_charging
 
-    def _morning_slow_charge_active(self, s: SolarState, now: datetime,
-                                     now_ts: float, slow_end_ts: float) -> bool:
+    def _morning_slow_charge_active(
+        self,
+        s: SolarState,
+        now: datetime,
+        now_ts: float,
+        slow_end_ts: float,
+        *,
+        feedin_price_trusted: bool | None = None,
+    ) -> bool:
         if self._morning_slow_charge_runtime_disabled:
             if not self._morning_slow_disable_logged:
                 logger.warning("Morning slow charge is runtime-disabled in this build")
@@ -4545,6 +4616,13 @@ class SigEnergyOptimizer:
         if now >= target_dt or now.hour < 5:
             return False
         if not s.sun_above_horizon and now.hour < 7:
+            return False
+        if feedin_price_trusted is None:
+            try:
+                feedin_price_trusted = math.isfinite(float(s.feedin_price))
+            except (TypeError, ValueError, OverflowError):
+                feedin_price_trusted = False
+        if not feedin_price_trusted:
             return False
         if s.feedin_price < cfg.morning_slow_charge_min_feedin_price:
             return False
@@ -4670,13 +4748,30 @@ class SigEnergyOptimizer:
         required = sunrise_fill_need_kwh * cfg.forecast_safety_export
         return s.forecast_remaining_kwh < required
 
-    def _export_tier_limit(self, s: SolarState, spike: bool, solar_override: bool,
-                            pv_safeguard: bool, boost: bool, surplus_bypass: bool) -> float:
+    def _export_tier_limit(
+        self,
+        s: SolarState,
+        spike: bool,
+        solar_override: bool,
+        pv_safeguard: bool,
+        boost: bool,
+        surplus_bypass: bool,
+        *,
+        feedin_price_trusted: bool | None = None,
+    ) -> float:
         cfg = self.cfg
         fit = s.feedin_price
         bsoc = s.battery_soc
         below_boost_floor = bsoc < cfg.evening_aggressive_floor
         below_target = bsoc < cfg.min_export_target_soc
+
+        if feedin_price_trusted is None:
+            try:
+                feedin_price_trusted = math.isfinite(float(fit))
+            except (TypeError, ValueError, OverflowError):
+                feedin_price_trusted = False
+        if not feedin_price_trusted:
+            return 0.0
 
         if spike:
             return cfg.export_limit_high
@@ -4712,7 +4807,8 @@ class SigEnergyOptimizer:
                                cap: float, pv_surplus: float,
                                is_evening_or_night: bool,
                                morning_slow_charge_active: bool,
-                               within_morning_grace: bool) -> float:
+                               within_morning_grace: bool,
+                               feedin_price_trusted: bool | None = None) -> float:
         cfg = self.cfg
         fit_cents = s.feedin_price_cents
         bsoc = s.battery_soc
@@ -4720,6 +4816,17 @@ class SigEnergyOptimizer:
         def choice(limit_kw: float, source: str) -> _DesiredExportLimit:
             return _DesiredExportLimit(limit_kw, source)
 
+        if feedin_price_trusted is None:
+            try:
+                fit = float(s.feedin_price)
+            except (TypeError, ValueError, OverflowError):
+                fit = float("nan")
+            feedin_price_trusted = bool(
+                math.isfinite(fit)
+                and (fit != -999.0 or s.feedin_is_negative)
+            )
+        if not feedin_price_trusted:
+            return choice(0.0, "closed_untrusted_fit")
         if fit_cents < 1:
             return choice(0.0, "closed_fit_below_minimum")
 
@@ -4874,7 +4981,8 @@ class SigEnergyOptimizer:
 
     def _desired_import_limit(self, s: SolarState, morning_dump_active: bool,
                                demand_window_active: bool, standby_holdoff_active: bool,
-                               feedin_price_ok: bool,
+                               import_price_trusted: bool,
+                               feedin_price_trusted: bool, feedin_price_ok: bool,
                                pv_surplus: float) -> float:
         cfg = self.cfg
         if morning_dump_active or demand_window_active:
@@ -4890,6 +4998,9 @@ class SigEnergyOptimizer:
             if s.current_price <= cfg.import_threshold_medium:
                 return min(cfg.import_limit_medium, rated)
             return min(cfg.import_limit_low, rated)
+
+        if not import_price_trusted:
+            return 0.0
 
         # Positive FIT → block import
         if feedin_price_ok:
@@ -4907,6 +5018,9 @@ class SigEnergyOptimizer:
         if pv_surplus >= cfg.target_battery_charge:
             return 0.0
 
+        if not feedin_price_trusted:
+            return 0.0
+
         # Cheap top-up
         if s.current_price <= cfg.max_price_threshold:
             return min(cfg.target_battery_charge, s.ess_max_charge_kw, cfg.cap_total_import)
@@ -4916,7 +5030,9 @@ class SigEnergyOptimizer:
     def _desired_ems_mode(self, s: SolarState, morning_dump: bool, standby_holdoff: bool,
                            export_solar_override: bool, desired_export: float,
                            export_intent: str, desired_import: float,
-                           sunrise_soc_target: float, within_morning_grace: bool) -> str:
+                           sunrise_soc_target: float, within_morning_grace: bool,
+                           *, import_price_trusted: bool,
+                           feedin_price_trusted: bool) -> str:
         cfg = self.cfg
         bsoc = s.battery_soc
         currently_charging = s.current_ems_mode in CHARGE_MODES
@@ -4953,7 +5069,12 @@ class SigEnergyOptimizer:
         if export_intent == BATTERY_EXPORT and desired_export > 0.01:
             return MODE_CMD_DISCHARGE_PV
         # Cheap import conditions
-        grid_limit_base = self._grid_limit_base(s, standby_holdoff)
+        grid_limit_base = self._grid_limit_base(
+            s,
+            standby_holdoff,
+            import_price_trusted=import_price_trusted,
+            feedin_price_trusted=feedin_price_trusted,
+        )
         if (grid_limit_base > 0
                 and s.feedin_price < cfg.export_threshold_low - cfg.price_hysteresis
                 and bsoc < cfg.max_battery_soc - cfg.soc_hysteresis):
@@ -4964,7 +5085,14 @@ class SigEnergyOptimizer:
             return _charge_mode()
         return MODE_MAX_SELF
 
-    def _grid_limit_base(self, s: SolarState, standby_holdoff_active: bool) -> float:
+    def _grid_limit_base(
+        self,
+        s: SolarState,
+        standby_holdoff_active: bool,
+        *,
+        import_price_trusted: bool,
+        feedin_price_trusted: bool,
+    ) -> float:
         """Determines base import limit before adjustments."""
         cfg = self.cfg
         price = s.current_price
@@ -4980,11 +5108,15 @@ class SigEnergyOptimizer:
             return min(cfg.import_limit_medium, s.ess_max_charge_kw)
         if price <= cfg.import_threshold_low and s.price_is_actual:
             return min(cfg.import_limit_low, s.ess_max_charge_kw)
+        if not import_price_trusted:
+            return 0.0
         if standby_holdoff_active:
             return 0.0
         if spike_low_soc:
             return 0.0
         if fit >= cfg.export_threshold_low:
+            return 0.0
+        if not feedin_price_trusted:
             return 0.0
         # Cheap topup
         if (price <= cfg.max_price_threshold
