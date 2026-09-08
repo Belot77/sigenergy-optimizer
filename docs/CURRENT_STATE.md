@@ -31,15 +31,16 @@ Active remediation worktree:
 - Package 4B production/test checkpoint: `19a6279`; verify the exact active HEAD directly with Git because a future docs-only commit may be a child of this checkpoint.
 - Package 4C production/test checkpoint: `85cfb1d`; verify the exact active HEAD directly with Git because a future docs-only commit may be a child of this checkpoint.
 - Package 4D production/test checkpoint: `44c63e80fa72655087504f5c612df10e6b77109f` (`Harden forecast and solar-clock telemetry trust`).
-- Current local HEAD before this documentation update: `44c63e80fa72655087504f5c612df10e6b77109f`; do not hard-code the future documentation-child commit SHA.
-- Remote branch last verified at `db8133567b3543b2d7aaff4e18e241ab9c409c44`, before the local Package 4D commit. Do not claim the remote contains Package 4D.
+- Package 5 actuator/fallback production/test checkpoint: `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`).
+- Current local HEAD before this documentation update: `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473`; do not hard-code the future documentation-child commit SHA.
+- Remote branch last verified at `6b1c6f2b84e955c597d4f57953e6c4ef24203725` (`Record Package 4D checkpoint state`). It does not contain Package 5 checkpoint `4c9c0e2`.
 - Worktree state after this documentation edit: dirty only in `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, and `docs/ROADMAP.md`.
 
 Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. The worktree was clean after the verified push. Package 1 has not been merged, released, deployed, or live-tested.
 
-Package 2 is committed locally at `d3294cb` and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
+Package 2 is committed at `d3294cb`, automated-validated, and present on the remote remediation branch. It has not been merged, tagged, released, deployed, installed, or live-tested.
 
-Package 3 is committed locally at `91b0075` and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
+Package 3 is committed at `91b0075`, automated-validated, and present on the remote remediation branch. It has not been merged, tagged, released, deployed, installed, or live-tested.
 
 Package 4A is committed at `d3e1d56`, automated-validated, and pushed. It has not been merged, tagged, released, deployed, installed, or live-tested.
 
@@ -47,7 +48,9 @@ Package 4B is committed at `19a6279`, automated-validated, and pushed. It has no
 
 Package 4C is committed at `85cfb1d`, automated-validated, and pushed. It has not been merged, tagged, released, deployed, installed, restarted, or live-tested.
 
-Package 4D is committed locally at `44c63e80fa72655087504f5c612df10e6b77109f` and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, restarted, or live-tested.
+Package 4D is committed at `44c63e80fa72655087504f5c612df10e6b77109f`, automated-validated, and present on the remote remediation branch. It has not been merged, tagged, released, deployed, installed, restarted, or live-tested.
+
+Package 5 actuator/fallback reliability is committed locally at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, restarted, or live-tested.
 
 Protected/reference worktrees:
 
@@ -61,7 +64,7 @@ Always verify branch, HEAD, and cleanliness directly before editing.
 
 Phase 1 was previously declared complete and live-accepted. That is no longer true. Phase 1 is **reopened for audit remediation** because a live Morning Slow low-SoC defect was proven and the broader audit found additional fail-closed and control-authority defects.
 
-Production Remediation Packages 1, 2, 3, and telemetry-trust Packages 4A through 4D are complete and automated-validated. Package 4A Tariff trust, 4B SoC/battery-energy trust, and 4C Live PV/load trust are pushed; Package 4D Forecast/solar-clock trust remains local only. Package 5 actuator and fallback hardening is next. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
+Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, and Package 5 actuator/fallback reliability are complete and automated-validated. Packages 1 through 4D are present on the remote remediation branch; Package 5 actuator/fallback reliability is local only. Package 5 chatter/reopen characterization is next. The Morning Slow forecast-feasibility discrepancy is a separate parked investigation. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
 
 ## Production Remediation Package 1
 
@@ -118,7 +121,7 @@ NaN and infinite import prices cannot establish tariff-dependent import or charg
 
 Validation passed for the Package 4A characterization (**23 passed**), existing tariff/import-cost reference set (**14 passed, 4 subtests passed**), Package 1 protections (**23 passed, 61 subtests passed**), Package 2 focused protections (**15 passed, 6 subtests passed, 124 deselected**), Package 3 protections (**13 passed, 10 subtests passed**), and broader tariff regression (**131 passed, 89 subtests passed**). The final complete suite collected 326 tests and finished **324 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed. No unexpected regression remained.
 
-Package 4 telemetry trust is automated-complete locally: 4A Tariff trust, 4B SoC/battery-energy trust, and 4C Live PV/load trust are pushed; 4D Forecast/solar-clock trust is local only. None is deployed or live-accepted.
+Package 4 telemetry trust is automated-complete and present on the remote remediation branch: 4A Tariff trust, 4B SoC/battery-energy trust, 4C Live PV/load trust, and 4D Forecast/solar-clock trust. None is deployed or live-accepted.
 
 ## Production Remediation Package 4B
 
@@ -148,7 +151,7 @@ Validation: Package 4C characterization **15 passed, 191 warnings**; focused reg
 
 ## Production Remediation Package 4D
 
-Forecast and solar-clock telemetry trust is implemented in `app/models.py` and `app/optimizer.py`, characterized in `tests/test_phase1_forecast_solar_clock_telemetry_trust_characterization.py`, automated-validated, and committed locally at `44c63e80fa72655087504f5c612df10e6b77109f` (`Harden forecast and solar-clock telemetry trust`). It has not been pushed, merged, tagged, released, deployed, installed, restarted, or live-tested. The remote branch was last verified at `db8133567b3543b2d7aaff4e18e241ab9c409c44`, before Package 4D.
+Forecast and solar-clock telemetry trust is implemented in `app/models.py` and `app/optimizer.py`, characterized in `tests/test_phase1_forecast_solar_clock_telemetry_trust_characterization.py`, automated-validated, and committed at `44c63e80fa72655087504f5c612df10e6b77109f` (`Harden forecast and solar-clock telemetry trust`). It is present on the remote remediation branch through documentation checkpoint `6b1c6f2`. It has not been merged, tagged, released, deployed, installed, restarted, or live-tested.
 
 Aggregate provenance is retained separately in `forecast_remaining_observation_trusted`, `forecast_today_observation_trusted`, and `forecast_tomorrow_observation_trusted`; detailed-source provenance is retained in `solcast_detailed_source_trusted`; and solar-clock provenance is retained separately in `sun_state_observation_trusted`, `sunrise_observation_trusted`, and `sunset_observation_trusted`. Forecasts use the existing 600-second `hvac_solar_forecast_max_age_seconds` basis, while sun telemetry uses the existing 120-second `hvac_solar_data_max_age_seconds` basis and HA `last_reported`/`last_updated` metadata. `next_rising` and `next_setting` retain their existing future-timestamp meaning. No configuration or timing threshold was added.
 
@@ -162,15 +165,31 @@ Package 4D preserved genuine fresh zero forecasts, conservative safety charging,
 
 Validation: Package 4D characterization **26 passed, 191 warnings**; focused regression **88 passed, 191 warnings**; complete suite **389 collected, 387 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed. No unexpected functional regression remained.
 
-## Package 5 next: actuator, fallback, and chatter evidence
+## Production Remediation Package 5: actuator/fallback reliability
 
-Package 5 actuator and fallback hardening is next. It must investigate the following evidence without assuming a root cause or selecting a fix in advance:
+The actuator/fallback reliability subpackage is complete, automated-validated, and committed locally at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`). It changed `app/optimizer.py` and `tests/test_phase1_actuator_settlement_fallback_characterization.py`. It has not been pushed, merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted. The remote remediation branch still ends at the earlier Package 4D/documentation checkpoint `6b1c6f2`.
 
-- Earlier 4C-style evidence reproduced and observed `25 kW -> closed -> 25 kW` export-ceiling chatter as flow classification moved from `battery_within_tolerance` to `simultaneous_battery_discharge_and_grid_export` and back. Package 4C fixed stale/untrusted PV/load evidence, but within-window telemetry and settlement behavior remained.
-- Separate live haos54 Morning Slow evidence used fresh `direct_battery_sensor` input with `pv_only_discharge_tolerance_kw = 0.1`: approximately `0.094 kW` discharge could allow the high ceiling, just over `0.10 kW` could block it, and observed load-serving discharge commonly varied around `0.13-0.34 kW`. This is genuine fresh direct-sensor evidence, not merely the earlier derived-flow/coherence issue.
-- One captured cycle had desired export already closed, the current export ceiling effectively closed or being closed, grid export around `1.837 kW`, and direct battery discharge around `0.273 kW`; classification correctly remained `simultaneous_battery_discharge_and_grid_export` and the optimizer failed closed. This suggests actuator/readback/flow settlement may contribute to visible chatter, but does not prove command failure or that service-call success established inverter state.
+`_apply` now returns an explicit application result. Required actuator write failures propagate as failed application; fallback return values are inspected; ordinary fallback exceptions remain visible while later independent safety actions are still attempted; and partial/asymmetric failures make the whole application fail. Successful fallback requests do not turn a failed primary application into observed success. This is failure accounting and fail-closed fallback, not transactional rollback.
 
-Package 5 must also retain failed-cycle fallback reliability, fallback command checking, and partial/asymmetric actuator failure scope. It must distinguish genuine unsafe battery-backed export, harmless/load-serving small battery flow, post-command settlement/readback lag, and unknown/untrusted evidence without letting ordinary positive-FiT export become battery export. The simultaneous battery-discharge plus grid-export fail-closed rule must not be weakened merely to suppress chatter. No larger tolerance, deadband, fixed timer, cycle hysteresis, or settlement duration is approved.
+`_tick` advances remembered applied decision/state only after successful application, restores the previous remembered state after failed pre-commit application, and retains application failure in cycle diagnostics. An ordinary export safety-close request now requires one immediate observed readback before it is considered settled. Open, unavailable, non-finite, or otherwise untrusted readback leaves application failed and allows later close reissue. Service-call success is not observed inverter state.
+
+Validation: Package 5 characterization **19 passed, 191 warnings**; focused regression **84 collected, 82 passed, 2 deselected, 191 warnings**; complete suite **408 collected, 406 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed. No unexpected functional regression remained.
+
+## Package 5 next: chatter/reopen characterization
+
+The remaining Package 5 subpackage is characterization of direct-battery hard-boundary chatter without assuming a root cause or selecting a fix. Current characterized behavior permits the high MSC/PV-only ceiling at about `0.094 kW` direct battery discharge and closes it at about `0.101 kW`; fresh snapshots can therefore produce immediate `25 -> 0 -> 25 -> 0 kW` behavior. This is current policy evidence, not proof that the `0.10 kW` threshold is wrong. No replacement threshold, deadband, timer, N-cycle hysteresis, settlement duration, or reopen delay is approved.
+
+Investigation context: under Maximum Self Consumption, the configured high export ceiling may be permission for genuine surplus rather than a command to export or discharge the battery. This is an architectural hypothesis grounded in the existing control contract, not a newly approved implementation rule. Chatter work must determine whether the existing MSC-baseline contract can avoid unnecessary close/reopen behavior while preserving the rule that meaningful simultaneous battery discharge plus grid export fails closed and ordinary positive-FiT export does not create battery-export intent.
+
+The characterized load-serving case at approximately `1.6 kW` PV, `4.7 kW` load, and `3.2 kW` battery discharge was correctly classified as material load-serving battery discharge and kept export closed. This does not imply that all load-serving discharge should always open export. The separate case at approximately `0.273 kW` battery discharge and `1.837 kW` grid export remains `simultaneous_battery_discharge_and_grid_export` and fail-closed; that protection must not be weakened to suppress chatter.
+
+## Parked investigation: Morning Slow forecast feasibility
+
+Live observation found Morning Slow active with actual operator settings: enabled `True`, until `11:00`, charge rate `2 kW`, minimum feed-in price `0.01 $/kWh`, base-load allowance `2 kW`, and sunset cutoff `1 hour`. These are live operator settings, not software defaults.
+
+At the time, observed values were approximately 15.9% SoC, 6.4 kWh available battery energy, 40 kWh battery capacity, 57.8 kWh remaining solar forecast, 3.5 kW PV, 0.9 kW load, and 2.57 kW battery charging. The implementation requires remaining forecast to cover battery refill need plus assumed load until the slow-charge solar cutoff, multiplied by the configured forecast-safety factor. The displayed values appear difficult to reconcile with Morning Slow eligibility, but this is not yet a confirmed production bug and does not justify changing operator settings or software defaults.
+
+The later bounded investigation must capture and compare the exact trusted remaining forecast, battery capacity, available discharge energy, calculated refill need, calculated slow-charge end timestamp, hours left, configured base load, calculated load need, forecast-safety charging multiplier, final `required_kwh`, and final Morning Slow eligibility result. It must determine whether the observation reflects expected operator tuning, stale or different live inputs, a calculation/provenance mismatch, or a real implementation defect. No diagnostics or production change is approved yet.
 
 ## Remaining audit findings requiring remediation
 
@@ -178,7 +197,6 @@ High/proven static findings unless noted otherwise:
 
 - export-spike minimum SoC does not enforce a real spike floor;
 - configured baselines can enlarge an observed capability cap, and capability domains are conflated;
-- failed cycles lack a reliable settled safe fallback, fallback results are unchecked, and partial actuator failures are asymmetric;
 - `/set_ess` can report success despite failed service calls;
 
 Medium findings:
@@ -207,7 +225,7 @@ These are operator settings, not software-default policy:
 
 - normal PV MAX and high export ceiling: 25 kW;
 - `MIN_SOC_FLOOR`: 20%; `MIN_EXPORT_TARGET_SOC`: 90%;
-- Morning Slow: enabled, 2 kW, until 11:00, minimum FiT `0.01`, base load 2 kW;
+- Morning Slow: enabled `True`, 2 kW charge rate, until 11:00, minimum FiT `0.01`, base-load allowance 2 kW, sunset cutoff 1 hour;
 - Morning Dump: enabled, 15% floor;
 - Evening Boost: enabled, 35% floor, safety multiplier 1.1, minimum tomorrow forecast 100 kWh;
 - `MIN_GRID_TRANSFER_KW`: 1 kW;
@@ -228,4 +246,4 @@ Protect the two existing expected Phase 2 failures:
 
 ## Exact next action
 
-Commit and push the local Package 4D production/test checkpoint and this documentation checkpoint before beginning Package 5 characterization. Package 4D itself is currently local only at `44c63e80fa72655087504f5c612df10e6b77109f`; verify the exact active HEAD after any documentation commit rather than hard-coding that future child SHA. Do not deploy, live-test, or begin Phase 2 without separate authorization.
+Commit these documentation changes, then separately decide whether to push the local checkpoints before beginning Package 5 chatter/reopen characterization. Package 5 actuator/fallback reliability is currently local only at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473`; verify the exact active HEAD after any documentation commit rather than inventing that future child SHA. Do not push, deploy, live-test, or begin Phase 2 without separate authorization.

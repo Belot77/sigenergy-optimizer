@@ -16,40 +16,35 @@ GitHub `main` remains `c624f0b4392634cf19276186ba46f4b80268627b` (`Record Phase 
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
-- Package 4D production/test checkpoint: `44c63e80fa72655087504f5c612df10e6b77109f` (`Harden forecast and solar-clock telemetry trust`)
-- Package 4D is locally committed and automated-validated, but not pushed, merged, tagged, released, deployed, installed, restarted, or live-tested.
-- Remote branch was last verified at `db8133567b3543b2d7aaff4e18e241ab9c409c44`, before Package 4D. Do not claim the remote contains `44c63e8`.
-- Package 4A Tariff trust, 4B SoC/battery-energy trust, and 4C Live PV/load trust are complete, automated-validated, and pushed. Package 4D Forecast/solar-clock trust is complete and automated-validated locally only.
-- None of Packages 4A through 4D is deployed or live-accepted.
+- Package 5 actuator/fallback production/test checkpoint: `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`).
+- Package 5 actuator/fallback reliability is locally committed and automated-validated, but not pushed, merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+- Remote branch was last verified at `6b1c6f2b84e955c597d4f57953e6c4ef24203725` (`Record Package 4D checkpoint state`). Do not claim the remote contains `4c9c0e2`.
+- Package 4A Tariff trust, 4B SoC/battery-energy trust, and 4C Live PV/load trust are complete, automated-validated, and pushed. Package 4D Forecast/solar-clock trust is also on the remote remediation branch. None of Packages 4A through 5 is deployed or live-accepted.
 
 Protected worktrees remain unchanged. Never modify/reset/stash `C:\Projects\sigenergy_optimizer` or `C:\Projects\sigenergy_optimizer-pv-hotfix`. The Phase 2 worktree remains frozen.
 
-## Package 4D result
+## Package 5 actuator/fallback result
 
-`SolarState` now retains separate trust for remaining, today, and tomorrow aggregate forecasts; the detailed forecast source; sun state; sunrise; and sunset. The fields are `forecast_remaining_observation_trusted`, `forecast_today_observation_trusted`, `forecast_tomorrow_observation_trusted`, `solcast_detailed_source_trusted`, `sun_state_observation_trusted`, `sunrise_observation_trusted`, and `sunset_observation_trusted`.
+`_apply` now returns an explicit application result. Required write failures propagate; fallback returns are checked; ordinary fallback exceptions remain visible while later independent safety actions continue; and partial/asymmetric failure makes the overall application fail. Successful fallback requests do not turn a failed primary application into observed success. `_tick` advances remembered applied state only after success, restores prior remembered state after failed pre-commit application, and retains the failure diagnostic. This is not transactional rollback.
 
-Forecast trust uses the existing 600-second forecast freshness setting. Sun trust uses the existing 120-second live-data setting, HA `last_reported`/`last_updated` metadata, and the existing future meaning of `next_rising`/`next_setting`. No configuration or new timing threshold was added.
+Ordinary export safety-close now requires one immediate observed readback. Open, unavailable, non-finite, or otherwise untrusted readback leaves application failed and preserves later close reissue. Service-call success is not observed inverter state.
 
-Fresh finite forecasts, including genuine zero, remain valid. Missing, malformed, unavailable, non-finite, or stale evidence cannot become permissive proof, while conservative numeric-zero arithmetic and forecast-safety charging are preserved. Solar Surplus Bypass/solar override require trusted remaining forecast; Standby Holdoff requires trusted today and remaining forecasts; Evening Boost requires trusted tomorrow and detailed forecast evidence.
+Validation: characterization **19 passed, 191 warnings**; focused regression **84 collected, 82 passed, 2 deselected, 191 warnings**; full suite **408 collected, 406 passed, 2 failed, 191 warnings**. The only failures were `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`, both frozen for Phase 2. Compileall and `git diff --check` passed; no unexpected functional regression remained.
 
-Detailed points remain structurally compatible but require finite timestamps and `pv_estimate` values before becoming permissive evidence. Untrusted source data, infinities, and the proven prior-day case cannot authorize Morning Dump. No horizon, point-count, completeness, intended-day, or new issue-age policy was invented.
+## Package 5 chatter/reopen is next
 
-Morning Dump requires trusted detailed source, sun state, and sunrise evidence while retaining deliberate battery-export ownership, its 15% floor, tariff/battery trust, and priority. `close_to_sunset` requires trusted sunset evidence, so missing, stale, malformed, or prior sunset data cannot relax export forecast guards. Wall-clock time remains separate from HA sun telemetry, and no sun tolerance was added. Morning Dump post-window grace remains unresolved.
+Fresh direct battery discharge at about `0.094 kW` can permit the high MSC/PV-only ceiling, while about `0.101 kW` can close it, allowing fresh snapshots to produce `25 -> 0 -> 25 -> 0 kW`. This records current policy behavior without declaring the `0.10 kW` threshold wrong or selecting a larger threshold, deadband, timer, N-cycle hysteresis, settlement duration, or reopen delay.
 
-Validation: Package 4D characterization **26 passed, 191 warnings**; focused regression **88 passed, 191 warnings**; complete suite **389 collected, 387 passed, 2 failed, 191 warnings**. The only failures were `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`, both frozen for Phase 2. Compileall and `git diff --check` passed; no unexpected functional regression remained.
+Investigation hypothesis only: under MSC, the high export ceiling is permission for genuine surplus, not a command to export or discharge the battery. Determine whether the existing contract can suppress unnecessary chatter while preserving fail-closed treatment of meaningful simultaneous battery discharge plus grid export. The characterized case near `0.273 kW` battery discharge and `1.837 kW` grid export remains `simultaneous_battery_discharge_and_grid_export` and fail-closed. The separate load-serving case near `1.6 kW` PV, `4.7 kW` load, and `3.2 kW` battery discharge was correctly kept export closed; it does not establish that all load-serving discharge should open export.
 
-## Package 5 is next
+## Parked Morning Slow investigation
 
-Package 5 actuator and fallback hardening must characterize, without preselecting a fix:
+Actual live operator settings were: enabled `True`, until `11:00`, charge rate `2 kW`, minimum FiT `0.01 $/kWh`, base-load allowance `2 kW`, and sunset cutoff `1 hour`. These are not software defaults. Morning Slow was observed active near 15.9% SoC, 6.4 kWh available energy, 40 kWh capacity, 57.8 kWh remaining forecast, 3.5 kW PV, 0.9 kW load, and 2.57 kW battery charging. Those displayed values are difficult to reconcile with the existing refill-plus-load forecast-feasibility calculation, but this is parked investigation evidence, not a confirmed bug or an approved settings/default change.
 
-- earlier `25 kW -> closed -> 25 kW` chatter with `battery_within_tolerance -> simultaneous_battery_discharge_and_grid_export -> battery_within_tolerance` after Package 4C repaired stale/untrusted PV/load evidence;
-- fresh direct battery evidence around the hard `0.10 kW` boundary: about `0.094 kW` could allow the Morning Slow high ceiling, just over `0.10 kW` could block it, and observed load-serving discharge was commonly around `0.13-0.34 kW`; this is distinct from the earlier derived-flow/coherence issue;
-- actuator/readback/flow settlement evidence: one captured cycle had desired export closed, the ceiling effectively closed or being closed, grid export about `1.837 kW`, and fresh direct discharge about `0.273 kW`; fail-closed classification was correct, and neither command failure nor settled inverter state is proven by service-call success.
-
-Package 5 also retains failed-cycle fallback reliability, fallback command checking, and partial/asymmetric actuator failure scope. It must distinguish unsafe battery-backed export, harmless/load-serving flow, settlement/readback lag, and unknown evidence. The simultaneous battery-discharge plus grid-export rule remains fail-closed, and ordinary positive-FiT export must not become battery export. No larger tolerance, deadband, timer, cycle hysteresis, or settlement duration is approved.
+Later capture the exact trusted remaining forecast, battery capacity, available discharge energy, calculated refill need, slow-charge end timestamp, hours left, configured base load, calculated load need, forecast-safety charging multiplier, final `required_kwh`, and eligibility result. Compare them to distinguish operator tuning, stale/different inputs, a calculation/provenance mismatch, or a real defect.
 
 ## Frozen Phase 2 and next action
 
 Phase 2 remains frozen. Preserve its close -> observe closed -> request MSC -> observe exact MSC -> reopen contract and the two expected failing tests. Live remains `2.3.43-haos54`; rollback remains `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`.
 
-Exact next action: commit and push the Package 4D production/test checkpoint and this documentation checkpoint before beginning Package 5 characterization. Deployment, live testing, and Phase 2 require separate authorization.
+Exact next action: commit this documentation checkpoint, then separately decide whether to push the local checkpoints before beginning Package 5 chatter/reopen characterization. Deployment, live testing, and Phase 2 require separate authorization.
