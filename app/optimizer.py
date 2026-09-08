@@ -1553,9 +1553,45 @@ class SigEnergyOptimizer:
         )
 
         # ---- Forecasts ------------------------------------------------
-        s.forecast_remaining_kwh = _fv(cfg.forecast_remaining_sensor)
-        s.forecast_today_kwh = _fv(cfg.forecast_today_sensor)
-        s.forecast_tomorrow_kwh = _fv(cfg.forecast_tomorrow_sensor)
+        forecast_remaining_observation = _observed_number(
+            cfg.forecast_remaining_sensor,
+            max_age_seconds=forecast_max_age,
+        )
+        forecast_today_observation = _observed_number(
+            cfg.forecast_today_sensor,
+            max_age_seconds=forecast_max_age,
+        )
+        forecast_tomorrow_observation = _observed_number(
+            cfg.forecast_tomorrow_sensor,
+            max_age_seconds=forecast_max_age,
+        )
+        s.forecast_remaining_kwh = (
+            forecast_remaining_observation.value
+            if forecast_remaining_observation.available
+            else 0.0
+        )
+        s.forecast_today_kwh = (
+            forecast_today_observation.value
+            if forecast_today_observation.available
+            else 0.0
+        )
+        s.forecast_tomorrow_kwh = (
+            forecast_tomorrow_observation.value
+            if forecast_tomorrow_observation.available
+            else 0.0
+        )
+        s.forecast_remaining_observation_trusted = bool(
+            forecast_remaining_observation.available
+            and forecast_remaining_observation.fresh
+        )
+        s.forecast_today_observation_trusted = bool(
+            forecast_today_observation.available
+            and forecast_today_observation.fresh
+        )
+        s.forecast_tomorrow_observation_trusted = bool(
+            forecast_tomorrow_observation.available
+            and forecast_tomorrow_observation.fresh
+        )
 
         solar_raw = _fv(cfg.solar_power_now_sensor)
         # Solcast power_now can return Watts (e.g. 554 W) or kW (e.g. 0.554 kW).
@@ -1563,6 +1599,10 @@ class SigEnergyOptimizer:
         s.solar_power_now_kw = solar_raw / 1000 if solar_raw > 100 else solar_raw
 
         s.solcast_detailed = _attr(cfg.forecast_today_sensor, "detailedForecast") or []
+        s.solcast_detailed_source_trusted = bool(
+            forecast_today_observation.available
+            and forecast_today_observation.fresh
+        )
         price_forecast_diagnostics: dict[str, Any] = {}
         s.price_forecast_entries = extract_forecast_entries(
             bulk,
@@ -1588,7 +1628,12 @@ class SigEnergyOptimizer:
 
         # ---- Sun ------------------------------------------------------
         s.sun_elevation = float(_attr(cfg.sun_entity, "elevation") or 0)
-        s.sun_above_horizon = _sv(cfg.sun_entity, "below_horizon") == "above_horizon"
+        s.sun_above_horizon = bool(
+            sun_observation.value if sun_observation.available else False
+        )
+        s.sun_state_observation_trusted = bool(
+            sun_observation.available and sun_observation.fresh
+        )
 
         def _ts(attr: str) -> Optional[float]:
             v = _attr(cfg.sun_entity, attr)
@@ -1603,6 +1648,18 @@ class SigEnergyOptimizer:
         s.next_sunset_ts = _ts("next_setting")
 
         now_ts = datetime.now().timestamp()
+        s.sunrise_observation_trusted = bool(
+            s.sun_state_observation_trusted
+            and s.next_sunrise_ts is not None
+            and math.isfinite(s.next_sunrise_ts)
+            and s.next_sunrise_ts > now_ts
+        )
+        s.sunset_observation_trusted = bool(
+            s.sun_state_observation_trusted
+            and s.next_sunset_ts is not None
+            and math.isfinite(s.next_sunset_ts)
+            and s.next_sunset_ts > now_ts
+        )
         if s.next_sunrise_ts:
             raw_h = (s.next_sunrise_ts - now_ts) / 3600
             s.hours_to_sunrise = max(0.0, raw_h)
@@ -1670,7 +1727,23 @@ class SigEnergyOptimizer:
 
         hours_to_sunrise = s.hours_to_sunrise
         hours_to_sunset = s.hours_to_sunset
-        close_to_sunset = hours_to_sunset <= cfg.sunset_export_grace_hours
+        sun_state_observation_trusted = (
+            s.sun_state_observation_trusted is not False
+        )
+        sunrise_observation_trusted = bool(
+            s.next_sunrise_ts is not None
+            and math.isfinite(float(s.next_sunrise_ts))
+            and s.sunrise_observation_trusted is not False
+        )
+        sunset_observation_trusted = bool(
+            s.next_sunset_ts is not None
+            and math.isfinite(float(s.next_sunset_ts))
+            and s.sunset_observation_trusted is not False
+        )
+        close_to_sunset = bool(
+            sunset_observation_trusted
+            and hours_to_sunset <= cfg.sunset_export_grace_hours
+        )
         d.hours_to_sunrise = hours_to_sunrise
 
         # ---- Re-derive price trust/flags (hand-built test states may bypass _read_state) ----
@@ -1766,6 +1839,33 @@ class SigEnergyOptimizer:
             load_power_valid and s.load_power_trusted is not False
         )
 
+        def _forecast_observation_trusted(
+            value: object,
+            provenance: Optional[bool],
+        ) -> bool:
+            try:
+                return bool(
+                    math.isfinite(float(value)) and provenance is not False
+                )
+            except (TypeError, ValueError, OverflowError):
+                return False
+
+        forecast_remaining_observation_trusted = _forecast_observation_trusted(
+            s.forecast_remaining_kwh,
+            s.forecast_remaining_observation_trusted,
+        )
+        forecast_today_observation_trusted = _forecast_observation_trusted(
+            s.forecast_today_kwh,
+            s.forecast_today_observation_trusted,
+        )
+        forecast_tomorrow_observation_trusted = _forecast_observation_trusted(
+            s.forecast_tomorrow_kwh,
+            s.forecast_tomorrow_observation_trusted,
+        )
+        solcast_detailed_source_trusted = bool(
+            s.solcast_detailed_source_trusted is not False
+        )
+
         # ---- Battery capacity helpers --------------------------------
         cap = s.battery_capacity_kwh
         bat_fill_need_kwh = max(0.0, cap - s.available_discharge_energy_kwh)
@@ -1782,14 +1882,27 @@ class SigEnergyOptimizer:
         negative_price_before_cutoff = self._negative_price_before_cutoff(s, now_ts)
 
         # ---- Productive solar window ---------------------------------
-        productive_solar_end_ts = self._productive_solar_end_ts(s, sunset_ts, now_ts)
+        productive_solar_end_ts = (
+            self._productive_solar_end_ts(s, sunset_ts, now_ts)
+            if solcast_detailed_source_trusted
+            else None
+        )
 
         # ---- Morning dump -------------------------------------------
-        morning_dump_start_ts, morning_dump_end_ts = self._morning_dump_window(s, actual_sunrise_ts)
+        if sun_state_observation_trusted and sunrise_observation_trusted:
+            morning_dump_start_ts, morning_dump_end_ts = self._morning_dump_window(
+                s,
+                actual_sunrise_ts,
+            )
+        else:
+            morning_dump_start_ts, morning_dump_end_ts = None, None
         morning_dump_active = bool(
             battery_soc_trusted
             and battery_capacity_trusted
             and available_discharge_energy_trusted
+            and solcast_detailed_source_trusted
+            and sun_state_observation_trusted
+            and sunrise_observation_trusted
             and self._morning_dump_active(
                 s, morning_dump_start_ts, morning_dump_end_ts,
                 productive_solar_end_ts, bat_fill_need_kwh, now_ts
@@ -1824,12 +1937,15 @@ class SigEnergyOptimizer:
 
         # ---- Standby holdoff ----------------------------------------
         battery_can_reach_from_pv = (
-            s.forecast_remaining_kwh >= sunrise_fill_need_kwh * cfg.forecast_safety_charging
+            forecast_remaining_observation_trusted
+            and s.forecast_remaining_kwh
+            >= sunrise_fill_need_kwh * cfg.forecast_safety_charging
         )
         standby_holdoff_active = (
             cfg.standby_holdoff_enabled
             and battery_soc_trusted
             and battery_capacity_trusted
+            and forecast_today_observation_trusted
             and s.forecast_today_kwh >= cfg.pv_forecast_holdoff_kwh
             and negative_price_before_cutoff
             and now < self._today_at(cfg.standby_holdoff_end_time)
@@ -1855,6 +1971,8 @@ class SigEnergyOptimizer:
             battery_soc_trusted
             and battery_capacity_trusted
             and available_discharge_energy_trusted
+            and forecast_tomorrow_observation_trusted
+            and solcast_detailed_source_trusted
             and self._evening_export_boost_active(
                 s, now_ts, productive_solar_end_ts, sunrise_soc_target, bat_fill_need_kwh
             )
@@ -1900,6 +2018,7 @@ class SigEnergyOptimizer:
             and battery_soc_trusted
             and battery_capacity_trusted
             and available_discharge_energy_trusted
+            and forecast_remaining_observation_trusted
             and s.feedin_price > 0
             and s.feedin_price >= cfg.export_threshold_medium
             and s.battery_soc >= cfg.max_battery_soc
@@ -1943,6 +2062,7 @@ class SigEnergyOptimizer:
             feedin_price_trusted
             and pv_power_trusted
             and load_power_trusted
+            and forecast_remaining_observation_trusted
             and self._solar_surplus_bypass(
                 s, morning_slow_charge_active, cap, pv_surplus_actual,
                 previously_active=bool(
@@ -1962,7 +2082,12 @@ class SigEnergyOptimizer:
 
         # ---- Battery full safeguard ---------------------------------
         battery_full_safeguard_block = self._battery_full_safeguard_block(
-            s, now_ts, sunset_ts, bat_fill_need_kwh, is_evening_or_night
+            s,
+            now_ts,
+            sunset_ts,
+            bat_fill_need_kwh,
+            is_evening_or_night,
+            detailed_forecast_trusted=solcast_detailed_source_trusted,
         )
         d.battery_full_safeguard = battery_full_safeguard_block
 
@@ -2870,6 +2995,7 @@ class SigEnergyOptimizer:
             feedin_price_trusted=feedin_price_trusted,
             battery_soc_trusted=battery_soc_trusted,
             battery_capacity_trusted=battery_capacity_trusted,
+            forecast_remaining_trusted=forecast_remaining_observation_trusted,
         )
         if (
             morning_slow_charge_active
@@ -3262,6 +3388,13 @@ class SigEnergyOptimizer:
             "available_discharge_energy_trusted": available_discharge_energy_trusted,
             "pv_power_trusted": pv_power_trusted,
             "load_power_trusted": load_power_trusted,
+            "forecast_remaining_observation_trusted": forecast_remaining_observation_trusted,
+            "forecast_today_observation_trusted": forecast_today_observation_trusted,
+            "forecast_tomorrow_observation_trusted": forecast_tomorrow_observation_trusted,
+            "solcast_detailed_source_trusted": solcast_detailed_source_trusted,
+            "sun_state_observation_trusted": sun_state_observation_trusted,
+            "sunrise_observation_trusted": sunrise_observation_trusted,
+            "sunset_observation_trusted": sunset_observation_trusted,
             "derived_power_flow_coherent": s.derived_power_flow_coherent is not False,
             "import_cost_floor_trusted": import_cost_floor_trusted,
             "import_cost_floor_unknown": import_cost_floor_unknown,
@@ -4774,7 +4907,13 @@ class SigEnergyOptimizer:
             try:
                 f_ts = self._parse_ts(f.get("period_start", ""))
                 pv_kw = float(f.get("pv_estimate", 0))
-                if f_ts and f_ts <= sunset_ts and pv_kw >= threshold:
+                if (
+                    f_ts
+                    and math.isfinite(f_ts)
+                    and f_ts <= sunset_ts
+                    and math.isfinite(pv_kw)
+                    and pv_kw >= threshold
+                ):
                     found = f_ts
                     break
             except Exception:
@@ -4800,6 +4939,11 @@ class SigEnergyOptimizer:
             return False
         if s.battery_soc <= cfg.morning_dump_min_soc:
             return False
+        if (
+            productive_solar_end_ts is not None
+            and productive_solar_end_ts <= dump_end
+        ):
+            return False
 
         # Check forecast can refill
         ns_total = 0.0
@@ -4809,7 +4953,13 @@ class SigEnergyOptimizer:
             try:
                 f_ts = self._parse_ts(f.get("period_start", ""))
                 pv_kw = float(f.get("pv_estimate", 0))
-                if f_ts and dump_end <= f_ts < (productive_solar_end_ts or now_ts + 86400):
+                if (
+                    f_ts
+                    and math.isfinite(f_ts)
+                    and math.isfinite(pv_kw)
+                    and dump_end <= f_ts
+                    < (productive_solar_end_ts or now_ts + 86400)
+                ):
                     ns_total += pv_kw * cfg.solcast_forecast_period_hours
             except Exception:
                 pass
@@ -4909,9 +5059,16 @@ class SigEnergyOptimizer:
         )
         return pv_over_load and (start_ok or continue_ok)
 
-    def _battery_full_safeguard_block(self, s: SolarState, now_ts: float,
-                                       sunset_ts: float, bat_fill_need_kwh: float,
-                                       is_evening_or_night: bool) -> bool:
+    def _battery_full_safeguard_block(
+        self,
+        s: SolarState,
+        now_ts: float,
+        sunset_ts: float,
+        bat_fill_need_kwh: float,
+        is_evening_or_night: bool,
+        *,
+        detailed_forecast_trusted: bool | None = None,
+    ) -> bool:
         cfg = self.cfg
         if not cfg.battery_full_safeguard_enabled or is_evening_or_night:
             return False
@@ -4924,13 +5081,21 @@ class SigEnergyOptimizer:
         # Forecast check
         ns_total = 0.0
         max_charge_kw = s.ess_max_charge_kw if 0 < s.ess_max_charge_kw < 999 else cfg.ess_charge_limit_value
-        for f in s.solcast_detailed:
+        forecasts = (
+            [] if detailed_forecast_trusted is False else s.solcast_detailed
+        )
+        for f in forecasts:
             if not isinstance(f, dict):
                 continue
             try:
                 f_ts = self._parse_ts(f.get("period_start", ""))
                 pv_kw = float(f.get("pv_estimate", 0))
-                if f_ts and now_ts <= f_ts < target_ts:
+                if (
+                    f_ts
+                    and math.isfinite(f_ts)
+                    and math.isfinite(pv_kw)
+                    and now_ts <= f_ts < target_ts
+                ):
                     net = max(pv_kw - s.load_kw, 0.0)
                     usable = min(net, max_charge_kw) * cfg.solcast_forecast_period_hours
                     ns_total += usable
@@ -5260,7 +5425,8 @@ class SigEnergyOptimizer:
                            *, import_price_trusted: bool,
                            feedin_price_trusted: bool,
                            battery_soc_trusted: bool,
-                           battery_capacity_trusted: bool) -> str:
+                           battery_capacity_trusted: bool,
+                           forecast_remaining_trusted: bool | None = None) -> str:
         cfg = self.cfg
         bsoc = s.battery_soc
         currently_charging = s.current_ems_mode in CHARGE_MODES
@@ -5304,6 +5470,7 @@ class SigEnergyOptimizer:
             feedin_price_trusted=feedin_price_trusted,
             battery_soc_trusted=battery_soc_trusted,
             battery_capacity_trusted=battery_capacity_trusted,
+            forecast_remaining_trusted=forecast_remaining_trusted,
         )
         if (grid_limit_base > 0
                 and s.feedin_price < cfg.export_threshold_low - cfg.price_hysteresis
@@ -5324,6 +5491,7 @@ class SigEnergyOptimizer:
         feedin_price_trusted: bool,
         battery_soc_trusted: bool,
         battery_capacity_trusted: bool,
+        forecast_remaining_trusted: bool | None = None,
     ) -> float:
         """Determines base import limit before adjustments."""
         cfg = self.cfg
@@ -5352,10 +5520,15 @@ class SigEnergyOptimizer:
             return 0.0
         if not battery_soc_trusted or not battery_capacity_trusted:
             return 0.0
+        forecast_remaining_kwh = (
+            0.0
+            if forecast_remaining_trusted is False
+            else s.forecast_remaining_kwh
+        )
         # Cheap topup
         if (price <= cfg.max_price_threshold
                 and bsoc < cfg.daytime_topup_max_soc
-                and s.forecast_remaining_kwh < s.battery_capacity_kwh * cfg.forecast_safety_charging):
+                and forecast_remaining_kwh < s.battery_capacity_kwh * cfg.forecast_safety_charging):
             surplus = max(s.pv_kw - s.load_kw, 0.0)
             if surplus < cfg.target_battery_charge:
                 return min(cfg.target_battery_charge, cfg.cap_total_import)

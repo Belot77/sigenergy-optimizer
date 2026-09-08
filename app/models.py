@@ -156,6 +156,9 @@ class SolarState:
     forecast_remaining_kwh: float = 0.0
     forecast_today_kwh: float = 0.0
     forecast_tomorrow_kwh: float = 0.0
+    forecast_remaining_observation_trusted: Optional[bool] = None
+    forecast_today_observation_trusted: Optional[bool] = None
+    forecast_tomorrow_observation_trusted: Optional[bool] = None
     solar_power_now_kw: float = 0.0
 
     # Sun
@@ -163,11 +166,15 @@ class SolarState:
     next_sunrise_ts: Optional[float] = None
     next_sunset_ts: Optional[float] = None
     sun_above_horizon: bool = False
+    sun_state_observation_trusted: Optional[bool] = None
+    sunrise_observation_trusted: Optional[bool] = None
+    sunset_observation_trusted: Optional[bool] = None
     hours_to_sunrise: float = 6.0
     hours_to_sunset: float = 0.0
 
     # Solcast detailed forecasts (list of {period_start, pv_estimate})
     solcast_detailed: list = field(default_factory=list)
+    solcast_detailed_source_trusted: Optional[bool] = None
     price_forecast_entries: list = field(default_factory=list)  # [{start_time, per_kwh}, ...]
     feedin_forecast_entries: list = field(default_factory=list)
 
