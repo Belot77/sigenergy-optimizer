@@ -26,11 +26,14 @@ Active remediation worktree:
 - Branch: `fix/phase1-audit-remediation`
 - Package 1 production checkpoint: `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`; verify the exact active HEAD directly with Git because later docs-only commits may be children of this checkpoint.
 - Package 2 production/test checkpoint: `d3294cb`; verify the exact active HEAD directly with Git because a later docs-only commit may be a child of this checkpoint.
-- Worktree state: clean after the local Package 2 checkpoint commit, before this documentation update.
+- Package 3 production/test checkpoint: `91b0075`; verify the exact active HEAD directly with Git because a future docs-only commit may be a child of this checkpoint.
+- Worktree state: clean after the local Package 3 checkpoint commit, before this documentation update.
 
 Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. The worktree was clean after the verified push. Package 1 has not been merged, released, deployed, or live-tested.
 
 Package 2 is committed locally at `d3294cb` and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
+
+Package 3 is committed locally at `91b0075` and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
 
 Protected/reference worktrees:
 
@@ -44,7 +47,7 @@ Always verify branch, HEAD, and cleanliness directly before editing.
 
 Phase 1 was previously declared complete and live-accepted. That is no longer true. Phase 1 is **reopened for audit remediation** because a live Morning Slow low-SoC defect was proven and the broader audit found additional fail-closed and control-authority defects.
 
-All audit remediation, full validation, and Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not the active phase.
+Production Remediation Packages 1, 2, and 3 are complete and automated-validated. All remaining audit remediation, full validation, and Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not the active phase.
 
 ## Production Remediation Package 1
 
@@ -81,6 +84,18 @@ Characterization results were **4 passed, 33 deselected**: safe 2.9 kW and 3.1 k
 
 The final complete suite result was **295 passed, 2 failed, 191 warnings** from 297 collected tests. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed. No additional regression was found.
 
+## Production Remediation Package 3
+
+The Battery-export safety repair is implemented in `app/optimizer.py`, characterized in `tests/test_msc_baseline_overlay_contract.py`, automated-validated, and committed locally at `91b0075` (`Fix battery export discharge ownership`). It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
+
+The confirmed defect allowed raw positive-FiT eligibility to leak into the independent ESS-discharge actuator. That could force the discharge limit to `0.01 kW` when positive-FiT export was enabled but positive-FiT battery sale was disabled, including while the battery served house load, export was an ownerless MSC-surplus ceiling or had failed closed, telemetry was untrusted, or another deliberate battery-export owner had priority.
+
+Package 3 applies the positive-FiT-specific ESS-discharge restriction only when the final live `export_intent` is `BATTERY_EXPORT` and the final `battery_export_owner` is `positive_fit_override`. Ordinary house-load discharge and other deliberate owners retain discharge capability. Simultaneous material battery discharge plus meaningful export and unknown-flow cases still close export; explicit positive-FiT safeguards and the negative-price `0.01 kW` clamp remain intact. Morning Dump, high-price, spike, Evening Boost, Package 2 Morning Slow behavior, Package 1 authority/fail-closed protections, and the frozen Phase 2 logic are unchanged.
+
+Targeted validation passed: Package 3 characterization **8 passed, 7 subtests passed**; existing flow/owner protection **12 passed, 7 subtests passed**; deliberate-owner protection **18 passed, 6 subtests passed**; all four selected actual-import-cost cases; both selected negative-price cases; Package 1 authority/fail-closed **11 passed, 39 subtests passed**; focused Remote EMS/Manual/Force/unavailable-mode **8 passed, 4 deselected, 14 subtests passed**; Package 2 Morning Slow **17 passed, 126 deselected, 8 subtests passed**; and broader MSC/export/Value Gate/positive-FiT/battery-export regression **101 passed, 31 deselected, 71 subtests passed**.
+
+The final complete suite collected 303 tests and finished **301 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed. No unexpected regression was found.
+
 ## Remaining audit findings requiring remediation
 
 High/proven static findings unless noted otherwise:
@@ -96,8 +111,7 @@ Medium findings:
 
 - unavailable or non-finite SoC becomes a fake 0%;
 - cheap-positive import can steal Morning Slow EMS ownership;
-- Morning Dump and negative-price paths can issue internally conflicting intent;
-- positive-FiT no-battery-export logic can suppress battery-to-house discharge.
+- Morning Dump and negative-price paths can issue internally conflicting intent.
 
 Policy/test items still requiring decisions:
 
@@ -141,4 +155,4 @@ Protect the two existing expected Phase 2 failures:
 
 ## Exact next action
 
-Production Remediation Packages 1 and 2 are complete and automated-validated. Package 2 is committed locally at `d3294cb` but is not yet pushed, deployed, or live-tested. The exact next engineering package is Battery-export safety. Preserve both checkpoints and do not begin Phase 2.
+Production Remediation Packages 1, 2, and 3 are complete and automated-validated. Package 3 is committed locally at `91b0075` but is not yet pushed, deployed, or live-tested. The exact next engineering package is Telemetry trust. Preserve all three checkpoints and do not begin Phase 2.
