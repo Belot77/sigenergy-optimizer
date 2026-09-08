@@ -16,9 +16,11 @@ GitHub `main` remains `c624f0b4392634cf19276186ba46f4b80268627b` (`Record Phase 
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
+- Local HEAD: `68bfa92393c7ff3bd69871acf3ec0bc269eb868d` (`Record Package 5 actuator checkpoint state`).
+- Remote `origin/fix/phase1-audit-remediation` HEAD: `68bfa92393c7ff3bd69871acf3ec0bc269eb868d`.
 - Package 5 actuator/fallback production/test checkpoint: `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`).
-- Package 5 actuator/fallback reliability is locally committed and automated-validated, but not pushed, merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
-- Remote branch was last verified at `6b1c6f2b84e955c597d4f57953e6c4ef24203725` (`Record Package 4D checkpoint state`). Do not claim the remote contains `4c9c0e2`.
+- Package 5 documentation checkpoint: `68bfa92393c7ff3bd69871acf3ec0bc269eb868d`.
+- Both Package 5 checkpoints are pushed to the remediation branch. Actuator/fallback reliability is automated-validated but has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
 - Package 4A Tariff trust, 4B SoC/battery-energy trust, and 4C Live PV/load trust are complete, automated-validated, and pushed. Package 4D Forecast/solar-clock trust is also on the remote remediation branch. None of Packages 4A through 5 is deployed or live-accepted.
 
 Protected worktrees remain unchanged. Never modify/reset/stash `C:\Projects\sigenergy_optimizer` or `C:\Projects\sigenergy_optimizer-pv-hotfix`. The Phase 2 worktree remains frozen.
@@ -47,4 +49,4 @@ Later capture the exact trusted remaining forecast, battery capacity, available 
 
 Phase 2 remains frozen. Preserve its close -> observe closed -> request MSC -> observe exact MSC -> reopen contract and the two expected failing tests. Live remains `2.3.43-haos54`; rollback remains `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`.
 
-Exact next action: commit this documentation checkpoint, then separately decide whether to push the local checkpoints before beginning Package 5 chatter/reopen characterization. Deployment, live testing, and Phase 2 require separate authorization.
+Exact next engineering action: begin Package 5 chatter/reopen characterization. The Package 5 production/test and documentation checkpoints are already pushed; this anti-stale correction is not yet committed or pushed. Deployment, live testing, and Phase 2 require separate authorization.

@@ -32,9 +32,10 @@ Active remediation worktree:
 - Package 4C production/test checkpoint: `85cfb1d`; verify the exact active HEAD directly with Git because a future docs-only commit may be a child of this checkpoint.
 - Package 4D production/test checkpoint: `44c63e80fa72655087504f5c612df10e6b77109f` (`Harden forecast and solar-clock telemetry trust`).
 - Package 5 actuator/fallback production/test checkpoint: `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`).
-- Current local HEAD before this documentation update: `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473`; do not hard-code the future documentation-child commit SHA.
-- Remote branch last verified at `6b1c6f2b84e955c597d4f57953e6c4ef24203725` (`Record Package 4D checkpoint state`). It does not contain Package 5 checkpoint `4c9c0e2`.
-- Worktree state after this documentation edit: dirty only in `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, and `docs/ROADMAP.md`.
+- Package 5 documentation checkpoint: `68bfa92393c7ff3bd69871acf3ec0bc269eb868d` (`Record Package 5 actuator checkpoint state`).
+- Current local HEAD: `68bfa92393c7ff3bd69871acf3ec0bc269eb868d`.
+- Remote `origin/fix/phase1-audit-remediation` HEAD: `68bfa92393c7ff3bd69871acf3ec0bc269eb868d`.
+- The worktree was verified clean immediately after the push and before this anti-stale documentation edit. These new documentation corrections are not yet committed or pushed.
 
 Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. The worktree was clean after the verified push. Package 1 has not been merged, released, deployed, or live-tested.
 
@@ -50,7 +51,7 @@ Package 4C is committed at `85cfb1d`, automated-validated, and pushed. It has no
 
 Package 4D is committed at `44c63e80fa72655087504f5c612df10e6b77109f`, automated-validated, and present on the remote remediation branch. It has not been merged, tagged, released, deployed, installed, restarted, or live-tested.
 
-Package 5 actuator/fallback reliability is committed locally at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, restarted, or live-tested.
+Package 5 actuator/fallback reliability is committed at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473`, automated-validated, and pushed with documentation checkpoint `68bfa92393c7ff3bd69871acf3ec0bc269eb868d` to the remediation branch. It has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
 
 Protected/reference worktrees:
 
@@ -64,7 +65,7 @@ Always verify branch, HEAD, and cleanliness directly before editing.
 
 Phase 1 was previously declared complete and live-accepted. That is no longer true. Phase 1 is **reopened for audit remediation** because a live Morning Slow low-SoC defect was proven and the broader audit found additional fail-closed and control-authority defects.
 
-Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, and Package 5 actuator/fallback reliability are complete and automated-validated. Packages 1 through 4D are present on the remote remediation branch; Package 5 actuator/fallback reliability is local only. Package 5 chatter/reopen characterization is next. The Morning Slow forecast-feasibility discrepancy is a separate parked investigation. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
+Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, and Package 5 actuator/fallback reliability are complete and automated-validated. Packages 1 through 4D and Package 5 actuator/fallback reliability are pushed to the remediation branch. Package 5 chatter/reopen characterization is next. The Morning Slow forecast-feasibility discrepancy is a separate parked investigation. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
 
 ## Production Remediation Package 1
 
@@ -151,7 +152,7 @@ Validation: Package 4C characterization **15 passed, 191 warnings**; focused reg
 
 ## Production Remediation Package 4D
 
-Forecast and solar-clock telemetry trust is implemented in `app/models.py` and `app/optimizer.py`, characterized in `tests/test_phase1_forecast_solar_clock_telemetry_trust_characterization.py`, automated-validated, and committed at `44c63e80fa72655087504f5c612df10e6b77109f` (`Harden forecast and solar-clock telemetry trust`). It is present on the remote remediation branch through documentation checkpoint `6b1c6f2`. It has not been merged, tagged, released, deployed, installed, restarted, or live-tested.
+Forecast and solar-clock telemetry trust is implemented in `app/models.py` and `app/optimizer.py`, characterized in `tests/test_phase1_forecast_solar_clock_telemetry_trust_characterization.py`, automated-validated, and committed at `44c63e80fa72655087504f5c612df10e6b77109f` (`Harden forecast and solar-clock telemetry trust`). It is present on the remote remediation branch through current checkpoint `68bfa92393c7ff3bd69871acf3ec0bc269eb868d`. It has not been merged, tagged, released, deployed, installed, restarted, or live-tested.
 
 Aggregate provenance is retained separately in `forecast_remaining_observation_trusted`, `forecast_today_observation_trusted`, and `forecast_tomorrow_observation_trusted`; detailed-source provenance is retained in `solcast_detailed_source_trusted`; and solar-clock provenance is retained separately in `sun_state_observation_trusted`, `sunrise_observation_trusted`, and `sunset_observation_trusted`. Forecasts use the existing 600-second `hvac_solar_forecast_max_age_seconds` basis, while sun telemetry uses the existing 120-second `hvac_solar_data_max_age_seconds` basis and HA `last_reported`/`last_updated` metadata. `next_rising` and `next_setting` retain their existing future-timestamp meaning. No configuration or timing threshold was added.
 
@@ -167,7 +168,7 @@ Validation: Package 4D characterization **26 passed, 191 warnings**; focused reg
 
 ## Production Remediation Package 5: actuator/fallback reliability
 
-The actuator/fallback reliability subpackage is complete, automated-validated, and committed locally at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`). It changed `app/optimizer.py` and `tests/test_phase1_actuator_settlement_fallback_characterization.py`. It has not been pushed, merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted. The remote remediation branch still ends at the earlier Package 4D/documentation checkpoint `6b1c6f2`.
+The actuator/fallback reliability subpackage is complete, automated-validated, and committed at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`). It changed `app/optimizer.py` and `tests/test_phase1_actuator_settlement_fallback_characterization.py`. The production/test checkpoint and documentation checkpoint `68bfa92393c7ff3bd69871acf3ec0bc269eb868d` are pushed to the remediation branch. They have not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
 
 `_apply` now returns an explicit application result. Required actuator write failures propagate as failed application; fallback return values are inspected; ordinary fallback exceptions remain visible while later independent safety actions are still attempted; and partial/asymmetric failures make the whole application fail. Successful fallback requests do not turn a failed primary application into observed success. This is failure accounting and fail-closed fallback, not transactional rollback.
 
@@ -246,4 +247,4 @@ Protect the two existing expected Phase 2 failures:
 
 ## Exact next action
 
-Commit these documentation changes, then separately decide whether to push the local checkpoints before beginning Package 5 chatter/reopen characterization. Package 5 actuator/fallback reliability is currently local only at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473`; verify the exact active HEAD after any documentation commit rather than inventing that future child SHA. Do not push, deploy, live-test, or begin Phase 2 without separate authorization.
+Package 5 chatter/reopen characterization is the exact next engineering action. The Package 5 production/test and documentation checkpoints are already pushed at `4c9c0e2` and `68bfa92`; these anti-stale documentation corrections are currently uncommitted and unpushed. Do not deploy, live-test, or begin Phase 2 without separate authorization.
