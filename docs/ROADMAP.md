@@ -12,8 +12,8 @@ Status: **active**. Phase 1 was reopened after a proven live Morning Slow defect
 4. Battery-export safety. Complete and automated-validated; committed locally at `91b0075`, not yet pushed, deployed, or live-tested.
 5. Telemetry trust.
    - 4A Tariff trust — **complete and automated-validated**; committed locally at `d3e1d56`, not pushed, deployed, or live-tested.
-   - 4B SoC/battery-energy trust — **NEXT**.
-   - 4C Live PV/load trust — pending. Before completion, characterize the parked live haos54 PV-only export-ceiling flapping and determine whether incoherent PV/load/grid snapshots can falsely create apparent battery discharge; repair telemetry-coherence/trust causes here without weakening the fail-closed battery-export rule.
+   - 4B SoC/battery-energy trust — **complete and automated-validated**; committed locally at `19a6279`, not pushed, deployed, or live-tested.
+   - 4C Live PV/load trust — **NEXT**. Before completion, characterize the parked live haos54 PV-only export-ceiling flapping and determine whether incoherent PV/load/grid snapshots can falsely create apparent battery discharge; repair telemetry-coherence/trust causes here without weakening the fail-closed battery-export rule.
    - 4D Forecast/solar-clock trust — pending.
 6. Actuator and fallback hardening. Before completion, resolve any settlement-specific remainder of the parked live export-ceiling flapping, including reopen-before-settlement, actuator-readback timing, or transition settling.
 7. Capability model with separate domains and no configured enlargement of observed caps.
