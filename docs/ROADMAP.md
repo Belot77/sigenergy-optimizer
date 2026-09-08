@@ -13,9 +13,9 @@ Status: **active**. Phase 1 was reopened after a proven live Morning Slow defect
 5. Telemetry trust.
    - 4A Tariff trust — **complete and automated-validated**; committed locally at `d3e1d56`, not pushed, deployed, or live-tested.
    - 4B SoC/battery-energy trust — **complete and automated-validated**; committed locally at `19a6279`, not pushed, deployed, or live-tested.
-   - 4C Live PV/load trust — **NEXT**. Before completion, characterize the parked live haos54 PV-only export-ceiling flapping and determine whether incoherent PV/load/grid snapshots can falsely create apparent battery discharge; repair telemetry-coherence/trust causes here without weakening the fail-closed battery-export rule.
-   - 4D Forecast/solar-clock trust — pending.
-6. Actuator and fallback hardening. Before completion, resolve any settlement-specific remainder of the parked live export-ceiling flapping, including reopen-before-settlement, actuator-readback timing, or transition settling.
+   - 4C Live PV/load trust — **complete and automated-validated**; committed locally at `85cfb1d`, not pushed, deployed, or live-tested. Static PV/load trust defects are repaired without weakening the fail-closed battery-export rule; genuine fresh zero PV/load remains trusted.
+   - 4D Forecast/solar-clock trust — **NEXT**.
+6. Actuator and fallback hardening. Before completion, investigate and address the remaining within-window `25.0 kW -> 0.0 kW -> 25.0 kW` export-ceiling chatter after Package 4C telemetry hardening, including possible settlement/readback timing or transition settling. Do not assume a specific delay or hysteresis mechanism is approved.
 7. Capability model with separate domains and no configured enlargement of observed caps.
 8. `/set_ess` hardening.
 9. Configuration validation and persistence.

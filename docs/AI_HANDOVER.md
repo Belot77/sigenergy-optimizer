@@ -1,6 +1,6 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-09-08
+Last consolidated: 2026-09-09
 
 This is concise continuation context for a new ChatGPT/Codex thread. Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md`, `ROADMAP.md`, and `DECISIONS.md`. Verify Git state directly before editing.
 
@@ -23,7 +23,8 @@ Active remediation:
 - Package 3 production/test checkpoint `91b0075`; verify exact current HEAD directly with Git because a future docs-only commit may be a child of it.
 - Package 4A production/test checkpoint `d3e1d56`; verify exact current HEAD directly with Git because a future docs-only commit may be a child of it.
 - Package 4B production/test checkpoint `19a6279`; verify exact current HEAD directly with Git because a future docs-only commit may be a child of it.
-- worktree clean after the local Package 4B checkpoint commit, before this documentation update.
+- Package 4C production/test checkpoint `85cfb1d`; verify exact current HEAD directly with Git because a future docs-only commit may be a child of it.
+- worktree clean after the local Package 4C checkpoint commit, before this documentation update.
 
 Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. Preserve that checkpoint; it has not been merged, released, deployed, or live-tested.
 
@@ -35,11 +36,13 @@ Package 4A is committed locally at `d3e1d56` and has not been pushed, merged, ta
 
 Package 4B is committed locally at `19a6279` and has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
 
+Package 4C is committed locally at `85cfb1d` and has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
+
 Protected: never modify/reset/stash `C:\Projects\sigenergy_optimizer` (intentionally dirty `refactor/msc-baseline-overlays` at `bce8411d5274fe17fb8d883e8e7faf43e9ce8d43`) or `C:\Projects\sigenergy_optimizer-pv-hotfix` (clean haos53 reference at `19f3c70d24dc086737d5956a1c66cad230287edd`). Phase 2 worktree `C:\Projects\sigenergy_optimizer-phase2-transition`, branch `phase2/msc-transition-settlement`, is frozen at `c624f0b4392634cf19276186ba46f4b80268627b` and was clean when last verified.
 
 ## Phase and gate
 
-Phase 1 is reopened for audit remediation after a proven live Morning Slow low-SoC defect and broader fail-closed/control-authority findings. Packages 1, 2, 3, 4A, and 4B are complete and automated-validated, but all remaining remediation, validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is paused/frozen, not active.
+Phase 1 is reopened for audit remediation after a proven live Morning Slow low-SoC defect and broader fail-closed/control-authority findings. Packages 1, 2, 3, 4A, 4B, and 4C are complete and automated-validated, but all remaining remediation, validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is paused/frozen, not active.
 
 ## Production Remediation Package 1 checkpoint
 
@@ -73,7 +76,7 @@ Non-finite import prices no longer establish tariff-dependent import or charging
 
 Validation: Package 4A characterization **23 passed**; tariff/import-cost reference **14 passed, 4 subtests passed**; Package 1 **23 passed, 61 subtests passed**; Package 2 focused **15 passed, 6 subtests passed, 124 deselected**; Package 3 **13 passed, 10 subtests passed**; broader tariff regression **131 passed, 89 subtests passed**. The complete suite collected 326 tests and finished **324 passed, 2 failed, 191 warnings**, with exactly the two frozen Phase 2 transition tests failing. `python -m compileall -q app tests` and `git diff --check` passed; no unexpected regression remained.
 
-Package 4 is split into 4A Tariff trust (complete and automated-validated), 4B SoC/battery-energy trust (complete and automated-validated), 4C Live PV/load trust (next), and 4D Forecast/solar-clock trust (pending).
+Package 4 is split into 4A Tariff trust (complete and automated-validated), 4B SoC/battery-energy trust (complete and automated-validated), 4C Live PV/load trust (complete and automated-validated), and 4D Forecast/solar-clock trust (next).
 
 ## Production Remediation Package 4B checkpoint
 
@@ -85,13 +88,23 @@ Package 4B preserves Package 1 authority/fail-closed protections, Package 2 Morn
 
 Validation: characterization **22 passed, 191 warnings**; narrow regression **90 collected, 88 passed, 2 frozen Phase 2 tests deselected, 191 warnings**; complete suite **348 collected, 346 passed, 2 failed, 191 warnings**, with only the two frozen Phase 2 transition tests failing. `python -m compileall -q app tests` and `git diff --check` passed, with no unexpected functional regression.
 
-Package 4 status: 4A Tariff trust and 4B SoC/battery-energy trust are complete and automated-validated; 4C Live PV/load trust is next; 4D Forecast/solar-clock trust remains pending.
+Package 4 status: 4A Tariff trust and 4B SoC/battery-energy trust are complete and automated-validated; 4C Live PV/load trust is complete and automated-validated; 4D Forecast/solar-clock trust is next.
+
+## Production Remediation Package 4C checkpoint
+
+Package 4C hardens live PV/load telemetry trust in `app/models.py` and `app/optimizer.py`, with characterization in `tests/test_phase1_pv_load_telemetry_trust_characterization.py`. It is automated-validated and committed locally at `85cfb1d` (`Harden PV and load telemetry trust`), but has not been pushed, merged, tagged, released, deployed, installed, restarted, or live-tested.
+
+`SolarState` now carries `pv_power_trusted`, `load_power_trusted`, `derived_power_flow_coherent`, and `derived_power_flow_span_seconds`. The live read path captures PV/load/battery/grid observations once per cycle, preserves trust separately from scalar fallbacks, and uses the existing 120-second-default `hvac_solar_data_max_age_seconds` basis for freshness and derived-flow timestamp coherence. Invalid or stale PV/load cannot establish exact-full PV-only MSC or Solar Surplus Bypass, while genuine fresh finite zero PV/load remains trusted. Ordinary branches that do not depend on PV/load proof and HVAC solar-permission trust behavior remain preserved.
+
+Fresh/trusted direct battery-power evidence remains authoritative over coherent derived PV/load/grid evidence; otherwise battery-flow safety is not proven. The simultaneous battery-discharge plus grid-export fail-closed rule remains intact.
+
+Validation: characterization **15 passed, 191 warnings**; focused regression **151 collected, 149 passed, 2 frozen Phase 2 tests deselected, 191 warnings**; complete suite **363 collected, 361 passed, 2 failed, 191 warnings**, with only the two frozen Phase 2 transition tests failing. Compilation and `git diff --check` passed; no unexpected functional regression remained.
 
 ## Parked live-control warning
 
-A live `2.3.43-haos54` observation on 2026-09-08 showed repeated PV-only MSC export-ceiling flapping between 25 kW and closed (`0.01 kW`). The direct battery sensor remained near zero discharge while derived flow arithmetic intermittently indicated up to approximately 1.43 kW battery discharge, triggering the simultaneous battery-discharge plus grid-export fail-closed rule before later cycles reopened the MSC ceiling. Cross-sensor snapshot incoherence and/or post-actuation settlement lag is suspected, not proven; the observation does not prove an actual deliberate battery dump.
+A live `2.3.43-haos54` observation on 2026-09-08 showed repeated PV-only MSC export-ceiling flapping between 25 kW and closed (`0.01 kW`). Package 4C repaired static PV/load trust defects, but its deterministic characterization still produces `25.0 kW -> 0.0 kW -> 25.0 kW` with `battery_within_tolerance -> simultaneous_battery_discharge_and_grid_export -> battery_within_tolerance`. The reproduced skew is about 100 seconds, within the existing 120-second freshness/coherence basis.
 
-Do not weaken the existing battery-export fail-closed protection. Characterize telemetry coherence first in 4C and repair it there if that is the defect; move any settlement/readback-specific remainder to Package 5. Package 4C Live PV/load trust is the immediate next task.
+Do not claim the chatter is fixed and do not weaken the fail-closed battery-export protection. Settlement/readback timing or transition settling remains to be investigated under Package 5; no particular delay or hysteresis implementation is yet approved.
 
 ## Protected behavior
 
@@ -121,4 +134,4 @@ Future return from deliberate battery export: close export -> later observe clos
 
 Recommended next session: Codex in the active remediation worktree, high reasoning, normal/standard speed; use a fresh thread with this handover loaded. Inspect narrowly, stage one remediation package at a time, and keep release/live actions separately authorized.
 
-Exact next action: begin Package 4C Live PV/load trust from the local Package 4B checkpoint, first characterizing the parked PV/load/grid telemetry-coherence hypothesis. Verify the exact active HEAD directly with Git rather than treating `19a6279` as volatile current-HEAD truth, and do not begin Phase 2.
+Exact next action: begin Package 4D Forecast/solar-clock trust from the local Package 4C checkpoint. Preserve the remaining within-window chatter for Package 5 investigation, verify the exact active HEAD directly with Git rather than treating `85cfb1d` as volatile current-HEAD truth, and do not begin Phase 2.
