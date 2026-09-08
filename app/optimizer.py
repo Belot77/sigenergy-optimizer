@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from dataclasses import dataclass
 from decimal import Decimal, ROUND_FLOOR
 import logging
 import math
@@ -102,6 +103,16 @@ class _DesiredExportLimit(float):
         result = float.__new__(cls, value)
         result.source = source
         return result
+
+
+@dataclass(frozen=True)
+class _ActuatorApplicationResult:
+    """Outcome of applying one decision, including any fail-closed fallback."""
+
+    succeeded: bool
+    error: str = ""
+    fallback_attempted: bool = False
+    fallback_succeeded: Optional[bool] = None
 
 
 class SigEnergyOptimizer:
@@ -472,6 +483,7 @@ class SigEnergyOptimizer:
 
     async def _tick(self) -> None:
         async with self._control_lock:
+            application_committed = False
             try:
                 prev_decision = self._last_decision
                 prev_state = self._last_state
@@ -481,8 +493,16 @@ class SigEnergyOptimizer:
                 effective_mode = self._manual_mode_override or state.sigenergy_mode
                 if effective_mode not in {self.cfg.automated_option, ""}:
                     self._freeze_decision_to_live_mode(state, decision, effective_mode)
+                application_result = await self._apply(state, decision)
+                if (
+                    isinstance(application_result, _ActuatorApplicationResult)
+                    and not application_result.succeeded
+                ):
+                    raise RuntimeError(
+                        application_result.error or "Actuator application failed"
+                    )
                 self._last_decision = decision
-                await self._apply(state, decision)
+                application_committed = True
                 permission = self._evaluate_hvac_solar_permission(
                     state,
                     decision,
@@ -499,6 +519,9 @@ class SigEnergyOptimizer:
             except asyncio.CancelledError:
                 raise
             except Exception:
+                if not application_committed:
+                    self._last_state = prev_state
+                    self._last_decision = prev_decision
                 await self._publish_hvac_solar_permission(
                     self._hvac_solar_cycle_error_result()
                 )
@@ -3594,17 +3617,64 @@ class SigEnergyOptimizer:
             await asyncio.sleep(0.3)
         return False
 
-    async def _apply(self, s: SolarState, d: Decision) -> None:
+    async def _apply(
+        self,
+        s: SolarState,
+        d: Decision,
+    ) -> _ActuatorApplicationResult:
         cfg = self.cfg
         ha = self.ha
+        application_failures: list[str] = []
 
-        async def _safe_fallback(reason: str) -> None:
+        async def _safe_fallback(reason: str) -> _ActuatorApplicationResult:
             logger.error("Entering safe fallback: %s", reason)
-            await ha.set_number(cfg.grid_export_limit, 0.01)
-            await ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF)
-            await ha.set_number(cfg.grid_import_limit, 0.01)
+            fallback_failures: list[str] = []
+
+            async def _attempt(label: str, request: Any) -> None:
+                try:
+                    result = await request()
+                    if result is not True:
+                        fallback_failures.append(f"{label} returned failure")
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    fallback_failures.append(
+                        f"{label} raised {type(exc).__name__}: {exc}"
+                    )
+
+            await _attempt(
+                "grid export safety close",
+                lambda: ha.set_number(cfg.grid_export_limit, 0.01),
+            )
+            await _attempt(
+                "Maximum Self Consumption fallback",
+                lambda: ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF),
+            )
+            await _attempt(
+                "grid import safety close",
+                lambda: ha.set_number(cfg.grid_import_limit, 0.01),
+            )
             if cfg.ess_max_discharging_limit:
-                await ha.set_number(cfg.ess_max_discharging_limit, 0.01)
+                await _attempt(
+                    "ESS discharge safety clamp",
+                    lambda: ha.set_number(cfg.ess_max_discharging_limit, 0.01),
+                )
+
+            if fallback_failures:
+                fallback_detail = "; ".join(fallback_failures)
+                logger.error("Safe fallback incomplete: %s", fallback_detail)
+                error = f"{reason}; safe fallback incomplete: {fallback_detail}"
+            else:
+                error = (
+                    f"{reason}; safe fallback requests succeeded but inverter "
+                    "settlement was not observed"
+                )
+            return _ActuatorApplicationResult(
+                succeeded=False,
+                error=error,
+                fallback_attempted=True,
+                fallback_succeeded=not fallback_failures,
+            )
 
         effective_mode = self._manual_mode_override or s.sigenergy_mode
         if self._manual_mode_override and s.sigenergy_mode != self._manual_mode_override:
@@ -3619,6 +3689,9 @@ class SigEnergyOptimizer:
                     "Failed to restore mode selector %s to %s",
                     cfg.sigenergy_mode_select,
                     self._manual_mode_override,
+                )
+                application_failures.append(
+                    f"failed restoring mode selector to {self._manual_mode_override}"
                 )
             s.sigenergy_mode = self._manual_mode_override
             effective_mode = self._manual_mode_override
@@ -3682,9 +3755,17 @@ class SigEnergyOptimizer:
                     )
                     if failed:
                         logger.error("Manual mode drift correction had failures: %s", ", ".join(failed))
+                        application_failures.append(
+                            "manual mode drift correction failed: " + ", ".join(failed)
+                        )
 
             logger.debug("Manual mode active (%s); optimizer decisions paused", effective_mode)
-            return
+            if application_failures:
+                return _ActuatorApplicationResult(
+                    succeeded=False,
+                    error="; ".join(application_failures),
+                )
+            return _ActuatorApplicationResult(succeeded=True)
 
         if cfg.auto_enable_ha_control and not s.ha_control_switch_available:
             now_ts = datetime.now().timestamp()
@@ -3705,7 +3786,7 @@ class SigEnergyOptimizer:
                 )
                 self._last_ha_control_switch_warning_at = now_ts
                 self._last_ha_control_switch_warning_key = warning_key
-            return
+            return _ActuatorApplicationResult(succeeded=True)
 
         effective_ha_control = s.ha_control_enabled
 
@@ -3721,7 +3802,7 @@ class SigEnergyOptimizer:
                     "Remote EMS control switch remains off; enable retry suppressed for %s",
                     cfg.ha_control_switch,
                 )
-                return
+                return _ActuatorApplicationResult(succeeded=True)
             self._last_ha_control_enable_attempt_at = now_ts
             logger.info("Auto-enabling Remote EMS control switch %s", cfg.ha_control_switch)
             enable_ok = await ha.turn_on(cfg.ha_control_switch)
@@ -3731,16 +3812,16 @@ class SigEnergyOptimizer:
                     "remain paused and retry is delayed",
                     cfg.ha_control_switch,
                 )
-                return
+                return _ActuatorApplicationResult(succeeded=True)
             logger.info(
                 "Remote EMS control switch enable requested successfully: %s; "
                 "awaiting an observed ON state before inverter writes",
                 cfg.ha_control_switch,
             )
-            return
+            return _ActuatorApplicationResult(succeeded=True)
 
         if not effective_ha_control:
-            return
+            return _ActuatorApplicationResult(succeeded=True)
 
         if not (
             s.sigenergy_mode_observed
@@ -3751,7 +3832,7 @@ class SigEnergyOptimizer:
                 "is not observed as %s",
                 cfg.automated_option,
             )
-            return
+            return _ActuatorApplicationResult(succeeded=True)
 
         ems_mode_to_apply = d.ems_mode
         near_zero = 0.011
@@ -3812,20 +3893,18 @@ class SigEnergyOptimizer:
                 # export first, then reopen only after exact MSC confirmation.
                 ok_close = await ha.set_number(cfg.grid_export_limit, 0.01)
                 if not ok_close:
-                    await _safe_fallback(
+                    return await _safe_fallback(
                         "failed closing export before Maximum Self Consumption transition"
                     )
-                    return
                 if not await self._wait_for_number_at_most(
                     cfg.grid_export_limit,
                     0.01,
                     timeout_s=3.0,
                     tolerance=0.001,
                 ):
-                    await _safe_fallback(
+                    return await _safe_fallback(
                         "export limit did not close before Maximum Self Consumption transition"
                     )
-                    return
                 export_write_required = True
 
             # The decision snapshot can race an external EMS writer. Reassert and
@@ -3833,15 +3912,13 @@ class SigEnergyOptimizer:
             # automatic PV-only ceiling, even when the snapshot already reported MSC.
             ok_mode = await ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF)
             if not ok_mode:
-                await _safe_fallback("failed reasserting Maximum Self Consumption before high PV-only export")
-                return
+                return await _safe_fallback("failed reasserting Maximum Self Consumption before high PV-only export")
             if not await self._wait_for_exact_entity_state(
                 cfg.ems_mode_select,
                 MODE_MAX_SELF,
                 timeout_s=3.0,
             ):
-                await _safe_fallback("Maximum Self Consumption did not settle before high PV-only export")
-                return
+                return await _safe_fallback("Maximum Self Consumption did not settle before high PV-only export")
 
         prepare_export_before_discharge = bool(
             ems_mode_to_apply in DISCHARGE_MODES
@@ -3857,19 +3934,17 @@ class SigEnergyOptimizer:
             # replaced with an unrelated blanket low cap.
             ok_export = await ha.set_number(cfg.grid_export_limit, export_val)
             if not ok_export:
-                await _safe_fallback(
+                return await _safe_fallback(
                     f"failed lowering export limit to {export_val:.2f}kW before discharge EMS"
                 )
-                return
             if not await self._wait_for_number_at_most(
                 cfg.grid_export_limit,
                 export_val,
                 timeout_s=3.0,
             ):
-                await _safe_fallback(
+                return await _safe_fallback(
                     f"export limit did not settle at or below {export_val:.2f}kW before discharge EMS"
                 )
-                return
             export_written = True
 
         # EMS mode
@@ -3880,15 +3955,13 @@ class SigEnergyOptimizer:
             logger.info("EMS mode: %s → %s", s.current_ems_mode, ems_mode_to_apply)
             ok_mode = await ha.select_option(cfg.ems_mode_select, ems_mode_to_apply)
             if not ok_mode:
-                await _safe_fallback(f"failed setting EMS mode to {ems_mode_to_apply}")
-                return
+                return await _safe_fallback(f"failed setting EMS mode to {ems_mode_to_apply}")
 
         # Export limit
         if export_write_required and not export_written:
             ok_export = await ha.set_number(cfg.grid_export_limit, export_val)
             if not ok_export:
-                await _safe_fallback(f"failed setting export limit to {export_val:.2f}kW")
-                return
+                return await _safe_fallback(f"failed setting export limit to {export_val:.2f}kW")
             if (
                 pv_only_over_cap_correction_required
                 and not await self._wait_for_number_at_most(
@@ -3898,10 +3971,30 @@ class SigEnergyOptimizer:
                     tolerance=0.001,
                 )
             ):
-                await _safe_fallback(
+                return await _safe_fallback(
                     f"PV-only export limit did not settle at or below {export_val:.2f}kW"
                 )
-                return
+            if export_val <= near_zero and not pv_only_over_cap_correction_required:
+                observed_export_limit = await ha.get_state_value(
+                    cfg.grid_export_limit,
+                    None,
+                )
+                try:
+                    observed_export_limit_kw = float(observed_export_limit)
+                    export_close_observed = bool(
+                        math.isfinite(observed_export_limit_kw)
+                        and observed_export_limit_kw <= near_zero
+                    )
+                except (TypeError, ValueError, OverflowError):
+                    export_close_observed = False
+                if not export_close_observed:
+                    return _ActuatorApplicationResult(
+                        succeeded=False,
+                        error=(
+                            "ordinary export safety close requested successfully but "
+                            "observed readback remains open or unavailable"
+                        ),
+                    )
 
         # Import limit
         import_val = 0.01 if d.import_limit == 0 else d.import_limit
@@ -3929,24 +4022,32 @@ class SigEnergyOptimizer:
         if import_write_required:
             ok_import = await ha.set_number(cfg.grid_import_limit, import_val)
             if not ok_import:
-                await _safe_fallback(f"failed setting import limit to {import_val:.2f}kW")
-                return
+                return await _safe_fallback(f"failed setting import limit to {import_val:.2f}kW")
 
         # ESS charge / discharge limits
         if cfg.ess_max_charging_limit:
             ok_chg = await ha.set_number(cfg.ess_max_charging_limit, d.ess_charge_limit)
             if not ok_chg:
                 logger.error("Failed setting ESS charge limit to %.2fkW", d.ess_charge_limit)
+                application_failures.append(
+                    f"failed setting ESS charge limit to {d.ess_charge_limit:.2f}kW"
+                )
         if cfg.ess_max_discharging_limit:
             discharge_limit = d.ess_discharge_limit
             ok_dis = await ha.set_number(cfg.ess_max_discharging_limit, discharge_limit)
             if not ok_dis:
-                await _safe_fallback(f"failed setting ESS discharge limit to {discharge_limit:.2f}kW")
-                return
+                reason = f"failed setting ESS discharge limit to {discharge_limit:.2f}kW"
+                if application_failures:
+                    reason = "; ".join([*application_failures, reason])
+                return await _safe_fallback(reason)
 
         # PV max power limit
         if abs(d.pv_max_power_limit - s.current_pv_max_power_limit) > 0.05:
-            await ha.set_number(cfg.pv_max_power_limit, d.pv_max_power_limit)
+            ok_pv = await ha.set_number(cfg.pv_max_power_limit, d.pv_max_power_limit)
+            if not ok_pv:
+                application_failures.append(
+                    f"failed setting PV MAX limit to {d.pv_max_power_limit:.2f}kW"
+                )
 
         # Reason text helper
         reason = d.outcome_reason[:250]
@@ -3958,11 +4059,18 @@ class SigEnergyOptimizer:
         # for internal logic but rejected by input_number entities with max: 100.
         await ha.set_input_number(cfg.min_soc_to_sunrise_helper, min(d.min_soc_to_sunrise, 100.0))
 
+        if application_failures:
+            return _ActuatorApplicationResult(
+                succeeded=False,
+                error="; ".join(application_failures),
+            )
+
         logger.debug(
             "Applied: mode=%s exp=%.1f imp=%.1f pv=%.1f | %s",
             d.ems_mode, d.export_limit, d.import_limit, d.pv_max_power_limit,
             d.outcome_reason[:80]
         )
+        return _ActuatorApplicationResult(succeeded=True)
 
     def _manual_mode_targets(
         self,
