@@ -32,10 +32,8 @@ Active remediation worktree:
 - Package 4C production/test checkpoint: `85cfb1d`; verify the exact active HEAD directly with Git because a future docs-only commit may be a child of this checkpoint.
 - Package 4D production/test checkpoint: `44c63e80fa72655087504f5c612df10e6b77109f` (`Harden forecast and solar-clock telemetry trust`).
 - Package 5 actuator/fallback production/test checkpoint: `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`).
-- Package 5 documentation checkpoint: `68bfa92393c7ff3bd69871acf3ec0bc269eb868d` (`Record Package 5 actuator checkpoint state`).
-- Current local HEAD: `68bfa92393c7ff3bd69871acf3ec0bc269eb868d`.
-- Remote `origin/fix/phase1-audit-remediation` HEAD: `68bfa92393c7ff3bd69871acf3ec0bc269eb868d`.
-- The worktree was verified clean immediately after the push and before this anti-stale documentation edit. These new documentation corrections are not yet committed or pushed.
+- Package 5 chatter/reopen production/test checkpoint: `e119f6f` (`Repair Morning Slow MSC ceiling chatter`).
+- Verify the exact branch tip, worktree status, and remote synchronization directly with Git; documentation commits may be children of the production/test checkpoints.
 
 Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. The worktree was clean after the verified push. Package 1 has not been merged, released, deployed, or live-tested.
 
@@ -51,7 +49,7 @@ Package 4C is committed at `85cfb1d`, automated-validated, and pushed. It has no
 
 Package 4D is committed at `44c63e80fa72655087504f5c612df10e6b77109f`, automated-validated, and present on the remote remediation branch. It has not been merged, tagged, released, deployed, installed, restarted, or live-tested.
 
-Package 5 actuator/fallback reliability is committed at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473`, automated-validated, and pushed with documentation checkpoint `68bfa92393c7ff3bd69871acf3ec0bc269eb868d` to the remediation branch. It has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+Package 5 actuator/fallback reliability is committed at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473`, automated-validated, and pushed. The chatter/reopen repair is committed at `e119f6f` and automated-validated. Package 5 has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
 
 Protected/reference worktrees:
 
@@ -65,7 +63,7 @@ Always verify branch, HEAD, and cleanliness directly before editing.
 
 Phase 1 was previously declared complete and live-accepted. That is no longer true. Phase 1 is **reopened for audit remediation** because a live Morning Slow low-SoC defect was proven and the broader audit found additional fail-closed and control-authority defects.
 
-Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, and Package 5 actuator/fallback reliability are complete and automated-validated. Packages 1 through 4D and Package 5 actuator/fallback reliability are pushed to the remediation branch. Package 5 chatter/reopen characterization is next. The Morning Slow forecast-feasibility discrepancy is a separate parked investigation. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
+Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, and both Package 5 subparts are complete and automated-validated. Package 6 capability modelling is next. The Morning Slow forecast-feasibility discrepancy is a separate parked investigation. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
 
 ## Production Remediation Package 1
 
@@ -98,7 +96,7 @@ The proven live defect occurred at approximately 14.2-14.5% SoC with Morning Slo
 
 Package 2 makes below-minimum-SoC export closure apply only when Morning Slow is inactive. Active Morning Slow no longer depends on `morning_slow_charge_rate_kw + min_grid_transfer_kw`; unrelated uses of `MIN_GRID_TRANSFER_KW` are unchanged. Morning Slow continues to own only the ESS charge rate, remains in Maximum Self Consumption with normal PV MAX, does not own export permission, retains `MSC_SURPLUS_CEILING` intent through independently owned ordinary MSC-surplus permission, and creates no battery-export owner. Package 1 authority and fail-closed protections remain intact.
 
-Characterization results were **4 passed, 33 deselected**: safe 2.9 kW and 3.1 kW surplus cases both received the same 25 kW MSC ceiling, while unobserved Automated ownership and material or unknown battery flow remained blocked. Focused Morning Slow/MSC protection results were **24 passed, 120 deselected**. Package 1 authority/fail-closed characterization was **11 passed**; focused Remote EMS, Manual, Force, and unavailable-mode protection was **8 passed, 4 deselected**; and Value Gate, positive-FiT, negative-price, MSC-intent, and battery-export protection was **95 passed, 31 deselected**.
+Characterization results were **4 passed, 33 deselected**: safe 2.9 kW and 3.1 kW surplus cases both received the same 25 kW MSC ceiling, while unobserved Automated ownership and unsafe or unknown flow remained blocked. Focused Morning Slow/MSC protection results were **24 passed, 120 deselected**. Package 1 authority/fail-closed characterization was **11 passed**; focused Remote EMS, Manual, Force, and unavailable-mode protection was **8 passed, 4 deselected**; and Value Gate, positive-FiT, negative-price, MSC-intent, and battery-export protection was **95 passed, 31 deselected**.
 
 The final complete suite result was **295 passed, 2 failed, 191 warnings** from 297 collected tests. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed. No additional regression was found.
 
@@ -166,9 +164,11 @@ Package 4D preserved genuine fresh zero forecasts, conservative safety charging,
 
 Validation: Package 4D characterization **26 passed, 191 warnings**; focused regression **88 passed, 191 warnings**; complete suite **389 collected, 387 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed. No unexpected functional regression remained.
 
-## Production Remediation Package 5: actuator/fallback reliability
+## Production Remediation Package 5
 
-The actuator/fallback reliability subpackage is complete, automated-validated, and committed at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`). It changed `app/optimizer.py` and `tests/test_phase1_actuator_settlement_fallback_characterization.py`. The production/test checkpoint and documentation checkpoint `68bfa92393c7ff3bd69871acf3ec0bc269eb868d` are pushed to the remediation branch. They have not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+Package 5 actuator/fallback reliability and chatter/reopen repair are complete and automated-validated. The actuator/fallback production/test checkpoint is `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`); the chatter/reopen production/test checkpoint is `e119f6f` (`Repair Morning Slow MSC ceiling chatter`). Package 5 has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+
+### Actuator/fallback reliability
 
 `_apply` now returns an explicit application result. Required actuator write failures propagate as failed application; fallback return values are inspected; ordinary fallback exceptions remain visible while later independent safety actions are still attempted; and partial/asymmetric failures make the whole application fail. Successful fallback requests do not turn a failed primary application into observed success. This is failure accounting and fail-closed fallback, not transactional rollback.
 
@@ -176,13 +176,15 @@ The actuator/fallback reliability subpackage is complete, automated-validated, a
 
 Validation: Package 5 characterization **19 passed, 191 warnings**; focused regression **84 collected, 82 passed, 2 deselected, 191 warnings**; complete suite **408 collected, 406 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed. No unexpected functional regression remained.
 
-## Package 5 next: chatter/reopen characterization
+### Chatter/reopen repair
 
-The remaining Package 5 subpackage is characterization of direct-battery hard-boundary chatter without assuming a root cause or selecting a fix. Current characterized behavior permits the high MSC/PV-only ceiling at about `0.094 kW` direct battery discharge and closes it at about `0.101 kW`; fresh snapshots can therefore produce immediate `25 -> 0 -> 25 -> 0 kW` behavior. This is current policy evidence, not proof that the `0.10 kW` threshold is wrong. No replacement threshold, deadband, timer, N-cycle hysteresis, settlement duration, or reopen delay is approved.
+Morning Slow's high MSC ceiling no longer closes merely because trusted battery discharge crosses `0.10 kW`. For this safety decision Morning Slow now reuses the existing trusted ordinary-MSC flow classification: trusted load-serving battery discharge with grid export below the existing meaningful threshold is compatible with the MSC surplus ceiling; meaningful simultaneous battery discharge and grid export remains fail-closed; and unknown or untrusted battery or grid-export evidence remains fail-closed. Solar Surplus retains its separate raw battery-discharge protection. Ordinary positive-FiT behavior, battery-export ownership, Manual/Force, Demand Window, PV MAX, and unrelated safety behavior are unchanged.
 
-Investigation context: under Maximum Self Consumption, the configured high export ceiling may be permission for genuine surplus rather than a command to export or discharge the battery. This is an architectural hypothesis grounded in the existing control contract, not a newly approved implementation rule. Chatter work must determine whether the existing MSC-baseline contract can avoid unnecessary close/reopen behavior while preserving the rule that meaningful simultaneous battery discharge plus grid export fails closed and ordinary positive-FiT export does not create battery-export intent.
+The existing `0.10 kW` battery tolerance and `0.5 kW` meaningful grid-export threshold were not changed. No timer, deadband, hysteresis, cycle count, settlement duration, or reopen delay was added.
 
-The characterized load-serving case at approximately `1.6 kW` PV, `4.7 kW` load, and `3.2 kW` battery discharge was correctly classified as material load-serving battery discharge and kept export closed. This does not imply that all load-serving discharge should always open export. The separate case at approximately `0.273 kW` battery discharge and `1.837 kW` grid export remains `simultaneous_battery_discharge_and_grid_export` and fail-closed; that protection must not be weakened to suppress chatter.
+Characterization confirms that `0.094 kW` and `0.101 kW` discharge with negligible export both retain the `25 kW` MSC ceiling, with `0.101 kW` classified as load-serving. Alternating `0.094 / 0.101 / 0.094 / 0.101` remains `25 / 25 / 25 / 25 kW`. A `1.0 kW` discharge with `0.499999 kW` export can remain load-serving/open; exactly `0.5 kW` export with discharge above `0.10 kW` becomes simultaneous/closed. The approximately `0.273 kW` discharge plus `1.837 kW` export case remains simultaneous/fail-closed. The approximately `3.2 kW` load-serving case remains independently closed through `closed_no_daytime_pv`. Unknown battery flow and unknown, stale, or non-finite grid-export flow close.
+
+Validation: chatter characterization **11 passed, 191 warnings**; affected actuator and Value Gate tests **108 passed, 191 warnings**; focused protection **200 collected, 198 passed, 2 deselected, 191 warnings**; complete suite **419 collected, 417 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. Compileall and `git diff --check` passed.
 
 ## Parked investigation: Morning Slow forecast feasibility
 
@@ -247,4 +249,4 @@ Protect the two existing expected Phase 2 failures:
 
 ## Exact next action
 
-Package 5 chatter/reopen characterization is the exact next engineering action. The Package 5 production/test and documentation checkpoints are already pushed at `4c9c0e2` and `68bfa92`; these anti-stale documentation corrections are currently uncommitted and unpushed. Do not deploy, live-test, or begin Phase 2 without separate authorization.
+Package 6 capability modelling, with separate capability domains and no configured enlargement of trusted observed hardware caps, is the exact next engineering action. Keep the Morning Slow forecast-feasibility discrepancy parked. Do not deploy, live-test, or begin Phase 2 without separate authorization.
