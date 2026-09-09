@@ -135,6 +135,8 @@ class SigEnergyOptimizer:
         self._holdoff_entry_floor: Optional[float] = None  # Stable SoC floor for holdoff window
         self._last_hw_charge_cap_kw: Optional[float] = None
         self._last_hw_discharge_cap_kw: Optional[float] = None
+        self._last_legacy_manual_charge_cap_kw: Optional[float] = None
+        self._last_legacy_manual_discharge_cap_kw: Optional[float] = None
         self._last_cycle_started: Optional[datetime] = None
         self._last_cycle_completed: Optional[datetime] = None
         self._last_cycle_error: str = ""
@@ -222,7 +224,52 @@ class SigEnergyOptimizer:
 
     @staticmethod
     def _valid_hw_cap_kw(v: Any) -> bool:
+        return bool(
+            isinstance(v, (int, float))
+            and not isinstance(v, bool)
+            and math.isfinite(float(v))
+            and 0 < float(v) <= _POWER_LIMIT_MAX_KW
+        )
+
+    @staticmethod
+    def _valid_legacy_manual_cap_kw(v: Any) -> bool:
         return isinstance(v, (int, float)) and 0 < float(v) < 999
+
+    @staticmethod
+    def _valid_grid_export_cap_kw(v: Any) -> bool:
+        return bool(
+            isinstance(v, (int, float))
+            and not isinstance(v, bool)
+            and math.isfinite(float(v))
+            and 0 <= float(v) <= _POWER_LIMIT_MAX_KW
+        )
+
+    @staticmethod
+    def _floor_power_command_kw(value: float) -> float:
+        return float(
+            Decimal(str(max(float(value), 0.0))).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_FLOOR,
+            )
+        )
+
+    def _bound_grid_export_request_kw(
+        self,
+        state: Optional[SolarState],
+        requested_kw: float,
+    ) -> float:
+        request = max(float(requested_kw), 0.0)
+        if state and self._valid_grid_export_cap_kw(
+            state.grid_export_limit_entity_max_kw
+        ):
+            request = min(request, float(state.grid_export_limit_entity_max_kw))
+            return self._floor_power_command_kw(request)
+        return request
+
+    def _bound_ess_request_kw(self, requested_kw: float, capability_kw: float) -> float:
+        return self._floor_power_command_kw(
+            min(max(float(requested_kw), 0.0), float(capability_kw))
+        )
 
     def get_power_caps_kw(self, s: Optional[SolarState] = None) -> tuple[float, float]:
         fallback = float(self.cfg.ess_limit_fallback_kw)
@@ -231,31 +278,31 @@ class SigEnergyOptimizer:
 
         state = s if s is not None else self._last_state
 
-        charge_cap = fallback
-        discharge_cap = fallback
-
-        configured_charge_baseline = max(0.1, float(self.cfg.ess_charge_limit_value))
-        configured_discharge_baseline = max(0.1, float(self.cfg.ess_discharge_limit_value))
-
-        # Prefer number-entity max attributes as authoritative hardware/UI bounds.
-        # Some dynamic sensors can temporarily report throttled operating limits
-        # (e.g. 3kW during special modes), which must not become global cap sources.
+        charge_candidates: list[float] = []
+        discharge_candidates: list[float] = []
         if state and self._valid_hw_cap_kw(state.ess_charge_limit_entity_max_kw):
-            charge_cap = float(state.ess_charge_limit_entity_max_kw)
-        elif state and self._valid_hw_cap_kw(state.ess_max_charge_kw):
-            charge_cap = float(state.ess_max_charge_kw)
+            charge_candidates.append(float(state.ess_charge_limit_entity_max_kw))
+        if state and self._valid_hw_cap_kw(state.ess_max_charge_kw):
+            charge_candidates.append(float(state.ess_max_charge_kw))
+        if state and self._valid_hw_cap_kw(state.ess_discharge_limit_entity_max_kw):
+            discharge_candidates.append(float(state.ess_discharge_limit_entity_max_kw))
+        if state and self._valid_hw_cap_kw(state.ess_max_discharge_kw):
+            discharge_candidates.append(float(state.ess_max_discharge_kw))
+
+        if charge_candidates:
+            charge_cap = min(charge_candidates)
         elif self._valid_hw_cap_kw(self._last_hw_charge_cap_kw):
             charge_cap = float(self._last_hw_charge_cap_kw)
+        else:
+            charge_cap = fallback
 
-        if state and self._valid_hw_cap_kw(state.ess_discharge_limit_entity_max_kw):
-            discharge_cap = float(state.ess_discharge_limit_entity_max_kw)
-        elif state and self._valid_hw_cap_kw(state.ess_max_discharge_kw):
-            discharge_cap = float(state.ess_max_discharge_kw)
+        if discharge_candidates:
+            discharge_cap = min(discharge_candidates)
         elif self._valid_hw_cap_kw(self._last_hw_discharge_cap_kw):
             discharge_cap = float(self._last_hw_discharge_cap_kw)
+        else:
+            discharge_cap = fallback
 
-        charge_cap = max(charge_cap, configured_charge_baseline)
-        discharge_cap = max(discharge_cap, configured_discharge_baseline)
         return charge_cap, discharge_cap
 
     def _validate_time_config(self) -> list[str]:
@@ -1433,57 +1480,109 @@ class SigEnergyOptimizer:
             and available_energy_observation.fresh
         )
 
-        def _kw_from_sensor(raw: float) -> float:
-            if raw <= 0:
+        def _kw_from_sensor(raw: Optional[float]) -> float:
+            if raw is None or raw <= 0:
                 return 999.0
             return raw / 1000 if raw >= 1000 else raw
 
-        s.ess_max_discharge_kw = _kw_from_sensor(_fv(cfg.ess_rated_discharge_power_sensor))
-        s.ess_max_charge_kw = _kw_from_sensor(_fv(cfg.ess_rated_charge_power_sensor))
+        s.ess_max_discharge_kw = _kw_from_sensor(
+            _fv(cfg.ess_rated_discharge_power_sensor, None)
+        )
+        s.ess_max_charge_kw = _kw_from_sensor(
+            _fv(cfg.ess_rated_charge_power_sensor, None)
+        )
+        if self._valid_legacy_manual_cap_kw(s.ess_max_charge_kw):
+            self._last_legacy_manual_charge_cap_kw = float(s.ess_max_charge_kw)
+        if self._valid_legacy_manual_cap_kw(s.ess_max_discharge_kw):
+            self._last_legacy_manual_discharge_cap_kw = float(s.ess_max_discharge_kw)
         if self._valid_hw_cap_kw(s.ess_max_charge_kw):
             self._last_hw_charge_cap_kw = float(s.ess_max_charge_kw)
         if self._valid_hw_cap_kw(s.ess_max_discharge_kw):
             self._last_hw_discharge_cap_kw = float(s.ess_max_discharge_kw)
 
         # ---- Grid limits / EMS mode -----------------------------------
+        def _trusted_number_entity_max_kw(
+            entity_id: str,
+            *,
+            allow_zero: bool,
+        ) -> Optional[float]:
+            obj = bulk.get(entity_id)
+            if not obj:
+                return None
+            raw_state = obj.get("state", "")
+            if str(raw_state).strip().lower() in unavailable_states:
+                return None
+            raw_maximum = obj.get("attributes", {}).get("max")
+            if isinstance(raw_state, bool) or isinstance(raw_maximum, bool):
+                return None
+            try:
+                current_value = float(raw_state)
+                maximum_kw = float(raw_maximum)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            if not math.isfinite(current_value) or not math.isfinite(maximum_kw):
+                return None
+            if allow_zero:
+                return maximum_kw if 0.0 <= maximum_kw <= _POWER_LIMIT_MAX_KW else None
+            return maximum_kw if 0.0 < maximum_kw <= _POWER_LIMIT_MAX_KW else None
+
         current_export_limit = _fv(cfg.grid_export_limit, None)
         s.current_export_limit_observed = current_export_limit is not None
         s.current_export_limit = (
             float(current_export_limit) if current_export_limit is not None else 0.0
         )
-        try:
-            grid_export_max_attr = _attr(cfg.grid_export_limit, "max")
-            if grid_export_max_attr is not None:
-                grid_export_max_kw = float(grid_export_max_attr)
-                if (
-                    math.isfinite(grid_export_max_kw)
-                    and 0.0 <= grid_export_max_kw <= _POWER_LIMIT_MAX_KW
-                ):
-                    s.grid_export_limit_entity_max_kw = grid_export_max_kw
-        except (TypeError, ValueError):
-            s.grid_export_limit_entity_max_kw = None
+        s.grid_export_limit_entity_max_kw = _trusted_number_entity_max_kw(
+            cfg.grid_export_limit,
+            allow_zero=True,
+        )
         current_import_limit = _fv(cfg.grid_import_limit, None)
         s.current_import_limit_observed = current_import_limit is not None
         s.current_import_limit = (
             float(current_import_limit) if current_import_limit is not None else 0.0
         )
         s.current_pv_max_power_limit = _fv(cfg.pv_max_power_limit)
+
+        def _legacy_manual_number_entity_max_kw(entity_id: str) -> Optional[float]:
+            raw_maximum = _attr(entity_id, "max")
+            if raw_maximum is None:
+                return None
+            try:
+                return float(raw_maximum)
+            except (TypeError, ValueError):
+                return None
+
+        legacy_charge_entity_max_kw = None
+        legacy_discharge_entity_max_kw = None
         if cfg.ess_max_charging_limit:
             s.current_ess_charge_limit = _fv(cfg.ess_max_charging_limit)
-            try:
-                max_attr = _attr(cfg.ess_max_charging_limit, "max")
-                if max_attr is not None:
-                    s.ess_charge_limit_entity_max_kw = float(max_attr)
-            except (TypeError, ValueError):
-                s.ess_charge_limit_entity_max_kw = None
+            legacy_charge_entity_max_kw = _legacy_manual_number_entity_max_kw(
+                cfg.ess_max_charging_limit
+            )
+            s.ess_charge_limit_entity_max_kw = _trusted_number_entity_max_kw(
+                cfg.ess_max_charging_limit,
+                allow_zero=False,
+            )
         if cfg.ess_max_discharging_limit:
             s.current_ess_discharge_limit = _fv(cfg.ess_max_discharging_limit)
-            try:
-                max_attr = _attr(cfg.ess_max_discharging_limit, "max")
-                if max_attr is not None:
-                    s.ess_discharge_limit_entity_max_kw = float(max_attr)
-            except (TypeError, ValueError):
-                s.ess_discharge_limit_entity_max_kw = None
+            legacy_discharge_entity_max_kw = _legacy_manual_number_entity_max_kw(
+                cfg.ess_max_discharging_limit
+            )
+            s.ess_discharge_limit_entity_max_kw = _trusted_number_entity_max_kw(
+                cfg.ess_max_discharging_limit,
+                allow_zero=False,
+            )
+        # Keep pre-Package-6A raw metadata attached only to this state snapshot.
+        # Automated capability decisions continue to use the sanitized public fields.
+        setattr(
+            s,
+            "_legacy_manual_ess_charge_limit_entity_max_kw",
+            legacy_charge_entity_max_kw,
+        )
+        setattr(
+            s,
+            "_legacy_manual_ess_discharge_limit_entity_max_kw",
+            legacy_discharge_entity_max_kw,
+        )
         # Preserve an unknown/unavailable EMS selector as unknown. Safety-critical
         # export paths must not infer Maximum Self Consumption from a missing state.
         ems_mode_obj = bulk.get(cfg.ems_mode_select)
@@ -3000,6 +3099,10 @@ class SigEnergyOptimizer:
                 f"{d.export_value_gate_reason}"
             )
 
+        desired_export_limit = self._bound_grid_export_request_kw(
+            s,
+            desired_export_limit,
+        )
         d.export_limit = desired_export_limit
         d.export_intent = (
             requested_export_intent
@@ -3648,6 +3751,12 @@ class SigEnergyOptimizer:
         cfg = self.cfg
         ha = self.ha
         application_failures: list[str] = []
+        safe_export_close_kw = self._bound_grid_export_request_kw(s, 0.01)
+        _, safe_discharge_cap_kw = self.get_power_caps_kw(s)
+        safe_ess_discharge_close_kw = self._bound_ess_request_kw(
+            0.01,
+            safe_discharge_cap_kw,
+        )
 
         async def _safe_fallback(reason: str) -> _ActuatorApplicationResult:
             logger.error("Entering safe fallback: %s", reason)
@@ -3667,7 +3776,7 @@ class SigEnergyOptimizer:
 
             await _attempt(
                 "grid export safety close",
-                lambda: ha.set_number(cfg.grid_export_limit, 0.01),
+                lambda: ha.set_number(cfg.grid_export_limit, safe_export_close_kw),
             )
             await _attempt(
                 "Maximum Self Consumption fallback",
@@ -3680,7 +3789,10 @@ class SigEnergyOptimizer:
             if cfg.ess_max_discharging_limit:
                 await _attempt(
                     "ESS discharge safety clamp",
-                    lambda: ha.set_number(cfg.ess_max_discharging_limit, 0.01),
+                    lambda: ha.set_number(
+                        cfg.ess_max_discharging_limit,
+                        safe_ess_discharge_close_kw,
+                    ),
                 )
 
             if fallback_failures:
@@ -3879,7 +3991,10 @@ class SigEnergyOptimizer:
             s.current_import_limit,
             s.current_import_limit_observed,
         )
-        export_val = d.export_limit if d.export_limit > 0 else 0.01
+        export_val = self._bound_grid_export_request_kw(
+            s,
+            d.export_limit if d.export_limit > 0 else 0.01,
+        )
         export_turning_on = bool(
             export_limit_observed
             and s.current_export_limit <= near_zero
@@ -3914,14 +4029,17 @@ class SigEnergyOptimizer:
                 # A previously opened ceiling must never overlap EMS drift into a
                 # discharge mode while MSC is being reasserted. Close and confirm
                 # export first, then reopen only after exact MSC confirmation.
-                ok_close = await ha.set_number(cfg.grid_export_limit, 0.01)
+                ok_close = await ha.set_number(
+                    cfg.grid_export_limit,
+                    safe_export_close_kw,
+                )
                 if not ok_close:
                     return await _safe_fallback(
                         "failed closing export before Maximum Self Consumption transition"
                     )
                 if not await self._wait_for_number_at_most(
                     cfg.grid_export_limit,
-                    0.01,
+                    safe_export_close_kw,
                     timeout_s=3.0,
                     tolerance=0.001,
                 ):
@@ -4048,15 +4166,23 @@ class SigEnergyOptimizer:
                 return await _safe_fallback(f"failed setting import limit to {import_val:.2f}kW")
 
         # ESS charge / discharge limits
+        charge_cap_kw, discharge_cap_kw = self.get_power_caps_kw(s)
+        charge_limit = self._bound_ess_request_kw(
+            d.ess_charge_limit,
+            charge_cap_kw,
+        )
+        discharge_limit = self._bound_ess_request_kw(
+            d.ess_discharge_limit,
+            discharge_cap_kw,
+        )
         if cfg.ess_max_charging_limit:
-            ok_chg = await ha.set_number(cfg.ess_max_charging_limit, d.ess_charge_limit)
+            ok_chg = await ha.set_number(cfg.ess_max_charging_limit, charge_limit)
             if not ok_chg:
-                logger.error("Failed setting ESS charge limit to %.2fkW", d.ess_charge_limit)
+                logger.error("Failed setting ESS charge limit to %.2fkW", charge_limit)
                 application_failures.append(
-                    f"failed setting ESS charge limit to {d.ess_charge_limit:.2f}kW"
+                    f"failed setting ESS charge limit to {charge_limit:.2f}kW"
                 )
         if cfg.ess_max_discharging_limit:
-            discharge_limit = d.ess_discharge_limit
             ok_dis = await ha.set_number(cfg.ess_max_discharging_limit, discharge_limit)
             if not ok_dis:
                 reason = f"failed setting ESS discharge limit to {discharge_limit:.2f}kW"
@@ -4095,6 +4221,61 @@ class SigEnergyOptimizer:
         )
         return _ActuatorApplicationResult(succeeded=True)
 
+    def _legacy_manual_power_caps_kw(
+        self,
+        state: Optional[SolarState] = None,
+    ) -> tuple[float, float]:
+        """Preserve the pre-Package-6A Manual/Force target calculation."""
+        fallback = float(self.cfg.ess_limit_fallback_kw)
+        if not (0 < fallback <= _POWER_LIMIT_MAX_KW):
+            fallback = min(max(fallback, 1.0), _POWER_LIMIT_MAX_KW)
+
+        charge_cap = fallback
+        discharge_cap = fallback
+        state = state if state is not None else self._last_state
+
+        legacy_charge_entity_max_kw = (
+            getattr(
+                state,
+                "_legacy_manual_ess_charge_limit_entity_max_kw",
+                state.ess_charge_limit_entity_max_kw,
+            )
+            if state
+            else None
+        )
+        legacy_discharge_entity_max_kw = (
+            getattr(
+                state,
+                "_legacy_manual_ess_discharge_limit_entity_max_kw",
+                state.ess_discharge_limit_entity_max_kw,
+            )
+            if state
+            else None
+        )
+
+        if state and self._valid_legacy_manual_cap_kw(legacy_charge_entity_max_kw):
+            charge_cap = float(legacy_charge_entity_max_kw)
+        elif state and self._valid_legacy_manual_cap_kw(state.ess_max_charge_kw):
+            charge_cap = float(state.ess_max_charge_kw)
+        elif self._valid_legacy_manual_cap_kw(self._last_legacy_manual_charge_cap_kw):
+            charge_cap = float(self._last_legacy_manual_charge_cap_kw)
+
+        if state and self._valid_legacy_manual_cap_kw(legacy_discharge_entity_max_kw):
+            discharge_cap = float(legacy_discharge_entity_max_kw)
+        elif state and self._valid_legacy_manual_cap_kw(state.ess_max_discharge_kw):
+            discharge_cap = float(state.ess_max_discharge_kw)
+        elif self._valid_legacy_manual_cap_kw(
+            self._last_legacy_manual_discharge_cap_kw
+        ):
+            discharge_cap = float(self._last_legacy_manual_discharge_cap_kw)
+
+        charge_cap = max(charge_cap, max(0.1, float(self.cfg.ess_charge_limit_value)))
+        discharge_cap = max(
+            discharge_cap,
+            max(0.1, float(self.cfg.ess_discharge_limit_value)),
+        )
+        return charge_cap, discharge_cap
+
     def _manual_mode_targets(
         self,
         mode_label: str,
@@ -4105,22 +4286,12 @@ class SigEnergyOptimizer:
         if mode_label in {cfg.automated_option, cfg.manual_option, ""}:
             return None
 
-        import_cap, export_cap = self.get_power_caps_kw(state)
+        import_cap, export_cap = self._legacy_manual_power_caps_kw(state)
         block = cfg.block_flow_limit_value
         pv_max = cfg.pv_max_power_value
 
-        # Use hardware caps/config baselines here; number-entity max attributes can be
-        # temporarily reduced during slow-charge windows and must not leak into manual
-        # mode reset targets.
         ess_charge = max(import_cap, cfg.ess_charge_limit_value)
         ess_discharge = max(export_cap, cfg.ess_discharge_limit_value)
-
-        # Prefer explicit number-entity max attributes when available; these are
-        # closer to what HA will actually accept for set_value.
-        if state and self._valid_hw_cap_kw(state.ess_charge_limit_entity_max_kw):
-            ess_charge = max(ess_charge, float(state.ess_charge_limit_entity_max_kw))
-        if state and self._valid_hw_cap_kw(state.ess_discharge_limit_entity_max_kw):
-            ess_discharge = max(ess_discharge, float(state.ess_discharge_limit_entity_max_kw))
 
         if mode_label == cfg.block_flow_option:
             if self._manual_ess_charge_override_kw is not None:
@@ -4633,23 +4804,14 @@ class SigEnergyOptimizer:
         self,
         s: SolarState,
     ) -> tuple[float, Optional[float]]:
-        authoritative_cap_kw: Optional[float] = None
-        ceiling_candidates = [max(float(self.cfg.export_limit_high), 0.0)]
-        if (
-            s.grid_export_limit_entity_max_kw is not None
-            and math.isfinite(float(s.grid_export_limit_entity_max_kw))
-            and 0.0 <= float(s.grid_export_limit_entity_max_kw) <= _POWER_LIMIT_MAX_KW
-        ):
-            authoritative_cap_kw = float(s.grid_export_limit_entity_max_kw)
-            ceiling_candidates.append(authoritative_cap_kw)
-
-        # HAClient serialises number writes to two decimal places. Quantise down
-        # so later rounding can never lift the command above the entity maximum.
-        bounded_ceiling_kw = float(
-            Decimal(str(min(ceiling_candidates))).quantize(
-                Decimal("0.01"),
-                rounding=ROUND_FLOOR,
-            )
+        authoritative_cap_kw = (
+            float(s.grid_export_limit_entity_max_kw)
+            if self._valid_grid_export_cap_kw(s.grid_export_limit_entity_max_kw)
+            else None
+        )
+        bounded_ceiling_kw = self._bound_grid_export_request_kw(
+            s,
+            max(float(self.cfg.export_limit_high), 0.0),
         )
         return bounded_ceiling_kw, authoritative_cap_kw
 
@@ -5331,7 +5493,10 @@ class SigEnergyOptimizer:
         bsoc = s.battery_soc
 
         def choice(limit_kw: float, source: str) -> _DesiredExportLimit:
-            return _DesiredExportLimit(limit_kw, source)
+            return _DesiredExportLimit(
+                self._bound_grid_export_request_kw(s, limit_kw),
+                source,
+            )
 
         if feedin_price_trusted is None:
             try:
@@ -5689,30 +5854,35 @@ class SigEnergyOptimizer:
                                    pv_surplus: float) -> float:
         cfg = self.cfg
         hw_charge, _ = self.get_power_caps_kw(s)
-        max_charge = max(0.1, hw_charge)
+        normal_request = max(0.0, float(cfg.ess_charge_limit_value))
         if desired_import > 0:
-            return min(max_charge, desired_import)
+            return self._bound_ess_request_kw(desired_import, hw_charge)
         if morning_slow_charge:
             slow = cfg.morning_slow_charge_rate_kw
             # Keep true slow-charge behavior; avoid charge spikes that collapse export.
-            return round(min(slow, max_charge), 1)
-        return max_charge
+            return self._bound_ess_request_kw(slow, hw_charge)
+        return self._bound_ess_request_kw(normal_request, hw_charge)
 
     def _desired_ess_discharge_limit(self, s: SolarState, standby_holdoff: bool,
                                       positive_fit_owns_live_battery_export: bool,
                                       evening_boost: bool) -> float:
         cfg = self.cfg
         _, hw_discharge = self.get_power_caps_kw(s)
-        max_dis = max(0.1, hw_discharge)
+        normal_request = max(0.0, float(cfg.ess_discharge_limit_value))
+        bounded_normal_request = self._bound_ess_request_kw(
+            normal_request,
+            hw_discharge,
+        )
         if s.price_is_negative and s.current_price <= cfg.import_threshold_low:
-            return 0.01
+            return self._bound_ess_request_kw(0.01, hw_discharge)
         if positive_fit_owns_live_battery_export and s.battery_soc < cfg.min_export_target_soc:
             if evening_boost and s.battery_soc >= cfg.evening_aggressive_floor:
-                return max_dis
-            return 0.01
+                return self._bound_ess_request_kw(hw_discharge, hw_discharge)
+            return self._bound_ess_request_kw(0.01, hw_discharge)
         if positive_fit_owns_live_battery_export:
-            return max_dis if cfg.allow_positive_fit_battery_discharging else 0.01
-        return max_dis
+            requested_kw = hw_discharge if cfg.allow_positive_fit_battery_discharging else 0.01
+            return self._bound_ess_request_kw(requested_kw, hw_discharge)
+        return bounded_normal_request
 
     def _export_soc_span_dynamic(self, s: SolarState, hours_to_sunrise: float,
                                   is_evening_or_night: bool, cap: float) -> float:

@@ -164,7 +164,7 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
         self.assertEqual(0.0, decision.import_limit)
         self.assertEqual(25.0, decision.pv_max_power_limit)
         self.assertEqual(25.0, decision.ess_charge_limit)
-        self.assertEqual(25.0, decision.ess_discharge_limit)
+        self.assertEqual(12.0, decision.ess_discharge_limit)
 
         asyncio.run(optimizer._apply(state, decision))
 

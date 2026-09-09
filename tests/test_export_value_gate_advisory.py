@@ -2740,7 +2740,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                     self.assertIn(decision.ems_mode, DISCHARGE_MODES)
                     self.assertFalse(decision.requires_verified_msc_before_export)
 
-    def test_zero_capped_solar_bypass_defers_to_competing_export_policies(self) -> None:
+    def test_zero_capped_solar_bypass_retains_policy_selection_but_closes_export(self) -> None:
         now_ts = datetime.now().timestamp()
         cases = (
             (
@@ -2810,27 +2810,28 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 self.assertFalse(
                     bool(decision.trace_gates.get("pv_surplus_only_ems_safety_clamp"))
                 )
+                self.assertEqual(
+                    "no_live_export",
+                    decision.trace_values.get("export_value_gate_export_type"),
+                )
+                self.assertLessEqual(decision.export_limit, 0.01)
+                self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+                self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+                self.assertFalse(decision.requires_verified_msc_before_export)
                 if name == "demand_window":
-                    self.assertEqual(
-                        "no_live_export",
-                        decision.trace_values.get("export_value_gate_export_type"),
-                    )
                     self.assertEqual(0.0, decision.export_limit)
-                    self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
                     self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
-                    self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
-                    self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
-                    self.assertFalse(decision.requires_verified_msc_before_export)
+                elif name == "solar_override":
+                    self.assertEqual(
+                        "solar_override",
+                        decision.trace_values.get("battery_export_owner"),
+                    )
                 else:
                     self.assertEqual(
-                        "battery_backed",
-                        decision.trace_values.get("export_value_gate_export_type"),
+                        "evening_export_boost",
+                        decision.trace_values.get("battery_export_owner"),
                     )
-                    self.assertGreater(decision.export_limit, 0.01)
-                    self.assertEqual(BATTERY_EXPORT, decision.export_intent)
-                    self.assertIn(decision.ems_mode, DISCHARGE_MODES)
-                    self.assertNotEqual(MODE_MAX_SELF, decision.ems_mode)
-                    self.assertFalse(decision.requires_verified_msc_before_export)
 
     def test_solar_deferral_does_not_recalculate_higher_priority_positive_fit(self) -> None:
         now_ts = datetime.now().timestamp()
