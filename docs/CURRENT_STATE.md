@@ -33,6 +33,7 @@ Active remediation worktree:
 - Package 4D production/test checkpoint: `44c63e80fa72655087504f5c612df10e6b77109f` (`Harden forecast and solar-clock telemetry trust`).
 - Package 5 actuator/fallback production/test checkpoint: `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`).
 - Package 5 chatter/reopen production/test checkpoint: `e119f6f` (`Repair Morning Slow MSC ceiling chatter`).
+- Package 6A capability-trust production/test checkpoint: `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`).
 - Verify the exact branch tip, worktree status, and remote synchronization directly with Git; documentation commits may be children of the production/test checkpoints.
 
 Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. The worktree was clean after the verified push. Package 1 has not been merged, released, deployed, or live-tested.
@@ -51,6 +52,8 @@ Package 4D is committed at `44c63e80fa72655087504f5c612df10e6b77109f`, automated
 
 Package 5 actuator/fallback reliability is committed at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473`, automated-validated, and pushed. The chatter/reopen repair is committed at `e119f6f` and automated-validated. Package 5 has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
 
+Package 6A is committed at `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3`, complete, and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+
 Protected/reference worktrees:
 
 - `C:\Projects\sigenergy_optimizer`: branch `refactor/msc-baseline-overlays`, HEAD `bce8411d5274fe17fb8d883e8e7faf43e9ce8d43`, intentionally dirty. Never modify, reset, or stash it.
@@ -63,7 +66,7 @@ Always verify branch, HEAD, and cleanliness directly before editing.
 
 Phase 1 was previously declared complete and live-accepted. That is no longer true. Phase 1 is **reopened for audit remediation** because a live Morning Slow low-SoC defect was proven and the broader audit found additional fail-closed and control-authority defects.
 
-Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, and both Package 5 subparts are complete and automated-validated. Package 6 capability modelling is next. The Morning Slow forecast-feasibility discrepancy is a separate parked investigation. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
+Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, both Package 5 subparts, and Package 6A are complete and automated-validated. Package 6B architecture/design for authoritative grid-import and PV hardware capability is next. The Morning Slow forecast-feasibility discrepancy remains parked until after Package 6. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
 
 ## Production Remediation Package 1
 
@@ -186,6 +189,16 @@ Characterization confirms that `0.094 kW` and `0.101 kW` discharge with negligib
 
 Validation: chatter characterization **11 passed, 191 warnings**; affected actuator and Value Gate tests **108 passed, 191 warnings**; focused protection **200 collected, 198 passed, 2 deselected, 191 warnings**; complete suite **419 collected, 417 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. Compileall and `git diff --check` passed.
 
+## Production Remediation Package 6A
+
+Package 6A repairs trust handling for the existing grid-export, ESS-charge, and ESS-discharge capability sources. It is complete and automated-validated at `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`). It has not been pushed, merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+
+For Automated control, a trusted hardware capability is an upper bound, while a configured ESS baseline is a request and not capability evidence. Charge and discharge remain separate domains; the effective bound is the minimum of current trusted sources in the same domain. If no current trusted source exists, Automated control uses the cached trusted rating for that domain and then `ESS_LIMIT_FALLBACK`. Invalid, unavailable, non-finite, or out-of-range evidence cannot enlarge a capability. Trusted grid-export number-entity maximum metadata bounds the Automated export target.
+
+Manual/Force behavior is temporarily frozen to exact pre-Package-6A capability inputs and fallback behavior through an isolated legacy compatibility path. This covers Manual, Full Import, Full Import + PV, Full Export, Block Flow, and manual ESS charge and discharge overrides. The compatibility path is not long-term capability policy and must not be revisited until all currently planned work is complete.
+
+Validation: Package 6A characterization **21 passed**; Manual/Force protection **13 passed, 5 deselected**; Automated export/ESS actuator protection **115 passed**; and the additional Manual/Force freeze regressions passed. The complete suite collected **440 tests: 438 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed.
+
 ## Parked investigation: Morning Slow forecast feasibility
 
 Live observation found Morning Slow active with actual operator settings: enabled `True`, until `11:00`, charge rate `2 kW`, minimum feed-in price `0.01 $/kWh`, base-load allowance `2 kW`, and sunset cutoff `1 hour`. These are live operator settings, not software defaults.
@@ -199,7 +212,7 @@ The later bounded investigation must capture and compare the exact trusted remai
 High/proven static findings unless noted otherwise:
 
 - export-spike minimum SoC does not enforce a real spike floor;
-- configured baselines can enlarge an observed capability cap, and capability domains are conflated;
+- grid-import and PV still require authoritative hardware capability sources and domain-specific architecture in Package 6B;
 - `/set_ess` can report success despite failed service calls;
 
 Medium findings:
@@ -249,4 +262,4 @@ Protect the two existing expected Phase 2 failures:
 
 ## Exact next action
 
-Package 6 capability modelling, with separate capability domains and no configured enlargement of trusted observed hardware caps, is the exact next engineering action. Keep the Morning Slow forecast-feasibility discrepancy parked. Do not deploy, live-test, or begin Phase 2 without separate authorization.
+Package 6B architecture/design for authoritative grid-import and PV hardware capability is the exact next engineering action. Do not map ESS charge capability to grid import or another capability domain to PV. Keep the Morning Slow forecast-feasibility discrepancy parked until after Package 6. Then continue in the existing order with Package 7 `/set_ess`, Package 8 configuration validation and persistence, Package 9 settings/UI, remaining cleanup, full Phase 1 validation and live acceptance, Phase 2, the short ownership audit, and Climate Manager. Do not deploy, live-test, or begin Phase 2 without separate authorization.
