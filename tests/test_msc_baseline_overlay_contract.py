@@ -452,7 +452,9 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         )
         self.assertTrue(decision.requires_verified_msc_before_export)
 
-    def test_cheap_fit_at_100_percent_closes_on_material_discharge(self) -> None:
+    def test_cheap_fit_at_100_percent_keeps_ceiling_for_load_serving_discharge(
+        self,
+    ) -> None:
         optimizer = self.optimizer()
         state = self._full_opportunity(
             battery_soc=100.0,
@@ -467,11 +469,6 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
 
         decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
 
-        self.assert_contract_outputs(
-            decision,
-            (MODE_MAX_SELF, 0.0, 0.0, 25.0),
-        )
-        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
         self.assertEqual(0.0, decision.trace_values.get("export_tier_limit"))
         self.assertEqual(
             0.2,
@@ -482,11 +479,19 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             decision.trace_values.get("pv_only_discharge_tolerance_kw"),
         )
         self.assertFalse(bool(decision.trace_gates.get("pv_only_discharge_ok")))
-        self.assertFalse(
+        self.assertTrue(bool(decision.trace_gates.get("ordinary_msc_flow_safe")))
+        self.assertEqual(
+            "load_serving_battery_discharge",
+            decision.trace_values.get("ordinary_msc_flow_classification"),
+        )
+        self.assertTrue(
             bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active"))
         )
-        self.assertFalse(decision.requires_verified_msc_before_export)
-        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assert_msc_surplus_permission(
+            decision,
+            export_ceiling=optimizer.cfg.export_limit_high,
+        )
+        self.assertTrue(decision.requires_verified_msc_before_export)
 
     def test_unobserved_automated_mode_cannot_open_normal_ceiling(self) -> None:
         optimizer = self.optimizer()

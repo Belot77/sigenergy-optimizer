@@ -2693,7 +2693,7 @@ class SigEnergyOptimizer:
             observed_automated_control_mode
             and pv_surplus_common_conditions
             and topoff_target_met
-            and pv_only_discharge_ok
+            and ordinary_msc_flow_ok
             and live_pv_plausible_for_msc_ceiling
             and not s.price_is_negative
             and not s.demand_window_active
@@ -2732,9 +2732,10 @@ class SigEnergyOptimizer:
             )
             pv_only_msc_high_ceiling_reason = (
                 "active: genuinely observed Automated and Maximum Self Consumption with "
-                "the 100% top-off target met, known battery flow within discharge "
-                "tolerance, qualifying daytime PV, and FiT at or above 1c/kWh; the "
-                "export setpoint is a ceiling."
+                "the 100% top-off target met, trusted ordinary MSC flow that does not "
+                "show meaningful simultaneous battery discharge and grid export, "
+                "qualifying daytime PV, and FiT at or above 1c/kWh; the export setpoint "
+                "is a ceiling."
             )
 
         unowned_ordinary_tier_blocked = bool(
@@ -2972,7 +2973,8 @@ class SigEnergyOptimizer:
                     f"{export_value_gate_fit_cents:.1f}c/kWh is below floor "
                     f"{export_value_gate_floor_cents:.1f}c/kWh, but the "
                     f"{desired_export_limit:.1f} kW Maximum Self Consumption setpoint "
-                    "is a ceiling and known battery discharge remains within tolerance."
+                    "is a ceiling and trusted flow does not show meaningful simultaneous "
+                    "battery discharge and grid export."
                 )
             export_value_gate_export_type = "pv_surplus_only"
 
@@ -3038,7 +3040,14 @@ class SigEnergyOptimizer:
                     "the ceiling is not requested battery energy and trusted flow does "
                     "not show meaningful simultaneous battery discharge and grid export."
                 )
-            elif pv_only_msc_high_ceiling_active or pv_only_branch_high_ceiling_active:
+            elif pv_only_msc_high_ceiling_active:
+                actual_import_cost_guard_reason = (
+                    "bypassed: confirmed exact-full Maximum Self Consumption export "
+                    "ceiling; the ceiling is not requested battery energy and trusted "
+                    "flow does not show meaningful simultaneous battery discharge and "
+                    "grid export."
+                )
+            elif pv_only_branch_high_ceiling_active:
                 actual_import_cost_guard_reason = (
                     "bypassed: confirmed PV-only Maximum Self Consumption export ceiling; "
                     "the ceiling is not requested battery energy and battery discharge "

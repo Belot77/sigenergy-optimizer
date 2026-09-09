@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-09 - Phase 1 remediation (unreleased)
+
+- Corrected the Cheap-FiT exact-full MSC exception so trusted battery discharge serving site load with grid export below the meaningful threshold retains the high `MSC_SURPLUS_CEILING` instead of closing solely above the raw 0.10 kW diagnostic tolerance.
+- Meaningful simultaneous battery discharge plus grid export and unknown or untrusted battery/grid-export evidence remain fail-closed. The path still creates no battery-export owner, remains in Maximum Self Consumption, and cannot request battery discharge.
+- Kept `pv_only_discharge_ok` and its Solar Surplus Bypass and other existing consumers unchanged; added direct-flow and cross-path invariant regressions.
+
 ## 2026-09-04 — 2.3.43-haos54
 
 - Separated ordinary Automated export permission from deliberate stored-battery export intent. Ordinary economically eligible operation remains in Maximum Self Consumption with normal PV MAX and the configured high export ceiling; only an explicit authorized policy owns `BATTERY_EXPORT`.

@@ -127,3 +127,9 @@ Decision: Missing, unavailable, unknown, stale, or non-finite current grid-impor
 Rationale: Untrusted actuator telemetry cannot prove that an actuator is safely closed. Safety therefore permits an idempotent closure request but withholds broader permission until trustworthy finite state is observed.
 
 Implementation status: Production Remediation Package 1 satisfies this decision in automated validation only. It remains uncommitted, undeployed, and not live-accepted; Phase 1 is not complete.
+
+## 2026-09-09 - Align the Cheap-FiT exact-full exception with MSC flow safety
+
+Decision: Supersede the 2026-09-04 rule that any material trusted battery discharge closes the Cheap-FiT exact-full exception. The exception now uses the existing trusted ordinary-MSC flow distinction: load-serving battery discharge with grid export below the meaningful threshold is compatible with `MSC_SURPLUS_CEILING`, while meaningful simultaneous battery discharge plus grid export and unknown or untrusted battery/grid-export evidence remain fail-closed. The ceiling creates no `BATTERY_EXPORT` owner and cannot select a discharge EMS mode. The raw `pv_only_discharge_ok` predicate remains unchanged for policies that still intentionally require it.
+
+Rationale: The central MSC flow model already distinguishes benign site-load service from evidence of stored-battery export. Reusing that contract prevents the exact-full branch from contradicting ordinary MSC safety without weakening simultaneous-export or telemetry-trust protections.

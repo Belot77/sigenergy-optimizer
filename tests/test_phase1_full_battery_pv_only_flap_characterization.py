@@ -15,7 +15,7 @@ from haos49_characterization_helpers import Haos49CharacterizationCase
 class Phase1FullBatteryPvOnlyFlapCharacterizationTests(
     Haos49CharacterizationCase
 ):
-    """Characterize the current exact-full PV-only evidence-source flap."""
+    """Protect exact-full trusted-flow behavior and the separate fallback flap."""
 
     DIRECT_BATTERY_POWER_KW = -0.007
     PV_POWER_KW = 6.0
@@ -284,7 +284,7 @@ class Phase1FullBatteryPvOnlyFlapCharacterizationTests(
             tuple(d.export_intent for d in decisions),
         )
 
-    def test_fresh_direct_load_serving_discharge_exposes_exact_full_gate_mismatch(
+    def test_fresh_direct_exact_full_uses_ordinary_msc_flow_safety(
         self,
     ) -> None:
         optimizer = self.optimizer(
@@ -295,6 +295,10 @@ class Phase1FullBatteryPvOnlyFlapCharacterizationTests(
             ess_charge_limit_value=100.0,
             ess_discharge_limit_value=100.0,
             ess_limit_fallback_kw=100.0,
+            export_value_gate_enabled=True,
+            export_value_gate_dry_run=True,
+            export_value_gate_enforce=False,
+            export_value_gate_min_floor=35.0,
         )
         base_context = self._fresh_live_context()
         cases = (
@@ -320,9 +324,9 @@ class Phase1FullBatteryPvOnlyFlapCharacterizationTests(
                 False,
                 True,
                 False,
-                0.0,
-                "blocked_or_zero",
-                EXPORT_BLOCKED,
+                25.0,
+                "msc_full_battery_high_ceiling",
+                MSC_SURPLUS_CEILING,
             ),
             (
                 "material_simultaneous_meaningful_export",
@@ -445,11 +449,11 @@ class Phase1FullBatteryPvOnlyFlapCharacterizationTests(
                     bool(decision.trace_gates.get("pv_only_discharge_ok")),
                 )
                 self.assertEqual(
-                    expected_pv_only_discharge_ok,
+                    expected_flow_safe,
                     bool(decision.trace_gates.get("pv_only_msc_transition_ready")),
                 )
                 self.assertEqual(
-                    expected_pv_only_discharge_ok,
+                    expected_flow_safe,
                     bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active")),
                 )
                 self.assertEqual(expected_export_limit, decision.export_limit)
@@ -466,6 +470,7 @@ class Phase1FullBatteryPvOnlyFlapCharacterizationTests(
                     "none",
                     decision.trace_values.get("battery_export_owner"),
                 )
+                self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
                 for inactive_gate in (
                     "morning_dump_active",
                     "morning_slow_charge_active",
@@ -491,10 +496,177 @@ class Phase1FullBatteryPvOnlyFlapCharacterizationTests(
             bool(load_serving.trace_gates.get("ordinary_msc_flow_safe"))
         )
         self.assertFalse(bool(load_serving.trace_gates.get("pv_only_discharge_ok")))
-        self.assertEqual(0.0, load_serving.export_limit)
+        self.assertTrue(
+            bool(load_serving.trace_gates.get("pv_only_msc_high_ceiling_active"))
+        )
+        self.assertEqual(25.0, load_serving.export_limit)
+        self.assertEqual(MSC_SURPLUS_CEILING, load_serving.export_intent)
+        for reason_key in (
+            "pv_only_msc_high_ceiling_reason",
+            "export_value_gate_reason",
+        ):
+            reason = str(load_serving.trace_values.get(reason_key, "")).lower()
+            self.assertIn("trusted", reason, reason_key)
+            self.assertIn("simultaneous", reason, reason_key)
+            self.assertNotIn("within tolerance", reason, reason_key)
+            self.assertNotIn("remains within tolerance", reason, reason_key)
 
         simultaneous = decisions["material_simultaneous_meaningful_export"]
         self.assertFalse(
             bool(simultaneous.trace_gates.get("ordinary_msc_flow_safe"))
         )
         self.assertEqual(EXPORT_BLOCKED, simultaneous.export_intent)
+
+    def test_exact_full_unknown_battery_or_grid_export_flow_fails_closed(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            export_threshold_low=0.10,
+            export_limit_high=25.0,
+            min_grid_transfer_kw=1.0,
+        )
+        base_context = self._fresh_live_context()
+        unavailable = HVACObservedValue(value=None, available=False, fresh=False)
+        cases = (
+            (
+                "unknown_battery_flow",
+                replace(
+                    base_context,
+                    battery_power=unavailable,
+                    grid_import_power=unavailable,
+                    grid_export_power=self._observed(0.0),
+                ),
+                None,
+                None,
+                0.0,
+                False,
+            ),
+            (
+                "unknown_grid_export_flow",
+                replace(
+                    base_context,
+                    battery_power=self._observed(-0.005),
+                    grid_export_power=unavailable,
+                ),
+                -0.005,
+                0.0,
+                None,
+                True,
+            ),
+        )
+
+        for (
+            name,
+            context,
+            battery_power_kw,
+            grid_import_kw,
+            grid_export_kw,
+            expected_raw_discharge_ok,
+        ) in cases:
+            with self.subTest(name=name):
+                state = self._full_battery_msc_state(context)
+                state.feedin_price = 0.0664
+                state.feedin_price_cents = 6.64
+                state.battery_power_sensor_kw = battery_power_kw
+                state.grid_import_power_kw = grid_import_kw
+                state.grid_export_power_kw = grid_export_kw
+
+                decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+                self.assertEqual(
+                    expected_raw_discharge_ok,
+                    bool(decision.trace_gates.get("pv_only_discharge_ok")),
+                )
+                self.assertFalse(
+                    bool(decision.trace_gates.get("ordinary_msc_flow_trusted"))
+                )
+                self.assertFalse(
+                    bool(decision.trace_gates.get("ordinary_msc_flow_safe"))
+                )
+                self.assertFalse(
+                    bool(decision.trace_gates.get("pv_only_msc_transition_ready"))
+                )
+                self.assertFalse(
+                    bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active"))
+                )
+                self.assertEqual(0.0, decision.export_limit)
+                self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                self.assertEqual(
+                    "none", decision.trace_values.get("battery_export_owner")
+                )
+                self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+
+    def test_ordinary_and_exact_full_msc_share_trusted_flow_interpretation(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            export_threshold_low=0.10,
+            export_limit_high=25.0,
+            min_grid_transfer_kw=1.0,
+        )
+        base_context = self._fresh_live_context()
+        cases = (
+            ("load_serving", 0.0, "load_serving_battery_discharge", True),
+            (
+                "simultaneous_export",
+                1.0,
+                "simultaneous_battery_discharge_and_grid_export",
+                False,
+            ),
+        )
+
+        for name, grid_export_kw, expected_classification, expected_safe in cases:
+            with self.subTest(name=name):
+                context = replace(
+                    base_context,
+                    battery_power=self._observed(-1.629),
+                    grid_export_power=self._observed(grid_export_kw),
+                )
+                exact_full_state = self._full_battery_msc_state(context)
+                exact_full_state.feedin_price = 0.0664
+                exact_full_state.feedin_price_cents = 6.64
+                exact_full_state.battery_power_sensor_kw = -1.629
+                exact_full_state.grid_export_power_kw = grid_export_kw
+
+                ordinary_state = self._full_battery_msc_state(context)
+                ordinary_state.battery_soc = 60.0
+                ordinary_state.available_discharge_energy_kwh = 24.0
+                ordinary_state.feedin_price = 0.15
+                ordinary_state.feedin_price_cents = 15.0
+                ordinary_state.battery_power_sensor_kw = -1.629
+                ordinary_state.grid_export_power_kw = grid_export_kw
+
+                exact_full = self.decide(
+                    optimizer, exact_full_state, self.FIXED_AFTERNOON
+                )
+                ordinary = self.decide(
+                    optimizer, ordinary_state, self.FIXED_AFTERNOON
+                )
+
+                self.assertEqual(
+                    expected_classification,
+                    exact_full.trace_values.get("ordinary_msc_flow_classification"),
+                )
+                self.assertEqual(
+                    exact_full.trace_values.get("ordinary_msc_flow_classification"),
+                    ordinary.trace_values.get("ordinary_msc_flow_classification"),
+                )
+                self.assertEqual(
+                    expected_safe,
+                    bool(exact_full.trace_gates.get("ordinary_msc_flow_safe")),
+                )
+                self.assertEqual(
+                    bool(exact_full.trace_gates.get("ordinary_msc_flow_safe")),
+                    bool(ordinary.trace_gates.get("ordinary_msc_flow_safe")),
+                )
+                expected_limit = 25.0 if expected_safe else 0.0
+                expected_intent = (
+                    MSC_SURPLUS_CEILING if expected_safe else EXPORT_BLOCKED
+                )
+                for decision in (exact_full, ordinary):
+                    self.assertEqual(expected_limit, decision.export_limit)
+                    self.assertEqual(expected_intent, decision.export_intent)
+                    self.assertEqual(
+                        "none", decision.trace_values.get("battery_export_owner")
+                    )
+                    self.assertEqual(MODE_MAX_SELF, decision.ems_mode)

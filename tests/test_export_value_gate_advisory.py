@@ -829,7 +829,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
         self.assertTrue(decision.requires_verified_msc_before_export)
 
-    def test_cheap_fit_at_100_percent_closes_on_material_battery_discharge(self) -> None:
+    def test_cheap_fit_at_100_percent_closes_on_simultaneous_battery_discharge_and_grid_export(self) -> None:
         now_ts = datetime.now().timestamp()
         optimizer = self._cheap_fit_optimizer()
         state = self._qualifying_full_battery_msc_state(
@@ -852,9 +852,20 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertEqual(1.0, decision.trace_values.get("battery_discharge_kw_for_pv_only"))
         self.assertEqual(0.1, decision.trace_values.get("pv_only_discharge_tolerance_kw"))
         self.assertFalse(bool(decision.trace_gates.get("pv_only_discharge_ok")))
+        self.assertTrue(bool(decision.trace_gates.get("ordinary_msc_flow_trusted")))
+        self.assertTrue(
+            bool(
+                decision.trace_gates.get(
+                    "ordinary_msc_simultaneous_battery_discharge_and_grid_export"
+                )
+            )
+        )
+        self.assertFalse(bool(decision.trace_gates.get("ordinary_msc_flow_safe")))
         self.assertEqual(0.0, decision.trace_values.get("export_tier_limit"))
         self.assertFalse(bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active")))
         self.assertEqual(0.0, decision.export_limit)
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
         self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
         self.assertFalse(decision.requires_verified_msc_before_export)
@@ -1051,7 +1062,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         decision = optimizer._decide(state)
 
         self.assertFalse(bool(decision.trace_gates.get("pv_only_discharge_ok")))
-        self.assertFalse(bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active")))
+        self.assertTrue(bool(decision.trace_gates.get("ordinary_msc_flow_safe")))
+        self.assertTrue(bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active")))
         self.assertFalse(bool(decision.trace_gates.get("pv_only_msc_stage1_active")))
         self.assertTrue(
             bool(

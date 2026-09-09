@@ -112,8 +112,11 @@ Cheap positive FiT below the ordinary export threshold remains a separate protec
 
 - below 100% SoC, the implicit path is closed;
 - at exact 100%, a high ceiling may open only through the verified Automated plus exact Maximum Self Consumption PV-only path;
-- material trusted battery discharge above the existing tolerance closes the exception;
-- unknown or untrusted flow cannot broaden it;
+- trusted battery discharge serving site load while grid export remains below the meaningful threshold is compatible with the MSC surplus ceiling;
+- meaningful simultaneous battery discharge plus grid export remains fail-closed;
+- unknown or untrusted battery-flow or grid-export evidence remains fail-closed;
+- the high value is only an MSC surplus ceiling and never a request to discharge or export the battery;
+- it creates no `BATTERY_EXPORT` owner;
 - it never uses `Command Discharging (PV First)`;
 - it must not be generalized into ordinary positive-FiT rules.
 
