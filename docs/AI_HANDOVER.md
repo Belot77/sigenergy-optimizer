@@ -19,7 +19,8 @@ GitHub `main` remains `c624f0b4392634cf19276186ba46f4b80268627b` (`Record Phase 
 - Package 5 actuator/fallback production/test checkpoint: `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`).
 - Package 5 chatter/reopen production/test checkpoint: `e119f6f` (`Repair Morning Slow MSC ceiling chatter`).
 - Package 6A capability-trust production/test checkpoint: `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`).
-- Package 6A is complete and automated-validated. It has not been pushed, merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+- Package 6A documentation checkpoint: `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573`.
+- Both Package 6A checkpoints are pushed to `origin/fix/phase1-audit-remediation`. Package 6A is complete and automated-validated, but has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
 
 Protected worktrees remain unchanged. Never modify, reset, or stash `C:\Projects\sigenergy_optimizer` or `C:\Projects\sigenergy_optimizer-pv-hotfix`. The Phase 2 worktree remains frozen.
 
