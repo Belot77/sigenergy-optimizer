@@ -207,7 +207,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
         self.assertEqual("none", decision.trace_values["battery_export_owner"])
 
-    def test_fresh_direct_discharge_just_above_010_blocks_morning_slow_ceiling(
+    def test_fresh_direct_discharge_just_above_010_keeps_morning_slow_ceiling(
         self,
     ) -> None:
         optimizer = self._morning_slow_optimizer()
@@ -219,9 +219,15 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
 
         self.assertTrue(decision.morning_slow_charge_active)
         self.assertEqual(0.101, decision.trace_values["battery_discharge_kw_for_pv_only"])
-        self.assertTrue(decision.trace_gates["pv_only_branch_battery_safety_blocked"])
-        self.assertEqual(0.0, decision.export_limit)
-        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertEqual(
+            "load_serving_battery_discharge",
+            decision.trace_values["ordinary_msc_flow_classification"],
+        )
+        self.assertTrue(decision.trace_gates["ordinary_msc_flow_safe"])
+        self.assertFalse(decision.trace_gates["pv_only_branch_battery_safety_blocked"])
+        self.assertEqual(optimizer.cfg.export_limit_high, decision.export_limit)
+        self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
+        self.assertEqual("none", decision.trace_values["battery_export_owner"])
 
     def test_material_32kw_load_serving_discharge_with_pv_below_load_stays_closed(
         self,
@@ -271,7 +277,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         self.assertEqual(0.0, decision.export_limit)
         self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
 
-    def test_fresh_threshold_snapshots_can_drive_25_0_25_0_without_stateful_hold(
+    def test_fresh_threshold_snapshots_keep_stable_ceiling_without_stateful_hold(
         self,
     ) -> None:
         optimizer = self._morning_slow_optimizer()
@@ -291,7 +297,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
             optimizer._last_state = state
             optimizer._last_decision = decision
 
-        self.assertEqual([25.0, 0.0, 25.0, 0.0], decisions)
+        self.assertEqual([25.0, 25.0, 25.0, 25.0], decisions)
 
     def test_unsettled_simultaneous_flow_reissues_safety_close_each_cycle(self) -> None:
         ha = RecordingHA(

@@ -1037,9 +1037,17 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
         self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
 
-    def test_morning_slow_low_soc_unsafe_battery_flow_remains_blocked(self) -> None:
+    def test_morning_slow_low_soc_simultaneous_or_unknown_flow_remains_blocked(
+        self,
+    ) -> None:
         cases = (
-            ("material_discharge", {"battery_power_sensor_kw": -0.2}),
+            (
+                "simultaneous_discharge_and_export",
+                {
+                    "battery_power_sensor_kw": -0.2,
+                    "grid_export_power_kw": 1.0,
+                },
+            ),
             (
                 "unknown_flow",
                 {
@@ -1602,7 +1610,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                     decision.ess_discharge_limit,
                 )
 
-    def test_morning_slow_positive_fit_overlap_retains_package2_flow_safety(
+    def test_morning_slow_positive_fit_overlap_allows_load_serving_discharge(
         self,
     ) -> None:
         when = datetime(2026, 1, 15, 9, 0)
@@ -1632,16 +1640,20 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         decision = self.decide(optimizer, state, when)
 
         self.assertTrue(bool(decision.trace_gates.get("morning_slow_charge_active")))
-        self.assertTrue(
+        self.assertFalse(
             bool(decision.trace_gates.get("pv_only_branch_battery_safety_blocked"))
         )
-        self.assert_contract_outputs(
+        self.assertEqual(
+            "load_serving_battery_discharge",
+            decision.trace_values.get("ordinary_msc_flow_classification"),
+        )
+        self.assert_msc_surplus_permission(
             decision,
-            (MODE_MAX_SELF, 0.0, 0.0, optimizer.cfg.pv_max_power_normal),
+            export_ceiling=optimizer.cfg.export_limit_high,
         )
         self.assertEqual(optimizer.cfg.morning_slow_charge_rate_kw, decision.ess_charge_limit)
         self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
-        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
 
     def test_positive_fit_battery_export_enabled_retains_low_soc_export_guard(
         self,

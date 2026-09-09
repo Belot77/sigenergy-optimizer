@@ -2544,30 +2544,53 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
 
                         decision = optimizer._decide(state)
 
+                        morning_load_serving = bool(
+                            branch == "morning_slow_charge"
+                            and flow_name == "material_discharge"
+                        )
                         self.assertTrue(bool(decision.trace_gates.get("pv_only_branch_high_ceiling_requested")))
-                        self.assertFalse(bool(decision.trace_gates.get("pv_only_branch_high_ceiling_active")))
-                        self.assertTrue(bool(decision.trace_gates.get("pv_only_branch_battery_safety_blocked")))
                         self.assertFalse(bool(decision.trace_gates.get("pv_only_discharge_ok")))
                         self.assertEqual(
                             expected_flow_source,
                             decision.trace_values.get("battery_flow_source_for_pv_only"),
                         )
                         self.assertEqual(branch, decision.trace_values.get("pv_only_branch_source"))
-                        self.assertEqual(
-                            "no_live_export",
-                            decision.trace_values.get("export_value_gate_export_type"),
-                        )
-                        self.assertEqual(0.0, decision.export_limit)
-                        self.assertEqual(
-                            "ordinary_msc_surplus_closed",
-                            decision.trace_values.get("desired_export_source"),
-                        )
-                        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
                         self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
                         self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
                         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
-                        self.assertFalse(decision.requires_verified_msc_before_export)
-                        self.assertIn("held closed", decision.export_reason.lower())
+                        if morning_load_serving:
+                            self.assertTrue(bool(decision.trace_gates.get("pv_only_branch_high_ceiling_active")))
+                            self.assertFalse(bool(decision.trace_gates.get("pv_only_branch_battery_safety_blocked")))
+                            self.assertEqual(
+                                "load_serving_battery_discharge",
+                                decision.trace_values.get("ordinary_msc_flow_classification"),
+                            )
+                            self.assertEqual(
+                                "pv_surplus_only",
+                                decision.trace_values.get("export_value_gate_export_type"),
+                            )
+                            self.assertEqual(optimizer.cfg.export_limit_high, decision.export_limit)
+                            self.assertEqual(
+                                "morning_slow_pv_high",
+                                decision.trace_values.get("desired_export_source"),
+                            )
+                            self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
+                            self.assertTrue(decision.requires_verified_msc_before_export)
+                        else:
+                            self.assertFalse(bool(decision.trace_gates.get("pv_only_branch_high_ceiling_active")))
+                            self.assertTrue(bool(decision.trace_gates.get("pv_only_branch_battery_safety_blocked")))
+                            self.assertEqual(
+                                "no_live_export",
+                                decision.trace_values.get("export_value_gate_export_type"),
+                            )
+                            self.assertEqual(0.0, decision.export_limit)
+                            self.assertEqual(
+                                "ordinary_msc_surplus_closed",
+                                decision.trace_values.get("desired_export_source"),
+                            )
+                            self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                            self.assertFalse(decision.requires_verified_msc_before_export)
+                            self.assertIn("held closed", decision.export_reason.lower())
 
     def test_unsafe_pv_only_ceiling_closes_when_no_independent_policy_allows_export(self) -> None:
         now_ts = datetime.now().timestamp()

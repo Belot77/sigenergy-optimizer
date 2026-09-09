@@ -2338,7 +2338,14 @@ class SigEnergyOptimizer:
             )
         )
         pv_only_branch_battery_safety_blocked = bool(
-            pv_only_branch_high_ceiling_requested and not pv_only_discharge_ok
+            (
+                morning_slow_pv_only_high_ceiling_requested
+                and not ordinary_msc_flow_ok
+            )
+            or (
+                solar_surplus_pv_only_high_ceiling_requested
+                and not pv_only_discharge_ok
+            )
         )
         pv_only_branch_automated_ownership_blocked = bool(
             pv_only_branch_high_ceiling_requested
@@ -2372,6 +2379,22 @@ class SigEnergyOptimizer:
                 f"blocked {pv_only_branch_source}: Automated ownership is unavailable "
                 "or not genuinely observed"
             )
+        elif morning_slow_pv_only_high_ceiling_requested:
+            if not ordinary_msc_flow_trusted:
+                pv_only_branch_safety_reason = (
+                    "blocked morning_slow_charge: battery or grid-export flow is "
+                    "unknown or untrustworthy"
+                )
+            elif ordinary_simultaneous_battery_grid_export:
+                pv_only_branch_safety_reason = (
+                    "blocked morning_slow_charge: meaningful battery discharge and "
+                    "grid export are simultaneously observed"
+                )
+            else:
+                pv_only_branch_safety_reason = (
+                    "active morning_slow_charge: trusted ordinary MSC flow is safe "
+                    f"({ordinary_msc_flow_classification})"
+                )
         elif battery_discharge_kw_for_pv_only is None:
             pv_only_branch_safety_reason = (
                 f"blocked {pv_only_branch_source}: battery flow is unknown or untrustworthy"
