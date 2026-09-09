@@ -35,6 +35,8 @@ Active remediation worktree:
 - Package 5 chatter/reopen production/test checkpoint: `e119f6f` (`Repair Morning Slow MSC ceiling chatter`).
 - Package 6A capability-trust production/test checkpoint: `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`).
 - Package 6A documentation checkpoint: `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573`.
+- Package 6A documentation-sync checkpoint and current branch HEAD: `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69`.
+- Sole local change at this checkpoint: untracked `tests/test_phase1_full_battery_pv_only_flap_characterization.py`; there are no production changes.
 - Verify the exact branch tip, worktree status, and remote synchronization directly with Git; documentation commits may be children of the production/test checkpoints.
 
 Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. The worktree was clean after the verified push. Package 1 has not been merged, released, deployed, or live-tested.
@@ -53,7 +55,9 @@ Package 4D is committed at `44c63e80fa72655087504f5c612df10e6b77109f`, automated
 
 Package 5 actuator/fallback reliability is committed at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473`, automated-validated, and pushed. The chatter/reopen repair is committed at `e119f6f` and automated-validated. Package 5 has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
 
-Package 6A is committed at `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3`, complete, automated-validated, and pushed to `origin/fix/phase1-audit-remediation`. Its documentation checkpoint `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573` is also pushed. It has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+Package 6A is committed at `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3`, complete, automated-validated, and pushed to `origin/fix/phase1-audit-remediation`. Its documentation checkpoints `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573` and `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69` are also pushed. It has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+
+Nothing from the current remediation branch has been deployed, live-tested, or live-accepted.
 
 Protected/reference worktrees:
 
@@ -67,7 +71,7 @@ Always verify branch, HEAD, and cleanliness directly before editing.
 
 Phase 1 was previously declared complete and live-accepted. That is no longer true. Phase 1 is **reopened for audit remediation** because a live Morning Slow low-SoC defect was proven and the broader audit found additional fail-closed and control-authority defects.
 
-Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, both Package 5 subparts, and Package 6A are complete and automated-validated. Package 6B architecture/design for authoritative grid-import and PV hardware capability is next. The Morning Slow forecast-feasibility discrepancy remains parked until after Package 6. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
+Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, both Package 5 subparts, and Package 6A are complete and automated-validated. Package 6B read-only investigation is complete and implementation is deferred. A proven live full-battery PV-only `25 -> 0` flap now has priority: resolve, validate, and live-accept it before Package 7. The Morning Slow forecast-feasibility discrepancy remains parked. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
 
 ## Production Remediation Package 1
 
@@ -198,7 +202,24 @@ For Automated control, a trusted hardware capability is an upper bound, while a 
 
 Manual/Force behavior is temporarily frozen to exact pre-Package-6A capability inputs and fallback behavior through an isolated legacy compatibility path. This covers Manual, Full Import, Full Import + PV, Full Export, Block Flow, and manual ESS charge and discharge overrides. The compatibility path is not long-term capability policy and must not be revisited until all currently planned work is complete.
 
-Validation: Package 6A characterization **21 passed**; Manual/Force protection **13 passed, 5 deselected**; Automated export/ESS actuator protection **115 passed**; and the additional Manual/Force freeze regressions passed. The complete suite collected **440 tests: 438 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed.
+Validation: Package 6A characterization **21 passed**; Manual/Force protection **13 passed, 5 deselected**; Automated export/ESS actuator protection **115 passed**; and the additional Manual/Force freeze regressions passed. The complete suite collected **440 tests: 438 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` passed, and `git diff --check` passed apart from the prior line-ending notices.
+
+## Package 6B investigation
+
+The read-only Package 6B investigation is complete; implementation is deferred and no production change was made. Do not invent a speculative grid-import or PV-capability architecture. The known ESS-to-grid-import capability coupling remains parked. Software defaults alone do not establish that normal PV MAX or the high export ceiling is universally 25 kW; the specific current live flap captures an observed 25 kW.
+
+## Proven live defect: full-battery PV-only `25 -> 0` flap
+
+This defect has priority before Package 7 and has two proven mechanisms:
+
+1. With exact-full SoC, fresh direct battery discharge around `0.007 kW` permits the 25 kW ceiling, while stale direct evidence selects a measured-grid-flow residual around `0.75 kW` and closes it. Alternating direct freshness reproduces `25 -> 0 -> 25 -> 0`. Later normal live samples showed the residual materially disagreeing with direct battery power even when Home Assistant `last_reported` timestamps were effectively simultaneous, so the residual is not equivalent to direct evidence near the `0.10 kW` threshold. This mechanism is real and characterized, but it is not required for the newly captured flap.
+2. The newly proven live mechanism uses fresh direct evidence. At about 15:31 local, PV fell below load while SoC remained 100%, grid export was zero, and fresh direct battery discharge rose from about `0.005 kW` to `1.629 kW`. The optimizer classified the closing sample as `ordinary_msc_load_serving_battery_discharge=true`, `ordinary_msc_simultaneous_battery_discharge_and_grid_export=false`, and `ordinary_msc_flow_safe=true`, yet `pv_only_discharge_ok=false`, `pv_only_msc_transition_ready=false`, `export_branch=blocked_or_zero`, and desired export `0`. Later closed samples retained fresh direct discharge around `1.6-1.9 kW` with no meaningful export; PV recovery and near-zero direct discharge reopened 25 kW. FiT below the configured ordinary `0.10 $/kWh` export threshold makes the visible flap `25 -> 0`.
+
+The exact-full raw `0.10 kW` discharge gate therefore conflicts with the already trusted ordinary-MSC distinction between safe load-serving discharge and unsafe simultaneous battery discharge plus meaningful grid export.
+
+The sole local characterization file is untracked `tests/test_phase1_full_battery_pv_only_flap_characterization.py`; it contains no production change. Its latest targeted run was **2 passed, 191 warnings in 0.39s** and covers both stale/fallback behavior and three fresh-direct cases: `0.005 kW` discharge with zero export is safe/open at 25 kW; `1.629 kW` discharge with zero export is load-serving and ordinary-MSC safe but current production closes the exact-full ceiling; and `1.629 kW` discharge with exactly `1.0 kW` export is simultaneous, unsafe, and closed. No broader suite has been run after this characterization.
+
+No remedy or new approved contract is encoded. The next explicit decision is whether exact-full PV-only permission should accept trusted load-serving battery discharge while remaining fail-closed for meaningful simultaneous discharge plus export and for unknown or untrusted evidence. The recommended surgical direction is to reuse the existing trusted ordinary-MSC safety distinction without authorizing battery export, subject to explicit approval.
 
 ## Parked investigation: Morning Slow forecast feasibility
 
@@ -213,7 +234,7 @@ The later bounded investigation must capture and compare the exact trusted remai
 High/proven static findings unless noted otherwise:
 
 - export-spike minimum SoC does not enforce a real spike floor;
-- grid-import and PV still require authoritative hardware capability sources and domain-specific architecture in Package 6B;
+- authoritative grid-import and PV hardware capability remain deferred after the read-only Package 6B investigation; the known ESS-to-grid-import coupling is parked and no speculative architecture is approved;
 - `/set_ess` can report success despite failed service calls;
 
 Medium findings:
@@ -240,7 +261,7 @@ Still unresolved: exact-zero import when FiT/export is extremely valuable, and P
 
 These are operator settings, not software-default policy:
 
-- normal PV MAX and high export ceiling: 25 kW;
+- the specific current live flap captures observed normal PV MAX and high export ceiling at 25 kW; do not infer a universal operator truth from software defaults;
 - `MIN_SOC_FLOOR`: 20%; `MIN_EXPORT_TARGET_SOC`: 90%;
 - Morning Slow: enabled `True`, 2 kW charge rate, until 11:00, minimum FiT `0.01`, base-load allowance 2 kW, sunset cutoff 1 hour;
 - Morning Dump: enabled, 15% floor;
@@ -263,4 +284,4 @@ Protect the two existing expected Phase 2 failures:
 
 ## Exact next action
 
-Package 6B architecture/design for authoritative grid-import and PV hardware capability is the exact next engineering action. Do not map ESS charge capability to grid import or another capability domain to PV. Keep the Morning Slow forecast-feasibility discrepancy parked until after Package 6. Then continue in the existing order with Package 7 `/set_ess`, Package 8 configuration validation and persistence, Package 9 settings/UI, remaining cleanup, full Phase 1 validation and live acceptance, Phase 2, the short ownership audit, and Climate Manager. Do not deploy, live-test, or begin Phase 2 without separate authorization.
+Make the explicit policy decision for the full-battery PV-only flap: whether trusted ordinary-MSC load-serving discharge may retain the exact-full high ceiling while meaningful simultaneous battery discharge plus grid export and unknown or untrusted evidence remain fail-closed. If approved, implement the smallest surgical repair, validate it, and obtain separate authorization for live acceptance. Do not resume Package 7 `/set_ess` until the flap is live-accepted. Package 6B implementation, Morning Slow forecast work, Phase 2, and Manual/Force changes remain deferred or frozen. Do not deploy, live-test, or begin Phase 2 without separate authorization.
