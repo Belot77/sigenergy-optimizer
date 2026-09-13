@@ -21,9 +21,9 @@ GitHub `main` remains `c624f0b4392634cf19276186ba46f4b80268627b` (`Record Phase 
 - Package 6A capability-trust production/test checkpoint: `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`).
 - Package 6A documentation checkpoint: `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573`.
 - Package 6A documentation-sync checkpoint: `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69`.
-- Exact-full MSC load-serving-discharge repair and current committed HEAD: `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2` (`Repair exact-full MSC load-serving discharge handling`). The upstream remediation branch was directly verified at the same SHA before the current uncommitted repair.
-- Current uncommitted work: the Solar Surplus PV-margin hysteresis repair, including runtime API/config validation, environment/UI exposure, tests, and bounded documentation. The corrected dirty inventory is 14 modified files with no staged or untracked files.
-- The Solar Surplus repair is not committed, pushed, tagged, built, released, deployed, installed, restarted, live-tested, or live-accepted.
+- Current local branch HEAD: `7ded75f9155d7002150a7308f03eb9510f5beb39` (`Stabilize Solar Surplus bypass hysteresis`), with parent `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2` (`Repair exact-full MSC load-serving discharge handling`).
+- The Solar Surplus PV-margin hysteresis repair, including runtime API/config validation, environment/UI exposure, tests, and bounded documentation, is committed locally at the current HEAD but is not pushed. The branch is ahead of `origin/fix/phase1-audit-remediation` by one commit, and the working tree was clean immediately after the commit.
+- The Solar Surplus repair has not been tagged, built, released, deployed, installed, restarted, live-tested, or live-accepted.
 
 Nothing from the current remediation branch has been deployed, live-tested, or live-accepted.
 
@@ -62,9 +62,9 @@ Regression coverage for the committed exact-full repair proves the trusted load-
 
 The exact-full repair is committed and pushed at `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2`, but is not merged, released, deployed, installed, restarted, live-tested, or live-accepted.
 
-## Current Solar Surplus PV-margin repair
+## Committed local Solar Surplus PV-margin repair
 
-The uncommitted repair retains entry strictly above 0.5 kW and permits continuation strictly above 0.2 kW only when the immediately previous decision genuinely held a Solar-Surplus-owned high `MSC_SURPLUS_CEILING` under observed Automated ownership. At or below 0.2 kW it stops; re-entry again requires more than 0.5 kW. Forecast hysteresis remains 2.0 start / 1.25 continue. No timer or smoothing is added.
+The locally committed repair retains entry strictly above 0.5 kW and permits continuation strictly above 0.2 kW only when the immediately previous decision genuinely held a Solar-Surplus-owned high `MSC_SURPLUS_CEILING` under observed Automated ownership. At or below 0.2 kW it stops; re-entry again requires more than 0.5 kW. Forecast hysteresis remains 2.0 start / 1.25 continue. No timer or smoothing is added.
 
 The new `solar_surplus_stop_pv_margin` / `SOLAR_SURPLUS_STOP_PV_MARGIN` setting defaults to 0.2 kW. Initialization and runtime API updates preserve `0.0 <= solar_surplus_stop_pv_margin <= solar_surplus_min_pv_margin`; a valid batch is checked as its final requested pair before mutation. Solar Surplus remains an MSC surplus-ceiling policy, creates no battery-export authority, and does not redesign EMS or PV MAX.
 
@@ -82,6 +82,6 @@ Validation evidence: focused API/config **11 passed**; affected Solar Surplus **
 
 ## Next action
 
-Perform an independent read-only re-review of the final 14-file uncommitted checkpoint. If it passes, decide whether to commit the bounded Solar Surplus repair. `.55` candidate metadata preparation is functionally unblocked but must wait until this checkpoint passes review and is committed.
+Review and commit this post-commit documentation truth correction, then decide separately whether to push the branch.
 
-Do not push, release, deploy, install, restart, or claim live acceptance as part of that commit decision. Preserve the Phase 2 close -> observe closed -> request MSC -> observe exact MSC -> reopen contract and its two expected failing tests.
+Do not release, deploy, install, restart, or claim live acceptance as part of either decision. Preserve the Phase 2 close -> observe closed -> request MSC -> observe exact MSC -> reopen contract and its two expected failing tests.

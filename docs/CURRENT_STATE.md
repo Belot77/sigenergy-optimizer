@@ -36,8 +36,8 @@ Active remediation worktree:
 - Package 6A capability-trust production/test checkpoint: `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`).
 - Package 6A documentation checkpoint: `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573`.
 - Package 6A documentation-sync checkpoint: `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69`.
-- Exact-full MSC flow-safety repair and current committed branch HEAD: `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2` (`Repair exact-full MSC load-serving discharge handling`).
-- Local status: uncommitted Solar Surplus PV-margin hysteresis repair across five production/config/UI/API surfaces (`.env.example`, `app/config.py`, `app/optimizer.py`, `app/routers/api.py`, and `templates/index.html`), three test files, and six bounded control/checkpoint documentation files. The final corrected dirty inventory is 14 files, including `docs/AI_HANDOVER.md`. Nothing from this Solar Surplus repair is committed, pushed, tagged, built, released, deployed, installed, restarted, live-tested, or live-accepted.
+- Current local branch HEAD: `7ded75f9155d7002150a7308f03eb9510f5beb39` (`Stabilize Solar Surplus bypass hysteresis`), with parent `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2` (`Repair exact-full MSC load-serving discharge handling`).
+- Local status: the Solar Surplus PV-margin hysteresis repair is committed locally at the current HEAD but is not pushed. The branch is ahead of `origin/fix/phase1-audit-remediation` by one commit, and the working tree was clean immediately after the commit. The repair has not been tagged, built, released, deployed, installed, restarted, live-tested, or live-accepted.
 - Verify the exact branch tip, worktree status, and remote synchronization directly with Git; documentation commits may be children of the production/test checkpoints.
 
 Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. The worktree was clean after the verified push. Package 1 has not been merged, released, deployed, or live-tested.
@@ -72,7 +72,7 @@ Always verify branch, HEAD, and cleanliness directly before editing.
 
 Phase 1 was previously declared complete and live-accepted. That is no longer true. Phase 1 is **reopened for audit remediation** because a live Morning Slow low-SoC defect was proven and the broader audit found additional fail-closed and control-authority defects.
 
-Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, both Package 5 subparts, Package 6A, and the exact-full MSC load-serving-discharge repair are complete, automated-validated, committed, and present on the remote remediation branch. Package 6B read-only investigation is complete and implementation is deferred. The Solar Surplus PV-margin hysteresis repair is automated-validated but remains uncommitted and unpushed pending independent read-only re-review of the corrected 14-file checkpoint. The stale-direct/measured-grid-flow fallback discrepancy and Morning Slow forecast-feasibility discrepancy remain parked. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
+Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, both Package 5 subparts, Package 6A, and the exact-full MSC load-serving-discharge repair are complete, automated-validated, committed, and present on the remote remediation branch. Package 6B read-only investigation is complete and implementation is deferred. The Solar Surplus PV-margin hysteresis repair is automated-validated and committed locally but remains unpushed. The stale-direct/measured-grid-flow fallback discrepancy and Morning Slow forecast-feasibility discrepancy remain parked. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
 
 ## Production Remediation Package 1
 
@@ -224,7 +224,7 @@ Validation: the focused repair matrix passed **13 tests and 9 subtests**; all th
 
 This repair is committed and pushed at `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2`, but is not merged, released, deployed, installed, restarted, live-tested, or live-accepted. Automated tests do not prove live behavior.
 
-## Local Solar Surplus PV-margin hysteresis repair
+## Locally committed Solar Surplus PV-margin hysteresis repair
 
 Live haos54 observation showed the Solar Surplus eligibility gate toggle `true -> false -> true` as real-time PV surplus moved `0.536 -> 0.439 -> 0.575 kW` around the configured 0.5 kW margin. At the observed 6c FiT below the ordinary 10c threshold, export remained closed, intent remained `EXPORT_BLOCKED`, EMS remained Maximum Self Consumption, PV MAX remained normal, and no battery-export owner appeared. Synthetic 12c testing proved that the same gate sequence previously propagated into `25 -> 0 -> 25 kW` and `MSC_SURPLUS_CEILING -> EXPORT_BLOCKED -> MSC_SURPLUS_CEILING`.
 
@@ -232,7 +232,7 @@ The local repair keeps entry strictly above `SOLAR_SURPLUS_MIN_PV_MARGIN`, uncha
 
 Regression coverage proves strict 0.5 kW entry, strict 0.2 kW continuation, re-entry protection, forecast continuation at 60.0 kWh for a 40.3 kWh battery while inactive entry remains blocked, rejection of unrelated prior MSC ownership, stable `25 / 25 / 25 kW` and `MSC_SURPLUS_CEILING` at synthetic 12c FiT, and stable closed outputs at observed-style 6c FiT. Focused API/config validation passed **11 tests**; directly affected Solar Surplus modules passed **104 tests**; independent MSC and exact-full protection passed **45 tests with the two frozen Phase 2 tests deselected**; and the complete suite collected **459 tests: 457 passed, 2 failed**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall` passed, and `git diff --check` passed apart from the repository's existing line-ending conversion notices.
 
-The Solar Surplus repair is uncommitted, not pushed, not released, not deployed, not installed or restarted, and not live-accepted. Automated tests do not prove live behavior.
+The Solar Surplus repair is committed locally at `7ded75f9155d7002150a7308f03eb9510f5beb39` but is not pushed, tagged, built, released, deployed, installed, restarted, live-tested, or live-accepted. Automated tests do not prove live behavior.
 
 ## Parked investigation: Morning Slow forecast feasibility
 
@@ -281,7 +281,7 @@ These are operator settings, not software-default policy:
 - Evening Boost: enabled, 35% floor, safety multiplier 1.1, minimum tomorrow forecast 100 kWh;
 - `MIN_GRID_TRANSFER_KW`: 1 kW;
 - Forecast Safety Charging: 1.35; Forecast Safety Export: 1.1;
-- Solar Surplus Bypass live settings: enabled at 2.0 / 1.25 / 0.5; the uncommitted repair adds a separate 0.2 kW continuation default without changing those live settings;
+- Solar Surplus Bypass live settings: enabled at 2.0 / 1.25 / 0.5; the locally committed but undeployed repair adds a separate 0.2 kW continuation default without changing those live settings;
 - spike minimum SoC: 60%, although current implementation does not enforce it;
 - cheap-positive threshold: `0.015 $/kWh`; daytime top-up maximum SoC: 50%; target battery charge: 2 kW;
 - Demand Window remains the higher-priority import block; Value Gate remains advisory-only.
@@ -297,4 +297,4 @@ Protect the two existing expected Phase 2 failures:
 
 ## Exact next action
 
-Perform an independent read-only re-review of the final 14-file uncommitted Solar Surplus checkpoint; if it passes, decide whether to commit that bounded repair. `.55` candidate metadata preparation is functionally unblocked but must wait until this checkpoint passes review and is committed. Push, release, deployment, installation/restart, and live acceptance remain separate later decisions and are not authorized. Do not resume Package 7 `/set_ess` until current Phase 1 repairs are live-accepted. Package 6B implementation, Morning Slow forecast work, Phase 2, and Manual/Force changes remain deferred or frozen.
+Review and commit this post-commit documentation truth correction, then decide separately whether to push the branch. Release, deployment, installation/restart, and live acceptance remain separate later decisions and are not authorized. Do not resume Package 7 `/set_ess` until current Phase 1 repairs are live-accepted. Package 6B implementation, Morning Slow forecast work, Phase 2, and Manual/Force changes remain deferred or frozen.
