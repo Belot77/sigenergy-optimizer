@@ -1,6 +1,6 @@
 # Current State
 
-Last consolidated: 2026-09-09
+Last consolidated: 2026-09-13
 
 **CURRENT TRUTH ONLY:** this file records the current operational and development checkpoint, not historical record. Durable control semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`.
 
@@ -36,8 +36,8 @@ Active remediation worktree:
 - Package 6A capability-trust production/test checkpoint: `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`).
 - Package 6A documentation checkpoint: `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573`.
 - Package 6A documentation-sync checkpoint: `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69`.
-- Full-battery flap characterization checkpoint and current branch HEAD: `1a611e082b05973b2e4831dd9d40180fde0bd84a` (`Characterize full-battery PV-only export flap`).
-- Local status: uncommitted exact-full MSC flow-safety repair in `app/optimizer.py`, the three allowed affected test files, and the approved control/checkpoint documentation files. Nothing from this repair is committed, pushed, released, deployed, installed, restarted, or live-tested.
+- Exact-full MSC flow-safety repair and current committed branch HEAD: `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2` (`Repair exact-full MSC load-serving discharge handling`).
+- Local status: uncommitted Solar Surplus PV-margin hysteresis repair across five production/config/UI/API surfaces (`.env.example`, `app/config.py`, `app/optimizer.py`, `app/routers/api.py`, and `templates/index.html`), three test files, and six bounded control/checkpoint documentation files. The final corrected dirty inventory is 14 files, including `docs/AI_HANDOVER.md`. Nothing from this Solar Surplus repair is committed, pushed, tagged, built, released, deployed, installed, restarted, live-tested, or live-accepted.
 - Verify the exact branch tip, worktree status, and remote synchronization directly with Git; documentation commits may be children of the production/test checkpoints.
 
 Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. The worktree was clean after the verified push. Package 1 has not been merged, released, deployed, or live-tested.
@@ -72,7 +72,7 @@ Always verify branch, HEAD, and cleanliness directly before editing.
 
 Phase 1 was previously declared complete and live-accepted. That is no longer true. Phase 1 is **reopened for audit remediation** because a live Morning Slow low-SoC defect was proven and the broader audit found additional fail-closed and control-authority defects.
 
-Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, both Package 5 subparts, and Package 6A are complete and automated-validated. Package 6B read-only investigation is complete and implementation is deferred. The proven live full-battery PV-only `25 -> 0` flap has a local automated-validated repair awaiting review and a separate commit decision; commit, push, release, deployment, and live acceptance have not occurred. The Morning Slow forecast-feasibility discrepancy remains parked. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
+Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, both Package 5 subparts, Package 6A, and the exact-full MSC load-serving-discharge repair are complete, automated-validated, committed, and present on the remote remediation branch. Package 6B read-only investigation is complete and implementation is deferred. The Solar Surplus PV-margin hysteresis repair is automated-validated but remains uncommitted and unpushed pending independent read-only re-review of the corrected 14-file checkpoint. The stale-direct/measured-grid-flow fallback discrepancy and Morning Slow forecast-feasibility discrepancy remain parked. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
 
 ## Production Remediation Package 1
 
@@ -99,7 +99,7 @@ The broader suite result was **291 passed, 2 failed, 191 warnings**. The only fa
 
 ## Production Remediation Package 2
 
-The Morning control repair is implemented in `app/optimizer.py`, characterized in `tests/test_msc_baseline_overlay_contract.py`, automated-validated, and committed locally at `d3294cb`. It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
+The Morning control repair is implemented in `app/optimizer.py`, characterized in `tests/test_msc_baseline_overlay_contract.py`, automated-validated, committed at `d3294cb`, and pushed as an ancestor of the current synchronized remediation branch HEAD. It has not been merged, tagged, released, deployed, installed, or live-tested.
 
 The proven live defect occurred at approximately 14.2-14.5% SoC with Morning Slow active, MSC observed, PV MAX 25 kW, ESS charging about 2 kW, export closed, and no deliberate battery-export owner. The old low-SoC path required the configured 2 kW slow charge plus the 1 kW `MIN_GRID_TRANSFER_KW`, creating an unintended 3 kW PV-surplus threshold.
 
@@ -111,7 +111,7 @@ The final complete suite result was **295 passed, 2 failed, 191 warnings** from 
 
 ## Production Remediation Package 3
 
-The Battery-export safety repair is implemented in `app/optimizer.py`, characterized in `tests/test_msc_baseline_overlay_contract.py`, automated-validated, and committed locally at `91b0075` (`Fix battery export discharge ownership`). It has not been pushed, merged, tagged, released, deployed, installed, or live-tested.
+The Battery-export safety repair is implemented in `app/optimizer.py`, characterized in `tests/test_msc_baseline_overlay_contract.py`, automated-validated, committed at `91b0075` (`Fix battery export discharge ownership`), and pushed as an ancestor of the current synchronized remediation branch HEAD. It has not been merged, tagged, released, deployed, installed, or live-tested.
 
 The confirmed defect allowed raw positive-FiT eligibility to leak into the independent ESS-discharge actuator. That could force the discharge limit to `0.01 kW` when positive-FiT export was enabled but positive-FiT battery sale was disabled, including while the battery served house load, export was an ownerless MSC-surplus ceiling or had failed closed, telemetry was untrusted, or another deliberate battery-export owner had priority.
 
@@ -213,16 +213,26 @@ The read-only Package 6B investigation is complete; implementation is deferred a
 
 This defect has priority before Package 7 and has two proven mechanisms:
 
-1. With exact-full SoC, fresh direct battery discharge around `0.007 kW` permits the 25 kW ceiling, while stale direct evidence selects a measured-grid-flow residual around `0.75 kW` and closes it. Alternating direct freshness reproduces `25 -> 0 -> 25 -> 0`. Later normal live samples showed the residual materially disagreeing with direct battery power even when Home Assistant `last_reported` timestamps were effectively simultaneous, so the residual is not equivalent to direct evidence near the `0.10 kW` threshold. This mechanism is real and characterized, but it is not required for the newly captured flap.
+1. With exact-full SoC, fresh direct battery discharge around `0.007 kW` permits the 25 kW ceiling, while stale direct evidence selects a measured-grid-flow residual around `0.75 kW` and closes it. Alternating direct freshness reproduces `25 -> 0 -> 25 -> 0`. Later normal live samples showed the residual materially disagreeing with direct battery power even when Home Assistant `last_reported` timestamps were effectively simultaneous, so the residual is not equivalent to direct evidence near the `0.10 kW` threshold. This stale-direct/measured-grid-flow fallback discrepancy remains parked; no fallback redesign is included in the committed exact-full repair or the current Solar Surplus repair.
 2. The newly proven live mechanism uses fresh direct evidence. At about 15:31 local, PV fell below load while SoC remained 100%, grid export was zero, and fresh direct battery discharge rose from about `0.005 kW` to `1.629 kW`. The optimizer classified the closing sample as `ordinary_msc_load_serving_battery_discharge=true`, `ordinary_msc_simultaneous_battery_discharge_and_grid_export=false`, and `ordinary_msc_flow_safe=true`, yet `pv_only_discharge_ok=false`, `pv_only_msc_transition_ready=false`, `export_branch=blocked_or_zero`, and desired export `0`. Later closed samples retained fresh direct discharge around `1.6-1.9 kW` with no meaningful export; PV recovery and near-zero direct discharge reopened 25 kW. FiT below the configured ordinary `0.10 $/kWh` export threshold makes the visible flap `25 -> 0`.
 
-The approved local repair replaces only the exact-full readiness use of the raw `pv_only_discharge_ok` threshold with the existing `ordinary_msc_flow_ok` result. Trusted load-serving discharge can therefore retain the exact-full `MSC_SURPLUS_CEILING`; meaningful simultaneous discharge plus grid export and unknown or untrusted battery/grid-export evidence remain fail-closed. The raw predicate and its other consumers, including Solar Surplus Bypass, are unchanged. The exact-full ceiling creates no `BATTERY_EXPORT` owner and remains in Maximum Self Consumption.
+The committed repair replaces only the exact-full readiness use of the raw `pv_only_discharge_ok` threshold with the existing `ordinary_msc_flow_ok` result. Trusted load-serving discharge can therefore retain the exact-full `MSC_SURPLUS_CEILING`; meaningful simultaneous discharge plus grid export and unknown or untrusted battery/grid-export evidence remain fail-closed. The raw predicate and its other consumers, including Solar Surplus Bypass, are unchanged. The exact-full ceiling creates no `BATTERY_EXPORT` owner and remains in Maximum Self Consumption.
 
 Regression coverage proves fresh direct discharge around `0.005 kW` with zero export remains open at 25 kW; fresh direct discharge around `1.629 kW` with zero export is classified load-serving, keeps `ordinary_msc_flow_safe=true`, leaves `pv_only_discharge_ok=false` diagnostically, and remains open at 25 kW; and the same discharge with `1.0 kW` grid export is classified simultaneous and closes. Separate unknown battery-flow and unknown grid-export cases close, and a cross-path invariant verifies that ordinary MSC and the exact-full Cheap-FiT path interpret equivalent trusted flow evidence consistently. The stale-direct/measured-grid-flow fallback characterization remains unchanged and no fallback policy was redesigned.
 
 Validation: the focused repair matrix passed **13 tests and 9 subtests**; all three affected test modules completed **134 passed, 2 failed, 95 subtests passed**, with only the two frozen Phase 2 tests failing; independent authority/capability protection passed **32 tests and 58 subtests**; and the complete suite collected **444 tests: 442 passed, 2 failed, 191 warnings, 368 subtests passed**. The only complete-suite failures were the two frozen Phase 2 tests. `python -m compileall -q app tests` and `git diff --check` passed; the latter emitted only the repository's existing line-ending conversion notices.
 
-This repair is not committed, pushed, released, deployed, installed, restarted, live-tested, or live-accepted. Automated tests do not prove live behavior.
+This repair is committed and pushed at `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2`, but is not merged, released, deployed, installed, restarted, live-tested, or live-accepted. Automated tests do not prove live behavior.
+
+## Local Solar Surplus PV-margin hysteresis repair
+
+Live haos54 observation showed the Solar Surplus eligibility gate toggle `true -> false -> true` as real-time PV surplus moved `0.536 -> 0.439 -> 0.575 kW` around the configured 0.5 kW margin. At the observed 6c FiT below the ordinary 10c threshold, export remained closed, intent remained `EXPORT_BLOCKED`, EMS remained Maximum Self Consumption, PV MAX remained normal, and no battery-export owner appeared. Synthetic 12c testing proved that the same gate sequence previously propagated into `25 -> 0 -> 25 kW` and `MSC_SURPLUS_CEILING -> EXPORT_BLOCKED -> MSC_SURPLUS_CEILING`.
+
+The local repair keeps entry strictly above `SOLAR_SURPLUS_MIN_PV_MARGIN`, unchanged at 0.5 kW, and adds `SOLAR_SURPLUS_STOP_PV_MARGIN`, default 0.2 kW, for continuation. The new value is normalized to a finite, non-negative value no greater than the entry margin. Only an immediately previous, genuinely active Solar Surplus high ceiling under observed Automated ownership may use the lower margin. At or below 0.2 kW the policy stops, and re-entry again requires more than 0.5 kW. Existing 2.0/1.25 forecast hysteresis is unchanged; no timer, smoothing, battery-export ownership, discharge EMS mode, or PV MAX change is introduced.
+
+Regression coverage proves strict 0.5 kW entry, strict 0.2 kW continuation, re-entry protection, forecast continuation at 60.0 kWh for a 40.3 kWh battery while inactive entry remains blocked, rejection of unrelated prior MSC ownership, stable `25 / 25 / 25 kW` and `MSC_SURPLUS_CEILING` at synthetic 12c FiT, and stable closed outputs at observed-style 6c FiT. Focused API/config validation passed **11 tests**; directly affected Solar Surplus modules passed **104 tests**; independent MSC and exact-full protection passed **45 tests with the two frozen Phase 2 tests deselected**; and the complete suite collected **459 tests: 457 passed, 2 failed**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall` passed, and `git diff --check` passed apart from the repository's existing line-ending conversion notices.
+
+The Solar Surplus repair is uncommitted, not pushed, not released, not deployed, not installed or restarted, and not live-accepted. Automated tests do not prove live behavior.
 
 ## Parked investigation: Morning Slow forecast feasibility
 
@@ -271,7 +281,7 @@ These are operator settings, not software-default policy:
 - Evening Boost: enabled, 35% floor, safety multiplier 1.1, minimum tomorrow forecast 100 kWh;
 - `MIN_GRID_TRANSFER_KW`: 1 kW;
 - Forecast Safety Charging: 1.35; Forecast Safety Export: 1.1;
-- Solar Surplus Bypass: enabled at 2.0 / 1.25 / 0.5;
+- Solar Surplus Bypass live settings: enabled at 2.0 / 1.25 / 0.5; the uncommitted repair adds a separate 0.2 kW continuation default without changing those live settings;
 - spike minimum SoC: 60%, although current implementation does not enforce it;
 - cheap-positive threshold: `0.015 $/kWh`; daytime top-up maximum SoC: 50%; target battery charge: 2 kW;
 - Demand Window remains the higher-priority import block; Value Gate remains advisory-only.
@@ -287,4 +297,4 @@ Protect the two existing expected Phase 2 failures:
 
 ## Exact next action
 
-Review the automated-validated local repair and decide whether to authorize committing it. Push, release, deployment, installation/restart, and live acceptance remain separate later decisions and are not authorized. Do not resume Package 7 `/set_ess` until the flap is live-accepted. Package 6B implementation, Morning Slow forecast work, Phase 2, and Manual/Force changes remain deferred or frozen.
+Perform an independent read-only re-review of the final 14-file uncommitted Solar Surplus checkpoint; if it passes, decide whether to commit that bounded repair. `.55` candidate metadata preparation is functionally unblocked but must wait until this checkpoint passes review and is committed. Push, release, deployment, installation/restart, and live acceptance remain separate later decisions and are not authorized. Do not resume Package 7 `/set_ess` until current Phase 1 repairs are live-accepted. Package 6B implementation, Morning Slow forecast work, Phase 2, and Manual/Force changes remain deferred or frozen.

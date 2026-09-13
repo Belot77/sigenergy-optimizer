@@ -1,6 +1,6 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-09-09
+Last consolidated: 2026-09-13
 
 Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md`, `ROADMAP.md`, and `DECISIONS.md`. Verify the exact branch tip, worktree status, and remote synchronization directly with Git before editing.
 
@@ -20,9 +20,10 @@ GitHub `main` remains `c624f0b4392634cf19276186ba46f4b80268627b` (`Record Phase 
 - Package 5 chatter/reopen production/test checkpoint: `e119f6f` (`Repair Morning Slow MSC ceiling chatter`).
 - Package 6A capability-trust production/test checkpoint: `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`).
 - Package 6A documentation checkpoint: `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573`.
-- Package 6A documentation-sync checkpoint and current HEAD: `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69`.
-- All three Package 6A checkpoints are pushed to `origin/fix/phase1-audit-remediation`. Package 6A is complete and automated-validated, but has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
-- Sole local change: untracked `tests/test_phase1_full_battery_pv_only_flap_characterization.py`; there are no production changes.
+- Package 6A documentation-sync checkpoint: `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69`.
+- Exact-full MSC load-serving-discharge repair and current committed HEAD: `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2` (`Repair exact-full MSC load-serving discharge handling`). The upstream remediation branch was directly verified at the same SHA before the current uncommitted repair.
+- Current uncommitted work: the Solar Surplus PV-margin hysteresis repair, including runtime API/config validation, environment/UI exposure, tests, and bounded documentation. The corrected dirty inventory is 14 modified files with no staged or untracked files.
+- The Solar Surplus repair is not committed, pushed, tagged, built, released, deployed, installed, restarted, live-tested, or live-accepted.
 
 Nothing from the current remediation branch has been deployed, live-tested, or live-accepted.
 
@@ -50,23 +51,37 @@ Validation: Package 6A characterization **21 passed**; Manual/Force protection *
 
 The read-only investigation is complete; implementation is deferred and no production change was made. Do not invent speculative grid-import or PV-capability architecture. The known ESS-to-grid-import coupling remains parked. Do not call 25 kW universal operator truth from defaults; the current live flap specifically captured PV MAX and the high export ceiling at 25 kW.
 
-## Full-battery PV-only flap checkpoint
+## Exact-full MSC repair and parked fallback discrepancy
 
-This proven live defect has priority before Package 7. There are two mechanisms:
+The proven live exact-full defect had two mechanisms:
 
-- Stale-direct/fallback: fresh direct discharge around `0.007 kW` permits exact-full 25 kW; stale direct evidence selects a measured-grid-flow residual around `0.75 kW` and closes it. Alternating freshness reproduces `25 -> 0 -> 25 -> 0`. Live normal samples later showed residual and direct values materially disagreeing despite effectively simultaneous Home Assistant `last_reported` timestamps, so residual is not equivalent to direct evidence near the `0.10 kW` threshold.
-- Fresh-direct load-serving: a clean live capture moved from exact-full 25 kW with direct discharge around `0.005 kW` to fresh direct discharge around `1.629 kW`, PV below load, and grid export zero. Production classified `ordinary_msc_load_serving_battery_discharge=true`, simultaneous discharge/export false, and `ordinary_msc_flow_safe=true`, but set `pv_only_discharge_ok=false`, transition ready false, branch `blocked_or_zero`, and desired export zero. Later fresh-direct samples around `1.6-1.9 kW` stayed closed without meaningful export; PV recovery and near-zero direct discharge reopened 25 kW. FiT below the configured ordinary `0.10 $/kWh` threshold exposes the visible flap.
+- Stale-direct/fallback: fresh direct discharge around `0.007 kW` permits exact-full 25 kW; stale direct evidence selects a measured-grid-flow residual around `0.75 kW` and closes it. Alternating freshness reproduces `25 -> 0 -> 25 -> 0`. Live normal samples later showed residual and direct values materially disagreeing despite effectively simultaneous Home Assistant `last_reported` timestamps. This stale-direct/measured-grid-flow fallback discrepancy remains parked; no fallback redesign is part of the current work.
+- Fresh-direct load-serving: a clean live capture moved from exact-full 25 kW with direct discharge around `0.005 kW` to fresh direct discharge around `1.629 kW`, PV below load, and grid export zero. The committed repair at `067d52c` now reuses trusted ordinary-MSC flow safety: load-serving battery discharge with grid export below the meaningful threshold is compatible with `MSC_SURPLUS_CEILING`; meaningful simultaneous discharge and export and unknown or untrusted relevant flow remain fail-closed. It creates no `BATTERY_EXPORT` owner and remains in Maximum Self Consumption.
 
-The raw exact-full `0.10 kW` gate conflicts with the trusted ordinary-MSC load-serving distinction. The untracked tests characterize current behavior without a remedy: `0.005 kW` discharge plus zero export is safe/open 25 kW; `1.629 kW` plus zero export is classified load-serving and ordinary safe but current production closes; `1.629 kW` plus exactly `1.0 kW` export is simultaneous unsafe/closed. The same file also covers stale/fallback behavior. Latest targeted result: **2 passed, 191 warnings in 0.39s**; no broader suite followed.
+Regression coverage for the committed exact-full repair proves the trusted load-serving case remains open, simultaneous battery discharge plus meaningful grid export closes, and unknown relevant flow closes. The raw `pv_only_discharge_ok` predicate remains available for its other consumers and diagnostics but is no longer the decisive exact-full MSC transition gate.
 
-No new control contract is approved. The recommended surgical direction is to let the exact-full path reuse the trusted ordinary-MSC safety distinction without authorizing battery export, while remaining fail-closed for meaningful simultaneous discharge plus export and unknown or untrusted evidence. This awaits explicit approval.
+The exact-full repair is committed and pushed at `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2`, but is not merged, released, deployed, installed, restarted, live-tested, or live-accepted.
 
-## Parked Morning Slow investigation
+## Current Solar Surplus PV-margin repair
 
-The Morning Slow forecast-feasibility discrepancy remains parked and is not a confirmed defect. A later bounded investigation must compare the exact trusted remaining forecast, battery capacity, available discharge energy, refill need, slow-charge end, hours left, configured base load, load need, forecast-safety multiplier, final `required_kwh`, and eligibility result. Do not change operator settings or defaults from the current evidence.
+The uncommitted repair retains entry strictly above 0.5 kW and permits continuation strictly above 0.2 kW only when the immediately previous decision genuinely held a Solar-Surplus-owned high `MSC_SURPLUS_CEILING` under observed Automated ownership. At or below 0.2 kW it stops; re-entry again requires more than 0.5 kW. Forecast hysteresis remains 2.0 start / 1.25 continue. No timer or smoothing is added.
 
-## Next action and frozen work
+The new `solar_surplus_stop_pv_margin` / `SOLAR_SURPLUS_STOP_PV_MARGIN` setting defaults to 0.2 kW. Initialization and runtime API updates preserve `0.0 <= solar_surplus_stop_pv_margin <= solar_surplus_min_pv_margin`; a valid batch is checked as its final requested pair before mutation. Solar Surplus remains an MSC surplus-ceiling policy, creates no battery-export authority, and does not redesign EMS or PV MAX.
 
-The next explicit decision is whether the exact-full PV-only path should accept trusted load-serving battery discharge while retaining fail-closed protection for meaningful simultaneous battery discharge plus grid export and unknown or untrusted evidence. If approved, make the smallest surgical repair, validate it, and obtain separate authorization for live acceptance. Do not resume Package 7 `/set_ess` until this flap is live-accepted.
+Validation evidence: focused API/config **11 passed**; affected Solar Surplus **104 passed**; independent protections **45 passed, 2 frozen Phase 2 tests deselected**; full suite **459 collected, 457 passed, 2 failed**, with only `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc` failing as expected. Compileall passed. `git diff --check` passed apart from the existing line-ending conversion notices.
 
-Package 6B implementation, Morning Slow forecast work, Manual/Force, and Phase 2 remain deferred or frozen. Preserve the Phase 2 close -> observe closed -> request MSC -> observe exact MSC -> reopen contract and its two expected failing tests. Deployment and live testing require separate authorization.
+## Protected and parked work
+
+- The stale-direct/measured-grid-flow fallback discrepancy remains parked.
+- Morning Slow behavior is unchanged; its forecast-feasibility discrepancy remains parked and is not a confirmed defect.
+- Evening Boost is unchanged.
+- Manual/Force behavior remains frozen.
+- Phase 2 remains frozen, including its two expected failing transition-settlement tests.
+- Package 7 remains after renewed Phase 1 live acceptance.
+- Climate Manager remains later work and is not part of this repair.
+
+## Next action
+
+Perform an independent read-only re-review of the final 14-file uncommitted checkpoint. If it passes, decide whether to commit the bounded Solar Surplus repair. `.55` candidate metadata preparation is functionally unblocked but must wait until this checkpoint passes review and is committed.
+
+Do not push, release, deploy, install, restart, or claim live acceptance as part of that commit decision. Preserve the Phase 2 close -> observe closed -> request MSC -> observe exact MSC -> reopen contract and its two expected failing tests.

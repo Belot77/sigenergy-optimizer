@@ -246,6 +246,59 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         values.update(overrides)
         return self._state(**values)
 
+    def _solar_surplus_margin_decision(
+        self,
+        optimizer: SigEnergyOptimizer,
+        now_ts: float,
+        *,
+        feedin_price: float,
+        pv_surplus_kw: float,
+        forecast_remaining_kwh: float = 114.5,
+        current_export_limit: float = 0.01,
+    ) -> Decision:
+        return optimizer._decide(
+            self._qualifying_solar_bypass_state(
+                optimizer,
+                now_ts,
+                battery_soc=14.0,
+                battery_capacity_kwh=40.3,
+                available_discharge_energy_kwh=5.642,
+                feedin_price=feedin_price,
+                feedin_price_cents=feedin_price * 100.0,
+                forecast_remaining_kwh=forecast_remaining_kwh,
+                pv_kw=1.0 + pv_surplus_kw,
+                solar_power_now_kw=1.0 + pv_surplus_kw,
+                load_kw=1.0,
+                battery_power_sensor_kw=0.0,
+                grid_import_power_kw=0.0,
+                grid_export_power_kw=0.0,
+                current_export_limit=current_export_limit,
+                current_ems_mode=MODE_MAX_SELF,
+                current_pv_max_power_limit=25.0,
+            )
+        )
+
+    def _replay_solar_surplus_margin_sequence(
+        self,
+        optimizer: SigEnergyOptimizer,
+        now_ts: float,
+        *,
+        feedin_price: float,
+        forecast_remaining_kwh: float = 114.5,
+    ) -> list[Decision]:
+        decisions: list[Decision] = []
+        for cycle, pv_surplus_kw in enumerate((0.536, 0.439, 0.575)):
+            decision = self._solar_surplus_margin_decision(
+                optimizer,
+                now_ts + (cycle * 6.0),
+                feedin_price=feedin_price,
+                pv_surplus_kw=pv_surplus_kw,
+                forecast_remaining_kwh=forecast_remaining_kwh,
+            )
+            decisions.append(decision)
+            optimizer._last_decision = decision
+        return decisions
+
     def _assert_legacy_discovery_inactive(self, decision: Decision) -> None:
         for gate in (
             "pv_surplus_estimated_init_active",
@@ -2494,6 +2547,314 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_active")))
         self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
         self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_bypassed_for_pv_surplus_only")))
+
+    def test_observed_style_solar_margin_gate_changes_below_threshold_but_outputs_stay_closed(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            battery_full_safeguard_enabled=False,
+            export_threshold_low=0.10,
+            solar_surplus_start_multiplier=2.0,
+            solar_surplus_stop_multiplier=1.25,
+            solar_surplus_min_pv_margin=0.5,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+
+        decisions = self._replay_solar_surplus_margin_sequence(
+            optimizer,
+            now_ts,
+            feedin_price=0.06,
+        )
+
+        self.assertEqual(
+            [True, False, True],
+            [decision.solar_surplus_bypass for decision in decisions],
+        )
+        self.assertEqual([0.0, 0.0, 0.0], [decision.export_limit for decision in decisions])
+        self.assertEqual([EXPORT_BLOCKED] * 3, [decision.export_intent for decision in decisions])
+        self.assertEqual([MODE_MAX_SELF] * 3, [decision.ems_mode for decision in decisions])
+        self.assertEqual(
+            [optimizer.cfg.pv_max_power_normal] * 3,
+            [decision.pv_max_power_limit for decision in decisions],
+        )
+        self.assertEqual(
+            ["none"] * 3,
+            [decision.trace_values.get("battery_export_owner") for decision in decisions],
+        )
+        self.assertEqual(
+            [False] * 3,
+            [
+                bool(decision.trace_gates.get("explicit_battery_export_owner_active"))
+                for decision in decisions
+            ],
+        )
+        self.assertTrue(all(decision.ems_mode not in DISCHARGE_MODES for decision in decisions))
+
+    def test_synthetic_high_fit_solar_margin_hysteresis_keeps_export_ceiling_stable(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            battery_full_safeguard_enabled=False,
+            export_threshold_low=0.10,
+            solar_surplus_start_multiplier=2.0,
+            solar_surplus_stop_multiplier=1.25,
+            solar_surplus_min_pv_margin=0.5,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+
+        decisions = self._replay_solar_surplus_margin_sequence(
+            optimizer,
+            now_ts,
+            feedin_price=0.12,
+        )
+
+        self.assertEqual(
+            [True, True, True],
+            [decision.solar_surplus_bypass for decision in decisions],
+        )
+        self.assertEqual(
+            [optimizer.cfg.export_limit_high] * 3,
+            [decision.export_limit for decision in decisions],
+        )
+        self.assertEqual(
+            [MSC_SURPLUS_CEILING] * 3,
+            [decision.export_intent for decision in decisions],
+        )
+        self.assertEqual([MODE_MAX_SELF] * 3, [decision.ems_mode for decision in decisions])
+        self.assertEqual(
+            [optimizer.cfg.pv_max_power_normal] * 3,
+            [decision.pv_max_power_limit for decision in decisions],
+        )
+        self.assertEqual(
+            ["none"] * 3,
+            [decision.trace_values.get("battery_export_owner") for decision in decisions],
+        )
+        self.assertEqual(
+            [False] * 3,
+            [
+                bool(decision.trace_gates.get("explicit_battery_export_owner_active"))
+                for decision in decisions
+            ],
+        )
+        self.assertTrue(all(decision.ems_mode not in DISCHARGE_MODES for decision in decisions))
+
+    def test_solar_surplus_entry_margin_remains_strict_and_separate_from_stop_margin(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            battery_full_safeguard_enabled=False,
+            export_threshold_low=0.10,
+            solar_surplus_min_pv_margin=0.5,
+            solar_surplus_stop_pv_margin=0.2,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+
+        at_entry_boundary = self._solar_surplus_margin_decision(
+            optimizer,
+            now_ts,
+            feedin_price=0.12,
+            pv_surplus_kw=0.5,
+        )
+        optimizer._last_decision = at_entry_boundary
+        above_entry_boundary = self._solar_surplus_margin_decision(
+            optimizer,
+            now_ts + 6.0,
+            feedin_price=0.12,
+            pv_surplus_kw=0.500001,
+        )
+
+        self.assertFalse(at_entry_boundary.solar_surplus_bypass)
+        self.assertTrue(above_entry_boundary.solar_surplus_bypass)
+        self.assertEqual(MSC_SURPLUS_CEILING, above_entry_boundary.export_intent)
+        self.assertEqual("none", above_entry_boundary.trace_values.get("battery_export_owner"))
+        self.assertEqual(MODE_MAX_SELF, above_entry_boundary.ems_mode)
+        self.assertNotIn(above_entry_boundary.ems_mode, DISCHARGE_MODES)
+        self.assertEqual(optimizer.cfg.pv_max_power_normal, above_entry_boundary.pv_max_power_limit)
+
+    def test_solar_surplus_stop_margin_is_strict_after_genuine_activation(self) -> None:
+        now_ts = datetime.now().timestamp()
+        for pv_surplus_kw, expected_active in (
+            (0.200001, True),
+            (0.2, False),
+            (0.199999, False),
+        ):
+            with self.subTest(pv_surplus_kw=pv_surplus_kw):
+                optimizer = self._optimizer(
+                    battery_full_safeguard_enabled=False,
+                    export_threshold_low=0.10,
+                    solar_surplus_min_pv_margin=0.5,
+                    solar_surplus_stop_pv_margin=0.2,
+                )
+                optimizer._is_evening_or_night = lambda _now: False
+                active = self._solar_surplus_margin_decision(
+                    optimizer,
+                    now_ts,
+                    feedin_price=0.12,
+                    pv_surplus_kw=0.536,
+                )
+                self.assertTrue(active.solar_surplus_bypass)
+                self.assertTrue(bool(active.trace_gates.get("pv_only_branch_high_ceiling_active")))
+                optimizer._last_decision = active
+
+                decision = self._solar_surplus_margin_decision(
+                    optimizer,
+                    now_ts + 6.0,
+                    feedin_price=0.12,
+                    pv_surplus_kw=pv_surplus_kw,
+                    current_export_limit=25.0,
+                )
+
+                self.assertEqual(expected_active, decision.solar_surplus_bypass)
+                self.assertEqual(
+                    MSC_SURPLUS_CEILING if expected_active else EXPORT_BLOCKED,
+                    decision.export_intent,
+                )
+                self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+                self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+                self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+                self.assertEqual(optimizer.cfg.pv_max_power_normal, decision.pv_max_power_limit)
+
+    def test_solar_surplus_must_cross_entry_margin_again_after_stopping(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            battery_full_safeguard_enabled=False,
+            export_threshold_low=0.10,
+            solar_surplus_min_pv_margin=0.5,
+            solar_surplus_stop_pv_margin=0.2,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+
+        decisions: list[Decision] = []
+        for cycle, pv_surplus_kw in enumerate((0.536, 0.2, 0.3, 0.439, 0.500001)):
+            decision = self._solar_surplus_margin_decision(
+                optimizer,
+                now_ts + (cycle * 6.0),
+                feedin_price=0.12,
+                pv_surplus_kw=pv_surplus_kw,
+            )
+            decisions.append(decision)
+            optimizer._last_decision = decision
+
+        self.assertEqual(
+            [True, False, False, False, True],
+            [decision.solar_surplus_bypass for decision in decisions],
+        )
+        self.assertTrue(all(decision.export_intent != BATTERY_EXPORT for decision in decisions))
+        self.assertTrue(
+            all(
+                decision.trace_values.get("battery_export_owner") == "none"
+                for decision in decisions
+            )
+        )
+        self.assertTrue(all(decision.ems_mode == MODE_MAX_SELF for decision in decisions))
+        self.assertTrue(all(decision.ems_mode not in DISCHARGE_MODES for decision in decisions))
+        self.assertTrue(
+            all(
+                decision.pv_max_power_limit == optimizer.cfg.pv_max_power_normal
+                for decision in decisions
+            )
+        )
+
+    def test_solar_surplus_previous_cycle_ownership_holds_only_forecast_hysteresis(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            battery_full_safeguard_enabled=False,
+            export_threshold_low=0.10,
+            solar_surplus_start_multiplier=2.0,
+            solar_surplus_stop_multiplier=1.25,
+            solar_surplus_min_pv_margin=0.5,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        active = self._replay_solar_surplus_margin_sequence(
+            optimizer,
+            now_ts,
+            feedin_price=0.12,
+        )[0]
+        optimizer._last_decision = active
+
+        continued = optimizer._decide(
+            self._qualifying_solar_bypass_state(
+                optimizer,
+                now_ts + 6.0,
+                battery_soc=14.0,
+                battery_capacity_kwh=40.3,
+                available_discharge_energy_kwh=5.642,
+                feedin_price=0.12,
+                feedin_price_cents=12.0,
+                forecast_remaining_kwh=60.0,
+                pv_kw=1.536,
+                solar_power_now_kw=1.536,
+                load_kw=1.0,
+                battery_power_sensor_kw=0.0,
+                grid_import_power_kw=0.0,
+                grid_export_power_kw=0.0,
+                current_export_limit=25.0,
+                current_ems_mode=MODE_MAX_SELF,
+                current_pv_max_power_limit=25.0,
+            )
+        )
+
+        self.assertLess(60.0, 40.3 * optimizer.cfg.solar_surplus_start_multiplier)
+        self.assertGreater(60.0, 40.3 * optimizer.cfg.solar_surplus_stop_multiplier)
+        self.assertTrue(continued.solar_surplus_bypass)
+        self.assertTrue(bool(continued.trace_gates.get("pv_only_branch_high_ceiling_active")))
+        self.assertEqual(optimizer.cfg.export_limit_high, continued.export_limit)
+        self.assertEqual(MSC_SURPLUS_CEILING, continued.export_intent)
+        self.assertEqual(MODE_MAX_SELF, continued.ems_mode)
+        self.assertEqual("none", continued.trace_values.get("battery_export_owner"))
+        self.assertEqual(optimizer.cfg.pv_max_power_normal, continued.pv_max_power_limit)
+
+        inactive_optimizer = self._optimizer(
+            battery_full_safeguard_enabled=False,
+            export_threshold_low=0.10,
+            solar_surplus_start_multiplier=2.0,
+            solar_surplus_stop_multiplier=1.25,
+            solar_surplus_min_pv_margin=0.5,
+            solar_surplus_stop_pv_margin=0.2,
+        )
+        inactive_optimizer._is_evening_or_night = lambda _now: False
+        inactive = self._solar_surplus_margin_decision(
+            inactive_optimizer,
+            now_ts,
+            feedin_price=0.12,
+            pv_surplus_kw=0.536,
+            forecast_remaining_kwh=60.0,
+        )
+
+        self.assertFalse(inactive.solar_surplus_bypass)
+        self.assertNotEqual(BATTERY_EXPORT, inactive.export_intent)
+
+    def test_unrelated_previous_msc_ceiling_cannot_use_solar_surplus_stop_margin(self) -> None:
+        now_ts = datetime.now().timestamp()
+        optimizer = self._optimizer(
+            battery_full_safeguard_enabled=False,
+            export_threshold_low=0.10,
+            solar_surplus_min_pv_margin=0.5,
+            solar_surplus_stop_pv_margin=0.2,
+        )
+        optimizer._is_evening_or_night = lambda _now: False
+        previous_msc = optimizer._decide(
+            self._qualifying_full_battery_msc_state(
+                optimizer,
+                now_ts,
+                forecast_remaining_kwh=0.0,
+            )
+        )
+        self.assertTrue(bool(previous_msc.trace_gates.get("pv_only_msc_high_ceiling_active")))
+        self.assertFalse(previous_msc.solar_surplus_bypass)
+        self.assertEqual(MSC_SURPLUS_CEILING, previous_msc.export_intent)
+        optimizer._last_decision = previous_msc
+
+        decision = self._solar_surplus_margin_decision(
+            optimizer,
+            now_ts + 6.0,
+            feedin_price=0.12,
+            pv_surplus_kw=0.439,
+        )
+
+        self.assertFalse(decision.solar_surplus_bypass)
+        self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        self.assertEqual(optimizer.cfg.pv_max_power_normal, decision.pv_max_power_limit)
 
     def test_unsafe_morning_and_solar_ceiling_closes_without_explicit_export_owner(self) -> None:
         now_ts = datetime.now().timestamp()

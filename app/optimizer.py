@@ -5353,13 +5353,16 @@ class SigEnergyOptimizer:
             return False
         start_thresh = cap * cfg.solar_surplus_start_multiplier
         stop_thresh = cap * cfg.solar_surplus_stop_multiplier
-        pv_over_load = pv_surplus > cfg.solar_surplus_min_pv_margin
-        start_ok = s.forecast_remaining_kwh >= start_thresh
+        start_ok = (
+            pv_surplus > cfg.solar_surplus_min_pv_margin
+            and s.forecast_remaining_kwh >= start_thresh
+        )
         continue_ok = (
-            s.forecast_remaining_kwh >= stop_thresh
+            pv_surplus > cfg.solar_surplus_stop_pv_margin
+            and s.forecast_remaining_kwh >= stop_thresh
             and previously_active
         )
-        return pv_over_load and (start_ok or continue_ok)
+        return start_ok or continue_ok
 
     def _battery_full_safeguard_block(
         self,

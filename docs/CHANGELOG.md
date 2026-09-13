@@ -2,6 +2,9 @@
 
 ## 2026-09-09 - Phase 1 remediation (unreleased)
 
+- Added ownership-scoped real-time PV-margin hysteresis to Solar Surplus Bypass: entry remains strictly above `SOLAR_SURPLUS_MIN_PV_MARGIN=0.5 kW`, while a genuinely active Solar Surplus high ceiling may continue strictly above the new `SOLAR_SURPLUS_STOP_PV_MARGIN=0.2 kW` default.
+- Preserved the separate 2.0/1.25 forecast hysteresis, FiT threshold, Maximum Self Consumption, normal PV MAX, raw PV-only discharge safety, and `battery_export_owner=none`; no timer, smoothing, or deliberate battery-export authority was added.
+- Exposed the new setting through environment and UI configuration and normalized it to a finite, non-negative value no greater than the configured entry margin.
 - Corrected the Cheap-FiT exact-full MSC exception so trusted battery discharge serving site load with grid export below the meaningful threshold retains the high `MSC_SURPLUS_CEILING` instead of closing solely above the raw 0.10 kW diagnostic tolerance.
 - Meaningful simultaneous battery discharge plus grid export and unknown or untrusted battery/grid-export evidence remain fail-closed. The path still creates no battery-export owner, remains in Maximum Self Consumption, and cannot request battery discharge.
 - Kept `pv_only_discharge_ok` and its Solar Surplus Bypass and other existing consumers unchanged; added direct-flow and cross-path invariant regressions.

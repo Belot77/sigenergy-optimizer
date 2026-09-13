@@ -40,6 +40,8 @@ _TIME_KEYS: set[str] = {
     "standby_holdoff_end_time",
     "morning_slow_charge_until",
 }
+_SOLAR_SURPLUS_START_PV_MARGIN_KEY = "solar_surplus_min_pv_margin"
+_SOLAR_SURPLUS_STOP_PV_MARGIN_KEY = "solar_surplus_stop_pv_margin"
 
 
 def _opt(request: Request):
@@ -132,6 +134,84 @@ def _validate_config_value(cfg: Any, key: str, value: Any) -> str | None:
         if isinstance(value, (int, float)) and not (0.0 <= float(value) <= 100.0):
             return "must be between 0 and 100"
     return None
+
+
+def _validate_solar_surplus_margin_pair(
+    cfg: Any,
+    proposed_updates: dict[str, Any],
+) -> list[dict[str, str]]:
+    margin_keys = {
+        _SOLAR_SURPLUS_START_PV_MARGIN_KEY,
+        _SOLAR_SURPLUS_STOP_PV_MARGIN_KEY,
+    }
+    if not margin_keys.intersection(proposed_updates):
+        return []
+
+    start_margin = float(
+        proposed_updates.get(
+            _SOLAR_SURPLUS_START_PV_MARGIN_KEY,
+            getattr(cfg, _SOLAR_SURPLUS_START_PV_MARGIN_KEY),
+        )
+    )
+    stop_margin = float(
+        proposed_updates.get(
+            _SOLAR_SURPLUS_STOP_PV_MARGIN_KEY,
+            getattr(cfg, _SOLAR_SURPLUS_STOP_PV_MARGIN_KEY),
+        )
+    )
+    errors: list[dict[str, str]] = []
+    if not math.isfinite(start_margin):
+        errors.append(
+            {
+                "key": _SOLAR_SURPLUS_START_PV_MARGIN_KEY,
+                "error": "must be a finite number",
+            }
+        )
+    elif start_margin < 0.0:
+        errors.append(
+            {
+                "key": _SOLAR_SURPLUS_START_PV_MARGIN_KEY,
+                "error": "must be non-negative",
+            }
+        )
+    if not math.isfinite(stop_margin):
+        errors.append(
+            {
+                "key": _SOLAR_SURPLUS_STOP_PV_MARGIN_KEY,
+                "error": "must be a finite number",
+            }
+        )
+    elif stop_margin < 0.0:
+        errors.append(
+            {
+                "key": _SOLAR_SURPLUS_STOP_PV_MARGIN_KEY,
+                "error": "must be non-negative",
+            }
+        )
+    if errors:
+        return errors
+    if stop_margin <= start_margin:
+        return []
+
+    if _SOLAR_SURPLUS_STOP_PV_MARGIN_KEY in proposed_updates:
+        return [
+            {
+                "key": _SOLAR_SURPLUS_STOP_PV_MARGIN_KEY,
+                "error": (
+                    "must not exceed solar_surplus_min_pv_margin "
+                    f"({start_margin:g})"
+                ),
+            }
+        ]
+    return [
+        {
+            "key": _SOLAR_SURPLUS_START_PV_MARGIN_KEY,
+            "error": (
+                "must not be lower than solar_surplus_stop_pv_margin "
+                f"({stop_margin:g})"
+            ),
+        }
+    ]
 
 
 def _sanitize_preset_payload(payload: dict[str, Any]) -> dict[str, float]:
@@ -1130,7 +1210,15 @@ async def update_config(request: Request, body: ConfigUpdateRequest) -> dict[str
     try:
         coerced = _coerce_config_value(cfg, body.key, body.value)
         err = _validate_config_value(cfg, body.key, coerced)
-        if err:
+        field_errors = (
+            [{"key": body.key, "error": err}]
+            if err
+            else _validate_solar_surplus_margin_pair(
+                cfg,
+                {body.key: coerced},
+            )
+        )
+        if field_errors:
             _record_audit(
                 request,
                 action="config_update",
@@ -1138,9 +1226,9 @@ async def update_config(request: Request, body: ConfigUpdateRequest) -> dict[str
                 target_key=body.key,
                 old_value=old_value,
                 new_value=body.value,
-                details={"field_errors": [{"key": body.key, "error": err}]},
+                details={"field_errors": field_errors},
             )
-            raise _validation_exception([{"key": body.key, "error": err}])
+            raise _validation_exception(field_errors)
         setattr(cfg, body.key, coerced)
         opt = _opt(request)
         if hasattr(opt, "refresh_config_time_warnings"):
@@ -1273,6 +1361,11 @@ async def update_config_batch(request: Request, body: ConfigBatchUpdateRequest) 
                 coerced_updates[item.key] = coerced
         except Exception as exc:
             field_errors.append({"key": item.key, "error": str(exc)})
+
+    if not field_errors:
+        field_errors.extend(
+            _validate_solar_surplus_margin_pair(cfg, coerced_updates)
+        )
 
     if field_errors:
         _record_audit(

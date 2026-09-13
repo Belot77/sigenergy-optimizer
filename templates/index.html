@@ -3813,6 +3813,7 @@ const _CONFIG_SECTIONS = [
     ['solar_surplus_start_multiplier', 'Start Multiplier', 'number', '0.1'],
     ['solar_surplus_stop_multiplier', 'Stop Multiplier', 'number', '0.1'],
     ['solar_surplus_min_pv_margin', 'Min PV Margin', 'number', '0.1'],
+    ['solar_surplus_stop_pv_margin', 'Stop PV Margin', 'number', '0.1'],
   ]},
   { key:'stability_hysteresis', title:'Stability & Hysteresis', fields:[
     ['soc_hysteresis', 'SoC Hysteresis', 'number', '0.1'],
@@ -3921,6 +3922,7 @@ function configFieldHelp(key, label, type) {
     solar_surplus_start_multiplier: 'Affects: start threshold for Solar Surplus Bypass relative to battery capacity. Lower -> bypass starts more easily. Higher -> bypass requires much stronger forecast surplus.',
     solar_surplus_stop_multiplier: 'Affects: stop threshold for Solar Surplus Bypass hysteresis. Lower -> bypass drops out sooner after conditions soften. Higher -> bypass stays active longer once started.',
     solar_surplus_min_pv_margin: 'Affects: minimum real-time PV surplus margin above load for bypass activation. Lower -> bypass can trigger with smaller surplus. Higher -> requires clear surplus before enabling.',
+    solar_surplus_stop_pv_margin: 'Affects: real-time PV surplus continuation threshold after Solar Surplus Bypass has genuinely started. It cannot exceed the start margin. Lower -> stays active through smaller surplus. Higher -> stops sooner as surplus falls.',
     export_threshold_low: 'Affects: FIT price band boundary for low export tier logic. Lower -> low-tier export allowed at lower prices. Higher -> low-tier threshold is harder to reach.',
     export_threshold_medium: 'Affects: FIT boundary for medium export tier and positive-FIT guards. Lower -> medium-tier behavior starts sooner. Higher -> needs better FIT before medium-tier behavior.',
     export_threshold_high: 'Affects: FIT boundary for high export tier/full export caps. Lower -> high-tier export unlocks sooner. Higher -> high-tier export requires stronger FIT.',

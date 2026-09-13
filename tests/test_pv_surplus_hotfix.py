@@ -222,6 +222,27 @@ class PVSurplusHotfixTests(unittest.TestCase):
             )
         )
 
+    def test_solar_surplus_stop_pv_margin_is_normalized_safely(self) -> None:
+        self.assertEqual(0.2, Settings().solar_surplus_stop_pv_margin)
+        for configured, expected in (
+            (float("nan"), 0.2),
+            (float("inf"), 0.2),
+            (-0.1, 0.0),
+            (0.8, 0.5),
+        ):
+            with self.subTest(configured=configured):
+                settings = Settings(
+                    solar_surplus_min_pv_margin=0.5,
+                    solar_surplus_stop_pv_margin=configured,
+                )
+                self.assertEqual(expected, settings.solar_surplus_stop_pv_margin)
+
+        narrowed_start = Settings(
+            solar_surplus_min_pv_margin=0.1,
+            solar_surplus_stop_pv_margin=0.2,
+        )
+        self.assertEqual(0.1, narrowed_start.solar_surplus_stop_pv_margin)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -59,6 +59,16 @@ For ordinary MSC flow interpretation:
 - meaningful simultaneous battery discharge and grid export is not presumed benign and closes conservatively;
 - unknown, stale, unavailable, or non-finite safety evidence cannot broaden permission.
 
+## Solar Surplus Bypass
+
+Solar Surplus Bypass is an MSC surplus-ceiling policy and never owns deliberate battery export. Entry requires trusted qualifying inputs, forecast remaining at or above battery capacity multiplied by `SOLAR_SURPLUS_START_MULTIPLIER`, and real-time PV surplus strictly greater than `SOLAR_SURPLUS_MIN_PV_MARGIN`.
+
+Continuation uses the lower forecast threshold from `SOLAR_SURPLUS_STOP_MULTIPLIER` and real-time PV surplus strictly greater than `SOLAR_SURPLUS_STOP_PV_MARGIN`. The lower continuation thresholds are available only when the immediately previous cycle genuinely held an active Solar Surplus high ceiling under observed Automated ownership. An inactive bypass, ordinary MSC, Morning Slow, another PV-only branch, or unrelated prior decision must satisfy the full entry thresholds.
+
+The default real-time entry and continuation margins are 0.5 kW and 0.2 kW. At or below the continuation margin, ownership stops; re-entry again requires surplus strictly above the entry margin. The continuation margin is normalized to a finite, non-negative value no greater than the entry margin. Forecast start/continuation multipliers remain 2.0 and 1.25 by default. No timer, delay, cycle count, smoothing, or generic hysteresis setting participates.
+
+FiT eligibility remains independent. A cycle below the ordinary export threshold cannot establish active high-ceiling ownership merely because the Solar Surplus eligibility gate is true, and hysteresis never overrides the FiT threshold. The policy remains in Maximum Self Consumption with normal PV MAX, creates no `BATTERY_EXPORT` owner, and cannot select a discharge EMS mode.
+
 ## Explicit deliberate battery-export policies
 
 Existing policies that genuinely own deliberate battery sale remain distinguishable. These include qualifying Morning Dump, high-price export, export spike, Evening Export Boost, explicitly enabled positive-FiT battery discharge, and established solar/export or external overrides where their current policy owns discharge.

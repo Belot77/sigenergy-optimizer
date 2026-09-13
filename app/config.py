@@ -299,6 +299,7 @@ class Settings(BaseSettings):
     solar_surplus_start_multiplier: float = Field(2.0, env="SOLAR_SURPLUS_START_MULTIPLIER")
     solar_surplus_stop_multiplier: float = Field(1.25, env="SOLAR_SURPLUS_STOP_MULTIPLIER")
     solar_surplus_min_pv_margin: float = Field(0.5, env="SOLAR_SURPLUS_MIN_PV_MARGIN")
+    solar_surplus_stop_pv_margin: float = Field(0.2, env="SOLAR_SURPLUS_STOP_PV_MARGIN")
 
     # ------------------------------------------------------------------
     # Manual mode labels (mirrors sigenergy_manual_control blueprint)
@@ -353,6 +354,22 @@ class Settings(BaseSettings):
         self.hvac_solar_permission_entity = (
             str(self.hvac_solar_permission_entity or "").strip()
             or "sensor.sigenergy_hvac_solar_permission"
+        )
+        return self
+
+    @model_validator(mode="after")
+    def _normalize_solar_surplus_margin_settings(self) -> "Settings":
+        start_margin = float(self.solar_surplus_min_pv_margin)
+        if not math.isfinite(start_margin) or start_margin < 0:
+            start_margin = 0.5
+        self.solar_surplus_min_pv_margin = start_margin
+
+        stop_margin = float(self.solar_surplus_stop_pv_margin)
+        if not math.isfinite(stop_margin):
+            stop_margin = 0.2
+        self.solar_surplus_stop_pv_margin = min(
+            max(0.0, stop_margin),
+            start_margin,
         )
         return self
 
