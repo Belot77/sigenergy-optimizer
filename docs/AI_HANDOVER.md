@@ -21,9 +21,9 @@ GitHub `main` remains `c624f0b4392634cf19276186ba46f4b80268627b` (`Record Phase 
 - Package 6A capability-trust production/test checkpoint: `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`).
 - Package 6A documentation checkpoint: `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573`.
 - Package 6A documentation-sync checkpoint: `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69`.
-- Current committed local HEAD before the uncommitted candidate-metadata edits, and local documentation checkpoint commit: `87b9a4390c558f895bcb1e7de69cab535c522f77` (`Record pushed remediation checkpoint`).
-- The Solar Surplus implementation commit is `7ded75f9155d7002150a7308f03eb9510f5beb39` (`Stabilize Solar Surplus bypass hysteresis`). The pushed remediation checkpoint and current upstream tip remain `c12da071a6bd18849eff125771ac525b85fd3470`; the local documentation checkpoint is `87b9a4390c558f895bcb1e7de69cab535c522f77`, so the branch was ahead 1 / behind 0 before these edits.
-- Candidate metadata for `2.3.44-haos55` is now prepared locally but remains uncommitted and unpushed. No `.55` tag exists, and no `.55` build, publish, release, deployment, installation, restart, live test, or live acceptance has occurred. Live remains `2.3.43-haos54`, rollback remains `2.3.42-haos53`, and no Home Assistant or Sigenergy write has occurred.
+- Current local HEAD and candidate-metadata commit: `c607cf3ac2366c713a1a6a6374eba02e09a558ea` (`Prepare 2.3.44-haos55 Phase 1 candidate`), with parent `87b9a4390c558f895bcb1e7de69cab535c522f77` (`Record pushed remediation checkpoint`).
+- The Solar Surplus implementation commit is `7ded75f9155d7002150a7308f03eb9510f5beb39` (`Stabilize Solar Surplus bypass hysteresis`). The pushed remediation checkpoint and current upstream tip remain `c12da071a6bd18849eff125771ac525b85fd3470`; the branch was ahead 2 / behind 0 before these documentation edits.
+- Candidate metadata for `2.3.44-haos55` is committed locally but not yet pushed. No local or remote `v2.3.44-haos55` tag exists, and no `.55` build, publish, release, deployment, installation, restart, live test, or live acceptance has occurred. Live remains `2.3.43-haos54`. The known-good rollback remains `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`, and no Home Assistant or Sigenergy write has occurred.
 
 Nothing from the current remediation branch has been deployed, live-tested, or live-accepted.
 
@@ -82,6 +82,6 @@ Validation evidence: focused API/config **11 passed**; affected Solar Surplus **
 
 ## Next action
 
-Review the locally prepared, uncommitted and unpushed `2.3.44-haos55` candidate metadata, then decide separately whether to commit it. No final candidate commit SHA exists yet. Tagging, building, publishing, releasing, deploying, installing, restarting, live testing, and live acceptance remain separate later boundaries requiring explicit approval.
+Review and commit this documentation truth correction, then separately decide whether to push the .55 candidate branch. Tag/build/release/live testing remain later approval boundaries.
 
 Do not release, deploy, install, restart, or claim live acceptance as part of either decision. Preserve the Phase 2 close -> observe closed -> request MSC -> observe exact MSC -> reopen contract and its two expected failing tests.
