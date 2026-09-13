@@ -21,9 +21,9 @@ GitHub `main` remains `c624f0b4392634cf19276186ba46f4b80268627b` (`Record Phase 
 - Package 6A capability-trust production/test checkpoint: `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`).
 - Package 6A documentation checkpoint: `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573`.
 - Package 6A documentation-sync checkpoint: `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69`.
-- Current local branch HEAD: `7ded75f9155d7002150a7308f03eb9510f5beb39` (`Stabilize Solar Surplus bypass hysteresis`), with parent `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2` (`Repair exact-full MSC load-serving discharge handling`).
-- The Solar Surplus PV-margin hysteresis repair, including runtime API/config validation, environment/UI exposure, tests, and bounded documentation, is committed locally at the current HEAD but is not pushed. The branch is ahead of `origin/fix/phase1-audit-remediation` by one commit, and the working tree was clean immediately after the commit.
-- The Solar Surplus repair has not been tagged, built, released, deployed, installed, restarted, live-tested, or live-accepted.
+- Current local branch HEAD and checkpoint documentation commit: `c12da071a6bd18849eff125771ac525b85fd3470` (`Update remediation checkpoint documentation`).
+- The Solar Surplus PV-margin hysteresis repair is commit `7ded75f9155d7002150a7308f03eb9510f5beb39` (`Stabilize Solar Surplus bypass hysteresis`). Both that repair and the checkpoint documentation commit are pushed to `origin/fix/phase1-audit-remediation`. The branch was synchronized at `c12da071a6bd18849eff125771ac525b85fd3470` (ahead 0 / behind 0), and the working tree was clean immediately before the current documentation edits; the current working tree contains only the two intentional modifications to `docs/AI_HANDOVER.md` and `docs/CURRENT_STATE.md`.
+- The Solar Surplus repair has not been tagged, built, released, deployed, installed, restarted, live-tested, or live-accepted, and no Home Assistant or Sigenergy write has occurred for it.
 
 Nothing from the current remediation branch has been deployed, live-tested, or live-accepted.
 
@@ -82,6 +82,6 @@ Validation evidence: focused API/config **11 passed**; affected Solar Surplus **
 
 ## Next action
 
-Review and commit this post-commit documentation truth correction, then decide separately whether to push the branch.
+No `2.3.44-haos55` candidate metadata currently exists or has been prepared. Preparing `.55` candidate metadata is the next separate engineering boundary only after this documentation checkpoint is reviewed and committed; no tag/build/release/deployment without later explicit approval.
 
 Do not release, deploy, install, restart, or claim live acceptance as part of either decision. Preserve the Phase 2 close -> observe closed -> request MSC -> observe exact MSC -> reopen contract and its two expected failing tests.
