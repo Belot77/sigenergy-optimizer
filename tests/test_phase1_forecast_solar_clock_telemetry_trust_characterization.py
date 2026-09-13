@@ -18,6 +18,7 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
 
     MORNING = datetime(2026, 1, 15, 6, 0, 0)
     HOLD_OFF_MORNING = datetime(2026, 1, 15, 8, 0, 0)
+    AFTERNOON = datetime(2026, 1, 15, 14, 0, 0)
     EVENING = datetime(2026, 1, 15, 17, 30, 0)
 
     @staticmethod
@@ -187,6 +188,8 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
         when = when or self.FIXED_AFTERNOON
         ha = RecordingHA()
         optimizer = self.optimizer(ha=ha, **dict(settings or {}))
+        # These fixtures express policy times as naive host-local datetimes.
+        optimizer._tz = timezone(when.astimezone().utcoffset() or timedelta())
         ha.states = self._states(optimizer, when=when, **state_overrides)
         with self.optimizer_time(when):
             state = asyncio.run(optimizer._read_state())
@@ -194,14 +197,29 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
         return optimizer, state, decision
 
     @staticmethod
-    def _morning_detail(when: datetime, pv_estimate: object = 10.0) -> list[dict[str, object]]:
-        return [
-            {
-                "period_start": (when + timedelta(hours=hours)).isoformat(),
-                "pv_estimate": pv_estimate,
-            }
-            for hours in (3, 5, 7, 9, 11)
-        ]
+    def _aware_iso(when: datetime) -> str:
+        """Render a naive local test instant as an explicitly zoned timestamp."""
+        return datetime.fromtimestamp(when.timestamp(), timezone.utc).isoformat()
+
+    @classmethod
+    def _morning_detail(
+        cls,
+        when: datetime,
+        pv_estimate: object = 10.0,
+    ) -> list[dict[str, object]]:
+        """Return a realistic complete local day of half-hour Solcast periods."""
+        day_start = when.replace(hour=0, minute=0, second=0, microsecond=0)
+        detail: list[dict[str, object]] = []
+        for index in range(48):
+            period_start = day_start + timedelta(minutes=30 * index)
+            productive = 8 <= period_start.hour < 17
+            detail.append(
+                {
+                    "period_start": cls._aware_iso(period_start),
+                    "pv_estimate": pv_estimate if productive else 0.0,
+                }
+            )
+        return detail
 
     # Aggregate forecast trust and genuine-zero controls.
     def test_invalid_aggregate_forecasts_collapse_to_numeric_zero(self) -> None:
@@ -299,7 +317,7 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
         self.assertFalse(decision.standby_holdoff_active)
 
     # Morning Dump and detailed forecast trust.
-    def test_stale_detailed_forecast_source_cannot_authorize_morning_dump(self) -> None:
+    def test_old_parent_with_complete_current_day_detail_can_authorize_morning_dump(self) -> None:
         stale_at = self.MORNING - timedelta(hours=2)
         _optimizer, _state, decision = self._read_and_decide(
             when=self.MORNING,
@@ -310,11 +328,17 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
             feedin_price=0.05,
             settings={"morning_dump_enabled": True},
         )
-        self.assertFalse(decision.morning_dump_active)
+        self.assertFalse(
+            bool(decision.trace_gates.get("forecast_today_observation_trusted"))
+        )
+        self.assertTrue(
+            bool(decision.trace_gates.get("solcast_detailed_source_trusted"))
+        )
+        self.assertTrue(decision.morning_dump_active)
 
     def test_nonfinite_positive_detailed_forecast_cannot_authorize_morning_dump(self) -> None:
         detail = self._morning_detail(self.MORNING)
-        detail[0]["pv_estimate"] = "inf"
+        detail[20]["pv_estimate"] = "inf"
         _optimizer, _state, decision = self._read_and_decide(
             when=self.MORNING,
             detailed_forecast=detail,
@@ -325,14 +349,11 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
         )
         self.assertFalse(decision.morning_dump_active)
 
-    def test_missing_empty_invalid_and_nonpositive_detail_are_conservative_for_dump(self) -> None:
+    def test_missing_empty_and_non_list_detail_are_conservative_for_dump(self) -> None:
         cases = (
             _MISSING,
             [],
             ["invalid"],
-            [{"period_start": "bad", "pv_estimate": 100.0}],
-            [{"period_start": (self.MORNING + timedelta(hours=3)).isoformat(), "pv_estimate": "nan"}],
-            [{"period_start": (self.MORNING + timedelta(hours=3)).isoformat(), "pv_estimate": "-inf"}],
         )
         for detail in cases:
             with self.subTest(detail=detail):
@@ -346,13 +367,43 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
                 )
                 self.assertFalse(decision.morning_dump_active)
 
+    def test_malformed_timestamp_or_estimate_invalidates_complete_detail(self) -> None:
+        cases = (
+            ("bad_timestamp", "period_start", "bad"),
+            (
+                "naive_timestamp",
+                "period_start",
+                self.MORNING.replace(hour=10).isoformat(),
+            ),
+            ("non_numeric_estimate", "pv_estimate", "bad"),
+            ("nan_estimate", "pv_estimate", "nan"),
+            ("positive_infinite_estimate", "pv_estimate", "inf"),
+            ("negative_infinite_estimate", "pv_estimate", "-inf"),
+            ("negative_estimate", "pv_estimate", -0.1),
+            ("missing_estimate", "pv_estimate", _MISSING),
+        )
+        for name, key, value in cases:
+            with self.subTest(name=name):
+                detail = self._morning_detail(self.MORNING)
+                if value is _MISSING:
+                    detail[20].pop(key)
+                else:
+                    detail[20][key] = value
+                _optimizer, _state, decision = self._read_and_decide(
+                    when=self.MORNING,
+                    detailed_forecast=detail,
+                    battery_soc=80.0,
+                    available_discharge_kwh=24.0,
+                    feedin_price=0.05,
+                    settings={"morning_dump_enabled": True},
+                )
+                self.assertFalse(decision.morning_dump_active)
+                self.assertFalse(
+                    bool(decision.trace_gates.get("solcast_detailed_source_trusted"))
+                )
+
     def test_previous_day_detailed_points_do_not_authorize_morning_dump(self) -> None:
-        detail = [
-            {
-                "period_start": (self.MORNING - timedelta(days=1, hours=-3)).isoformat(),
-                "pv_estimate": 100.0,
-            }
-        ]
+        detail = self._morning_detail(self.MORNING - timedelta(days=1))
         _optimizer, _state, decision = self._read_and_decide(
             when=self.MORNING,
             detailed_forecast=detail,
@@ -362,15 +413,18 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
             settings={"morning_dump_enabled": True},
         )
         self.assertFalse(decision.morning_dump_active)
+        self.assertTrue(
+            bool(decision.trace_gates.get("solcast_detailed_source_trusted"))
+        )
 
-    def test_partial_horizon_can_satisfy_dump_energy_without_coverage_provenance(self) -> None:
+    def test_sparse_two_point_horizon_cannot_authorize_morning_dump(self) -> None:
         detail = [
             {
-                "period_start": (self.MORNING + timedelta(hours=3)).isoformat(),
+                "period_start": self._aware_iso(self.MORNING + timedelta(hours=3)),
                 "pv_estimate": 100.0,
             },
             {
-                "period_start": (self.MORNING + timedelta(hours=11)).isoformat(),
+                "period_start": self._aware_iso(self.MORNING + timedelta(hours=11)),
                 "pv_estimate": 1.0,
             },
         ]
@@ -383,7 +437,98 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
             settings={"morning_dump_enabled": True},
         )
         self.assertEqual(detail, state.solcast_detailed)
+        self.assertFalse(decision.morning_dump_active)
+        self.assertFalse(
+            bool(decision.trace_gates.get("solcast_detailed_source_trusted"))
+        )
+
+    def test_complete_half_hour_horizon_can_authorize_morning_dump(self) -> None:
+        _optimizer, _state, decision = self._read_and_decide(
+            when=self.MORNING,
+            detailed_forecast=self._morning_detail(self.MORNING),
+            battery_soc=80.0,
+            available_discharge_kwh=24.0,
+            feedin_price=0.05,
+            settings={"morning_dump_enabled": True},
+        )
         self.assertTrue(decision.morning_dump_active)
+
+    def test_morning_dump_rejects_gaps_truncation_late_start_duplicates_and_disorder(self) -> None:
+        complete = self._morning_detail(self.MORNING)
+
+        internal_gap = [dict(period) for period in complete]
+        internal_gap.pop(24)
+
+        truncated = [dict(period) for period in complete[:32]]
+        late_start = [dict(period) for period in complete[17:]]
+
+        duplicate = [dict(period) for period in complete]
+        duplicate.insert(25, dict(duplicate[24]))
+
+        conflicting_duplicate = [dict(period) for period in complete]
+        conflict = dict(conflicting_duplicate[24])
+        conflict["pv_estimate"] = 99.0
+        conflicting_duplicate.insert(25, conflict)
+
+        unordered = [dict(period) for period in complete]
+        unordered[24], unordered[25] = unordered[25], unordered[24]
+
+        cases = (
+            ("internal_gap", internal_gap),
+            ("truncated", truncated),
+            ("late_start", late_start),
+            ("duplicate", duplicate),
+            ("conflicting_duplicate", conflicting_duplicate),
+            ("unordered", unordered),
+        )
+        for name, detail in cases:
+            with self.subTest(name=name):
+                _optimizer, _state, decision = self._read_and_decide(
+                    when=self.MORNING,
+                    detailed_forecast=detail,
+                    battery_soc=80.0,
+                    available_discharge_kwh=24.0,
+                    feedin_price=0.05,
+                    settings={"morning_dump_enabled": True},
+                )
+                self.assertFalse(decision.morning_dump_active)
+
+    def test_complete_zero_production_detail_is_valid_but_cannot_prove_refill(self) -> None:
+        _optimizer, _state, decision = self._read_and_decide(
+            when=self.MORNING,
+            detailed_forecast=self._morning_detail(self.MORNING, pv_estimate=0.0),
+            battery_soc=80.0,
+            available_discharge_kwh=24.0,
+            feedin_price=0.05,
+            settings={"morning_dump_enabled": True},
+        )
+        self.assertTrue(
+            bool(decision.trace_gates.get("solcast_detailed_source_trusted"))
+        )
+        self.assertFalse(decision.morning_dump_active)
+
+    def test_detail_same_day_check_uses_optimizer_timezone(self) -> None:
+        optimizer = self.optimizer()
+        local_start = datetime(2026, 1, 15, 23, 30)
+        local_end = datetime(2026, 1, 16, 0, 30)
+        start_ts = local_start.timestamp()
+        end_ts = local_end.timestamp()
+        host_offset = local_start.astimezone().utcoffset() or timedelta()
+        configured_offset = (
+            host_offset - timedelta(hours=12)
+            if host_offset >= timedelta()
+            else host_offset + timedelta(hours=12)
+        )
+        optimizer._tz = timezone(configured_offset)
+        periods = [
+            (start_ts - 1800.0, 1.0),
+            (start_ts, 1.0),
+            (start_ts + 1800.0, 1.0),
+        ]
+
+        self.assertTrue(
+            optimizer._detailed_forecast_covers(periods, start_ts, end_ts)
+        )
 
     def test_morning_dump_retains_deliberate_owner_and_fifteen_percent_floor(self) -> None:
         settings = {"morning_dump_enabled": True, "morning_dump_min_soc": 15.0}
@@ -415,12 +560,7 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
             when=self.EVENING,
             forecast_tomorrow_state="120.0",
             forecast_tomorrow_observed_at=stale_at,
-            detailed_forecast=[
-                {
-                    "period_start": datetime(2026, 1, 15, 16, 0).isoformat(),
-                    "pv_estimate": 2.0,
-                }
-            ],
+            detailed_forecast=self._morning_detail(self.EVENING),
             battery_soc=80.0,
             available_discharge_kwh=24.0,
             load_kw=0.0,
@@ -438,12 +578,7 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
                 _optimizer, state, decision = self._read_and_decide(
                     when=self.EVENING,
                     forecast_tomorrow_state=raw_value,
-                    detailed_forecast=[
-                        {
-                            "period_start": datetime(2026, 1, 15, 16, 0).isoformat(),
-                            "pv_estimate": 2.0,
-                        }
-                    ],
+                    detailed_forecast=self._morning_detail(self.EVENING),
                     battery_soc=80.0,
                     available_discharge_kwh=24.0,
                     load_kw=0.0,
@@ -456,16 +591,13 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
                 self.assertEqual(0.0, state.forecast_tomorrow_kwh)
                 self.assertFalse(decision.evening_export_boost_active)
 
-    def test_fresh_positive_tomorrow_forecast_preserves_evening_boost(self) -> None:
+    def test_old_detailed_parent_with_complete_horizon_preserves_evening_boost(self) -> None:
+        stale_at = self.EVENING - timedelta(hours=2)
         _optimizer, _state, decision = self._read_and_decide(
             when=self.EVENING,
             forecast_tomorrow_state="120.0",
-            detailed_forecast=[
-                {
-                    "period_start": datetime(2026, 1, 15, 16, 0).isoformat(),
-                    "pv_estimate": 2.0,
-                }
-            ],
+            forecast_today_observed_at=stale_at,
+            detailed_forecast=self._morning_detail(self.EVENING),
             battery_soc=80.0,
             available_discharge_kwh=24.0,
             load_kw=0.0,
@@ -475,11 +607,92 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
                 "evening_boost_min_tomorrow_forecast_kwh": 100.0,
             },
         )
+        self.assertFalse(
+            bool(decision.trace_gates.get("forecast_today_observation_trusted"))
+        )
+        self.assertTrue(
+            bool(decision.trace_gates.get("solcast_detailed_source_trusted"))
+        )
         self.assertTrue(decision.evening_export_boost_active)
         self.assertEqual(
             "evening_export_boost",
             decision.trace_values.get("battery_export_owner"),
         )
+
+    def test_evening_boost_requires_detail_coverage_through_sunset(self) -> None:
+        complete = self._morning_detail(self.EVENING)
+
+        internal_gap = [dict(period) for period in complete]
+        internal_gap.pop(35)
+        truncated = [dict(period) for period in complete[:35]]
+
+        for name, detail in (
+            ("internal_gap", internal_gap),
+            ("truncated", truncated),
+        ):
+            with self.subTest(name=name):
+                _optimizer, _state, decision = self._read_and_decide(
+                    when=self.EVENING,
+                    forecast_tomorrow_state="120.0",
+                    detailed_forecast=detail,
+                    battery_soc=80.0,
+                    available_discharge_kwh=24.0,
+                    load_kw=0.0,
+                    feedin_price=0.15,
+                    settings={
+                        "evening_boost_enabled": True,
+                        "evening_boost_min_tomorrow_forecast_kwh": 100.0,
+                    },
+                )
+                self.assertFalse(decision.evening_export_boost_active)
+
+    # Battery Full Safeguard detailed-forecast coverage.
+    def test_old_parent_with_complete_detail_can_safely_clear_battery_full_safeguard(self) -> None:
+        stale_at = self.AFTERNOON - timedelta(hours=2)
+        _optimizer, _state, decision = self._read_and_decide(
+            when=self.AFTERNOON,
+            forecast_today_observed_at=stale_at,
+            detailed_forecast=self._morning_detail(self.AFTERNOON),
+            battery_soc=95.0,
+            available_discharge_kwh=29.0,
+            load_kw=0.0,
+            settings={
+                "battery_full_safeguard_enabled": True,
+                "battery_full_hours_before_sunset": 1.0,
+            },
+        )
+        self.assertFalse(
+            bool(decision.trace_gates.get("forecast_today_observation_trusted"))
+        )
+        self.assertTrue(
+            bool(decision.trace_gates.get("solcast_detailed_source_trusted"))
+        )
+        self.assertFalse(decision.battery_full_safeguard)
+
+    def test_battery_full_safeguard_blocks_on_gap_or_truncated_target_horizon(self) -> None:
+        complete = self._morning_detail(self.AFTERNOON)
+
+        internal_gap = [dict(period) for period in complete]
+        internal_gap.pop(30)
+        truncated = [dict(period) for period in complete[:31]]
+
+        for name, detail in (
+            ("internal_gap", internal_gap),
+            ("truncated", truncated),
+        ):
+            with self.subTest(name=name):
+                _optimizer, _state, decision = self._read_and_decide(
+                    when=self.AFTERNOON,
+                    detailed_forecast=detail,
+                    battery_soc=95.0,
+                    available_discharge_kwh=29.0,
+                    load_kw=0.0,
+                    settings={
+                        "battery_full_safeguard_enabled": True,
+                        "battery_full_hours_before_sunset": 1.0,
+                    },
+                )
+                self.assertTrue(decision.battery_full_safeguard)
 
     # Forecast Safety Charging directionality.
     def test_invalid_remaining_forecast_pushes_cheap_topup_conservatively_toward_charge(self) -> None:
@@ -524,31 +737,40 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
         )
         self.assertEqual(0.0, limit)
 
-    # Detailed forecast and time provenance limitations.
-    def test_detailed_forecast_retains_points_but_loses_source_provenance(self) -> None:
+    # Detailed forecast source and structure provenance.
+    def test_old_parent_age_does_not_discard_structurally_complete_detail(self) -> None:
         detail = self._morning_detail(self.MORNING)
         stale_at = self.MORNING - timedelta(hours=2)
-        _optimizer, state, _decision = self._read_and_decide(
+        _optimizer, state, decision = self._read_and_decide(
             when=self.MORNING,
             forecast_today_observed_at=stale_at,
             detailed_forecast=detail,
         )
         self.assertEqual(detail, state.solcast_detailed)
-        self.assertFalse(hasattr(state, "solcast_detailed_trusted"))
-        self.assertFalse(hasattr(state, "solcast_detailed_observed_at"))
-        self.assertFalse(hasattr(state, "solcast_horizon_complete"))
+        self.assertFalse(
+            bool(decision.trace_gates.get("forecast_today_observation_trusted"))
+        )
+        self.assertTrue(
+            bool(decision.trace_gates.get("solcast_detailed_source_trusted"))
+        )
 
     def test_missing_and_empty_detailed_forecast_are_not_distinguishable(self) -> None:
-        _optimizer, missing, _decision = self._read_and_decide(
+        _optimizer, missing, missing_decision = self._read_and_decide(
             detailed_forecast=_MISSING
         )
-        _optimizer, empty, _decision = self._read_and_decide(detailed_forecast=[])
+        _optimizer, empty, empty_decision = self._read_and_decide(detailed_forecast=[])
         self.assertEqual([], missing.solcast_detailed)
         self.assertEqual(missing.solcast_detailed, empty.solcast_detailed)
+        self.assertFalse(
+            bool(missing_decision.trace_gates.get("solcast_detailed_source_trusted"))
+        )
+        self.assertFalse(
+            bool(empty_decision.trace_gates.get("solcast_detailed_source_trusted"))
+        )
 
     def test_forecast_point_time_is_retained_but_issue_time_and_coverage_are_absent(self) -> None:
         point = {
-            "period_start": (self.MORNING + timedelta(hours=3)).isoformat(),
+            "period_start": self._aware_iso(self.MORNING + timedelta(hours=3)),
             "pv_estimate": 5.0,
         }
         _optimizer, state, _decision = self._read_and_decide(

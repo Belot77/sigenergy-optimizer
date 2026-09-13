@@ -9,6 +9,25 @@ from haos49_characterization_helpers import Haos49CharacterizationCase, Recordin
 
 
 _MISSING = object()
+_DEFAULT_REPORTED_AT = object()
+
+
+class _ReportMetadataHA(RecordingHA):
+    """Recording HA double with optional live state-report metadata."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.report_metadata: dict[str, dict[str, object]] = {}
+
+    async def get_state_report_metadata(
+        self,
+        entity_ids: list[str],
+    ) -> dict[str, dict[str, object]]:
+        return {
+            entity_id: self.report_metadata[entity_id]
+            for entity_id in entity_ids
+            if entity_id in self.report_metadata
+        }
 
 
 class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCase):
@@ -24,14 +43,27 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
         attributes: dict[str, object] | None = None,
         *,
         observed_at: datetime | None = None,
+        updated_at: datetime | None = None,
+        reported_at: datetime | str | None | object = _DEFAULT_REPORTED_AT,
     ) -> dict[str, object]:
-        reported = observed_at or when
-        reported_utc = datetime.fromtimestamp(reported.timestamp(), timezone.utc)
-        return {
+        observed = observed_at or when
+        updated = updated_at or observed
+        entity = {
             "state": state,
             "attributes": dict(attributes or {}),
-            "last_reported": reported_utc.isoformat(),
+            "last_updated": datetime.fromtimestamp(
+                updated.timestamp(),
+                timezone.utc,
+            ).isoformat(),
         }
+        reported = observed if reported_at is _DEFAULT_REPORTED_AT else reported_at
+        if reported is not _MISSING:
+            entity["last_reported"] = (
+                datetime.fromtimestamp(reported.timestamp(), timezone.utc).isoformat()
+                if isinstance(reported, datetime)
+                else reported
+            )
+        return entity
 
     def _read_and_decide(
         self,
@@ -39,8 +71,13 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
         when: datetime | None = None,
         battery_soc_state: object = "60.0",
         battery_soc_observed_at: datetime | None = None,
+        battery_soc_updated_at: datetime | None = None,
+        battery_soc_reported_at: datetime | str | None | object = _DEFAULT_REPORTED_AT,
+        battery_soc_enriched_reported_at: datetime | None = None,
         capacity_state: object = "30.0",
         capacity_observed_at: datetime | None = None,
+        capacity_reported_at: datetime | str | None | object = _DEFAULT_REPORTED_AT,
+        capacity_unit: object = "kWh",
         available_energy_state: object = "18.0",
         available_energy_observed_at: datetime | None = None,
         price_state: object = "0.30",
@@ -53,12 +90,16 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
         grid_export_kw: float = 0.0,
         forecast_remaining_kwh: float = 100.0,
         forecast_tomorrow_kwh: float = 100.0,
+        forecast_today_observed_at: datetime | None = None,
+        forecast_today_reported_at: datetime | str | None | object = _DEFAULT_REPORTED_AT,
         solcast_detailed: list[dict[str, object]] | None = None,
         **settings_overrides: object,
     ):
         when = when or self.FIXED_AFTERNOON
-        ha = RecordingHA()
+        ha = _ReportMetadataHA()
         optimizer = self.optimizer(ha=ha, **settings_overrides)
+        # These fixtures express policy times as naive host-local datetimes.
+        optimizer._tz = timezone(when.astimezone().utcoffset() or timedelta())
         cfg = optimizer.cfg
 
         states: dict[str, dict[str, object]] = {
@@ -91,6 +132,8 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
                 100.0,
                 when,
                 {"detailedForecast": list(solcast_detailed or [])},
+                observed_at=forecast_today_observed_at,
+                reported_at=forecast_today_reported_at,
             ),
             cfg.forecast_tomorrow_sensor: self._entity(forecast_tomorrow_kwh, when),
             cfg.solar_power_now_sensor: self._entity(pv_kw, when),
@@ -106,13 +149,21 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
                 battery_soc_state,
                 when,
                 observed_at=battery_soc_observed_at,
+                updated_at=battery_soc_updated_at,
+                reported_at=battery_soc_reported_at,
             )
         if capacity_state is not _MISSING:
+            capacity_attributes = (
+                {}
+                if capacity_unit is _MISSING
+                else {"unit_of_measurement": capacity_unit}
+            )
             states[cfg.rated_capacity_sensor] = self._entity(
                 capacity_state,
                 when,
-                {"unit_of_measurement": "kWh"},
+                capacity_attributes,
                 observed_at=capacity_observed_at,
+                reported_at=capacity_reported_at,
             )
         if available_energy_state is not _MISSING:
             states[cfg.available_discharge_sensor] = self._entity(
@@ -121,6 +172,24 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
                 {"unit_of_measurement": "kWh"},
                 observed_at=available_energy_observed_at,
             )
+
+        for entity_id, entity in states.items():
+            entity["entity_id"] = entity_id
+
+        if (
+            battery_soc_enriched_reported_at is not None
+            and cfg.battery_soc_sensor in states
+        ):
+            soc_entity = states[cfg.battery_soc_sensor]
+            ha.report_metadata[cfg.battery_soc_sensor] = {
+                "entity_id": cfg.battery_soc_sensor,
+                "state": soc_entity["state"],
+                "last_updated": soc_entity["last_updated"],
+                "last_reported": datetime.fromtimestamp(
+                    battery_soc_enriched_reported_at.timestamp(),
+                    timezone.utc,
+                ).isoformat(),
+            }
 
         ha.states = states
         with self.optimizer_time(when):
@@ -149,13 +218,21 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
 
     @staticmethod
     def _morning_forecast(when: datetime, pv_estimate: float) -> list[dict[str, object]]:
-        return [
-            {
-                "period_start": (when + timedelta(hours=hours)).isoformat(),
-                "pv_estimate": pv_estimate,
-            }
-            for hours in (3, 5, 7, 9, 11)
-        ]
+        midnight = when.replace(hour=0, minute=0, second=0, microsecond=0)
+        forecast: list[dict[str, object]] = []
+        for half_hour in range(48):
+            period_start = midnight + timedelta(minutes=30 * half_hour)
+            productive = 8 <= period_start.hour < 17
+            forecast.append(
+                {
+                    "period_start": datetime.fromtimestamp(
+                        period_start.timestamp(),
+                        timezone.utc,
+                    ).isoformat(),
+                    "pv_estimate": pv_estimate if productive else 0.0,
+                }
+            )
+        return forecast
 
     # Unavailable and non-finite SoC must not become a permissive synthetic 0%.
     def test_missing_soc_cannot_authorize_positive_price_topup(self) -> None:
@@ -200,8 +277,8 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
             battery_soc_observed_at=self.FIXED_AFTERNOON - timedelta(hours=2),
         )
 
-    def test_stale_high_soc_cannot_authorize_deliberate_high_price_export(self) -> None:
-        self._assert_no_deliberate_export(
+    def test_unenriched_stable_high_soc_remains_stale_and_cannot_export(self) -> None:
+        _optimizer, state, decision = self._read_and_decide(
             battery_soc_state="95.0",
             battery_soc_observed_at=self.FIXED_AFTERNOON - timedelta(hours=2),
             available_energy_state="28.5",
@@ -209,6 +286,26 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
             pv_kw=4.0,
             load_kw=1.0,
         )
+        self.assertFalse(bool(state.battery_soc_trusted))
+        self.assertFalse(bool(decision.trace_gates.get("battery_soc_trusted")))
+        self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+
+    def test_matching_fresh_report_metadata_proves_stable_soc_current(self) -> None:
+        stale_snapshot_timestamp = self.FIXED_AFTERNOON - timedelta(hours=2)
+        _optimizer, state, decision = self._read_and_decide(
+            battery_soc_state="95.0",
+            battery_soc_observed_at=stale_snapshot_timestamp,
+            battery_soc_enriched_reported_at=self.FIXED_AFTERNOON,
+            available_energy_state="28.5",
+            feedin_state="1.10",
+            pv_kw=4.0,
+            load_kw=1.0,
+        )
+        self.assertTrue(bool(state.battery_soc_trusted))
+        self.assertTrue(bool(decision.trace_gates.get("battery_soc_trusted")))
+        self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual("high_price", decision.trace_values.get("battery_export_owner"))
 
     # Unknown SoC is already conservative for representative deliberate owners.
     def test_unavailable_soc_does_not_authorize_high_price_export(self) -> None:
@@ -293,6 +390,81 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
         self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
 
     # Capacity and available-energy trust matters only where it changes eligibility.
+    def test_unchanged_old_valid_capacity_remains_trusted(self) -> None:
+        _optimizer, state, decision = self._read_and_decide(
+            battery_soc_state="30.0",
+            capacity_state="40.3",
+            capacity_observed_at=self.FIXED_AFTERNOON - timedelta(days=1),
+            available_energy_state="0.0",
+            price_state="0.01",
+            price_is_estimate=True,
+            feedin_state="0.0",
+            forecast_remaining_kwh=0.0,
+        )
+        self.assertEqual(40.3, state.battery_capacity_kwh)
+        self.assertTrue(bool(state.battery_capacity_trusted))
+        self.assertTrue(bool(decision.trace_gates.get("battery_capacity_trusted")))
+        self.assertEqual(2.0, decision.import_limit)
+        self.assertEqual(MODE_CMD_CHARGE_PV, decision.ems_mode)
+        self.assertEqual("cheap_topup_import", decision.trace_values.get("import_branch"))
+
+    def test_invalid_capacity_snapshots_remain_untrusted(self) -> None:
+        cases = (
+            ("missing", _MISSING, "kWh"),
+            ("unavailable", "unavailable", "kWh"),
+            ("unknown", "unknown", "kWh"),
+            ("none", "none", "kWh"),
+            ("blank", "", "kWh"),
+            ("non_numeric", "forty", "kWh"),
+            ("nan", "nan", "kWh"),
+            ("positive_infinity", "inf", "kWh"),
+            ("negative_infinity", "-inf", "kWh"),
+            ("zero", "0.0", "kWh"),
+            ("negative", "-1.0", "kWh"),
+            ("missing_unit", "40.3", _MISSING),
+            ("unsupported_unit", "40.3", "MJ"),
+        )
+        for label, raw_capacity, capacity_unit in cases:
+            with self.subTest(case=label):
+                _optimizer, state, decision = self._read_and_decide(
+                    battery_soc_state="30.0",
+                    capacity_state=raw_capacity,
+                    capacity_unit=capacity_unit,
+                    available_energy_state="0.0",
+                    price_state="0.01",
+                    price_is_estimate=True,
+                    feedin_state="0.0",
+                    forecast_remaining_kwh=0.0,
+                )
+                self.assertFalse(bool(state.battery_capacity_trusted))
+                self.assertFalse(
+                    bool(decision.trace_gates.get("battery_capacity_trusted"))
+                )
+                self.assertEqual(0.0, decision.import_limit)
+                self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+                self.assertNotEqual(
+                    "cheap_topup_import",
+                    decision.trace_values.get("import_branch"),
+                )
+
+    def test_supported_capacity_units_normalize_to_kwh(self) -> None:
+        cases = (
+            ("Wh", "40300", 40.3),
+            ("kWh", "40.3", 40.3),
+            ("MWh", "0.0403", 40.3),
+        )
+        for unit, raw_capacity, expected_kwh in cases:
+            with self.subTest(unit=unit):
+                _optimizer, state, decision = self._read_and_decide(
+                    capacity_state=raw_capacity,
+                    capacity_unit=unit,
+                )
+                self.assertAlmostEqual(expected_kwh, state.battery_capacity_kwh)
+                self.assertTrue(bool(state.battery_capacity_trusted))
+                self.assertTrue(
+                    bool(decision.trace_gates.get("battery_capacity_trusted"))
+                )
+
     def test_missing_capacity_cannot_authorize_positive_price_topup(self) -> None:
         _optimizer, state, decision = self._read_and_decide(
             battery_soc_state="30.0",
@@ -322,7 +494,7 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
         )
 
     def test_stale_high_available_energy_cannot_authorize_morning_dump(self) -> None:
-        self._assert_no_deliberate_export(
+        _optimizer, state, decision = self._read_and_decide(
             when=self.MORNING,
             battery_soc_state="80.0",
             capacity_state="30.0",
@@ -332,6 +504,13 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
             solcast_detailed=self._morning_forecast(self.MORNING, 10.0),
             morning_dump_enabled=True,
         )
+        self.assertFalse(bool(state.available_discharge_energy_trusted))
+        self.assertFalse(
+            bool(decision.trace_gates.get("available_discharge_energy_trusted"))
+        )
+        self.assertFalse(bool(decision.trace_gates.get("morning_dump_active")))
+        self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
 
     def test_missing_available_energy_fallback_is_conservative_for_morning_dump(self) -> None:
         _optimizer, state, decision = self._read_and_decide(
@@ -360,6 +539,40 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
         )
         self.assertEqual(30.0, state.battery_capacity_kwh)
         self.assertEqual(24.0, state.available_discharge_energy_kwh)
+        self.assertTrue(bool(decision.trace_gates.get("morning_dump_active")))
+        self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual("morning_dump", decision.trace_values.get("battery_export_owner"))
+
+    def test_live_regression_combination_preserves_owned_morning_dump(self) -> None:
+        old_dynamic_timestamp = self.MORNING - timedelta(hours=2)
+        old_capacity_timestamp = self.MORNING - timedelta(days=1)
+        _optimizer, state, decision = self._read_and_decide(
+            when=self.MORNING,
+            battery_soc_state="47.1",
+            battery_soc_observed_at=old_dynamic_timestamp,
+            battery_soc_reported_at=_MISSING,
+            battery_soc_enriched_reported_at=self.MORNING,
+            capacity_state="40.3",
+            capacity_observed_at=old_capacity_timestamp,
+            capacity_reported_at=_MISSING,
+            available_energy_state="19.77",
+            forecast_today_observed_at=old_dynamic_timestamp,
+            forecast_today_reported_at=_MISSING,
+            feedin_state="0.05",
+            solcast_detailed=self._morning_forecast(self.MORNING, 10.0),
+            morning_dump_enabled=True,
+        )
+
+        self.assertTrue(bool(state.battery_soc_trusted))
+        self.assertTrue(bool(state.battery_capacity_trusted))
+        self.assertTrue(bool(state.available_discharge_energy_trusted))
+        self.assertFalse(bool(state.forecast_today_observation_trusted))
+        self.assertTrue(
+            bool(decision.trace_gates.get("solcast_detailed_source_trusted"))
+        )
+        self.assertTrue(
+            bool(decision.trace_gates.get("morning_dump_detailed_coverage"))
+        )
         self.assertTrue(bool(decision.trace_gates.get("morning_dump_active")))
         self.assertEqual(BATTERY_EXPORT, decision.export_intent)
         self.assertEqual("morning_dump", decision.trace_values.get("battery_export_owner"))

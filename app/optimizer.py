@@ -1141,6 +1141,88 @@ class SigEnergyOptimizer:
                 entity_ids.append(candidate)
         bulk = await self.ha.bulk_states(entity_ids)
 
+        def _parse_aware_metadata_timestamp(raw_timestamp: object) -> Optional[datetime]:
+            if not raw_timestamp:
+                return None
+            try:
+                parsed = datetime.fromisoformat(
+                    str(raw_timestamp).replace("Z", "+00:00")
+                )
+                if parsed.tzinfo is None or parsed.utcoffset() is None:
+                    return None
+                return parsed.astimezone(timezone.utc)
+            except (TypeError, ValueError, OverflowError):
+                return None
+
+        # REST state JSON may retain a frozen last_reported value for unchanged
+        # entities.  Only the optimizer's freshness-sensitive observations request
+        # current State-object metadata; other bulk_states consumers remain a
+        # single-request read path.
+        report_metadata_reader = getattr(self.ha, "get_state_report_metadata", None)
+        if callable(report_metadata_reader):
+            report_entity_ids = list(dict.fromkeys(filter(None, (
+                cfg.pv_power_sensor,
+                cfg.consumed_power_sensor,
+                cfg.battery_soc_sensor,
+                cfg.available_discharge_sensor,
+                cfg.sun_entity,
+                cfg.battery_power_sensor,
+                cfg.grid_import_power_sensor,
+                cfg.grid_export_power_sensor,
+                cfg.forecast_remaining_sensor,
+                cfg.forecast_today_sensor,
+                cfg.forecast_tomorrow_sensor,
+                cfg.solar_power_now_sensor,
+                cfg.grid_export_limit,
+            ))))
+
+            # Never use an unverified REST last_reported value when the reliable
+            # metadata path is available.  A failed enrichment safely falls back
+            # to genuine state-change time via last_updated.
+            for entity_id in report_entity_ids:
+                snapshot = bulk.get(entity_id)
+                if isinstance(snapshot, dict):
+                    sanitized = dict(snapshot)
+                    sanitized.pop("last_reported", None)
+                    bulk[entity_id] = sanitized
+
+            try:
+                report_metadata = await report_metadata_reader(report_entity_ids)
+            except Exception as exc:
+                logger.warning("State report metadata enrichment failed: %s", exc)
+                report_metadata = {}
+            if not isinstance(report_metadata, dict):
+                report_metadata = {}
+
+            for entity_id in report_entity_ids:
+                snapshot = bulk.get(entity_id)
+                metadata = report_metadata.get(entity_id)
+                if not isinstance(snapshot, dict) or not isinstance(metadata, dict):
+                    continue
+                if metadata.get("entity_id") != entity_id:
+                    continue
+                if snapshot.get("state") != metadata.get("state"):
+                    continue
+                snapshot_updated_at = _parse_aware_metadata_timestamp(
+                    snapshot.get("last_updated")
+                )
+                metadata_updated_at = _parse_aware_metadata_timestamp(
+                    metadata.get("last_updated")
+                )
+                metadata_reported_at = _parse_aware_metadata_timestamp(
+                    metadata.get("last_reported")
+                )
+                if (
+                    snapshot_updated_at is None
+                    or metadata_updated_at is None
+                    or metadata_reported_at is None
+                    or snapshot_updated_at != metadata_updated_at
+                ):
+                    continue
+                enriched = dict(snapshot)
+                enriched["last_reported"] = metadata_reported_at.isoformat()
+                bulk[entity_id] = enriched
+
         def _fv(eid: str, default: Optional[float] = 0.0) -> Optional[float]:
             obj = bulk.get(eid)
             if not obj:
@@ -1171,22 +1253,11 @@ class SigEnergyOptimizer:
         unavailable_states = {"unknown", "unavailable", "none", ""}
 
         def _metadata_timestamp(obj: dict[str, Any]) -> Optional[datetime]:
-            raw_timestamp = (
-                obj.get("last_reported")
-                if "last_reported" in obj
-                else obj.get("last_updated")
-            )
-            if not raw_timestamp:
-                return None
-            try:
-                updated_at = datetime.fromisoformat(
-                    str(raw_timestamp).replace("Z", "+00:00")
-                )
-                if updated_at.tzinfo is None:
-                    return None
-                return updated_at.astimezone(timezone.utc)
-            except (TypeError, ValueError):
-                return None
+            for field in ("last_reported", "last_updated"):
+                parsed = _parse_aware_metadata_timestamp(obj.get(field))
+                if parsed is not None:
+                    return parsed
+            return None
 
         def _metadata_is_fresh(
             obj: dict[str, Any],
@@ -1431,25 +1502,32 @@ class SigEnergyOptimizer:
             if capacity_observation.available
             else None
         )
-        cap_uom = (_attr(cfg.rated_capacity_sensor, "unit_of_measurement") or "kwh").lower()
+        cap_uom = str(
+            _attr(cfg.rated_capacity_sensor, "unit_of_measurement", "") or ""
+        ).strip().lower()
+        capacity_unit_supported = cap_uom in {"wh", "kwh", "mwh"}
         if cap_raw is None:
             normalized_capacity_kwh = 10.0
         elif cap_uom == "wh":
             normalized_capacity_kwh = cap_raw / 1000
-        elif 0 < cap_raw < 1.0:
+        elif cap_uom == "mwh":
             normalized_capacity_kwh = cap_raw * 1000
-        else:
+        elif cap_uom == "kwh":
             normalized_capacity_kwh = cap_raw
+        else:
+            normalized_capacity_kwh = 10.0
         capacity_usable = bool(
-            math.isfinite(normalized_capacity_kwh)
+            capacity_observation.available
+            and capacity_unit_supported
+            and math.isfinite(normalized_capacity_kwh)
             and normalized_capacity_kwh > 0.0
         )
         s.battery_capacity_kwh = (
             normalized_capacity_kwh if capacity_usable else 10.0
         )
-        s.battery_capacity_trusted = bool(
-            capacity_usable and capacity_observation.fresh
-        )
+        # Rated capacity is static capability data.  Its current valid snapshot
+        # does not become unsafe merely because the value remains unchanged.
+        s.battery_capacity_trusted = capacity_usable
 
         available_energy_observation = _observed_number(
             cfg.available_discharge_sensor,
@@ -1723,7 +1801,6 @@ class SigEnergyOptimizer:
         s.solcast_detailed = _attr(cfg.forecast_today_sensor, "detailedForecast") or []
         s.solcast_detailed_source_trusted = bool(
             forecast_today_observation.available
-            and forecast_today_observation.fresh
         )
         price_forecast_diagnostics: dict[str, Any] = {}
         s.price_forecast_entries = extract_forecast_entries(
@@ -1984,9 +2061,22 @@ class SigEnergyOptimizer:
             s.forecast_tomorrow_kwh,
             s.forecast_tomorrow_observation_trusted,
         )
-        solcast_detailed_source_trusted = bool(
-            s.solcast_detailed_source_trusted is not False
+        detailed_forecast_periods = self._normalize_detailed_forecast(
+            s.solcast_detailed
         )
+        detailed_forecast_validation_required = bool(
+            s.solcast_detailed_source_trusted is not None
+        )
+        if detailed_forecast_validation_required:
+            solcast_detailed_source_trusted = bool(
+                s.solcast_detailed_source_trusted
+                and detailed_forecast_periods is not None
+            )
+        else:
+            # Preserve the legacy pure-decision calling contract for hand-built
+            # SolarState instances.  Live snapshots always carry explicit source
+            # provenance and therefore use the strict validation path above.
+            solcast_detailed_source_trusted = True
 
         # ---- Battery capacity helpers --------------------------------
         cap = s.battery_capacity_kwh
@@ -2005,7 +2095,16 @@ class SigEnergyOptimizer:
 
         # ---- Productive solar window ---------------------------------
         productive_solar_end_ts = (
-            self._productive_solar_end_ts(s, sunset_ts, now_ts)
+            self._productive_solar_end_ts(
+                s,
+                sunset_ts,
+                now_ts,
+                detailed_periods=(
+                    detailed_forecast_periods
+                    if detailed_forecast_validation_required
+                    else None
+                ),
+            )
             if solcast_detailed_source_trusted
             else None
         )
@@ -2018,16 +2117,41 @@ class SigEnergyOptimizer:
             )
         else:
             morning_dump_start_ts, morning_dump_end_ts = None, None
+        morning_dump_detailed_coverage = bool(
+            solcast_detailed_source_trusted
+            and (
+                not detailed_forecast_validation_required
+                or (
+                    sunset_observation_trusted
+                    and morning_dump_end_ts is not None
+                    and self._detailed_forecast_covers(
+                        detailed_forecast_periods,
+                        morning_dump_end_ts,
+                        sunset_ts,
+                    )
+                )
+            )
+        )
         morning_dump_active = bool(
             battery_soc_trusted
             and battery_capacity_trusted
             and available_discharge_energy_trusted
             and solcast_detailed_source_trusted
+            and morning_dump_detailed_coverage
             and sun_state_observation_trusted
             and sunrise_observation_trusted
+            and (
+                sunset_observation_trusted
+                or not detailed_forecast_validation_required
+            )
             and self._morning_dump_active(
                 s, morning_dump_start_ts, morning_dump_end_ts,
-                productive_solar_end_ts, bat_fill_need_kwh, now_ts
+                productive_solar_end_ts, bat_fill_need_kwh, now_ts,
+                detailed_periods=(
+                    detailed_forecast_periods
+                    if detailed_forecast_validation_required
+                    else None
+                ),
             )
         )
         within_morning_grace = (
@@ -2089,12 +2213,27 @@ class SigEnergyOptimizer:
             self._holdoff_entry_floor = None
 
         # ---- Evening boost ------------------------------------------
+        evening_boost_detailed_coverage = bool(
+            solcast_detailed_source_trusted
+            and (
+                not detailed_forecast_validation_required
+                or (
+                    sunset_observation_trusted
+                    and self._detailed_forecast_covers(
+                        detailed_forecast_periods,
+                        now_ts,
+                        sunset_ts,
+                    )
+                )
+            )
+        )
         evening_export_boost_active = bool(
             battery_soc_trusted
             and battery_capacity_trusted
             and available_discharge_energy_trusted
             and forecast_tomorrow_observation_trusted
             and solcast_detailed_source_trusted
+            and evening_boost_detailed_coverage
             and self._evening_export_boost_active(
                 s, now_ts, productive_solar_end_ts, sunrise_soc_target, bat_fill_need_kwh
             )
@@ -2203,13 +2342,38 @@ class SigEnergyOptimizer:
         d.solar_surplus_bypass = solar_surplus_bypass
 
         # ---- Battery full safeguard ---------------------------------
+        battery_full_forecast_target_ts = (
+            sunset_ts - cfg.battery_full_hours_before_sunset * 3600
+        )
+        battery_full_detailed_coverage = bool(
+            solcast_detailed_source_trusted
+            and (
+                not detailed_forecast_validation_required
+                or (
+                    sunset_observation_trusted
+                    and self._detailed_forecast_covers(
+                        detailed_forecast_periods,
+                        now_ts,
+                        battery_full_forecast_target_ts,
+                    )
+                )
+            )
+        )
         battery_full_safeguard_block = self._battery_full_safeguard_block(
             s,
             now_ts,
             sunset_ts,
             bat_fill_need_kwh,
             is_evening_or_night,
-            detailed_forecast_trusted=solcast_detailed_source_trusted,
+            detailed_forecast_trusted=bool(
+                solcast_detailed_source_trusted
+                and battery_full_detailed_coverage
+            ),
+            detailed_periods=(
+                detailed_forecast_periods
+                if detailed_forecast_validation_required
+                else None
+            ),
         )
         d.battery_full_safeguard = battery_full_safeguard_block
 
@@ -3550,6 +3714,9 @@ class SigEnergyOptimizer:
             "forecast_today_observation_trusted": forecast_today_observation_trusted,
             "forecast_tomorrow_observation_trusted": forecast_tomorrow_observation_trusted,
             "solcast_detailed_source_trusted": solcast_detailed_source_trusted,
+            "morning_dump_detailed_coverage": morning_dump_detailed_coverage,
+            "evening_boost_detailed_coverage": evening_boost_detailed_coverage,
+            "battery_full_detailed_coverage": battery_full_detailed_coverage,
             "sun_state_observation_trusted": sun_state_observation_trusted,
             "sunrise_observation_trusted": sunrise_observation_trusted,
             "sunset_observation_trusted": sunset_observation_trusted,
@@ -5196,30 +5363,147 @@ class SigEnergyOptimizer:
                 pass
         return False
 
-    def _productive_solar_end_ts(self, s: SolarState, sunset_ts: float, now_ts: float) -> Optional[float]:
+    def _normalize_detailed_forecast(
+        self,
+        forecasts: object,
+    ) -> Optional[list[tuple[float, float]]]:
+        """Validate ordered Solcast periods and return ``(start_ts, pv_kw)``."""
+        if not isinstance(forecasts, list) or not forecasts:
+            return None
+        try:
+            period_seconds = float(self.cfg.solcast_forecast_period_hours) * 3600.0
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if not math.isfinite(period_seconds) or period_seconds <= 0.0:
+            return None
+
+        normalized: list[tuple[float, float]] = []
+        previous_start_ts: Optional[float] = None
+        for forecast in forecasts:
+            if not isinstance(forecast, dict):
+                return None
+            raw_start = forecast.get("period_start")
+            raw_pv = forecast.get("pv_estimate")
+            if not isinstance(raw_start, str) or not raw_start.strip():
+                return None
+            if isinstance(raw_pv, bool):
+                return None
+            try:
+                period_start = datetime.fromisoformat(
+                    raw_start.replace("Z", "+00:00")
+                )
+                if period_start.tzinfo is None or period_start.utcoffset() is None:
+                    return None
+                start_ts = period_start.timestamp()
+                pv_kw = float(raw_pv)
+            except (TypeError, ValueError, OverflowError):
+                return None
+            if (
+                not math.isfinite(start_ts)
+                or not math.isfinite(pv_kw)
+                or pv_kw < 0.0
+            ):
+                return None
+            if previous_start_ts is not None and not math.isclose(
+                start_ts - previous_start_ts,
+                period_seconds,
+                rel_tol=0.0,
+                abs_tol=1.0,
+            ):
+                return None
+            normalized.append((start_ts, pv_kw))
+            previous_start_ts = start_ts
+        return normalized
+
+    def _detailed_forecast_covers(
+        self,
+        forecasts: Optional[list[tuple[float, float]]],
+        start_ts: float,
+        end_ts: float,
+    ) -> bool:
+        """Return whether continuous normalized periods cover one local-day window."""
+        if not forecasts:
+            return False
+        try:
+            period_seconds = float(self.cfg.solcast_forecast_period_hours) * 3600.0
+            start_ts = float(start_ts)
+            end_ts = float(end_ts)
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if (
+            not math.isfinite(period_seconds)
+            or period_seconds <= 0.0
+            or not math.isfinite(start_ts)
+            or not math.isfinite(end_ts)
+            or end_ts <= start_ts
+        ):
+            return False
+        try:
+            start_day = datetime.fromtimestamp(start_ts, tz=self._tz).date()
+            end_day = datetime.fromtimestamp(
+                end_ts - min(1.0, period_seconds / 2.0),
+                tz=self._tz,
+            ).date()
+        except (OSError, OverflowError, ValueError):
+            return False
+        if start_day != end_day:
+            return False
+
+        tolerance_seconds = 1.0
+        coverage_start = forecasts[0][0]
+        coverage_end = forecasts[-1][0] + period_seconds
+        return bool(
+            coverage_start <= start_ts + tolerance_seconds
+            and coverage_end >= end_ts - tolerance_seconds
+        )
+
+    def _productive_solar_end_ts(
+        self,
+        s: SolarState,
+        sunset_ts: float,
+        now_ts: float,
+        *,
+        detailed_periods: Optional[list[tuple[float, float]]] = None,
+    ) -> Optional[float]:
         cfg = self.cfg
         threshold = cfg.productive_solar_threshold_kw
-        forecasts = s.solcast_detailed
+        forecasts = detailed_periods
+        if forecasts is None:
+            forecasts = []
+            for forecast in s.solcast_detailed:
+                if not isinstance(forecast, dict):
+                    continue
+                try:
+                    forecasts.append(
+                        (
+                            self._parse_ts(forecast.get("period_start", "")),
+                            float(forecast.get("pv_estimate", 0)),
+                        )
+                    )
+                except Exception:
+                    continue
         if not forecasts:
             return None
         found = None
-        for f in reversed(forecasts):
-            if not isinstance(f, dict):
-                continue
+        try:
+            sunset_day = datetime.fromtimestamp(sunset_ts, tz=self._tz).date()
+        except (OSError, OverflowError, ValueError):
+            return None
+        for f_ts, pv_kw in reversed(forecasts):
             try:
-                f_ts = self._parse_ts(f.get("period_start", ""))
-                pv_kw = float(f.get("pv_estimate", 0))
-                if (
-                    f_ts
-                    and math.isfinite(f_ts)
-                    and f_ts <= sunset_ts
-                    and math.isfinite(pv_kw)
-                    and pv_kw >= threshold
-                ):
-                    found = f_ts
-                    break
-            except Exception:
-                pass
+                forecast_day = datetime.fromtimestamp(f_ts, tz=self._tz).date()
+            except (OSError, OverflowError, ValueError):
+                continue
+            if (
+                f_ts
+                and math.isfinite(f_ts)
+                and forecast_day == sunset_day
+                and f_ts <= sunset_ts
+                and math.isfinite(pv_kw)
+                and pv_kw >= threshold
+            ):
+                found = f_ts
+                break
         return found
 
     def _morning_dump_window(self, s: SolarState, actual_sunrise_ts: float):
@@ -5230,8 +5514,17 @@ class SigEnergyOptimizer:
         dump_end = actual_sunrise_ts + 3600
         return dump_start, dump_end
 
-    def _morning_dump_active(self, s: SolarState, dump_start, dump_end,
-                              productive_solar_end_ts, bat_fill_need_kwh, now_ts) -> bool:
+    def _morning_dump_active(
+        self,
+        s: SolarState,
+        dump_start,
+        dump_end,
+        productive_solar_end_ts,
+        bat_fill_need_kwh,
+        now_ts,
+        *,
+        detailed_periods: Optional[list[tuple[float, float]]] = None,
+    ) -> bool:
         cfg = self.cfg
         if not cfg.morning_dump_enabled:
             return False
@@ -5249,22 +5542,27 @@ class SigEnergyOptimizer:
 
         # Check forecast can refill
         ns_total = 0.0
-        for f in s.solcast_detailed:
-            if not isinstance(f, dict):
-                continue
-            try:
-                f_ts = self._parse_ts(f.get("period_start", ""))
-                pv_kw = float(f.get("pv_estimate", 0))
-                if (
-                    f_ts
-                    and math.isfinite(f_ts)
-                    and math.isfinite(pv_kw)
-                    and dump_end <= f_ts
-                    < (productive_solar_end_ts or now_ts + 86400)
-                ):
+        if detailed_periods is not None:
+            for f_ts, pv_kw in detailed_periods:
+                if dump_end <= f_ts < (productive_solar_end_ts or now_ts + 86400):
                     ns_total += pv_kw * cfg.solcast_forecast_period_hours
-            except Exception:
-                pass
+        else:
+            for f in s.solcast_detailed:
+                if not isinstance(f, dict):
+                    continue
+                try:
+                    f_ts = self._parse_ts(f.get("period_start", ""))
+                    pv_kw = float(f.get("pv_estimate", 0))
+                    if (
+                        f_ts
+                        and math.isfinite(f_ts)
+                        and math.isfinite(pv_kw)
+                        and dump_end <= f_ts
+                        < (productive_solar_end_ts or now_ts + 86400)
+                    ):
+                        ns_total += pv_kw * cfg.solcast_forecast_period_hours
+                except Exception:
+                    pass
         load_need = ((productive_solar_end_ts or now_ts + 86400) - dump_end) / 3600 * s.load_kw
         return ns_total >= (bat_fill_need_kwh + load_need) * cfg.forecast_safety_charging
 
@@ -5373,6 +5671,7 @@ class SigEnergyOptimizer:
         is_evening_or_night: bool,
         *,
         detailed_forecast_trusted: bool | None = None,
+        detailed_periods: Optional[list[tuple[float, float]]] = None,
     ) -> bool:
         cfg = self.cfg
         if not cfg.battery_full_safeguard_enabled or is_evening_or_night:
@@ -5386,26 +5685,30 @@ class SigEnergyOptimizer:
         # Forecast check
         ns_total = 0.0
         max_charge_kw = s.ess_max_charge_kw if 0 < s.ess_max_charge_kw < 999 else cfg.ess_charge_limit_value
-        forecasts = (
-            [] if detailed_forecast_trusted is False else s.solcast_detailed
-        )
-        for f in forecasts:
-            if not isinstance(f, dict):
-                continue
-            try:
-                f_ts = self._parse_ts(f.get("period_start", ""))
-                pv_kw = float(f.get("pv_estimate", 0))
-                if (
-                    f_ts
-                    and math.isfinite(f_ts)
-                    and math.isfinite(pv_kw)
-                    and now_ts <= f_ts < target_ts
-                ):
+        if detailed_forecast_trusted is not False and detailed_periods is not None:
+            for f_ts, pv_kw in detailed_periods:
+                if now_ts <= f_ts < target_ts:
                     net = max(pv_kw - s.load_kw, 0.0)
                     usable = min(net, max_charge_kw) * cfg.solcast_forecast_period_hours
                     ns_total += usable
-            except Exception:
-                pass
+        elif detailed_forecast_trusted is not False:
+            for f in s.solcast_detailed:
+                if not isinstance(f, dict):
+                    continue
+                try:
+                    f_ts = self._parse_ts(f.get("period_start", ""))
+                    pv_kw = float(f.get("pv_estimate", 0))
+                    if (
+                        f_ts
+                        and math.isfinite(f_ts)
+                        and math.isfinite(pv_kw)
+                        and now_ts <= f_ts < target_ts
+                    ):
+                        net = max(pv_kw - s.load_kw, 0.0)
+                        usable = min(net, max_charge_kw) * cfg.solcast_forecast_period_hours
+                        ns_total += usable
+                except Exception:
+                    pass
         return (ns_total * cfg.battery_full_forecast_multiplier) < bat_fill_need_kwh
 
     def _export_blocked_for_forecast(self, s: SolarState, pv_surplus: float,

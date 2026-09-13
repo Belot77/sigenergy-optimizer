@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -44,6 +45,34 @@ class _RecordingHTTPClient:
         return _HTTPResponse(self.error)
 
 
+class _TemplateHTTPResponse:
+    def __init__(
+        self,
+        payload: Any,
+        *,
+        error: Exception | None = None,
+    ) -> None:
+        self.error = error
+        self.text = payload if isinstance(payload, str) else json.dumps(payload)
+
+    def raise_for_status(self) -> None:
+        if self.error is not None:
+            raise self.error
+
+    def json(self) -> Any:
+        return json.loads(self.text)
+
+
+class _TemplateHTTPClient:
+    def __init__(self, response: _TemplateHTTPResponse) -> None:
+        self.response = response
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def post(self, path: str, *, json: dict[str, Any]) -> _TemplateHTTPResponse:
+        self.calls.append((path, json))
+        return self.response
+
+
 class _PublishingHA:
     def __init__(
         self,
@@ -76,12 +105,132 @@ class _BulkStateHA(_PublishingHA):
         return {entity_id: self.states[entity_id] for entity_id in entity_ids if entity_id in self.states}
 
 
+class _MetadataBulkStateHA(_BulkStateHA):
+    def __init__(
+        self,
+        states: dict[str, dict[str, Any]],
+        *,
+        report_metadata: dict[str, dict[str, Any]] | None = None,
+        report_metadata_error: Exception | None = None,
+    ) -> None:
+        super().__init__(states)
+        self.report_metadata = report_metadata or {}
+        self.report_metadata_error = report_metadata_error
+        self.report_metadata_calls: list[list[str]] = []
+
+    async def get_state_report_metadata(
+        self,
+        entity_ids: list[str],
+    ) -> dict[str, dict[str, Any]]:
+        self.report_metadata_calls.append(list(entity_ids))
+        if self.report_metadata_error is not None:
+            raise self.report_metadata_error
+        return self.report_metadata
+
+
 def _fresh(value: float | str | bool) -> HVACObservedValue:
     return HVACObservedValue(value=value, available=True, fresh=True)
 
 
 def _stale(value: float | str | bool) -> HVACObservedValue:
     return HVACObservedValue(value=value, available=True, fresh=False)
+
+
+class HAClientStateReportMetadataTests(unittest.IsolatedAsyncioTestCase):
+    async def test_state_report_metadata_uses_one_read_only_batched_template_request(
+        self,
+    ) -> None:
+        updated_at = "2026-09-13T21:58:18+00:00"
+        reported_at = "2026-09-13T21:58:29+00:00"
+        rows = [
+            {
+                "entity_id": "sensor.battery_soc",
+                "state": "47.1",
+                "last_updated": updated_at,
+                "last_reported": reported_at,
+                "attributes": {"not": "requested"},
+            },
+            {
+                "entity_id": "sun.sun",
+                "state": "above_horizon",
+                "last_updated": updated_at,
+                "last_reported": reported_at,
+                "attributes": {"not": "requested"},
+            },
+        ]
+        http = _TemplateHTTPClient(_TemplateHTTPResponse(rows))
+        client = HAClient.__new__(HAClient)
+        client._client = http
+
+        result = await client.get_state_report_metadata(
+            ["sensor.battery_soc", "sun.sun"]
+        )
+
+        self.assertEqual(
+            result,
+            {
+                row["entity_id"]: {
+                    "entity_id": row["entity_id"],
+                    "state": row["state"],
+                    "last_updated": row["last_updated"],
+                    "last_reported": row["last_reported"],
+                }
+                for row in rows
+            },
+        )
+        self.assertEqual(len(http.calls), 1)
+        path, request = http.calls[0]
+        self.assertEqual(path, "/api/template")
+        self.assertEqual(set(request), {"template"})
+        self.assertIn("sensor.battery_soc", request["template"])
+        self.assertIn("sun.sun", request["template"])
+        self.assertIn("last_updated", request["template"])
+        self.assertIn("last_reported", request["template"])
+
+    async def test_state_report_metadata_failure_or_malformed_response_is_empty(
+        self,
+    ) -> None:
+        cases = (
+            (
+                "http failure",
+                _TemplateHTTPResponse([], error=RuntimeError("HTTP 403")),
+            ),
+            ("invalid json", _TemplateHTTPResponse("{not-json")),
+            (
+                "wrong root type",
+                _TemplateHTTPResponse(
+                    {
+                        "entity_id": "sensor.battery_soc",
+                        "state": "47.1",
+                    }
+                ),
+            ),
+            (
+                "missing required field",
+                _TemplateHTTPResponse(
+                    [
+                        {
+                            "entity_id": "sensor.battery_soc",
+                            "state": "47.1",
+                            "last_updated": "2026-09-13T21:58:18+00:00",
+                        }
+                    ]
+                ),
+            ),
+        )
+        for label, response in cases:
+            with self.subTest(case=label):
+                http = _TemplateHTTPClient(response)
+                client = HAClient.__new__(HAClient)
+                client._client = http
+
+                result = await client.get_state_report_metadata(
+                    ["sensor.battery_soc"]
+                )
+
+                self.assertEqual(result, {})
+                self.assertEqual(len(http.calls), 1)
+                self.assertEqual(http.calls[0][0], "/api/template")
 
 
 class HAClientStatePublicationTests(unittest.IsolatedAsyncioTestCase):
@@ -267,6 +416,28 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         if reported_at is not None:
             state["last_reported"] = reported_at.isoformat()
         return state
+
+    @staticmethod
+    def _report_metadata_row(
+        entity_id: str,
+        value: Any,
+        updated_at: datetime | str,
+        reported_at: datetime | str,
+    ) -> dict[str, Any]:
+        return {
+            "entity_id": entity_id,
+            "state": str(value),
+            "last_updated": (
+                updated_at.isoformat()
+                if isinstance(updated_at, datetime)
+                else updated_at
+            ),
+            "last_reported": (
+                reported_at.isoformat()
+                if isinstance(reported_at, datetime)
+                else reported_at
+            ),
+        }
 
     def _bulk_states(
         self,
@@ -666,6 +837,201 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(state.hvac_solar_inputs.pv_power.fresh)
         self.assertEqual(result.state, "blocked")
         self.assertTrue(result.data_fresh)
+
+    async def test_matching_state_report_metadata_refreshes_unchanged_observation(
+        self,
+    ) -> None:
+        cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)
+        now = datetime.now(timezone.utc)
+        unchanged_at = now - timedelta(days=1)
+        states = self._bulk_states(cfg, updated_at=now)
+        states[cfg.pv_power_sensor] = self._ha_state(
+            0.0,
+            unchanged_at,
+            reported_at=unchanged_at,
+        )
+        metadata = {
+            cfg.pv_power_sensor: self._report_metadata_row(
+                cfg.pv_power_sensor,
+                0.0,
+                unchanged_at,
+                now,
+            )
+        }
+        ha = _MetadataBulkStateHA(states, report_metadata=metadata)
+        optimizer = self._optimizer(ha)
+
+        state = await optimizer._read_state()
+        result = self._evaluate(optimizer, state.hvac_solar_inputs)
+
+        self.assertEqual(len(ha.report_metadata_calls), 1)
+        self.assertIn(cfg.pv_power_sensor, ha.report_metadata_calls[0])
+        self.assertTrue(state.hvac_solar_inputs.pv_power.fresh)
+        self.assertEqual(result.state, "blocked")
+        self.assertTrue(result.data_fresh)
+
+    async def test_state_report_metadata_state_mismatch_is_not_merged(self) -> None:
+        cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)
+        now = datetime.now(timezone.utc)
+        unchanged_at = now - timedelta(days=1)
+        states = self._bulk_states(cfg, updated_at=now)
+        states[cfg.pv_power_sensor] = self._ha_state(
+            0.0,
+            unchanged_at,
+            reported_at=unchanged_at,
+        )
+        metadata = {
+            cfg.pv_power_sensor: self._report_metadata_row(
+                cfg.pv_power_sensor,
+                1.0,
+                unchanged_at,
+                now,
+            )
+        }
+        ha = _MetadataBulkStateHA(states, report_metadata=metadata)
+        optimizer = self._optimizer(ha)
+
+        state = await optimizer._read_state()
+        result = self._evaluate(optimizer, state.hvac_solar_inputs)
+
+        self.assertEqual(len(ha.report_metadata_calls), 1)
+        self.assertFalse(state.hvac_solar_inputs.pv_power.fresh)
+        self.assertEqual(result.state, "unavailable")
+        self.assertEqual(result.reason_code, "required_data_stale")
+
+    async def test_state_report_metadata_last_updated_mismatch_is_not_merged(
+        self,
+    ) -> None:
+        cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)
+        now = datetime.now(timezone.utc)
+        unchanged_at = now - timedelta(days=1)
+        states = self._bulk_states(cfg, updated_at=now)
+        states[cfg.pv_power_sensor] = self._ha_state(
+            0.0,
+            unchanged_at,
+            reported_at=unchanged_at,
+        )
+        metadata = {
+            cfg.pv_power_sensor: self._report_metadata_row(
+                cfg.pv_power_sensor,
+                0.0,
+                unchanged_at + timedelta(seconds=1),
+                now,
+            )
+        }
+        ha = _MetadataBulkStateHA(states, report_metadata=metadata)
+        optimizer = self._optimizer(ha)
+
+        state = await optimizer._read_state()
+        result = self._evaluate(optimizer, state.hvac_solar_inputs)
+
+        self.assertEqual(len(ha.report_metadata_calls), 1)
+        self.assertFalse(state.hvac_solar_inputs.pv_power.fresh)
+        self.assertEqual(result.state, "unavailable")
+        self.assertEqual(result.reason_code, "required_data_stale")
+
+    async def test_naive_state_report_metadata_timestamp_is_not_merged(self) -> None:
+        cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)
+        now = datetime.now(timezone.utc)
+        unchanged_at = now - timedelta(days=1)
+        cases = (
+            (
+                "last_updated",
+                unchanged_at.replace(tzinfo=None).isoformat(),
+                now.isoformat(),
+            ),
+            (
+                "last_reported",
+                unchanged_at.isoformat(),
+                now.replace(tzinfo=None).isoformat(),
+            ),
+        )
+        for label, metadata_updated_at, metadata_reported_at in cases:
+            with self.subTest(timestamp=label):
+                states = self._bulk_states(cfg, updated_at=now)
+                states[cfg.pv_power_sensor] = self._ha_state(
+                    0.0,
+                    unchanged_at,
+                    # The REST field may look current while still being an
+                    # unverified cached serialization.
+                    reported_at=now,
+                )
+                metadata = {
+                    cfg.pv_power_sensor: self._report_metadata_row(
+                        cfg.pv_power_sensor,
+                        0.0,
+                        metadata_updated_at,
+                        metadata_reported_at,
+                    )
+                }
+                ha = _MetadataBulkStateHA(states, report_metadata=metadata)
+                optimizer = self._optimizer(ha)
+
+                state = await optimizer._read_state()
+                result = self._evaluate(optimizer, state.hvac_solar_inputs)
+
+                self.assertEqual(len(ha.report_metadata_calls), 1)
+                self.assertFalse(state.hvac_solar_inputs.pv_power.fresh)
+                self.assertEqual(result.state, "unavailable")
+                self.assertEqual(result.reason_code, "required_data_stale")
+
+    async def test_missing_or_failed_enrichment_does_not_infer_receipt_time_freshness(
+        self,
+    ) -> None:
+        cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)
+        now = datetime.now(timezone.utc)
+        unchanged_at = now - timedelta(days=1)
+        cases = (
+            ("missing", {}, None),
+            ("failed", {}, RuntimeError("template unavailable")),
+        )
+        for label, metadata, error in cases:
+            with self.subTest(case=label):
+                states = self._bulk_states(cfg, updated_at=now)
+                states[cfg.pv_power_sensor] = self._ha_state(
+                    0.0,
+                    unchanged_at,
+                    # A fresh-looking REST field is still not observation proof;
+                    # failed enrichment must discard it and use last_updated.
+                    reported_at=now,
+                )
+                ha = _MetadataBulkStateHA(
+                    states,
+                    report_metadata=metadata,
+                    report_metadata_error=error,
+                )
+                optimizer = self._optimizer(ha)
+
+                state = await optimizer._read_state()
+                result = self._evaluate(optimizer, state.hvac_solar_inputs)
+
+                self.assertEqual(len(ha.report_metadata_calls), 1)
+                self.assertFalse(state.hvac_solar_inputs.pv_power.fresh)
+                self.assertEqual(result.state, "unavailable")
+                self.assertEqual(result.reason_code, "required_data_stale")
+
+    async def test_unusable_last_reported_falls_back_to_valid_last_updated(
+        self,
+    ) -> None:
+        cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)
+        now = datetime.now(timezone.utc)
+        invalid_reported_values = (
+            None,
+            "",
+            "not-a-timestamp",
+            now.replace(tzinfo=None).isoformat(),
+        )
+        for raw_last_reported in invalid_reported_values:
+            with self.subTest(last_reported=raw_last_reported):
+                states = self._bulk_states(cfg, updated_at=now)
+                states[cfg.pv_power_sensor]["last_reported"] = raw_last_reported
+                optimizer = self._optimizer(_BulkStateHA(states))
+
+                state = await optimizer._read_state()
+                result = self._evaluate(optimizer, state.hvac_solar_inputs)
+
+                self.assertTrue(state.hvac_solar_inputs.pv_power.fresh)
+                self.assertNotEqual(result.state, "unavailable")
 
     async def test_unchanged_valid_control_mode_helper_is_current(self) -> None:
         cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)

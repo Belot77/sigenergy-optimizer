@@ -3,6 +3,7 @@ Home Assistant client — wraps the REST API for state reads and service calls.
 Uses httpx for async HTTP.
 """
 from __future__ import annotations
+import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -84,6 +85,83 @@ class HAClient:
             return {s["entity_id"]: s for s in all_states if s["entity_id"] in entity_ids}
         except Exception as exc:
             logger.warning("bulk_states failed: %s", exc)
+            return {}
+
+    async def get_state_report_metadata(
+        self,
+        entity_ids: list[str],
+    ) -> dict[str, dict[str, Any]]:
+        """Read current State-object report metadata in one template request.
+
+        Home Assistant's REST state JSON cannot be relied upon to advance
+        ``last_reported`` when an entity reports an unchanged value.  This helper
+        is intentionally separate from ``bulk_states`` so only callers that need
+        observation provenance pay for the additional read-only request.
+        """
+        requested = sorted({str(entity_id).strip() for entity_id in entity_ids if str(entity_id).strip()})
+        if not requested:
+            return {}
+
+        encoded_entity_ids = json.dumps(requested)
+        template = (
+            "{% set ns = namespace(rows=[]) %}\n"
+            f"{{% for entity in expand({encoded_entity_ids}) %}}\n"
+            "{% set ns.rows = ns.rows + [{"
+            "'entity_id': entity.entity_id, "
+            "'state': entity.state, "
+            "'last_updated': entity.last_updated.isoformat(), "
+            "'last_reported': entity.last_reported.isoformat()"
+            "}] %}\n"
+            "{% endfor %}\n"
+            "{{ ns.rows | to_json }}"
+        )
+
+        try:
+            r = await self._client.post(
+                "/api/template",
+                json={"template": template},
+            )
+            r.raise_for_status()
+            rows = r.json()
+            if not isinstance(rows, list):
+                return {}
+
+            requested_set = set(requested)
+            metadata: dict[str, dict[str, Any]] = {}
+            required_fields = {
+                "entity_id",
+                "state",
+                "last_updated",
+                "last_reported",
+            }
+            for row in rows:
+                if not isinstance(row, dict) or not required_fields.issubset(row):
+                    return {}
+                entity_id = row.get("entity_id")
+                if (
+                    not isinstance(entity_id, str)
+                    or entity_id not in requested_set
+                    or entity_id in metadata
+                ):
+                    return {}
+                if not isinstance(row.get("state"), str):
+                    return {}
+                for field in ("last_updated", "last_reported"):
+                    raw_timestamp = row.get(field)
+                    if not isinstance(raw_timestamp, str):
+                        return {}
+                    parsed = datetime.fromisoformat(
+                        raw_timestamp.replace("Z", "+00:00")
+                    )
+                    if parsed.tzinfo is None or parsed.utcoffset() is None:
+                        return {}
+                metadata[entity_id] = {
+                    field: row[field]
+                    for field in required_fields
+                }
+            return metadata
+        except Exception as exc:
+            logger.warning("get_state_report_metadata failed: %s", exc)
             return {}
 
     async def set_state(
