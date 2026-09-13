@@ -1,13 +1,12 @@
 # Changelog
 
-## 2026-09-09 - Phase 1 remediation (unreleased)
+## 2026-09-13 - 2.3.44-haos55 candidate
 
-- Added ownership-scoped real-time PV-margin hysteresis to Solar Surplus Bypass: entry remains strictly above `SOLAR_SURPLUS_MIN_PV_MARGIN=0.5 kW`, while a genuinely active Solar Surplus high ceiling may continue strictly above the new `SOLAR_SURPLUS_STOP_PV_MARGIN=0.2 kW` default.
-- Preserved the separate 2.0/1.25 forecast hysteresis, FiT threshold, Maximum Self Consumption, normal PV MAX, raw PV-only discharge safety, and `battery_export_owner=none`; no timer, smoothing, or deliberate battery-export authority was added.
-- Exposed the new setting through environment and UI configuration and normalized it to a finite, non-negative value no greater than the configured entry margin.
-- Corrected the Cheap-FiT exact-full MSC exception so trusted battery discharge serving site load with grid export below the meaningful threshold retains the high `MSC_SURPLUS_CEILING` instead of closing solely above the raw 0.10 kW diagnostic tolerance.
-- Meaningful simultaneous battery discharge plus grid export and unknown or untrusted battery/grid-export evidence remain fail-closed. The path still creates no battery-export owner, remains in Maximum Self Consumption, and cannot request battery discharge.
-- Kept `pv_only_discharge_ok` and its Solar Surplus Bypass and other existing consumers unchanged; added direct-flow and cross-path invariant regressions.
+- Corrected the exact-full MSC path so trusted battery discharge serving site load no longer closes the high export ceiling; meaningful simultaneous battery discharge plus grid export and unknown or untrusted flow remain fail-closed.
+- Added ownership-scoped Solar Surplus real-time PV-margin hysteresis: entry is strictly above 0.5 kW, genuine owned continuation is strictly above 0.2 kW, stopping occurs at or below 0.2 kW, and re-entry again requires more than 0.5 kW. Forecast hysteresis remains 2.0/1.25.
+- Enforced `0.0 <= solar_surplus_stop_pv_margin <= solar_surplus_min_pv_margin` for initialization and runtime API configuration.
+- Preserved Maximum Self Consumption and PV MAX semantics and added no battery-export authority.
+- Prepared the candidate identity locally as `2.3.44-haos55`; it is uncommitted, unpushed, untagged, unbuilt, unreleased, undeployed, and not live-accepted.
 
 ## 2026-09-04 — 2.3.43-haos54
 
