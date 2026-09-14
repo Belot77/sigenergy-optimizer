@@ -1,14 +1,14 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-09-13
+Last consolidated: 2026-09-14
 
 Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md`, `ROADMAP.md`, and `DECISIONS.md`. Verify the exact branch tip, worktree status, and remote synchronization directly with Git before editing.
 
 ## Live baseline and rollback
 
-Live remains `2.3.43-haos54`. Home Assistant observed runtime source `083b1fcc241b0d86271f5da80538d4e224fc6433`; its production code is identical to tagged candidate `174136280ed1c516b7666b4600622ce9544bb8e0`.
+Live remains `2.3.44-haos55`. Morning Dump failed closed under apparently valid live telemetry; this was conservative behavior, but `.55` is not live-accepted.
 
-Known-good emergency rollback remains `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`. If separately authorized, rollback means stop the add-on, restore Sig Opt only, then verify EMS, PV MAX, export, and HA control. No rollback is underway.
+Before any `.56` live test, separately confirm and prepare a rollback path for the current `.55` installation. Do not claim that a current `.55` backup or rollback artifact exists without authoritative verification. Historical known-good reference `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`, remains useful evidence. No rollback is underway.
 
 GitHub `main` remains `c624f0b4392634cf19276186ba46f4b80268627b` (`Record Phase 1 live acceptance`), whose phase-status documentation is stale because Phase 1 was reopened.
 
@@ -21,13 +21,29 @@ GitHub `main` remains `c624f0b4392634cf19276186ba46f4b80268627b` (`Record Phase 
 - Package 6A capability-trust production/test checkpoint: `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`).
 - Package 6A documentation checkpoint: `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573`.
 - Package 6A documentation-sync checkpoint: `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69`.
-- Current local HEAD and candidate-metadata commit: `c607cf3ac2366c713a1a6a6374eba02e09a558ea` (`Prepare 2.3.44-haos55 Phase 1 candidate`), with parent `87b9a4390c558f895bcb1e7de69cab535c522f77` (`Record pushed remediation checkpoint`).
-- The Solar Surplus implementation commit is `7ded75f9155d7002150a7308f03eb9510f5beb39` (`Stabilize Solar Surplus bypass hysteresis`). The pushed remediation checkpoint and current upstream tip remain `c12da071a6bd18849eff125771ac525b85fd3470`; the branch was ahead 2 / behind 0 before these documentation edits.
-- Candidate metadata for `2.3.44-haos55` is committed locally but not yet pushed. No local or remote `v2.3.44-haos55` tag exists, and no `.55` build, publish, release, deployment, installation, restart, live test, or live acceptance has occurred. Live remains `2.3.43-haos54`. The known-good rollback remains `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`, and no Home Assistant or Sigenergy write has occurred.
+- Current committed HEAD: `df90c365fc0413ad0ce048a2796ab8df30ec0c0a` (`Repair telemetry and forecast trust`).
+- Before candidate preparation, the branch was pushed and synchronized with `origin/fix/phase1-audit-remediation` at that commit, with divergence 0/0 and a clean worktree.
+- Candidate `2.3.45-haos56` is now prepared locally only as uncommitted metadata and documentation changes. It is not pushed, tagged, built, published, released, deployed, installed, restarted, live-tested, or live-accepted. Live remains `2.3.44-haos55`; no Home Assistant or Sigenergy write has occurred.
 
-Nothing from the current remediation branch has been deployed, live-tested, or live-accepted.
+The pre-repair remediation content is present in live `.55`, but renewed Phase 1 live acceptance is withheld. The repair commit and local `.56` candidate identity have not been deployed or live-tested.
 
 Protected worktrees remain unchanged. Never modify, reset, or stash `C:\Projects\sigenergy_optimizer` or `C:\Projects\sigenergy_optimizer-pv-hotfix`. The Phase 2 worktree remains frozen.
+
+## Live `.55` regression repair and `.56` candidate
+
+Commit `df90c365fc0413ad0ce048a2796ab8df30ec0c0a` (`Repair telemetry and forecast trust`) is pushed and synchronized. It repairs two independent trust defects behind the live Morning Dump fail-closed result:
+
+- one batched, read-only `/api/template` request enriches freshness-sensitive REST snapshots with timezone-aware State-object `last_reported` only when entity ID, exact state string, and timezone-aware `last_updated` match; mismatches or failure remain conservative, and request receipt time is never freshness evidence;
+- rated battery capacity is treated as static capability only when its current value is available, finite, positive, and has an explicit supported unit;
+- detailed Solcast periods must be ordered, timezone-aware, finite, non-negative, cadence-continuous, and cover the same-local-day interval required by Morning Dump, Evening Boost, or Battery Full Safeguard. Sparse or gapped data fails closed.
+
+Dynamic live telemetry retains the 120-second limit, and unrelated aggregate forecast observations retain the 600-second limit. Manual/Force ownership, Maximum Self Consumption, PV MAX, Demand Window, deliberate Morning Dump battery-export ownership, and unrelated controls are unchanged.
+
+Validation passed: affected tests **121 passed, 127 subtests passed**; independent protections **253 passed, 2 frozen Phase 2 tests deselected, 245 subtests passed**; full suite **478 passed, 421 subtests passed**, with only the two expected frozen Phase 2 failures. Compileall and `git diff --check` passed.
+
+The compatibility probe used the actual add-on Home Assistant credentials and received HTTP 200 from `/api/template`. REST `last_reported` remained frozen while template `last_reported` advanced, including unchanged rated capacity. Entity ID, exact state string, and the same `last_updated` instant all correlated, so the repair does not substitute receipt time for observation freshness.
+
+Package 7 remains blocked pending renewed Phase 1 live acceptance. Phase 2 remains frozen. Before any `.56` live test, confirm and prepare rollback for the current `.55` installation; no backup is asserted without authoritative evidence.
 
 ## Package 5 result
 
@@ -60,11 +76,11 @@ The proven live exact-full defect had two mechanisms:
 
 Regression coverage for the committed exact-full repair proves the trusted load-serving case remains open, simultaneous battery discharge plus meaningful grid export closes, and unknown relevant flow closes. The raw `pv_only_discharge_ok` predicate remains available for its other consumers and diagnostics but is no longer the decisive exact-full MSC transition gate.
 
-The exact-full repair is committed and pushed at `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2`, but is not merged, released, deployed, installed, restarted, live-tested, or live-accepted.
+The exact-full repair is committed and pushed at `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2` and included in live `.55`; renewed live acceptance is withheld.
 
-## Committed local Solar Surplus PV-margin repair
+## Solar Surplus PV-margin repair
 
-The locally committed repair retains entry strictly above 0.5 kW and permits continuation strictly above 0.2 kW only when the immediately previous decision genuinely held a Solar-Surplus-owned high `MSC_SURPLUS_CEILING` under observed Automated ownership. At or below 0.2 kW it stops; re-entry again requires more than 0.5 kW. Forecast hysteresis remains 2.0 start / 1.25 continue. No timer or smoothing is added.
+The repair included in live `.55` retains entry strictly above 0.5 kW and permits continuation strictly above 0.2 kW only when the immediately previous decision genuinely held a Solar-Surplus-owned high `MSC_SURPLUS_CEILING` under observed Automated ownership. At or below 0.2 kW it stops; re-entry again requires more than 0.5 kW. Forecast hysteresis remains 2.0 start / 1.25 continue. No timer or smoothing is added.
 
 The new `solar_surplus_stop_pv_margin` / `SOLAR_SURPLUS_STOP_PV_MARGIN` setting defaults to 0.2 kW. Initialization and runtime API updates preserve `0.0 <= solar_surplus_stop_pv_margin <= solar_surplus_min_pv_margin`; a valid batch is checked as its final requested pair before mutation. Solar Surplus remains an MSC surplus-ceiling policy, creates no battery-export authority, and does not redesign EMS or PV MAX.
 
@@ -82,6 +98,6 @@ Validation evidence: focused API/config **11 passed**; affected Solar Surplus **
 
 ## Next action
 
-Review and commit this documentation truth correction, then separately decide whether to push the .55 candidate branch. Tag/build/release/live testing remain later approval boundaries.
+Review the uncommitted `2.3.45-haos56` identity/documentation candidate and decide whether to commit it. Push, tag, build, publish, release, deployment, installation, restart, and live testing remain separate approval boundaries.
 
 Do not release, deploy, install, restart, or claim live acceptance as part of either decision. Preserve the Phase 2 close -> observe closed -> request MSC -> observe exact MSC -> reopen contract and its two expected failing tests.

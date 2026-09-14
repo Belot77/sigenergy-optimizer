@@ -1,6 +1,6 @@
 # Current State
 
-Last consolidated: 2026-09-13
+Last consolidated: 2026-09-14
 
 **CURRENT TRUTH ONLY:** this file records the current operational and development checkpoint, not historical record. Durable control semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`.
 
@@ -8,13 +8,13 @@ Authority depends on the subject: GitHub for committed repository state; the rel
 
 ## Live release and rollback
 
-- Current live release: `2.3.43-haos54`.
-- Runtime source observed from Home Assistant: `083b1fcc241b0d86271f5da80538d4e224fc6433`.
-- Tagged haos54 candidate: `174136280ed1c516b7666b4600622ce9544bb8e0`.
-- Production code in `083b1fc` is identical to the tagged candidate.
-- Known-good emergency rollback: `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`.
+- Current live release: `2.3.44-haos55`.
+- Live `.55` failed closed for Morning Dump because valid unchanged telemetry and valid day-forecast data did not satisfy the implemented trust gates. It remains live while the bounded repair candidate is prepared; the failure is conservative rather than an unsafe permissive action.
+- Candidate `2.3.45-haos56` is prepared locally only from repair commit `df90c365fc0413ad0ce048a2796ab8df30ec0c0a` (`Repair telemetry and forecast trust`). It is not committed, pushed, tagged, built, published, released, deployed, installed, restarted, live-tested, or live-accepted.
+- Before any `.56` live test, an operator must separately confirm and prepare a rollback path for the current `.55` installation. No current `.55` backup or rollback artifact is claimed here without authoritative verification.
+- Historical known-good reference: `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`.
 
-Rollback, if separately authorized, means stop the add-on, restore Sig Opt only, then verify EMS, PV MAX, export, and Home Assistant control. No rollback is currently being performed.
+Rollback, if separately authorized and prepared, means stop the add-on, restore Sig Opt only, then verify EMS, PV MAX, export, and Home Assistant control. No rollback is currently being performed.
 
 GitHub `main` remains at `c624f0b4392634cf19276186ba46f4b80268627b` (`Record Phase 1 live acceptance`). That committed documentation is stale because Phase 1 was subsequently reopened after a proven live defect and broader control-authority audit.
 
@@ -36,29 +36,30 @@ Active remediation worktree:
 - Package 6A capability-trust production/test checkpoint: `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`).
 - Package 6A documentation checkpoint: `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573`.
 - Package 6A documentation-sync checkpoint: `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69`.
-- Current local HEAD and candidate-metadata commit: `c607cf3ac2366c713a1a6a6374eba02e09a558ea` (`Prepare 2.3.44-haos55 Phase 1 candidate`), with parent `87b9a4390c558f895bcb1e7de69cab535c522f77` (`Record pushed remediation checkpoint`).
-- Local status: the Solar Surplus implementation commit is `7ded75f9155d7002150a7308f03eb9510f5beb39` (`Stabilize Solar Surplus bypass hysteresis`). The pushed remediation checkpoint and current upstream tip remain `c12da071a6bd18849eff125771ac525b85fd3470`; the branch was ahead 2 / behind 0 before these documentation edits. Candidate metadata for `2.3.44-haos55` is committed locally but not yet pushed. No local or remote `v2.3.44-haos55` tag exists, and no `.55` build, publish, release, deployment, installation, restart, live test, or live acceptance has occurred. Live remains `2.3.43-haos54`. The known-good rollback remains `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`, and no Home Assistant or Sigenergy write has occurred.
+- Current committed HEAD: `df90c365fc0413ad0ce048a2796ab8df30ec0c0a` (`Repair telemetry and forecast trust`).
+- Before candidate preparation, the branch was pushed and synchronized with `origin/fix/phase1-audit-remediation` at that commit, with divergence 0/0 and a clean worktree.
+- Local status: candidate identity and documentation for `2.3.45-haos56` are being prepared as uncommitted changes. Live remains `2.3.44-haos55`; no tag, build, publish, release, deployment, installation, restart, Home Assistant write, or Sigenergy write is part of this preparation.
 - Verify the exact branch tip, worktree status, and remote synchronization directly with Git; documentation commits may be children of the production/test checkpoints.
 
-Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0` and pushed to `origin/fix/phase1-audit-remediation`. The worktree was clean after the verified push. Package 1 has not been merged, released, deployed, or live-tested.
+Package 1 is committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`, pushed, and included in live `.55`; renewed live acceptance is withheld.
 
-Package 2 is committed at `d3294cb`, automated-validated, and present on the remote remediation branch. It has not been merged, tagged, released, deployed, installed, or live-tested.
+Package 2 is committed at `d3294cb`, automated-validated, pushed, and included in live `.55`; renewed live acceptance is withheld.
 
-Package 3 is committed at `91b0075`, automated-validated, and present on the remote remediation branch. It has not been merged, tagged, released, deployed, installed, or live-tested.
+Package 3 is committed at `91b0075`, automated-validated, pushed, and included in live `.55`; renewed live acceptance is withheld.
 
-Package 4A is committed at `d3e1d56`, automated-validated, and pushed. It has not been merged, tagged, released, deployed, installed, or live-tested.
+Package 4A is committed at `d3e1d56`, automated-validated, pushed, and included in live `.55`; renewed live acceptance is withheld.
 
-Package 4B is committed at `19a6279`, automated-validated, and pushed. It has not been merged, tagged, released, deployed, installed, or live-tested.
+Package 4B is committed at `19a6279`, automated-validated, pushed, and included in live `.55`; renewed live acceptance is withheld.
 
-Package 4C is committed at `85cfb1d`, automated-validated, and pushed. It has not been merged, tagged, released, deployed, installed, restarted, or live-tested.
+Package 4C is committed at `85cfb1d`, automated-validated, pushed, and included in live `.55`; renewed live acceptance is withheld.
 
-Package 4D is committed at `44c63e80fa72655087504f5c612df10e6b77109f`, automated-validated, and present on the remote remediation branch. It has not been merged, tagged, released, deployed, installed, restarted, or live-tested.
+Package 4D is committed at `44c63e80fa72655087504f5c612df10e6b77109f`, automated-validated, pushed, and included in live `.55`; its trust defects are repaired by `df90c365fc0413ad0ce048a2796ab8df30ec0c0a`, which is not deployed.
 
-Package 5 actuator/fallback reliability is committed at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473`, automated-validated, and pushed. The chatter/reopen repair is committed at `e119f6f` and automated-validated. Package 5 has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+Package 5 actuator/fallback reliability is committed at `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473`; the chatter/reopen repair is committed at `e119f6f`. Both are automated-validated, pushed, and included in live `.55`; renewed live acceptance is withheld.
 
-Package 6A is committed at `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3`, complete, automated-validated, and pushed to `origin/fix/phase1-audit-remediation`. Its documentation checkpoints `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573` and `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69` are also pushed. It has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+Package 6A is committed at `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3`, complete, automated-validated, pushed, and included in live `.55`. Its documentation checkpoints `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573` and `a60f71063ef4c3c3043e18f5f1ef4eb85787bc69` are also pushed; renewed live acceptance is withheld.
 
-Nothing from the current remediation branch has been deployed, live-tested, or live-accepted.
+The pre-repair remediation content is present in live `.55`, but renewed Phase 1 live acceptance is withheld after the Morning Dump fail-closed regression. Commit `df90c365fc0413ad0ce048a2796ab8df30ec0c0a` and the local `.56` candidate identity have not been deployed or live-tested.
 
 Protected/reference worktrees:
 
@@ -74,9 +75,25 @@ Phase 1 was previously declared complete and live-accepted. That is no longer tr
 
 Production Remediation Packages 1, 2, 3, telemetry-trust Packages 4A through 4D, both Package 5 subparts, Package 6A, and the exact-full MSC load-serving-discharge repair are complete, automated-validated, committed, and present on the remote remediation branch. Package 6B read-only investigation is complete and implementation is deferred. The Solar Surplus PV-margin hysteresis repair is automated-validated, committed, and pushed to the remote remediation branch. The stale-direct/measured-grid-flow fallback discrepancy and Morning Slow forecast-feasibility discrepancy remain parked. All remaining audit remediation, full validation, and renewed Phase 1 live acceptance must finish before Phase 2. Phase 2 is frozen before production implementation and is not active.
 
+## Live `.55` telemetry/forecast regression repair
+
+Repair commit `df90c365fc0413ad0ce048a2796ab8df30ec0c0a` (`Repair telemetry and forecast trust`) is pushed and synchronized on the remediation branch. It addresses two independent trust defects exposed by the live Morning Dump failure:
+
+- Dynamic freshness-sensitive snapshots receive one batched, read-only `/api/template` metadata enrichment. A timezone-aware `last_reported` is accepted only when entity ID, exact state string, and timezone-aware `last_updated` match the preceding REST snapshot. Home Assistant request receipt time is never treated as telemetry freshness, and failed or mismatched enrichment falls back conservatively to genuine `last_updated`.
+- Rated battery capacity is static capability data: its current snapshot is trusted only when available, finite, positive, and expressed in supported `Wh`, `kWh`, or `MWh`; it no longer expires merely because its value is unchanged.
+- Detailed Solcast validity is based on ordered, timezone-aware, finite, non-negative, cadence-continuous periods covering the policy's required same-local-day interval. Morning Dump, Evening Boost, and Battery Full Safeguard fail closed on sparse, gapped, malformed, wrong-day, or insufficient-horizon detail.
+
+The 120-second freshness limit for dynamic live telemetry is unchanged. The unrelated 600-second freshness limit for aggregate forecast observations is unchanged. Manual/Force ownership, Maximum Self Consumption, PV MAX, Demand Window, deliberate Morning Dump battery-export ownership, and unrelated policy behavior are unchanged.
+
+Validation passed: affected tests **121 passed, 127 subtests passed**; independent protections **253 passed, 2 frozen Phase 2 tests deselected, 245 subtests passed**; complete suite **478 passed, 421 subtests passed**, with only the two expected frozen Phase 2 failures; `python -m compileall app` and `git diff --check` passed.
+
+The live compatibility probe used the actual add-on Home Assistant credentials and received HTTP 200 from `/api/template`. The REST `last_reported` remained frozen while the State-object template value advanced, including for unchanged rated capacity. Correlation requirements passed for entity ID, exact state string, and the same `last_updated` instant, confirming that the implementation can safely merge advancing report metadata without manufacturing receipt-time freshness.
+
+Package 7 remains blocked pending renewed Phase 1 live acceptance. Phase 2 remains frozen, including its two expected transition-settlement failures.
+
 ## Production Remediation Package 1
 
-The authority/fail-closed package is implemented in `app/models.py` and `app/optimizer.py`, automated-validated, committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`, and pushed to `origin/fix/phase1-audit-remediation`. Its test artifacts are `tests/test_haos49_failure_characterization.py` and `tests/test_phase1_authority_fail_closed_characterization.py`. Nothing from this package has been merged, released, deployed, or live-tested.
+The authority/fail-closed package is implemented in `app/models.py` and `app/optimizer.py`, automated-validated, committed at `9538cc84c1235f33d52ebc2ecdf1b6b9c64896b0`, pushed, and included in live `.55`. Its test artifacts are `tests/test_haos49_failure_characterization.py` and `tests/test_phase1_authority_fail_closed_characterization.py`.
 
 The package implements four bounded contracts:
 
@@ -99,7 +116,7 @@ The broader suite result was **291 passed, 2 failed, 191 warnings**. The only fa
 
 ## Production Remediation Package 2
 
-The Morning control repair is implemented in `app/optimizer.py`, characterized in `tests/test_msc_baseline_overlay_contract.py`, automated-validated, committed at `d3294cb`, and pushed as an ancestor of the current synchronized remediation branch HEAD. It has not been merged, tagged, released, deployed, installed, or live-tested.
+The Morning control repair is implemented in `app/optimizer.py`, characterized in `tests/test_msc_baseline_overlay_contract.py`, automated-validated, committed at `d3294cb`, pushed, and included in live `.55`.
 
 The proven live defect occurred at approximately 14.2-14.5% SoC with Morning Slow active, MSC observed, PV MAX 25 kW, ESS charging about 2 kW, export closed, and no deliberate battery-export owner. The old low-SoC path required the configured 2 kW slow charge plus the 1 kW `MIN_GRID_TRANSFER_KW`, creating an unintended 3 kW PV-surplus threshold.
 
@@ -111,7 +128,7 @@ The final complete suite result was **295 passed, 2 failed, 191 warnings** from 
 
 ## Production Remediation Package 3
 
-The Battery-export safety repair is implemented in `app/optimizer.py`, characterized in `tests/test_msc_baseline_overlay_contract.py`, automated-validated, committed at `91b0075` (`Fix battery export discharge ownership`), and pushed as an ancestor of the current synchronized remediation branch HEAD. It has not been merged, tagged, released, deployed, installed, or live-tested.
+The Battery-export safety repair is implemented in `app/optimizer.py`, characterized in `tests/test_msc_baseline_overlay_contract.py`, automated-validated, committed at `91b0075` (`Fix battery export discharge ownership`), pushed, and included in live `.55`.
 
 The confirmed defect allowed raw positive-FiT eligibility to leak into the independent ESS-discharge actuator. That could force the discharge limit to `0.01 kW` when positive-FiT export was enabled but positive-FiT battery sale was disabled, including while the battery served house load, export was an ownerless MSC-surplus ceiling or had failed closed, telemetry was untrusted, or another deliberate battery-export owner had priority.
 
@@ -123,17 +140,17 @@ The final complete suite collected 303 tests and finished **301 passed, 2 failed
 
 ## Production Remediation Package 4A
 
-Tariff telemetry trust is implemented in `app/optimizer.py` and `app/state_store.py`, characterized in `tests/test_phase1_tariff_telemetry_trust_characterization.py`, automated-validated, committed at `d3e1d56` (`Harden tariff telemetry trust`), and pushed. It has not been merged, tagged, released, deployed, installed, or live-tested.
+Tariff telemetry trust is implemented in `app/optimizer.py` and `app/state_store.py`, characterized in `tests/test_phase1_tariff_telemetry_trust_characterization.py`, automated-validated, committed at `d3e1d56` (`Harden tariff telemetry trust`), pushed, and included in live `.55`.
 
 NaN and infinite import prices cannot establish tariff-dependent import or charging authority, and non-finite or unavailable FiT cannot establish permissive FiT-dependent export authority. Missing or untrusted import price cannot establish Standby Holdoff; missing or untrusted FiT cannot establish cheap-positive import; and non-finite optimizer import-cost evidence is excluded from trusted persistence and summary use. Finite estimated positive-price policy, actual negative-price Grid Charge, positive-FiT ownership, Package 2 Morning Slow behavior, Package 3 battery-export ownership, and the trusted negative-price `0.01 kW` discharge clamp remain preserved. Trust gates are branch-specific: invalid tariff telemetry does not globally seize or block unrelated controls.
 
 Validation passed for the Package 4A characterization (**23 passed**), existing tariff/import-cost reference set (**14 passed, 4 subtests passed**), Package 1 protections (**23 passed, 61 subtests passed**), Package 2 focused protections (**15 passed, 6 subtests passed, 124 deselected**), Package 3 protections (**13 passed, 10 subtests passed**), and broader tariff regression (**131 passed, 89 subtests passed**). The final complete suite collected 326 tests and finished **324 passed, 2 failed, 191 warnings**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall -q app tests` and `git diff --check` passed. No unexpected regression remained.
 
-Package 4 telemetry trust is automated-complete and present on the remote remediation branch: 4A Tariff trust, 4B SoC/battery-energy trust, 4C Live PV/load trust, and 4D Forecast/solar-clock trust. None is deployed or live-accepted.
+Package 4 telemetry trust is automated-complete, pushed, and included in live `.55`: 4A Tariff trust, 4B SoC/battery-energy trust, 4C Live PV/load trust, and 4D Forecast/solar-clock trust. Renewed live acceptance is withheld, and the follow-up `.55` regression repair remains undeployed.
 
 ## Production Remediation Package 4B
 
-SoC and battery-energy telemetry trust is implemented in `app/models.py` and `app/optimizer.py`, characterized in `tests/test_phase1_battery_telemetry_trust_characterization.py`, automated-validated, committed at `19a6279` (`Harden battery telemetry trust`), and pushed. It has not been merged, tagged, released, deployed, installed, or live-tested.
+SoC and battery-energy telemetry trust is implemented in `app/models.py` and `app/optimizer.py`, characterized in `tests/test_phase1_battery_telemetry_trust_characterization.py`, automated-validated, committed at `19a6279` (`Harden battery telemetry trust`), pushed, and included in live `.55`; the follow-up static-capacity repair is in undeployed commit `df90c365fc0413ad0ce048a2796ab8df30ec0c0a`.
 
 `SolarState` now records `battery_soc_trusted`, `battery_capacity_trusted`, and `available_discharge_energy_trusted`, allowing the read path to retain conservative numeric fallbacks without treating them as trusted evidence. SoC is trusted only when freshly observed, finite, and within 0% through 100%; genuine fresh 0% and 100% remain trusted values, while missing, unavailable, unknown, non-finite, out-of-range, and stale observations cannot authorize behavior. Missing or unusable capacity may retain the synthetic 10 kWh arithmetic fallback but cannot make it permissive. Missing available energy remains a conservative numeric 0 kWh, while unavailable, non-finite, or stale available energy cannot become permissive proof.
 
@@ -145,7 +162,7 @@ Validation passed for the Package 4B characterization (**22 passed, 191 warnings
 
 ## Production Remediation Package 4C
 
-Live PV/load telemetry trust is implemented in `app/models.py` and `app/optimizer.py`, characterized in `tests/test_phase1_pv_load_telemetry_trust_characterization.py`, automated-validated, committed at `85cfb1d` (`Harden PV and load telemetry trust`), and pushed. It has not been merged, tagged, released, deployed, installed, restarted, or live-tested.
+Live PV/load telemetry trust is implemented in `app/models.py` and `app/optimizer.py`, characterized in `tests/test_phase1_pv_load_telemetry_trust_characterization.py`, automated-validated, committed at `85cfb1d` (`Harden PV and load telemetry trust`), pushed, and included in live `.55`.
 
 `SolarState` now records `pv_power_trusted`, `load_power_trusted`, `derived_power_flow_coherent`, and `derived_power_flow_span_seconds`. The live read path captures PV, load, battery, and grid observations once per cycle, preserves PV/load trust separately from conservative scalar fallbacks, and retains timestamp-span provenance for derived power-flow coherence. It uses the existing `hvac_solar_data_max_age_seconds` freshness basis, 120 seconds by default, and adds no configuration setting.
 
@@ -159,13 +176,13 @@ Validation: Package 4C characterization **15 passed, 191 warnings**; focused reg
 
 ## Production Remediation Package 4D
 
-Forecast and solar-clock telemetry trust is implemented in `app/models.py` and `app/optimizer.py`, characterized in `tests/test_phase1_forecast_solar_clock_telemetry_trust_characterization.py`, automated-validated, and committed at `44c63e80fa72655087504f5c612df10e6b77109f` (`Harden forecast and solar-clock telemetry trust`). It is present on the remote remediation branch through current checkpoint `68bfa92393c7ff3bd69871acf3ec0bc269eb868d`. It has not been merged, tagged, released, deployed, installed, restarted, or live-tested.
+Forecast and solar-clock telemetry trust is implemented in `app/models.py` and `app/optimizer.py`, characterized in `tests/test_phase1_forecast_solar_clock_telemetry_trust_characterization.py`, automated-validated, committed at `44c63e80fa72655087504f5c612df10e6b77109f` (`Harden forecast and solar-clock telemetry trust`), pushed, and included in live `.55`. The follow-up repair is pushed at `df90c365fc0413ad0ce048a2796ab8df30ec0c0a` but is not deployed.
 
-Aggregate provenance is retained separately in `forecast_remaining_observation_trusted`, `forecast_today_observation_trusted`, and `forecast_tomorrow_observation_trusted`; detailed-source provenance is retained in `solcast_detailed_source_trusted`; and solar-clock provenance is retained separately in `sun_state_observation_trusted`, `sunrise_observation_trusted`, and `sunset_observation_trusted`. Forecasts use the existing 600-second `hvac_solar_forecast_max_age_seconds` basis, while sun telemetry uses the existing 120-second `hvac_solar_data_max_age_seconds` basis and HA `last_reported`/`last_updated` metadata. `next_rising` and `next_setting` retain their existing future-timestamp meaning. No configuration or timing threshold was added.
+Aggregate provenance is retained separately in `forecast_remaining_observation_trusted`, `forecast_today_observation_trusted`, and `forecast_tomorrow_observation_trusted`; detailed-source provenance is retained in `solcast_detailed_source_trusted`; and solar-clock provenance is retained separately in `sun_state_observation_trusted`, `sunrise_observation_trusted`, and `sunset_observation_trusted`. Aggregate forecasts retain the existing 600-second `hvac_solar_forecast_max_age_seconds` basis, while dynamic sun telemetry retains the existing 120-second `hvac_solar_data_max_age_seconds` basis. `next_rising` and `next_setting` retain their existing future-timestamp meaning. No configuration or timing threshold was added.
 
 Fresh finite aggregate forecasts, including genuine `0.0`, can be trusted. Missing, unavailable, malformed, or non-finite values may remain numeric `0.0` for conservative arithmetic but are untrusted; stale finite values may remain visible diagnostically but cannot become trusted permissive proof. Solar Surplus Bypass and solar export override require trusted remaining forecast, Standby Holdoff requires trusted today and remaining forecast, and Evening Boost requires trusted tomorrow and detailed forecast evidence. Stale-high remaining forecast no longer suppresses Forecast Safety Charging as trusted evidence, while missing or invalid forecast retains the conservative charging direction. Forecast uncertainty does not globally veto unrelated owners.
 
-Detailed point dictionaries remain structurally compatible, but required timestamps and `pv_estimate` values must be finite before becoming permissive evidence; NaN and infinities are ignored. An untrusted detailed source cannot authorize Morning Dump, and evidence at or before the dump-window boundary cannot permissively reduce future load need in the proven prior-day case. No minimum horizon, point count, completeness requirement, intended-day alignment policy, or forecast issue-age policy beyond existing source freshness was created.
+Detailed point dictionaries remain structurally compatible, but current live trust requires ordered, timezone-aware timestamps, finite non-negative `pv_estimate` values, configured-cadence continuity, and coverage of the consuming policy's required same-local-day interval. Morning Dump, Evening Boost, and Battery Full Safeguard reject sparse, gapped, malformed, wrong-day, or insufficient-horizon detail. Detailed validity is not tied to the aggregate forecast's 600-second issue age.
 
 Parsed sun values may remain diagnostically available while untrusted. Morning Dump now requires trusted detailed source, sun state, and sunrise evidence, while preserving deliberate battery-export ownership, its 15% floor, tariff and battery-state trust, and existing priority. Missing, unavailable, unknown, or malformed sunrise cannot construct a permissive dump window. `close_to_sunset` requires trusted sunset evidence, so missing, stale, malformed, or prior sunset evidence cannot relax export forecast guards. Local wall-clock time remains distinct from HA sun telemetry trust, and no sunrise/sunset tolerance was invented. The separate Morning Dump post-window grace policy remains unresolved.
 
@@ -175,7 +192,7 @@ Validation: Package 4D characterization **26 passed, 191 warnings**; focused reg
 
 ## Production Remediation Package 5
 
-Package 5 actuator/fallback reliability and chatter/reopen repair are complete and automated-validated. The actuator/fallback production/test checkpoint is `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`); the chatter/reopen production/test checkpoint is `e119f6f` (`Repair Morning Slow MSC ceiling chatter`). Package 5 has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+Package 5 actuator/fallback reliability and chatter/reopen repair are complete, automated-validated, pushed, and included in live `.55`. The actuator/fallback production/test checkpoint is `4c9c0e2663357a65e8cdf80d7c6d1cf7ea8d0473` (`Harden actuator fallback and settlement handling`); the chatter/reopen production/test checkpoint is `e119f6f` (`Repair Morning Slow MSC ceiling chatter`). Renewed live acceptance is withheld.
 
 ### Actuator/fallback reliability
 
@@ -197,7 +214,7 @@ Validation: chatter characterization **11 passed, 191 warnings**; affected actua
 
 ## Production Remediation Package 6A
 
-Package 6A repairs trust handling for the existing grid-export, ESS-charge, and ESS-discharge capability sources. It is complete, automated-validated, and pushed to `origin/fix/phase1-audit-remediation` at `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`). Its documentation checkpoint `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573` is also pushed. It has not been merged, tagged, released, deployed, installed, restarted, live-tested, or live-accepted.
+Package 6A repairs trust handling for the existing grid-export, ESS-charge, and ESS-discharge capability sources. It is complete, automated-validated, pushed at `f95f9ce01a53e66a533edbfe3bd423e4ee3dafd3` (`Repair Package 6A capability trust`), and included in live `.55`. Its documentation checkpoint `f1ade7b0db500cadcdfccce7e2fd5e7d3a5cf573` is also pushed; renewed live acceptance is withheld.
 
 For Automated control, a trusted hardware capability is an upper bound, while a configured ESS baseline is a request and not capability evidence. Charge and discharge remain separate domains; the effective bound is the minimum of current trusted sources in the same domain. If no current trusted source exists, Automated control uses the cached trusted rating for that domain and then `ESS_LIMIT_FALLBACK_KW`. Invalid, unavailable, non-finite, or out-of-range evidence cannot enlarge a capability. Trusted grid-export number-entity maximum metadata bounds the Automated export target.
 
@@ -222,17 +239,17 @@ Regression coverage proves fresh direct discharge around `0.005 kW` with zero ex
 
 Validation: the focused repair matrix passed **13 tests and 9 subtests**; all three affected test modules completed **134 passed, 2 failed, 95 subtests passed**, with only the two frozen Phase 2 tests failing; independent authority/capability protection passed **32 tests and 58 subtests**; and the complete suite collected **444 tests: 442 passed, 2 failed, 191 warnings, 368 subtests passed**. The only complete-suite failures were the two frozen Phase 2 tests. `python -m compileall -q app tests` and `git diff --check` passed; the latter emitted only the repository's existing line-ending conversion notices.
 
-This repair is committed and pushed at `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2`, but is not merged, released, deployed, installed, restarted, live-tested, or live-accepted. Automated tests do not prove live behavior.
+This repair is committed and pushed at `067d52cc5e231d4c3ffd4be2d8c0d058bfbf19b2` and included in live `.55`; renewed live acceptance is withheld.
 
-## Locally committed Solar Surplus PV-margin hysteresis repair
+## Solar Surplus PV-margin hysteresis repair
 
 Live haos54 observation showed the Solar Surplus eligibility gate toggle `true -> false -> true` as real-time PV surplus moved `0.536 -> 0.439 -> 0.575 kW` around the configured 0.5 kW margin. At the observed 6c FiT below the ordinary 10c threshold, export remained closed, intent remained `EXPORT_BLOCKED`, EMS remained Maximum Self Consumption, PV MAX remained normal, and no battery-export owner appeared. Synthetic 12c testing proved that the same gate sequence previously propagated into `25 -> 0 -> 25 kW` and `MSC_SURPLUS_CEILING -> EXPORT_BLOCKED -> MSC_SURPLUS_CEILING`.
 
-The local repair keeps entry strictly above `SOLAR_SURPLUS_MIN_PV_MARGIN`, unchanged at 0.5 kW, and adds `SOLAR_SURPLUS_STOP_PV_MARGIN`, default 0.2 kW, for continuation. The new value is normalized to a finite, non-negative value no greater than the entry margin. Only an immediately previous, genuinely active Solar Surplus high ceiling under observed Automated ownership may use the lower margin. At or below 0.2 kW the policy stops, and re-entry again requires more than 0.5 kW. Existing 2.0/1.25 forecast hysteresis is unchanged; no timer, smoothing, battery-export ownership, discharge EMS mode, or PV MAX change is introduced.
+The repair included in live `.55` keeps entry strictly above `SOLAR_SURPLUS_MIN_PV_MARGIN`, unchanged at 0.5 kW, and adds `SOLAR_SURPLUS_STOP_PV_MARGIN`, default 0.2 kW, for continuation. The new value is normalized to a finite, non-negative value no greater than the entry margin. Only an immediately previous, genuinely active Solar Surplus high ceiling under observed Automated ownership may use the lower margin. At or below 0.2 kW the policy stops, and re-entry again requires more than 0.5 kW. Existing 2.0/1.25 forecast hysteresis is unchanged; no timer, smoothing, battery-export ownership, discharge EMS mode, or PV MAX change is introduced.
 
 Regression coverage proves strict 0.5 kW entry, strict 0.2 kW continuation, re-entry protection, forecast continuation at 60.0 kWh for a 40.3 kWh battery while inactive entry remains blocked, rejection of unrelated prior MSC ownership, stable `25 / 25 / 25 kW` and `MSC_SURPLUS_CEILING` at synthetic 12c FiT, and stable closed outputs at observed-style 6c FiT. Focused API/config validation passed **11 tests**; directly affected Solar Surplus modules passed **104 tests**; independent MSC and exact-full protection passed **45 tests with the two frozen Phase 2 tests deselected**; and the complete suite collected **459 tests: 457 passed, 2 failed**. The only failures were the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`. `python -m compileall` passed, and `git diff --check` passed apart from the repository's existing line-ending conversion notices.
 
-The Solar Surplus repair is committed and pushed at `7ded75f9155d7002150a7308f03eb9510f5beb39` but is not tagged, built, released, deployed, installed, restarted, live-tested, or live-accepted. No Home Assistant or Sigenergy write has occurred for this repair. Automated tests do not prove live behavior.
+The Solar Surplus repair is committed and pushed at `7ded75f9155d7002150a7308f03eb9510f5beb39` and included in live `.55`; renewed live acceptance is withheld.
 
 ## Parked investigation: Morning Slow forecast feasibility
 
@@ -281,7 +298,7 @@ These are operator settings, not software-default policy:
 - Evening Boost: enabled, 35% floor, safety multiplier 1.1, minimum tomorrow forecast 100 kWh;
 - `MIN_GRID_TRANSFER_KW`: 1 kW;
 - Forecast Safety Charging: 1.35; Forecast Safety Export: 1.1;
-- Solar Surplus Bypass live settings: enabled at 2.0 / 1.25 / 0.5; the locally committed but undeployed repair adds a separate 0.2 kW continuation default without changing those live settings;
+- Solar Surplus Bypass live settings: enabled at 2.0 / 1.25 / 0.5; live `.55` includes the separate 0.2 kW continuation default without changing those operator values;
 - spike minimum SoC: 60%, although current implementation does not enforce it;
 - cheap-positive threshold: `0.015 $/kWh`; daytime top-up maximum SoC: 50%; target battery charge: 2 kW;
 - Demand Window remains the higher-priority import block; Value Gate remains advisory-only.
@@ -297,4 +314,4 @@ Protect the two existing expected Phase 2 failures:
 
 ## Exact next action
 
-Review and commit this documentation truth correction, then separately decide whether to push the .55 candidate branch. Tag/build/release/live testing remain later approval boundaries.
+Review the uncommitted `2.3.45-haos56` identity/documentation candidate and decide whether to commit it. Push, tag, build, publish, release, deployment, installation, restart, and live testing remain separate approval boundaries.

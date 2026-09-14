@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-14 - 2.3.45-haos56 candidate
+
+- Repair unchanged live-telemetry freshness by enriching freshness-sensitive REST snapshots with Home Assistant State-object `last_reported` metadata only when entity ID, exact state string, and timezone-aware `last_updated` identify the same observation; receipt time is never treated as freshness.
+- Treat rated battery capacity as static capability data when its current value is finite, positive, and uses an explicit supported unit, while retaining the 120-second freshness limit for dynamic live telemetry.
+- Validate detailed Solcast data by ordered, finite, non-negative, cadence-continuous periods covering each policy's required same-local-day interval. Sparse or gapped data remains fail-closed; unrelated aggregate forecast freshness remains 600 seconds.
+- Preserve Manual/Force ownership, Maximum Self Consumption, PV MAX, Demand Window, deliberate Morning Dump battery-export ownership, and all unrelated control policy.
+- Prepared `2.3.45-haos56` locally only. It is uncommitted, unpushed, untagged, unbuilt, unpublished, unreleased, undeployed, uninstalled, and not restarted or live-tested.
+
 ## 2026-09-13 - 2.3.44-haos55 candidate
 
 - Corrected the exact-full MSC path so trusted battery discharge serving site load no longer closes the high export ceiling; meaningful simultaneous battery discharge plus grid export and unknown or untrusted flow remain fail-closed.
