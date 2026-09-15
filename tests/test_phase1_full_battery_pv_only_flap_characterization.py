@@ -517,6 +517,180 @@ class Phase1FullBatteryPvOnlyFlapCharacterizationTests(
         )
         self.assertEqual(EXPORT_BLOCKED, simultaneous.export_intent)
 
+    def test_live_pv_load_deficit_crossing_keeps_exact_full_ceiling_stable(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            export_threshold_low=0.10,
+            export_limit_high=25.0,
+            min_grid_transfer_kw=1.0,
+            productive_solar_threshold_kw=1.0,
+            pv_max_power_normal=25.0,
+        )
+        base_context = self._fresh_live_context()
+        samples = (
+            (0.906, 1.078, 0.163, -0.007, 25.0),
+            (0.941, 1.009, 0.061, -0.007, 0.01),
+            (0.906, 1.078, 0.163, -0.008, 25.0),
+            (0.941, 1.009, 0.061, -0.007, 0.01),
+        )
+
+        decisions = []
+        for cycle, (
+            pv_kw,
+            load_kw,
+            grid_import_kw,
+            battery_power_kw,
+            observed_export_limit,
+        ) in enumerate(samples, start=1):
+            context = replace(
+                base_context,
+                pv_power=self._observed(pv_kw),
+                load_power=self._observed(load_kw),
+                battery_power=self._observed(battery_power_kw),
+                grid_import_power=self._observed(grid_import_kw),
+                grid_export_power=self._observed(0.0),
+            )
+            state = self._full_battery_msc_state(context)
+            state.feedin_price = 0.0439411
+            state.feedin_price_cents = 4.39411
+            state.pv_kw = pv_kw
+            state.solar_power_now_kw = pv_kw
+            state.load_kw = load_kw
+            state.battery_power_sensor_kw = battery_power_kw
+            state.grid_import_power_kw = grid_import_kw
+            state.grid_export_power_kw = 0.0
+            state.current_export_limit = observed_export_limit
+
+            decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+            decisions.append(decision)
+
+            self.assertEqual(0.0, decision.trace_values.get("pv_surplus_actual"), cycle)
+            self.assertEqual(
+                0.0, decision.trace_values.get("measured_pv_surplus_kw"), cycle
+            )
+            self.assertTrue(
+                bool(
+                    decision.trace_gates.get(
+                        "live_pv_plausible_for_msc_ceiling"
+                    )
+                ),
+                cycle,
+            )
+            self.assertTrue(
+                bool(decision.trace_gates.get("pv_surplus_common_conditions")),
+                cycle,
+            )
+            self.assertTrue(
+                bool(decision.trace_gates.get("ordinary_msc_flow_safe")), cycle
+            )
+            self.assertFalse(
+                bool(
+                    decision.trace_gates.get(
+                        "ordinary_msc_simultaneous_battery_discharge_and_grid_export"
+                    )
+                ),
+                cycle,
+            )
+            self.assertTrue(
+                bool(decision.trace_gates.get("pv_only_msc_transition_ready")),
+                cycle,
+            )
+            self.assertTrue(
+                bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active")),
+                cycle,
+            )
+            self.assertEqual(25.0, decision.export_limit, cycle)
+            self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent, cycle)
+            self.assertEqual(
+                "msc_full_battery_high_ceiling",
+                decision.trace_values.get("export_branch"),
+                cycle,
+            )
+            self.assertEqual(
+                "msc_full_battery_high_ceiling",
+                decision.trace_values.get("pv_surplus_initiation_source"),
+                cycle,
+            )
+            self.assertEqual(
+                "none", decision.trace_values.get("battery_export_owner"), cycle
+            )
+            self.assertEqual(MODE_MAX_SELF, decision.ems_mode, cycle)
+            self.assertEqual(25.0, decision.pv_max_power_limit, cycle)
+
+            optimizer._last_state = state
+            optimizer._last_decision = decision
+
+        self.assertEqual(
+            (25.0, 25.0, 25.0, 25.0),
+            tuple(decision.export_limit for decision in decisions),
+        )
+
+    def test_exact_full_positive_pv_presence_and_trust_remain_fail_closed(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            export_threshold_low=0.10,
+            export_limit_high=25.0,
+            min_grid_transfer_kw=1.0,
+            productive_solar_threshold_kw=1.0,
+        )
+        base_context = self._fresh_live_context()
+        cases = (
+            ("no_meaningful_pv", 0.05, 1.0, True, True),
+            ("untrusted_pv", 0.906, 1.078, False, True),
+            ("untrusted_load", 0.941, 1.009, True, False),
+        )
+
+        for name, pv_kw, load_kw, pv_trusted, load_trusted in cases:
+            with self.subTest(name=name):
+                pv_observation = self._observed(pv_kw)
+                load_observation = self._observed(load_kw)
+                context = replace(
+                    base_context,
+                    pv_power=replace(pv_observation, fresh=pv_trusted),
+                    load_power=replace(load_observation, fresh=load_trusted),
+                    battery_power=self._observed(-0.007),
+                    grid_import_power=self._observed(0.0),
+                    grid_export_power=self._observed(0.0),
+                )
+                state = self._full_battery_msc_state(context)
+                state.feedin_price = 0.0439411
+                state.feedin_price_cents = 4.39411
+                state.pv_kw = pv_kw
+                state.pv_power_trusted = pv_trusted
+                state.solar_power_now_kw = pv_kw
+                state.load_kw = load_kw
+                state.load_power_trusted = load_trusted
+                state.battery_power_sensor_kw = -0.007
+                state.grid_import_power_kw = 0.0
+                state.grid_export_power_kw = 0.0
+
+                decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+                self.assertTrue(
+                    bool(decision.trace_gates.get("pv_surplus_common_conditions"))
+                )
+                self.assertFalse(
+                    bool(
+                        decision.trace_gates.get(
+                            "live_pv_plausible_for_msc_ceiling"
+                        )
+                    )
+                )
+                self.assertFalse(
+                    bool(decision.trace_gates.get("pv_only_msc_transition_ready"))
+                )
+                self.assertFalse(
+                    bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active"))
+                )
+                self.assertEqual(0.0, decision.export_limit)
+                self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                self.assertEqual(
+                    "none", decision.trace_values.get("battery_export_owner")
+                )
+                self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+
     def test_exact_full_unknown_battery_or_grid_export_flow_fails_closed(
         self,
     ) -> None:

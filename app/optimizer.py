@@ -2680,17 +2680,11 @@ class SigEnergyOptimizer:
             math.isfinite(live_pv_value) and math.isfinite(live_load_value)
         )
         live_pv_kw = max(live_pv_value, 0.0) if live_pv_and_load_finite else 0.0
-        live_load_kw = max(live_load_value, 0.0) if live_pv_and_load_finite else 0.0
-        live_pv_plausible_for_msc_ceiling = (
+        live_pv_plausible_for_msc_ceiling = bool(
             pv_power_trusted
             and load_power_trusted
             and live_pv_and_load_finite
-            and
-            live_pv_kw > 0.05
-            and (
-                live_pv_kw >= max(float(cfg.productive_solar_threshold_kw or 0.0), 0.0)
-                or live_pv_kw + pv_only_discharge_tolerance_kw >= live_load_kw
-            )
+            and live_pv_kw > 0.05
         )
         feedin_price_for_pv_only = (
             float(s.feedin_price) if feedin_price_trusted else 0.0
@@ -3672,6 +3666,8 @@ class SigEnergyOptimizer:
             "sigenergy_mode_observed": s.sigenergy_mode_observed,
             "ems_mode_observed": s.ems_mode_observed,
             "observed_automated_control_mode": observed_automated_control_mode,
+            "pv_surplus_common_conditions": pv_surplus_common_conditions,
+            "live_pv_plausible_for_msc_ceiling": live_pv_plausible_for_msc_ceiling,
             "pv_only_msc_transition_ready": pv_only_msc_transition_ready,
             "pv_only_msc_stage1_active": pv_only_msc_stage1_active,
             "pv_only_msc_high_ceiling_active": pv_only_msc_high_ceiling_active,
