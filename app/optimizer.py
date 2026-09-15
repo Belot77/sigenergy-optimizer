@@ -91,7 +91,7 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
-_RUNTIME_SIGNATURE = "2.3.45-haos56"
+_RUNTIME_SIGNATURE = "2.3.46-haos57"
 
 
 class _DesiredExportLimit(float):

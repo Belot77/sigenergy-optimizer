@@ -139,3 +139,9 @@ Rationale: The central MSC flow model already distinguishes benign site-load ser
 Decision: Solar Surplus Bypass starts only above its existing 0.5 kW real-time PV margin and, once the immediately previous cycle genuinely owned an active Solar Surplus high ceiling under observed Automated ownership, continues strictly above a separate configurable 0.2 kW stop margin. At or below 0.2 kW it stops, and re-entry again requires more than 0.5 kW. Forecast hysteresis remains separately controlled by the existing 2.0 start and 1.25 continuation multipliers. No timer or smoothing is added.
 
 Rationale: Live gate chatter around 0.5 kW and synthetic decision tests proved that, above the ordinary FiT threshold, the former single PV-margin boundary propagated into `25 -> 0 -> 25 kW` export-ceiling chatter. Ownership-scoped continuation removes that control chatter without granting lower-threshold entry to unrelated policies or creating battery-export authority.
+
+## 2026-09-15 - Exact-full Cheap-FiT requires PV presence, not instantaneous adequacy
+
+Decision: The exact-full Cheap-FiT MSC exception requires trusted finite PV and load telemetry and positive live PV strictly above `0.05 kW`. It does not require PV to meet the productive-solar threshold or remain within `0.1 kW` of instantaneous load. Observed Automated and exact Maximum Self Consumption ownership, the exact-full target, ordinary-MSC flow safety, and all independent fail-closed protections remain mandatory; the ceiling creates no `BATTERY_EXPORT` owner.
+
+Rationale: Live `.56` evidence showed genuine `25 -> 0 -> 25 -> 0 kW` desired-ceiling chatter as sub-1 kW PV/load readings crossed the former `load - 0.1 kW` adequacy boundary while every independent ownership and flow-safety condition remained valid. Positive PV presence retains the narrow PV-only character without feeding instantaneous load variation back into ceiling eligibility.

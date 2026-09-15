@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-15 - 2.3.46-haos57 candidate
+
+- Eliminate exact-full Cheap-FiT MSC export-ceiling chatter caused by sub-1 kW PV moving across the former instantaneous `load - 0.1 kW` adequacy boundary.
+- Keep trusted finite PV/load telemetry and strict positive live PV presence above `0.05 kW`, while removing the requirement that PV meet the productive-solar threshold or remain within `0.1 kW` of load.
+- Preserve observed Automated and exact Maximum Self Consumption ownership, exact-full target, trusted ordinary-MSC flow safety, simultaneous battery-discharge plus meaningful-grid-export closure, unknown-flow closure, normal PV MAX, and the absence of deliberate battery-export ownership.
+- Expose `live_pv_plausible_for_msc_ceiling` and `pv_surplus_common_conditions` in decision diagnostics.
+- The functional repair is committed at `9e5517ea85dea286608d564cbe2cdeaa18a2e03e` and passed its final automated gate: 482 collected, 480 passed, with only the two frozen Phase 2 tests failing as expected. This checkpoint changes production identity only and prepares `2.3.46-haos57`; it does not tag, build, publish, install, restart, or claim live acceptance.
+
 ## 2026-09-14 - 2.3.45-haos56 candidate
 
 - Repair unchanged live-telemetry freshness by enriching freshness-sensitive REST snapshots with Home Assistant State-object `last_reported` metadata only when entity ID, exact state string, and timezone-aware `last_updated` identify the same observation; receipt time is never treated as freshness.

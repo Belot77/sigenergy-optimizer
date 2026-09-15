@@ -122,6 +122,8 @@ Cheap positive FiT below the ordinary export threshold remains a separate protec
 
 - below 100% SoC, the implicit path is closed;
 - at exact 100%, a high ceiling may open only through the verified Automated plus exact Maximum Self Consumption PV-only path;
+- trusted finite PV and load telemetry remain required, together with positive live PV presence strictly above `0.05 kW`;
+- positive PV presence is not an adequacy test against the productive-solar threshold or the instantaneous site load;
 - trusted battery discharge serving site load while grid export remains below the meaningful threshold is compatible with the MSC surplus ceiling;
 - meaningful simultaneous battery discharge plus grid export remains fail-closed;
 - unknown or untrusted battery-flow or grid-export evidence remains fail-closed;
