@@ -3609,61 +3609,6 @@ async function loadEarnings() {
 }
 
 // ------ Config tab ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-const _ENTITY_GROUPS = [
-  { title: 'EMS Controls', keys: [
-    ['ha_control_switch',         'HA Control Switch'],
-    ['ems_mode_select',           'EMS Mode Select'],
-    ['grid_export_limit',         'Grid Export Limit'],
-    ['grid_import_limit',         'Grid Import Limit'],
-    ['pv_max_power_limit',        'PV Max Power Limit'],
-    ['ess_max_charging_limit',    'ESS Max Charging Limit'],
-    ['ess_max_discharging_limit', 'ESS Max Discharging Limit'],
-  ]},
-  { title: 'SigEnergy Sensors', keys: [
-    ['pv_power_sensor',                   'PV Power'],
-    ['consumed_power_sensor',             'Consumed Power'],
-    ['grid_import_power_sensor',          'Grid Import Power'],
-    ['grid_export_power_sensor',          'Grid Export Power'],
-    ['battery_power_sensor',              'Battery Power'],
-    ['battery_soc_sensor',                'Battery SoC'],
-    ['rated_capacity_sensor',             'Rated Capacity'],
-    ['available_discharge_sensor',        'Available Discharge'],
-    ['ess_rated_discharge_power_sensor',  'ESS Rated Discharge Power'],
-    ['ess_rated_charge_power_sensor',     'ESS Rated Charge Power'],
-    ['daily_export_energy',               'Daily Export Energy'],
-    ['daily_import_energy',               'Daily Import Energy'],
-    ['daily_load_energy',                 'Daily Load Energy'],
-    ['daily_battery_charge_energy',       'Daily Battery Charge'],
-    ['daily_battery_discharge_energy',    'Daily Battery Discharge'],
-    ['daily_pv_energy',                   'Daily PV Energy'],
-    ['sun_entity',                        'Sun Entity'],
-  ]},
-  { title: 'Price / Amber', keys: [
-    ['price_sensor',          'Import Price'],
-    ['feedin_sensor',         'Feed-in Price'],
-    ['feedin_forecast_sensor','Feed-in Forecast'],
-    ['demand_window_sensor',  'Demand Window'],
-    ['price_spike_sensor',    'Price Spike'],
-    ['price_forecast_sensor', 'Price Forecast'],
-  ]},
-  { title: 'Solcast / Forecast', keys: [
-    ['forecast_remaining_sensor', 'Forecast Remaining Today'],
-    ['forecast_today_sensor',     'Forecast Today'],
-    ['forecast_tomorrow_sensor',  'Forecast Tomorrow'],
-    ['solar_power_now_sensor',    'Solar Power Now'],
-  ]},
-  { title: 'HA Helpers', keys: [
-    ['sigenergy_mode_select',      'Mode Select'],
-    ['automated_export_flag',      'Automated Export Flag'],
-    ['export_session_start',       'Export Session Start'],
-    ['import_session_start',       'Import Session Start'],
-    ['last_export_notification',   'Last Export Notification'],
-    ['last_import_notification',   'Last Import Notification'],
-    ['reason_text_helper',         'Reason Text'],
-    ['min_soc_to_sunrise_helper',  'Min SoC to Sunrise'],
-  ]},
-];
-
 const _CONFIG_SECTIONS = [
   { key:'control_notifications', title:'Control & Notifications', fields:[
     ['notification_service', 'Notification Service', 'text'],
@@ -3677,7 +3622,6 @@ const _CONFIG_SECTIONS = [
     ['daily_summary_time', 'Daily Summary Time', 'text'],
     ['notify_morning_summary', 'Send Morning Forecast', 'bool'],
     ['morning_summary_time', 'Morning Forecast Time', 'text'],
-    ['automated_export_flag', 'Automated Export Flag', 'text'],
   ]},
   { key:'session_tracking', title:'Session Tracking & Notification State', fields:[
     ['export_session_start', 'Export Session Start', 'text'],
@@ -3745,7 +3689,7 @@ const _CONFIG_SECTIONS = [
     ['export_limit_medium', 'Export Limit Medium', 'number', '0.1'],
     ['export_limit_high', 'Export Limit High', 'number', '0.1'],
     ['export_spike_threshold', 'Export Spike Threshold', 'number', '0.01'],
-    ['export_spike_min_soc', 'Export Spike Min SoC', 'number', '0.1'],
+    ['export_spike_min_soc', 'Price Spike Import Block SoC', 'number', '0.1'],
     ['export_spike_full_power', 'Export Spike Full Power', 'bool'],
     ['allow_low_medium_export_positive_fit', 'Allow Low/Medium Positive FIT', 'bool'],
     ['allow_positive_fit_battery_discharging', 'Allow Positive FIT Battery Discharging', 'bool'],
@@ -3784,8 +3728,6 @@ const _CONFIG_SECTIONS = [
   ]},
   { key:'forecast_holdoff', title:'Forecast-based Holdoff', fields:[
     ['standby_holdoff_enabled', 'Standby Holdoff Enabled', 'bool'],
-    ['slow_charge_holdoff', 'Slow Charge Holdoff', 'bool'],
-    ['slow_charge_limit_kw', 'Slow Charge Limit kW', 'number', '0.1'],
     ['pv_forecast_holdoff_kwh', 'PV Forecast Holdoff kWh', 'number', '0.1'],
     ['negative_price_forecast_lookahead_hours', 'Negative Price Forecast Lookahead Hours', 'number', '1'],
     ['standby_holdoff_end_time', 'Standby Holdoff End Time', 'text'],
@@ -3819,7 +3761,6 @@ const _CONFIG_SECTIONS = [
     ['soc_hysteresis', 'SoC Hysteresis', 'number', '0.1'],
     ['min_change_threshold', 'Min Change Threshold', 'number', '0.1'],
     ['min_grid_transfer_kw', 'Min Grid Transfer kW', 'number', '0.1'],
-    ['export_hysteresis_percent', 'Export Hysteresis Percent', 'number', '0.1'],
     ['price_hysteresis', 'Price Hysteresis', 'number', '0.001'],
   ]},
   { key:'forecast_safety', title:'Forecast Safety', fields:[
@@ -3829,7 +3770,6 @@ const _CONFIG_SECTIONS = [
   { key:'export_scheduling', title:'Export Scheduling', fields:[
     ['export_soc_span_day', 'Export SoC Span Day', 'number', '0.1'],
     ['export_discharge_window_hours', 'Export Discharge Window Hours', 'number', '0.1'],
-    ['sun_elevation_evening_threshold', 'Sun Elevation Evening Threshold', 'number', '0.1'],
     ['sunset_export_grace_hours', 'Sunset Export Grace Hours', 'number', '0.1'],
     ['evening_mode_hours_before_sunset', 'Evening Mode Hours Before Sunset', 'number', '0.1'],
     ['export_guard_relax_soc', 'Export Guard Relax SoC', 'number', '0.1'],
@@ -3844,8 +3784,6 @@ const _CONFIG_SECTIONS = [
     ['block_flow_limit_value', 'Block Flow Limit Value', 'number', '0.01'],
     ['ess_charge_limit_value', 'ESS Charge Limit Value', 'number', '0.1'],
     ['ess_discharge_limit_value', 'ESS Discharge Limit Value', 'number', '0.1'],
-    ['export_limit_value', 'Export Limit Value', 'number', '0.1'],
-    ['import_limit_value', 'Import Limit Value', 'number', '0.1'],
     ['pv_max_power_value', 'PV Max Power Value', 'number', '0.1'],
   ]},
   { key:'service_runtime', title:'Service & Runtime', fields:[
@@ -3930,7 +3868,7 @@ function configFieldHelp(key, label, type) {
     export_limit_medium: 'Affects: export cap used in medium FIT tier. Lower -> tighter export in medium-price periods. Higher -> more export allowed in medium-price periods.',
     export_limit_high: 'Affects: export cap used in high FIT tier/spike contexts. Lower -> tempers export even in strong price windows. Higher -> allows stronger export in high-value windows.',
     export_spike_threshold: 'Affects: price spike detection threshold for spike export branch. Lower -> spike branch triggers more often. Higher -> only large spikes trigger it.',
-    export_spike_min_soc: 'Affects: minimum SoC requirement for spike-based export behavior. Lower -> spike export allowed with less battery. Higher -> reserves more SoC before spike export.',
+    export_spike_min_soc: 'Affects: cheap-import eligibility while a price spike is active. Below this SoC, the ordinary cheap top-up path is blocked. This setting does not set an export floor.',
     export_spike_full_power: 'Affects: whether spike branch can command full export power. Off -> still capped by tier limits. On -> allows full-power export when spike logic is active.',
     allow_low_medium_export_positive_fit: 'Affects: permission to export in positive FIT during low/medium tiers. Off -> stricter blocking in positive FIT. On -> allows controlled export in those tiers.',
     allow_positive_fit_battery_discharging: 'Affects: whether battery discharge is allowed when FIT is positive. Off -> avoids battery discharge in positive FIT conditions. On -> permits discharge when other guards allow it.',
@@ -3940,7 +3878,6 @@ function configFieldHelp(key, label, type) {
     import_limit_low: 'Affects: import cap in low import tier. Lower -> gentler grid charging/import. Higher -> more aggressive grid import when in low tier.',
     import_limit_medium: 'Affects: import cap in medium import tier. Lower -> tighter medium-tier import. Higher -> stronger medium-tier import.',
     import_limit_high: 'Affects: import cap in high import tier. Lower -> reduces maximum import even in best-price windows. Higher -> allows maximum import in best-price windows.',
-    export_hysteresis_percent: 'Hysteresis around export decisions to reduce mode flapping.',
     price_hysteresis: 'Minimum price movement needed before price-tier decisions change state.',
     min_change_threshold: 'Small-change deadband for command updates; lower values update more often.',
     poll_interval_seconds: 'How often the optimizer reads sensors and recomputes decisions.',
