@@ -120,6 +120,8 @@ def _is_valid_time(value: str) -> bool:
 
 
 def _validate_config_value(cfg: Any, key: str, value: Any) -> str | None:
+    if key in _MASKED_KEYS and value == "****":
+        return "masked placeholder is not a valid value"
     if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
         return "must be a finite number"
     if key in _TIME_KEYS and not _is_valid_time(str(value)):
@@ -430,7 +432,11 @@ def _to_env_literal(value: Any) -> str:
     return str(value)
 
 
-def _persist_config_keys_to_env(cfg: Any, keys: list[str]) -> list[str]:
+def _persist_config_keys_to_env(
+    cfg: Any,
+    keys: list[str],
+    proposed_values: dict[str, Any] | None = None,
+) -> list[str]:
     env_path = Path(".env")
     lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
 
@@ -438,7 +444,11 @@ def _persist_config_keys_to_env(cfg: Any, keys: list[str]) -> list[str]:
     for key in keys:
         if not hasattr(cfg, key):
             raise ValueError(f"Unknown config key: {key}")
-        value = getattr(cfg, key)
+        value = (
+            proposed_values[key]
+            if proposed_values is not None and key in proposed_values
+            else getattr(cfg, key)
+        )
         if key in _MASKED_KEYS and value == "****":
             raise ValueError(f"Refusing to persist masked value for {key}")
         updates[_config_key_to_env_var(key)] = _to_env_literal(value)
@@ -1259,18 +1269,22 @@ async def update_config(request: Request, body: ConfigUpdateRequest) -> dict[str
                 action="config_update",
                 result="validation_error",
                 target_key=body.key,
-                old_value=old_value,
-                new_value=body.value,
+                old_value="****" if body.key in _MASKED_KEYS else old_value,
+                new_value="****" if body.key in _MASKED_KEYS else body.value,
                 details={"field_errors": field_errors},
             )
             raise _validation_exception(field_errors)
+        persisted_keys: list[str] = []
+        if body.persist:
+            persisted_keys = _persist_config_keys_to_env(
+                cfg,
+                [body.key],
+                {body.key: coerced},
+            )
         setattr(cfg, body.key, coerced)
         opt = _opt(request)
         if hasattr(opt, "refresh_config_time_warnings"):
             opt.refresh_config_time_warnings()
-        persisted_keys: list[str] = []
-        if body.persist:
-            persisted_keys = _persist_config_keys_to_env(cfg, [body.key])
         safe_value = "****" if body.key in _MASKED_KEYS else getattr(cfg, body.key)
         _record_audit(
             request,
@@ -1416,16 +1430,35 @@ async def update_config_batch(request: Request, body: ConfigBatchUpdateRequest) 
         for k in coerced_updates.keys()
     }
 
+    persisted_keys: list[str] = []
+    try:
+        if body.persist:
+            persisted_keys = _persist_config_keys_to_env(
+                cfg,
+                list(coerced_updates.keys()),
+                coerced_updates,
+            )
+    except Exception as exc:
+        safe_updated = {
+            k: ("****" if k in _MASKED_KEYS else v)
+            for k, v in coerced_updates.items()
+        }
+        _record_audit(
+            request,
+            action="config_batch_update",
+            result="error",
+            old_value=old_values,
+            new_value=safe_updated,
+            details={"error": str(exc)},
+        )
+        raise HTTPException(status_code=500, detail=str(exc))
+
     for key, value in coerced_updates.items():
         setattr(cfg, key, value)
 
     opt = _opt(request)
     if hasattr(opt, "refresh_config_time_warnings"):
         opt.refresh_config_time_warnings()
-
-    persisted_keys: list[str] = []
-    if body.persist:
-        persisted_keys = _persist_config_keys_to_env(cfg, list(coerced_updates.keys()))
 
     safe_updated = {k: ("****" if k in _MASKED_KEYS else v) for k, v in coerced_updates.items()}
     _record_audit(
