@@ -62,6 +62,7 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
         forecast_tomorrow_state: object = "100.0",
         forecast_tomorrow_observed_at: datetime | None = None,
         detailed_forecast: object = _MISSING,
+        tomorrow_detailed_forecast: object = _MISSING,
         sun_state: object = _MISSING,
         sun_observed_at: datetime | None = None,
         next_rising: object = _MISSING,
@@ -133,6 +134,10 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
             cfg.ha_control_switch: self._entity("on", when),
             cfg.sigenergy_mode_select: self._entity(cfg.automated_option, when),
         }
+        tomorrow_attributes: dict[str, object] = {}
+        if tomorrow_detailed_forecast is not _MISSING:
+            tomorrow_attributes["detailedForecast"] = tomorrow_detailed_forecast
+
         forecast_inputs = (
             (
                 cfg.forecast_remaining_sensor,
@@ -150,7 +155,7 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
                 cfg.forecast_tomorrow_sensor,
                 forecast_tomorrow_state,
                 forecast_tomorrow_observed_at,
-                {},
+                tomorrow_attributes,
             ),
         )
         for entity_id, raw_state, observed_at, attributes in forecast_inputs:
@@ -220,6 +225,17 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
                 }
             )
         return detail
+
+    @classmethod
+    def _tomorrow_detail_for_total(
+        cls,
+        when: datetime,
+        total_kwh: float,
+    ) -> list[dict[str, object]]:
+        return cls._morning_detail(
+            when + timedelta(days=1),
+            pv_estimate=total_kwh / 9.0,
+        )
 
     # Aggregate forecast trust and genuine-zero controls.
     def test_invalid_aggregate_forecasts_collapse_to_numeric_zero(self) -> None:
@@ -554,6 +570,88 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
         self.assertFalse(floored.morning_dump_active)
 
     # Evening Boost forecast trust.
+    def test_post_sunset_next_setting_rollover_does_not_block_evening_boost(self) -> None:
+        after_sunset = self.EVENING.replace(hour=19, minute=18)
+        _optimizer, _state, decision = self._read_and_decide(
+            when=after_sunset,
+            forecast_tomorrow_state="129.08",
+            detailed_forecast=self._morning_detail(after_sunset),
+            battery_soc=93.2,
+            available_discharge_kwh=27.96,
+            pv_kw=0.0,
+            load_kw=0.0,
+            feedin_price=0.15,
+            settings={
+                "evening_boost_enabled": True,
+                "evening_boost_min_tomorrow_forecast_kwh": 100.0,
+            },
+        )
+
+        self.assertGreater(decision.hours_to_sunrise, 0.0)
+        self.assertTrue(
+            bool(decision.trace_gates.get("evening_boost_detailed_coverage"))
+        )
+        self.assertTrue(decision.evening_export_boost_active)
+        self.assertEqual(
+            "evening_export_boost",
+            decision.trace_values.get("battery_export_owner"),
+        )
+
+    def test_complete_tomorrow_detail_can_corroborate_unchanged_aggregate(self) -> None:
+        after_sunset = self.EVENING.replace(hour=19, minute=18)
+        stale_at = after_sunset - timedelta(hours=2)
+        _optimizer, _state, decision = self._read_and_decide(
+            when=after_sunset,
+            forecast_tomorrow_state="129.08",
+            forecast_tomorrow_observed_at=stale_at,
+            detailed_forecast=self._morning_detail(after_sunset),
+            tomorrow_detailed_forecast=self._tomorrow_detail_for_total(
+                after_sunset,
+                129.08,
+            ),
+            battery_soc=93.2,
+            available_discharge_kwh=27.96,
+            pv_kw=0.0,
+            load_kw=0.0,
+            feedin_price=0.15,
+            settings={
+                "evening_boost_enabled": True,
+                "evening_boost_min_tomorrow_forecast_kwh": 100.0,
+            },
+        )
+
+        self.assertTrue(
+            bool(decision.trace_gates.get("forecast_tomorrow_observation_trusted"))
+        )
+        self.assertTrue(decision.evening_export_boost_active)
+
+    def test_mismatched_tomorrow_detail_does_not_trust_stale_aggregate(self) -> None:
+        after_sunset = self.EVENING.replace(hour=19, minute=18)
+        stale_at = after_sunset - timedelta(hours=2)
+        _optimizer, _state, decision = self._read_and_decide(
+            when=after_sunset,
+            forecast_tomorrow_state="129.08",
+            forecast_tomorrow_observed_at=stale_at,
+            detailed_forecast=self._morning_detail(after_sunset),
+            tomorrow_detailed_forecast=self._tomorrow_detail_for_total(
+                after_sunset,
+                80.0,
+            ),
+            battery_soc=93.2,
+            available_discharge_kwh=27.96,
+            load_kw=0.0,
+            feedin_price=0.15,
+            settings={
+                "evening_boost_enabled": True,
+                "evening_boost_min_tomorrow_forecast_kwh": 100.0,
+            },
+        )
+
+        self.assertFalse(
+            bool(decision.trace_gates.get("forecast_tomorrow_observation_trusted"))
+        )
+        self.assertFalse(decision.evening_export_boost_active)
+
     def test_stale_tomorrow_forecast_cannot_authorize_evening_boost(self) -> None:
         stale_at = self.EVENING - timedelta(hours=2)
         _optimizer, _state, decision = self._read_and_decide(

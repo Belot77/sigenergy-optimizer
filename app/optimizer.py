@@ -1780,6 +1780,33 @@ class SigEnergyOptimizer:
             if forecast_tomorrow_observation.available
             else 0.0
         )
+        tomorrow_detail_total_kwh: Optional[float] = None
+        if forecast_tomorrow_observation.available:
+            local_today = datetime.now(self._tz).date()
+            tomorrow_start = datetime.combine(
+                local_today + timedelta(days=1),
+                time.min,
+                tzinfo=self._tz,
+            )
+            tomorrow_end = datetime.combine(
+                local_today + timedelta(days=2),
+                time.min,
+                tzinfo=self._tz,
+            )
+            tomorrow_detail_total_kwh = self._detailed_forecast_energy_for_window(
+                _attr(cfg.forecast_tomorrow_sensor, "detailedForecast") or [],
+                tomorrow_start.timestamp(),
+                tomorrow_end.timestamp(),
+            )
+        tomorrow_detail_corroborates_aggregate = bool(
+            tomorrow_detail_total_kwh is not None
+            and math.isclose(
+                tomorrow_detail_total_kwh,
+                s.forecast_tomorrow_kwh,
+                rel_tol=0.0,
+                abs_tol=0.01,
+            )
+        )
         s.forecast_remaining_observation_trusted = bool(
             forecast_remaining_observation.available
             and forecast_remaining_observation.fresh
@@ -1790,7 +1817,10 @@ class SigEnergyOptimizer:
         )
         s.forecast_tomorrow_observation_trusted = bool(
             forecast_tomorrow_observation.available
-            and forecast_tomorrow_observation.fresh
+            and (
+                forecast_tomorrow_observation.fresh
+                or tomorrow_detail_corroborates_aggregate
+            )
         )
 
         solar_raw = _fv(cfg.solar_power_now_sensor)
@@ -2213,6 +2243,17 @@ class SigEnergyOptimizer:
             self._holdoff_entry_floor = None
 
         # ---- Evening boost ------------------------------------------
+        now_local_day = datetime.fromtimestamp(now_ts, tz=self._tz).date()
+        sunset_local_day = datetime.fromtimestamp(sunset_ts, tz=self._tz).date()
+        sunset_rolled_to_tomorrow = bool(
+            detailed_forecast_validation_required
+            and sunset_local_day == now_local_day + timedelta(days=1)
+        )
+        evening_coverage_start_ts = now_ts
+        evening_coverage_end_ts = sunset_ts
+        if sunset_rolled_to_tomorrow:
+            evening_coverage_start_ts = productive_solar_end_ts
+            evening_coverage_end_ts = now_ts
         evening_boost_detailed_coverage = bool(
             solcast_detailed_source_trusted
             and (
@@ -2221,8 +2262,8 @@ class SigEnergyOptimizer:
                     sunset_observation_trusted
                     and self._detailed_forecast_covers(
                         detailed_forecast_periods,
-                        now_ts,
-                        sunset_ts,
+                        evening_coverage_start_ts,
+                        evening_coverage_end_ts,
                     )
                 )
             )
@@ -5453,6 +5494,26 @@ class SigEnergyOptimizer:
             and coverage_end >= end_ts - tolerance_seconds
         )
 
+    def _detailed_forecast_energy_for_window(
+        self,
+        forecasts: object,
+        start_ts: float,
+        end_ts: float,
+    ) -> Optional[float]:
+        """Return forecast energy only for a complete, continuous local-day window."""
+        normalized = self._normalize_detailed_forecast(forecasts)
+        if not self._detailed_forecast_covers(normalized, start_ts, end_ts):
+            return None
+        if normalized is None:
+            return None
+        period_hours = float(self.cfg.solcast_forecast_period_hours)
+        total_kwh = sum(
+            pv_kw * period_hours
+            for period_start_ts, pv_kw in normalized
+            if start_ts <= period_start_ts < end_ts
+        )
+        return total_kwh if math.isfinite(total_kwh) and total_kwh >= 0.0 else None
+
     def _productive_solar_end_ts(
         self,
         s: SolarState,
@@ -5483,8 +5544,21 @@ class SigEnergyOptimizer:
         found = None
         try:
             sunset_day = datetime.fromtimestamp(sunset_ts, tz=self._tz).date()
+            now_day = datetime.fromtimestamp(now_ts, tz=self._tz).date()
         except (OSError, OverflowError, ValueError):
             return None
+        productive_day = sunset_day
+        productive_cutoff_ts = sunset_ts
+        if (
+            s.solcast_detailed_source_trusted is not None
+            and sunset_day == now_day + timedelta(days=1)
+        ):
+            productive_day = now_day
+            productive_cutoff_ts = datetime.combine(
+                now_day + timedelta(days=1),
+                time.min,
+                tzinfo=self._tz,
+            ).timestamp()
         for f_ts, pv_kw in reversed(forecasts):
             try:
                 forecast_day = datetime.fromtimestamp(f_ts, tz=self._tz).date()
@@ -5493,8 +5567,8 @@ class SigEnergyOptimizer:
             if (
                 f_ts
                 and math.isfinite(f_ts)
-                and forecast_day == sunset_day
-                and f_ts <= sunset_ts
+                and forecast_day == productive_day
+                and f_ts <= productive_cutoff_ts
                 and math.isfinite(pv_kw)
                 and pv_kw >= threshold
             ):
@@ -5610,7 +5684,15 @@ class SigEnergyOptimizer:
             return False
         if productive_solar_end_ts is None or now_ts < productive_solar_end_ts:
             return False
-        midnight = (datetime.now() + timedelta(days=1)).replace(hour=0, minute=0, second=0).timestamp()
+        productive_day = datetime.fromtimestamp(
+            productive_solar_end_ts,
+            tz=self._tz,
+        ).date()
+        midnight = datetime.combine(
+            productive_day + timedelta(days=1),
+            time.min,
+            tzinfo=self._tz,
+        ).timestamp()
         if now_ts >= midnight:
             return False
 
@@ -5622,7 +5704,12 @@ class SigEnergyOptimizer:
             s.forecast_tomorrow_kwh >= bat_fill_need_kwh * cfg.evening_boost_forecast_safety
         )
         # Check no high FIT forecast overnight
-        tomorrow_6am = (datetime.now() + timedelta(days=1)).replace(hour=6, minute=0, second=0).timestamp()
+        now_day = datetime.fromtimestamp(now_ts, tz=self._tz).date()
+        tomorrow_6am = datetime.combine(
+            now_day + timedelta(days=1),
+            time(hour=6),
+            tzinfo=self._tz,
+        ).timestamp()
         no_high_fit = True
         for f in s.feedin_forecast_entries:
             if not isinstance(f, dict):
