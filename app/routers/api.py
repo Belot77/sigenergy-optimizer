@@ -1001,6 +1001,11 @@ class ESSRequest(BaseModel):
     ess_discharge_limit: Optional[float] = None
 
 
+def _require_ha_service_success(success: bool, operation: str) -> None:
+    if not success:
+        raise RuntimeError(f"Home Assistant service call failed: {operation}")
+
+
 @router.post("/set_ess")
 async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
     _require_mutation_auth(request)
@@ -1049,19 +1054,49 @@ async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
         "pv_max_power_limit": opt.last_decision.pv_max_power_limit if opt.last_decision else None,
     }
     try:
-        await ha.select_option(cfg.ems_mode_select, body.ems_mode)
-        await ha.set_number(cfg.grid_export_limit, body.grid_export_limit)
-        await ha.set_number(cfg.grid_import_limit, body.grid_import_limit)
-        await ha.set_number(cfg.pv_max_power_limit, body.pv_max_power_limit)
+        _require_ha_service_success(
+            await ha.select_option(cfg.ems_mode_select, body.ems_mode),
+            "set EMS mode",
+        )
+        _require_ha_service_success(
+            await ha.set_number(cfg.grid_export_limit, body.grid_export_limit),
+            "set grid export limit",
+        )
+        _require_ha_service_success(
+            await ha.set_number(cfg.grid_import_limit, body.grid_import_limit),
+            "set grid import limit",
+        )
+        _require_ha_service_success(
+            await ha.set_number(cfg.pv_max_power_limit, body.pv_max_power_limit),
+            "set PV max power limit",
+        )
         if body.ess_charge_limit is not None:
-            await ha.set_number(cfg.ess_max_charging_limit, body.ess_charge_limit)
+            _require_ha_service_success(
+                await ha.set_number(
+                    cfg.ess_max_charging_limit,
+                    body.ess_charge_limit,
+                ),
+                "set ESS charge limit",
+            )
         if body.ess_discharge_limit is not None:
-            await ha.set_number(cfg.ess_max_discharging_limit, body.ess_discharge_limit)
+            _require_ha_service_success(
+                await ha.set_number(
+                    cfg.ess_max_discharging_limit,
+                    body.ess_discharge_limit,
+                ),
+                "set ESS discharge limit",
+            )
         if body.ha_control is not None:
             if body.ha_control:
-                await ha.turn_on(cfg.ha_control_switch)
+                _require_ha_service_success(
+                    await ha.turn_on(cfg.ha_control_switch),
+                    "enable HA control",
+                )
             else:
-                await ha.turn_off(cfg.ha_control_switch)
+                _require_ha_service_success(
+                    await ha.turn_off(cfg.ha_control_switch),
+                    "disable HA control",
+                )
         mode_from_entity = str(await ha.get_state_value(cfg.sigenergy_mode_select, "") or "")
         current_mode = mode_from_entity or _effective_mode_label(opt, opt.last_state, cfg)
         if current_mode == str(getattr(cfg, "block_flow_option", "Prevent Import & Export")):
