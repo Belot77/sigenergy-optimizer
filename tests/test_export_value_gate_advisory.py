@@ -1314,10 +1314,10 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
 
         decision = optimizer._decide(state)
 
-        self.assertTrue(bool(decision.trace_gates.get("pv_only_branch_high_ceiling_requested")))
-        self.assertTrue(bool(decision.trace_gates.get("pv_only_branch_battery_safety_blocked")))
+        self.assertFalse(bool(decision.trace_gates.get("pv_only_branch_high_ceiling_requested")))
+        self.assertFalse(bool(decision.trace_gates.get("pv_only_branch_battery_safety_blocked")))
         self.assertEqual("unknown", decision.trace_values.get("battery_flow_source_for_pv_only"))
-        self.assertNotEqual(optimizer.cfg.export_limit_high, decision.export_limit)
+        self.assertEqual(0.0, decision.export_limit)
         self.assertFalse(decision.requires_verified_msc_before_export)
 
     def test_full_battery_msc_high_ceiling_requires_fixed_100_percent_topoff(self) -> None:

@@ -2068,6 +2068,39 @@ class SigEnergyOptimizer:
             load_power_valid and s.load_power_trusted is not False
         )
 
+        try:
+            solar_power_now_value = float(s.solar_power_now_kw)
+        except (TypeError, ValueError, OverflowError):
+            solar_power_now_value = float("nan")
+        solar_power_now_valid = bool(
+            math.isfinite(solar_power_now_value) and solar_power_now_value >= 0.0
+        )
+        solar_power_now_observation = s.hvac_solar_inputs.solar_power_now
+        if s.hvac_solar_inputs.live_snapshot:
+            try:
+                observed_solar_power_now_kw = float(
+                    solar_power_now_observation.value
+                )
+            except (TypeError, ValueError, OverflowError):
+                observed_solar_power_now_kw = float("nan")
+            solar_power_now_trusted = bool(
+                solar_power_now_observation.available
+                and solar_power_now_observation.fresh
+                and math.isfinite(observed_solar_power_now_kw)
+                and observed_solar_power_now_kw >= 0.0
+            )
+            control_solar_power_now_kw = (
+                observed_solar_power_now_kw if solar_power_now_trusted else 0.0
+            )
+        else:
+            # Hand-built decision states predate the live observation wrapper.
+            # Preserve their finite legacy behavior without allowing live snapshots
+            # to bypass the explicit availability/freshness provenance above.
+            solar_power_now_trusted = solar_power_now_valid
+            control_solar_power_now_kw = (
+                solar_power_now_value if solar_power_now_trusted else 0.0
+            )
+
         def _forecast_observation_trusted(
             value: object,
             provenance: Optional[bool],
@@ -2311,9 +2344,32 @@ class SigEnergyOptimizer:
             and cfg.allow_positive_fit_battery_discharging
         )
 
+        # Retain raw power values for diagnostics, but derive every permissive
+        # control surplus from trusted sources only. Solcast power_now uses the
+        # existing live observation wrapper instead of its unqualified scalar.
         solar_potential_kw = max(s.pv_kw, s.solar_power_now_kw)
         pv_surplus = max(solar_potential_kw - s.load_kw, 0.0)
         pv_surplus_actual = max(s.pv_kw - s.load_kw, 0.0)
+        control_pv_kw = pv_power_value if pv_power_trusted else 0.0
+        control_load_kw = load_power_value if load_power_trusted else 0.0
+        control_solar_potential_kw = max(
+            control_pv_kw,
+            control_solar_power_now_kw,
+        )
+        solar_potential_power_trusted = bool(
+            load_power_trusted
+            and (pv_power_trusted or solar_power_now_trusted)
+        )
+        control_pv_surplus_kw = (
+            max(control_solar_potential_kw - control_load_kw, 0.0)
+            if solar_potential_power_trusted
+            else 0.0
+        )
+        control_measured_pv_surplus_kw = (
+            max(control_pv_kw - control_load_kw, 0.0)
+            if pv_power_trusted and load_power_trusted
+            else 0.0
+        )
 
         export_solar_override = (
             feedin_price_trusted
@@ -2321,11 +2377,12 @@ class SigEnergyOptimizer:
             and battery_capacity_trusted
             and available_discharge_energy_trusted
             and forecast_remaining_observation_trusted
+            and solar_potential_power_trusted
             and s.feedin_price > 0
             and s.feedin_price >= cfg.export_threshold_medium
             and s.battery_soc >= cfg.max_battery_soc
             and not is_evening_or_night
-            and pv_surplus > cfg.min_grid_transfer_kw
+            and control_pv_surplus_kw > cfg.min_grid_transfer_kw
             and (
                 s.forecast_remaining_kwh >= bat_fill_need_kwh * 1.25
                 or bat_fill_need_kwh <= 0
@@ -2335,14 +2392,22 @@ class SigEnergyOptimizer:
         # ---- PV safeguard -------------------------------------------
         full_export_override_check = (
             battery_soc_trusted
+            and solar_potential_power_trusted
             and s.battery_soc >= cfg.max_battery_soc
             and not is_evening_or_night
-            and pv_surplus > cfg.min_grid_transfer_kw
+            and control_pv_surplus_kw > cfg.min_grid_transfer_kw
         )
         est_load_kwh = s.load_kw * hours_to_sunset
         net_forecast = s.forecast_remaining_kwh - est_load_kwh
         tomorrow_kwh = s.forecast_tomorrow_kwh
-        low_today = s.forecast_remaining_kwh > 0 and net_forecast <= bat_fill_need_kwh * cfg.forecast_safety_charging
+        low_today = (
+            not load_power_trusted
+            or (
+                s.forecast_remaining_kwh > 0
+                and net_forecast
+                <= bat_fill_need_kwh * cfg.forecast_safety_charging
+            )
+        )
         low_tomorrow = is_evening_or_night and tomorrow_kwh < cap * cfg.forecast_safety_charging
         pv_safeguard_active = (
             not full_export_override_check
@@ -2366,7 +2431,10 @@ class SigEnergyOptimizer:
             and load_power_trusted
             and forecast_remaining_observation_trusted
             and self._solar_surplus_bypass(
-                s, morning_slow_charge_active, cap, pv_surplus_actual,
+                s,
+                morning_slow_charge_active,
+                cap,
+                control_measured_pv_surplus_kw,
                 previously_active=bool(
                     self._last_decision
                     and self._last_decision.trace_gates.get(
@@ -2407,7 +2475,8 @@ class SigEnergyOptimizer:
             bat_fill_need_kwh,
             is_evening_or_night,
             detailed_forecast_trusted=bool(
-                solcast_detailed_source_trusted
+                load_power_trusted
+                and solcast_detailed_source_trusted
                 and battery_full_detailed_coverage
             ),
             detailed_periods=(
@@ -2420,8 +2489,13 @@ class SigEnergyOptimizer:
 
         # ---- Export blocked for forecast ----------------------------
         export_blocked_for_forecast = self._export_blocked_for_forecast(
-            s, pv_surplus, is_evening_or_night, bat_fill_need_kwh,
-            hours_to_sunset, close_to_sunset
+            s,
+            control_pv_surplus_kw,
+            is_evening_or_night,
+            bat_fill_need_kwh,
+            hours_to_sunset,
+            close_to_sunset,
+            load_power_trusted=load_power_trusted,
         )
         export_forecast_guard = self._export_forecast_guard(
             s, sunrise_fill_need_kwh, is_evening_or_night,
@@ -2458,8 +2532,9 @@ class SigEnergyOptimizer:
                 battery_full_safeguard_block,
                 tier_limit, hours_to_sunrise, cap,
                 # Forecast potential avoids the old self-curtailed measured-PV loop.
-                pv_surplus, is_evening_or_night, morning_slow_for_policy,
+                control_pv_surplus_kw, is_evening_or_night, morning_slow_for_policy,
                 within_morning_grace, feedin_price_trusted,
+                measured_pv_surplus=control_measured_pv_surplus_kw,
             )
             return (
                 float(raw_choice),
@@ -2519,7 +2594,7 @@ class SigEnergyOptimizer:
         else:
             pv_only_branch_policy_deferred_reason = "inactive: no competing policy owner"
         export_value_gate_vetoed = False
-        measured_pv_surplus_kw = max(s.pv_kw - s.load_kw, 0.0)
+        measured_pv_surplus_kw = control_measured_pv_surplus_kw
         export_value_gate_pv_surplus_initiated_active = False
         export_value_gate_pv_surplus_carveout_active = False
         export_value_gate_export_type = "unknown"
@@ -3747,6 +3822,8 @@ class SigEnergyOptimizer:
             "available_discharge_energy_trusted": available_discharge_energy_trusted,
             "pv_power_trusted": pv_power_trusted,
             "load_power_trusted": load_power_trusted,
+            "solar_power_now_trusted": solar_power_now_trusted,
+            "solar_potential_power_trusted": solar_potential_power_trusted,
             "forecast_remaining_observation_trusted": forecast_remaining_observation_trusted,
             "forecast_today_observation_trusted": forecast_today_observation_trusted,
             "forecast_tomorrow_observation_trusted": forecast_tomorrow_observation_trusted,
@@ -3783,6 +3860,10 @@ class SigEnergyOptimizer:
             "feedin_price": s.feedin_price,
             "pv_kw": s.pv_kw,
             "solar_potential_kw": solar_potential_kw,
+            "control_solar_power_now_kw": control_solar_power_now_kw,
+            "control_solar_potential_kw": control_solar_potential_kw,
+            "control_pv_surplus_kw": control_pv_surplus_kw,
+            "control_measured_pv_surplus_kw": control_measured_pv_surplus_kw,
             "load_kw": s.load_kw,
             "grid_import_power_kw": s.grid_import_power_kw,
             "grid_export_power_kw": s.grid_export_power_kw,
@@ -5794,12 +5875,22 @@ class SigEnergyOptimizer:
                     pass
         return (ns_total * cfg.battery_full_forecast_multiplier) < bat_fill_need_kwh
 
-    def _export_blocked_for_forecast(self, s: SolarState, pv_surplus: float,
-                                      is_evening_or_night: bool, bat_fill_need_kwh: float,
-                                      hours_to_sunset: float, close_to_sunset: bool) -> bool:
+    def _export_blocked_for_forecast(
+        self,
+        s: SolarState,
+        pv_surplus: float,
+        is_evening_or_night: bool,
+        bat_fill_need_kwh: float,
+        hours_to_sunset: float,
+        close_to_sunset: bool,
+        *,
+        load_power_trusted: bool | None = None,
+    ) -> bool:
         cfg = self.cfg
         if s.battery_soc >= cfg.export_guard_relax_soc or close_to_sunset:
             return False
+        if not is_evening_or_night and load_power_trusted is False:
+            return True
         allow_full = (
             s.battery_soc >= cfg.max_battery_soc
             and not is_evening_or_night
@@ -5885,10 +5976,16 @@ class SigEnergyOptimizer:
                                is_evening_or_night: bool,
                                morning_slow_charge_active: bool,
                                within_morning_grace: bool,
-                               feedin_price_trusted: bool | None = None) -> float:
+                               feedin_price_trusted: bool | None = None,
+                               measured_pv_surplus: float | None = None) -> float:
         cfg = self.cfg
         fit_cents = s.feedin_price_cents
         bsoc = s.battery_soc
+
+        if measured_pv_surplus is None:
+            measured_pv_surplus = max(s.pv_kw - s.load_kw, 0.0)
+        else:
+            measured_pv_surplus = max(float(measured_pv_surplus), 0.0)
 
         def choice(limit_kw: float, source: str) -> _DesiredExportLimit:
             return _DesiredExportLimit(
@@ -5922,8 +6019,13 @@ class SigEnergyOptimizer:
         effective_export_floor = cfg.evening_aggressive_floor if evening_boost else cfg.min_export_target_soc
 
         # No PV surplus during daytime → no export
-        if (pv_surplus == 0 and not is_evening_or_night and not high_price
-                and not spike and not evening_boost):
+        if (
+            pv_surplus == 0
+            and not is_evening_or_night
+            and not high_price
+            and not spike
+            and not evening_boost
+        ):
             return choice(0.0, "closed_no_daytime_pv")
 
         if morning_dump:
@@ -5958,16 +6060,14 @@ class SigEnergyOptimizer:
             if limit_value <= 0:
                 return 0.0
             if bypass_min_soc and bsoc <= (export_min_soc + 0.05):
-                excess_solar_kw = max(s.pv_kw - s.load_kw, 0.0)
-                return min(limit_value, excess_solar_kw)
+                return min(limit_value, measured_pv_surplus)
             return limit_value
 
         def cap_full_battery_poor_tomorrow(limit_value: float) -> float:
             if limit_value <= 0:
                 return 0.0
             if bsoc >= 99 and poor_tomorrow_forecast:
-                measured_surplus_kw = max(s.pv_kw - s.load_kw, 0.0)
-                return min(limit_value, measured_surplus_kw)
+                return min(limit_value, measured_pv_surplus)
             return limit_value
 
         # Morning slow charge: keep the battery charge rate deliberately limited,
@@ -6021,8 +6121,11 @@ class SigEnergyOptimizer:
         scale_soc = max(0.0, min(1.0, diff / span))
 
         if solar_override:
-            surplus_kw = max(s.pv_kw - s.load_kw, 0.0)
-            override_cap = min(surplus_kw, cfg.export_limit_high, tier_limit)
+            override_cap = min(
+                measured_pv_surplus,
+                cfg.export_limit_high,
+                tier_limit,
+            )
             limit = min(override_cap, s.ess_max_discharge_kw)
             return choice(round(limit, 1) if limit > 0 else 0.0, "solar_override")
 
@@ -6041,13 +6144,11 @@ class SigEnergyOptimizer:
         # PV surplus cap during normal daytime
         if not is_evening_or_night and not high_price and not spike:
             if bsoc >= 99:
-                pv_surplus_full = max(max(s.pv_kw, s.solar_power_now_kw) - s.load_kw, 0.0)
-                limit = min(limit, pv_surplus_full)
+                limit = min(limit, pv_surplus)
             else:
-                raw_surplus = max(s.pv_kw - s.load_kw, 0.0)
                 max_charge = cfg.target_battery_charge
                 charge_priority = 0 if surplus_bypass else (max_charge if bsoc < 98 else 0)
-                pv_surplus_net = max(raw_surplus - charge_priority, 0.0)
+                pv_surplus_net = max(measured_pv_surplus - charge_priority, 0.0)
                 limit = min(limit, pv_surplus_net)
 
         limit = cap_near_floor_to_pv(limit)
