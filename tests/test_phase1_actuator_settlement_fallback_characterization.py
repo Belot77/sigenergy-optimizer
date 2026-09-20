@@ -322,18 +322,22 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
     def test_ordinary_safety_close_is_verified_by_observed_readback_before_completion(
         self,
     ) -> None:
-        ha = RecordingHA(
-            state_values={},
+        ha = _ScriptedActuatorHA(
             settle_numbers=False,
             settle_selects=False,
         )
         optimizer = self._morning_slow_optimizer(ha)
+        cfg = optimizer.cfg
+        ha._record_state_value(cfg.grid_export_limit, 25.0)
         state = self._morning_slow_state(
             battery_discharge_kw=0.273,
             grid_export_kw=1.837,
             current_export_limit=25.0,
         )
+        state.current_import_limit = 25.0
+        state.current_import_limit_observed = True
         decision = self.decide(optimizer, state, self.MORNING)
+        decision.pv_max_power_limit = 10.0
 
         result = asyncio.run(optimizer._apply(state, decision))
 
@@ -344,7 +348,44 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
             ),
             "ordinary safety closure needs a provenance-bearing readback, not request success alone",
         )
+        self.assertEqual(
+            [
+                ("set_number", cfg.grid_export_limit, 0.01),
+                ("set_number", cfg.grid_import_limit, 0.01),
+            ],
+            ha.calls,
+            "an unproven export close must still issue the independent import safety close and stop",
+        )
         self.assertFalse(result.succeeded)
+
+    def test_import_safety_close_failure_after_unproven_export_close_stops_application(
+        self,
+    ) -> None:
+        ha = _ScriptedActuatorHA(
+            settle_numbers=False,
+            settle_selects=False,
+        )
+        optimizer = self.optimizer(ha)
+        cfg = optimizer.cfg
+        ha._record_state_value(cfg.grid_export_limit, 25.0)
+        ha.outcomes[("set_number", cfg.grid_import_limit)] = [False]
+        state = self._automatic_apply_state(
+            current_import_limit=25.0,
+            current_pv_max_power_limit=25.0,
+        )
+        decision = self._closed_decision(pv_max_power_limit=10.0)
+
+        result = asyncio.run(optimizer._apply(state, decision))
+
+        self.assertEqual(
+            [
+                ("set_number", cfg.grid_export_limit, 0.01),
+                ("set_number", cfg.grid_import_limit, 0.01),
+            ],
+            ha.calls,
+        )
+        self.assertFalse(result.succeeded)
+        self.assertIn("grid import safety close returned failure", result.error)
 
     def test_primary_export_failure_attempts_full_fallback_in_safety_order(self) -> None:
         ha = _ScriptedActuatorHA()

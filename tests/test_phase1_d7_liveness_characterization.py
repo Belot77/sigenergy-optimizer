@@ -345,6 +345,38 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
         self.assertFalse(state.current_import_limit_observed)
         self.assertEqual(10.0, state.grid_export_limit_entity_max_kw)
 
+    def test_fresh_negative_grid_limit_readbacks_are_untrusted_but_remain_diagnostic(
+        self,
+    ) -> None:
+        _optimizer, _ha, state = self._read_d7_state(
+            export_state=-1.0,
+            import_state=-1.0,
+        )
+
+        self.assertEqual(-1.0, state.current_export_limit)
+        self.assertEqual(-1.0, state.current_import_limit)
+        self.assertFalse(state.current_export_limit_observed)
+        self.assertFalse(state.current_import_limit_observed)
+
+    def test_negative_grid_limit_is_not_observed_even_with_explicit_provenance(
+        self,
+    ) -> None:
+        optimizer = self.optimizer()
+
+        self.assertFalse(optimizer._grid_limit_is_observed(-1.0, True))
+
+    def test_live_negative_grid_limit_readback_retains_value_without_trust(self) -> None:
+        ha = RecordingHA()
+        optimizer = self.optimizer(ha)
+        ha._record_state_value(optimizer.cfg.grid_export_limit, -1.0)
+
+        value, trusted = asyncio.run(
+            optimizer._read_trusted_live_number(optimizer.cfg.grid_export_limit)
+        )
+
+        self.assertEqual(-1.0, value)
+        self.assertFalse(trusted)
+
     def test_failed_or_missing_enrichment_discards_fake_rest_last_reported(self) -> None:
         for label, error in (("missing", None), ("failed", RuntimeError("boom"))):
             with self.subTest(label=label):
@@ -474,6 +506,44 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
 
         self.assertFalse(result.succeeded)
         self.assertIn("readback remains open or unavailable", result.error)
+
+    def test_negative_export_readback_cannot_prove_safety_close_settled(self) -> None:
+        ha = RecordingHA(settle_numbers=False)
+        optimizer = self.optimizer(ha)
+        cfg = optimizer.cfg
+        ha._record_state_value(cfg.grid_export_limit, -1.0)
+        state = self.state(
+            self.FIXED_AFTERNOON,
+            current_export_limit=-1.0,
+            current_export_limit_observed=True,
+            current_import_limit=25.0,
+            current_import_limit_observed=True,
+        )
+
+        result = asyncio.run(optimizer._apply(state, self._closed_decision()))
+
+        self.assertIn(("set_number", cfg.grid_export_limit, 0.01), ha.calls)
+        self.assertIn(("set_number", cfg.grid_import_limit, 0.01), ha.calls)
+        self.assertFalse(result.succeeded)
+        self.assertIn("readback remains open or unavailable", result.error)
+
+    def test_negative_import_readback_cannot_authorize_permissive_opening(self) -> None:
+        ha = RecordingHA()
+        optimizer = self.optimizer(ha)
+        cfg = optimizer.cfg
+        state = self.state(
+            self.FIXED_AFTERNOON,
+            current_import_limit=-1.0,
+            current_import_limit_observed=True,
+        )
+        decision = self._closed_decision()
+        decision.import_limit = 25.0
+
+        result = asyncio.run(optimizer._apply(state, decision))
+
+        self.assertIn(("set_number", cfg.grid_import_limit, 0.01), ha.calls)
+        self.assertNotIn(("set_number", cfg.grid_import_limit, 25.0), ha.calls)
+        self.assertFalse(result.succeeded)
 
     def test_deliberate_export_with_unknown_prior_position_settles_before_discharge(self) -> None:
         ha = RecordingHA()

@@ -1251,7 +1251,7 @@ class SigEnergyOptimizer:
         self,
         entity_id: str,
     ) -> tuple[Optional[float], bool]:
-        """Read a finite dynamic number and its independently proven liveness."""
+        """Read a non-negative grid limit and its independently proven liveness."""
         bulk = await self.ha.bulk_states([entity_id])
         bulk = await self._enrich_state_report_metadata(bulk, [entity_id])
         obj = bulk.get(entity_id)
@@ -1266,6 +1266,8 @@ class SigEnergyOptimizer:
             return None, False
         if not math.isfinite(value):
             return None, False
+        if value < 0.0:
+            return value, False
         trusted = self._state_metadata_is_fresh(
             obj,
             self.cfg.hvac_solar_data_max_age_seconds,
@@ -1742,7 +1744,10 @@ class SigEnergyOptimizer:
             else None
         )
         s.current_export_limit_observed = bool(
-            export_limit_observation.available and export_limit_observation.fresh
+            export_limit_observation.available
+            and export_limit_observation.fresh
+            and current_export_limit is not None
+            and current_export_limit >= 0.0
         )
         s.current_export_limit = (
             float(current_export_limit) if current_export_limit is not None else 0.0
@@ -1761,7 +1766,10 @@ class SigEnergyOptimizer:
             else None
         )
         s.current_import_limit_observed = bool(
-            import_limit_observation.available and import_limit_observation.fresh
+            import_limit_observation.available
+            and import_limit_observation.fresh
+            and current_import_limit is not None
+            and current_import_limit >= 0.0
         )
         s.current_import_limit = (
             float(current_import_limit) if current_import_limit is not None else 0.0
@@ -4265,12 +4273,12 @@ class SigEnergyOptimizer:
         observed: Optional[bool],
     ) -> bool:
         try:
-            finite = math.isfinite(float(value))
+            numeric_value = float(value)
         except (TypeError, ValueError, OverflowError):
             return False
         # Missing provenance is never current actuator proof. Hand-built states
         # that intentionally model a live readback must opt in explicitly.
-        return observed is True and finite
+        return observed is True and math.isfinite(numeric_value) and numeric_value >= 0.0
 
     async def _apply(
         self,
@@ -4671,12 +4679,30 @@ class SigEnergyOptimizer:
                     and observed_export_limit_kw <= near_zero
                 )
                 if not export_close_observed:
+                    error = (
+                        "ordinary export safety close requested successfully but "
+                        "observed readback remains open or unavailable"
+                    )
+                    try:
+                        import_close_ok = await ha.set_number(
+                            cfg.grid_import_limit,
+                            0.01,
+                        )
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        return _ActuatorApplicationResult(
+                            succeeded=False,
+                            error=(
+                                f"{error}; grid import safety close raised "
+                                f"{type(exc).__name__}: {exc}"
+                            ),
+                        )
+                    if not import_close_ok:
+                        error = f"{error}; grid import safety close returned failure"
                     return _ActuatorApplicationResult(
                         succeeded=False,
-                        error=(
-                            "ordinary export safety close requested successfully but "
-                            "observed readback remains open or unavailable"
-                        ),
+                        error=error,
                     )
 
         # Import limit
