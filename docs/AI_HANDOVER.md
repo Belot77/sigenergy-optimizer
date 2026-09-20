@@ -1,44 +1,68 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-09-15
+Last consolidated: 2026-09-21
 
-Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md`, `ROADMAP.md`, and `DECISIONS.md`. Verify the exact branch tip, worktree status, and remote synchronization directly with Git before editing.
+Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md`, `DECISIONS.md`, and `ROADMAP.md`. Verify the exact worktree, branch, HEAD, and status before editing.
 
 ## Live baseline and rollback
 
-Live is `2.3.45-haos56`. It proved the Morning Dump telemetry/forecast repair, Morning Slow activation with actual charging around `2 kW`, static battery-capacity trust, and detailed Solcast trust/coverage.
-
-Renewed Phase 1 acceptance remains withheld because `.56` exhibited genuine exact-full Cheap-FiT desired export-ceiling chatter `25 -> 0 -> 25 -> 0 kW`. The rollback ladder remains the immediate fresh `.55` backup, then deeper `.54`/`.53` fallbacks; `.54` has known exact-full and Solar Surplus defects and is not preferred. No rollback is underway.
-
-GitHub `main` is `1566beb3252119aabc060b39420581ca3a550631`, the `2.3.45-haos56` candidate checkpoint.
+- Live: `2.3.46-haos57`, candidate commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
+- No rollback from `.57` has occurred.
+- Known-good deeper rollback: `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`.
+- D1-D7 and the post-review repair are branch-only; do not describe them as live.
 
 ## Active checkpoint
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
-- Functional repair: `9e5517ea85dea286608d564cbe2cdeaa18a2e03e` (`Stabilize exact-full cheap-FiT MSC ceiling`), pushed and synchronized before candidate preparation.
-- Candidate: `2.3.46-haos57`, being prepared as uncommitted version/release metadata and documentation only.
-- No `.57` tag, build, publication, installation, restart, or live acceptance has occurred.
+- Last production/test checkpoint: `f2f0720` (`Harden restrictive close handling`)
+- This documentation sync is a child of that production/test checkpoint.
+- Verify the current branch tip, worktree status, and remote synchronization directly with Git before editing.
 
-Protected worktrees remain unchanged. Never modify, reset, or stash `C:\Projects\sigenergy_optimizer` or `C:\Projects\sigenergy_optimizer-pv-hotfix`. The Phase 2 worktree remains frozen.
+Packages 1-5, Package 6A, Package 7 `/set_ess` hardening, Package 8 configuration validation/persistence, Package 9 settings/UI cleanup, Evening Boost safety repair, D1-D7 trust/freshness remediation, export-notification correction, and the F1/R9 follow-up are complete, committed, and pushed on this branch. Package 6B design/investigation is complete and implementation remains deferred.
 
-## Exact-full Cheap-FiT repair
+Protected worktrees must not be modified: `C:\Projects\sigenergy_optimizer` is the intentionally dirty reference worktree; `C:\Projects\sigenergy_optimizer-pv-hotfix` is the rollback reference; and `C:\Projects\sigenergy_optimizer-phase2-transition` is frozen until Phase 1 live acceptance. Their precise states in `CURRENT_STATE.md` are last-known references, not verification from this docs task.
 
-The `.56` chatter was independent of the earlier `ordinary_msc_flow_ok` repair. Under exact 100% SoC, Cheap-FiT, observed Automated plus exact Maximum Self Consumption, trusted safe flow, no battery-export owner, and zero actual PV surplus, `live_pv_plausible_for_msc_ceiling` toggled as sub-1 kW PV moved above and below the former `load - 0.1 kW` adequacy boundary.
+## D1-D7 and independent review
 
-Commit `9e5517e` preserves trusted finite PV/load telemetry and strict positive live PV above `0.05 kW`, but removes the unstable requirement that PV meet the productive-solar threshold or remain within `0.1 kW` of load. Observed ownership, exact-full target, `ordinary_msc_flow_ok`, simultaneous discharge/export closure, unknown-flow closure, forecast/standby/demand protections, Manual/Force, Morning Dump, Morning Slow, Solar Surplus, normal PV MAX, and Phase 2 semantics are unchanged. The high value remains an MSC ceiling and creates no deliberate battery-export owner. Diagnostics expose `live_pv_plausible_for_msc_ceiling` and `pv_surplus_common_conditions`.
+D1-D7 establish trusted aggregate forecasts; trusted live PV/load/Solcast evidence; coherent finite, non-negative derived directional flow with direct battery telemetry taking precedence; explicit units and capability consistency for available discharge energy; source-specific negative-price forecast provenance; a 360-second Demand Window boundary distinct from 120-second dynamic inverter telemetry; and provenance-bearing, non-negative grid-limit readbacks for current-position proof.
 
-Automated validation passed: exact-full characterization **6 passed**; MSC baseline/overlay plus chatter protection **52 passed, 2 frozen Phase 2 tests deselected**; final suite **482 collected, 480 passed**, with only the two expected frozen Phase 2 failures. Compileall and `git diff --check` passed with no unexpected findings.
+Observed live cadence supports those boundaries: unchanged Demand Window ON reports arrived about 295-299 seconds apart, while unchanged dynamic grid-limit reports arrived about 58-61 seconds apart.
 
-## Remaining live acceptance
+Independent Claude review found F1 and R9. Commit `f2f0720` ensures that an unproven export close does not prevent an independent restrictive import-close attempt, and that negative grid-limit readbacks cannot prove closure or authorize opening. Its earlier ordinary-MSC concern was resolved as not a defect. The frozen Phase 2 pair remains unchanged.
 
-After `.57` is separately published and installed, obtain natural live proof of both:
+## Validation
 
-1. Exact-full 100% SoC Cheap-FiT remains at the high MSC ceiling through PV/load deficit changes that previously caused `25/0` chatter.
-2. Solar Surplus enters above `0.5 kW`, continues above `0.2 kW` once genuinely active, stops at or below `0.2 kW`, re-enters only above `0.5 kW`, and does not chatter the ceiling.
+Targeted F1/R9, D1-D7, authority, actuator, grid-readback, Demand Window/PV MAX, Manual/Force, MSC/exact-full/chatter, and export-notification tests passed. The full result is **565 passed, 2 failed, 510 subtests passed**. The only failures are the intentionally frozen Phase 2 tests:
 
-Do not state that Phase 1 is complete. Packages 7 through 9 remain future work after current live acceptance. Phase 2 remains frozen, including its two expected transition-settlement failures.
+- `test_exact_msc_does_not_reopen_before_export_is_observed_closed`
+- `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`
 
-## Next action
+`compileall` and `git diff --check` passed. There are 192 existing Pydantic deprecation warnings. These automated results do not prove live behavior.
 
-Review the uncommitted `2.3.46-haos57` candidate checkpoint and decide whether to commit it. Push, tag-triggered build/publication, installation/restart, and live observation each require separate approval. After publication and installation, the exact next operational action is read-only natural monitoring of the two acceptance items above; do not manufacture state changes.
+## Protected control behavior
+
+Manual and Force remain user-owned. Demand Window primarily owns import blocking. Ordinary positive-FiT and PV-only MSC ceilings do not create battery-export authority. Untrusted Demand Window state fails closed for import without reducing normal PV MAX or acquiring export ownership. Service-call success is not settlement proof. Deliberate export must settle its target before discharge EMS, and an uncertain export close must not suppress an independent restrictive import close. Export notifications follow trusted measured flow, not ceiling changes.
+
+## Phase 1 gate and Solar Surplus
+
+Phase 1 is not complete or live-proven. Solar Surplus redesign/implementation, the consolidated final-candidate gate, release-candidate preparation, and final live acceptance remain.
+
+Approved Solar Surplus behavior is PV -> house load -> enough battery charging to remain safely on the fill trajectory -> export only genuinely remaining PV while FiT is positive. Use remaining-today forecast minus expected remaining load, battery fill need, and a conservative buffer as the main energy budget, refined by detailed Solcast timing and current measured PV-load surplus. Re-evaluate every cycle.
+
+The policy remains MSC/PV-only and must never discharge the battery merely to create export. A safe charging cap may expose genuine surplus. Start requires trusted inputs, positive FiT, strong net-energy proof, and measured surplus above `0.5 kW`; continuation uses the same budget with hysteresis and surplus above `0.2 kW`; loss of trust, non-positive FiT, or an unsupported budget stops export. Do not retain the old capacity-times-2/1.25 heuristics as the primary trigger. Charging-cap, timing, and priority architecture remain to be designed before coding.
+
+Relevant operator context, not software defaults: observed normal PV MAX/high export ceiling is `25 kW`; Morning Slow is enabled at `2 kW` until `11:00` with minimum FiT `0.01 $/kWh`, `2 kW` base-load allowance, and one-hour sunset cutoff; Forecast Safety Charging/Export are `1.35`/`1.1`; Demand Window remains the higher-priority import block; Value Gate remains advisory-only. The existing Solar Surplus `2.0`/`1.25` multipliers are legacy live/operator context that the approved net-energy redesign is intended to replace as the primary decision basis.
+
+## Parked and out of scope
+
+- Package 6B implementation remains deferred.
+- Manual/Force stale-readback rewrite churn is parked; do not redesign it during Solar Surplus work.
+- Phase 2 remains frozen, and Climate Manager remains after Phase 2 and the short ownership audit.
+- Diagnostics, replay tooling, load modelling, and the dynamic scheduler are later work.
+- Exact-full/sub-1 kW observation and import-`0.00` A/B work remain parked.
+- Do not opportunistically implement unrelated telemetry, tariff, or spike findings during Solar Surplus work.
+
+## Exact next action
+
+Use a **new Codex session**, **Ultra reasoning**, and **Standard speed** for a bounded Solar Surplus architecture/design pass before production changes. After Solar Surplus implementation and validation, run the final candidate gate, prepare the release candidate, and obtain live acceptance. Only then proceed to Phase 2 transition safety, the short control-ownership audit, and Climate Manager integration.

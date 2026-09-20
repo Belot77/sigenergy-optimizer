@@ -61,13 +61,13 @@ For ordinary MSC flow interpretation:
 
 ## Solar Surplus Bypass
 
-Solar Surplus Bypass is an MSC surplus-ceiling policy and never owns deliberate battery export. Entry requires trusted qualifying inputs, forecast remaining at or above battery capacity multiplied by `SOLAR_SURPLUS_START_MULTIPLIER`, and real-time PV surplus strictly greater than `SOLAR_SURPLUS_MIN_PV_MARGIN`.
+The approved Solar Surplus direction is an MSC/PV-only surplus policy and never owns deliberate battery export. Its energy order is PV serving house load first, then enough battery charging to remain safely on the fill trajectory, then export of genuinely remaining PV while FiT is positive.
 
-Continuation uses the lower forecast threshold from `SOLAR_SURPLUS_STOP_MULTIPLIER` and real-time PV surplus strictly greater than `SOLAR_SURPLUS_STOP_PV_MARGIN`. The lower continuation thresholds are available only when the immediately previous cycle genuinely held an active Solar Surplus high ceiling under observed Automated ownership. An inactive bypass, ordinary MSC, Morning Slow, another PV-only branch, or unrelated prior decision must satisfy the full entry thresholds.
+The primary energy budget is remaining-today forecast minus expected remaining load, battery fill need, and a conservative buffer. Detailed Solcast timing may refine that budget. Current measured PV-load surplus must independently support export, and the budget must be recalculated every cycle so export is reduced or stopped as conditions deteriorate. The old battery-capacity-times-2 and 1.25-times forecast heuristics are not the primary trigger.
 
-The default real-time entry and continuation margins are 0.5 kW and 0.2 kW. At or below the continuation margin, ownership stops; re-entry again requires surplus strictly above the entry margin. The continuation margin is normalized to a finite, non-negative value no greater than the entry margin. Forecast start/continuation multipliers remain 2.0 and 1.25 by default. No timer, delay, cycle count, smoothing, or generic hysteresis setting participates.
+Entry requires positive FiT, trusted qualifying inputs, strong net-energy proof, and current measured PV-load surplus strictly above `0.5 kW`. Continuation uses the same budget model with a smaller hysteresis margin and current measured surplus strictly above `0.2 kW`. Loss of trust, non-positive FiT, or a budget that no longer supports export ends the policy; re-entry must satisfy the full entry contract.
 
-FiT eligibility remains independent. A cycle below the ordinary export threshold cannot establish active high-ceiling ownership merely because the Solar Surplus eligibility gate is true, and hysteresis never overrides the FiT threshold. The policy remains in Maximum Self Consumption with normal PV MAX, creates no `BATTERY_EXPORT` owner, and cannot select a discharge EMS mode.
+Solar Surplus may cap charging to expose genuine surplus only when the fill trajectory remains safely supported. It must never discharge the battery merely to create Solar Surplus export, must remain in Maximum Self Consumption, and must not create a `BATTERY_EXPORT` owner. The charging-cap, timing, and priority architecture requires a bounded design before implementation.
 
 ## Explicit deliberate battery-export policies
 
@@ -99,6 +99,8 @@ Morning Slow must not retain legacy measured-PV start/ramp/probe gates for its e
 Demand Window primarily owns import blocking. It does not implicitly own battery export, lower ordinary PV MAX, or convert ordinary economic export permission into deliberate discharge.
 
 Observed ON blocks import. Observed OFF permits ordinary policy, subject to all other owners and safeguards. Missing, unknown, unavailable, stale, or otherwise untrustworthy Demand Window state also blocks import until trustworthy observation resumes.
+
+Demand Window observations use a dedicated 360-second freshness maximum, reflecting the source's slower reporting cadence. A trusted current ON state has its normal import-block effect. Uncertainty does not gain trusted-ON export effects, create battery-export ownership, or by itself reduce normal PV MAX. Notification remembered state advances only from trusted observations.
 
 Unless another explicit overlay or safety rule owns a different value, normal PV MAX and the MSC surplus ceiling remain available; failing Demand Window closed for import does not itself curtail PV or authorize battery export.
 
@@ -138,7 +140,19 @@ An independently configured positive-FiT policy remains separate and follows its
 
 Where safety depends on observed state, service-call success is not observation. A successful HA-control `turn_on` call does not grant control authority; observed HA-control ON is required. Required observations must be available, fresh, finite, and from trusted sources. Unknown evidence fails closed when the safe export type or actuator ownership cannot be proven.
 
+Control decisions requiring future-energy evidence must not use stale or untrusted aggregate forecasts. A selected forecast source carries its own trust and freshness provenance; malformed, boolean, non-finite, or out-of-window entries cannot prove a future negative-price condition. Permissive PV-surplus decisions require trusted live PV, load, and relevant Solcast evidence.
+
+Derived battery flow from PV, load, and directional grid components requires finite, non-negative values, fresh timestamps, and temporal coherence within the established skew window. Trusted direct battery telemetry takes precedence. Negative directional grid-power readings are untrusted and must not be silently clamped into trusted zero.
+
+Available discharge energy requires an explicit supported unit, a finite non-negative value, and consistency with trusted capability. Missing units must not silently default to kWh.
+
 Unavailable, missing, unknown, stale, or non-finite actuator-state telemetry is not proof that import or export is safely closed. Deadband or a numeric default must not suppress a required safety-close request when the present actuator state is untrusted. Untrusted current grid-limit telemetry also cannot authorize a permissive opening; opening requires a trusted finite observation. Trusted finite current limits retain ordinary deadband behavior.
+
+Dynamic grid import/export current-position readbacks use the live inverter telemetry boundary of 120 seconds and require provenance-bearing fresh observations. Missing provenance, stale values, and negative values are not current-position proof, cannot prove closure, and cannot authorize permissive opening; raw values may remain diagnostic. Restrictive closes remain allowed. Static `grid_export_limit_entity_max_kw` capability is separate from dynamic current-position liveness.
+
+Safety-critical settlement requires provenance-bearing readback. Deliberate battery export must establish or set the intended export target before entering or changing discharge EMS. If an export-close request succeeds but settlement remains unproven, that uncertainty must not suppress an independent restrictive grid-import close; the overall application remains failed and unrelated permissive writes remain deferred.
+
+Export start/stop notifications are classified from trusted measured grid export. A changed export ceiling alone is not proof that physical export started or stopped.
 
 Manual and Force modes remain user-owned. Automated logic must not silently reinterpret them as ordinary MSC or deliberate battery export.
 

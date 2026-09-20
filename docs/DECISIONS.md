@@ -145,3 +145,27 @@ Rationale: Live gate chatter around 0.5 kW and synthetic decision tests proved t
 Decision: The exact-full Cheap-FiT MSC exception requires trusted finite PV and load telemetry and positive live PV strictly above `0.05 kW`. It does not require PV to meet the productive-solar threshold or remain within `0.1 kW` of instantaneous load. Observed Automated and exact Maximum Self Consumption ownership, the exact-full target, ordinary-MSC flow safety, and all independent fail-closed protections remain mandatory; the ceiling creates no `BATTERY_EXPORT` owner.
 
 Rationale: Live `.56` evidence showed genuine `25 -> 0 -> 25 -> 0 kW` desired-ceiling chatter as sub-1 kW PV/load readings crossed the former `load - 0.1 kW` adequacy boundary while every independent ownership and flow-safety condition remained valid. Positive PV presence retains the narrow PV-only character without feeding instantaneous load variation back into ceiling eligibility.
+
+## 2026-09-21 - Separate Demand Window freshness from inverter telemetry
+
+Decision: Demand Window uses a dedicated 360-second freshness maximum, while dynamic inverter and grid-limit telemetry retains the 120-second boundary. Trusted current ON blocks import, trusted current OFF may permit ordinary import, and missing, malformed, stale, or untrusted Demand Window state fails closed for import without acquiring export, battery-discharge, or PV-curtailment ownership.
+
+Rationale: The actual Demand Window entity reported unchanged ON state at approximately 295-299 second intervals, proving 120 seconds too short. Dynamic grid-limit entities reported unchanged values at approximately 58-61 second intervals, so 120 seconds remains appropriate for those readbacks.
+
+## 2026-09-21 - Current grid-limit position requires fresh non-negative provenance
+
+Decision: A dynamic grid-limit value proves current actuator position only when it has provenance, is fresh within 120 seconds, finite, and non-negative. Missing provenance, stale data, and negative values may remain diagnostic but cannot prove closure or authorize permissive opening. Restrictive closes remain permitted. Static export-capability metadata is a separate trust domain.
+
+Rationale: Numeric finiteness alone does not establish a valid actuator position; sentinel-like negative values such as `-1` must not become safety or permission evidence.
+
+## 2026-09-21 - Independent safety closes must remain independent
+
+Decision: An export-close request whose settlement is not proven must not prevent an independent restrictive grid-import close from being attempted. The combined application remains failed, unrelated permissive writes remain deferred, and any import-close failure is reported.
+
+Rationale: Uncertainty in one actuator's settlement must not suppress a separate safety action on another actuator domain.
+
+## 2026-09-21 - Solar Surplus uses a net-energy budget
+
+Decision: Solar Surplus remains MSC/PV-only and follows the order PV to house load, sufficient battery charging to preserve a safe fill trajectory, then export of genuinely remaining PV while FiT is positive. Its primary budget is remaining-today forecast minus expected remaining load, battery fill need, and a conservative buffer, refined by detailed Solcast timing and current measured PV-load surplus. Start requires trusted inputs, positive FiT, strong net-energy proof, and measured surplus above `0.5 kW`; continuation uses the same model with hysteresis and surplus above `0.2 kW`; loss of trust, non-positive FiT, or an unsupported budget stops it. It may safely cap charging but must never discharge the battery to create Solar Surplus export.
+
+Rationale: The capacity-times-2 and 1.25-times heuristics do not directly establish genuinely exportable energy or preserve the battery fill trajectory. The charging-cap, timing, and priority architecture remains pending a bounded design before implementation.
