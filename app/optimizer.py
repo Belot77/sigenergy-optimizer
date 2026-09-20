@@ -91,6 +91,9 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
+# One 0.01 kWh sensor-resolution step may be rounding noise; larger excess is
+# materially inconsistent with a trusted rated capacity.
+_AVAILABLE_ENERGY_CAPACITY_TOLERANCE_KWH = 0.01
 _RUNTIME_SIGNATURE = "2.3.46-haos57"
 
 
@@ -1538,24 +1541,43 @@ class SigEnergyOptimizer:
             if available_energy_observation.available
             else None
         )
-        avail_uom = (_attr(cfg.available_discharge_sensor, "unit_of_measurement") or "kwh").lower()
+        avail_uom = str(
+            _attr(cfg.available_discharge_sensor, "unit_of_measurement", "") or ""
+        ).strip().lower()
+        available_energy_unit_supported = avail_uom in {"wh", "kwh", "mwh"}
         if avail_raw is None:
             normalized_available_energy_kwh = 0.0
         elif avail_uom == "wh":
             normalized_available_energy_kwh = avail_raw / 1000
-        else:
+        elif avail_uom == "mwh":
+            normalized_available_energy_kwh = avail_raw * 1000
+        elif avail_uom == "kwh":
             normalized_available_energy_kwh = avail_raw
+        else:
+            normalized_available_energy_kwh = 0.0
+        available_energy_capacity_consistent = bool(
+            not s.battery_capacity_trusted
+            or normalized_available_energy_kwh
+            <= s.battery_capacity_kwh + _AVAILABLE_ENERGY_CAPACITY_TOLERANCE_KWH
+        )
         available_energy_usable = bool(
-            math.isfinite(normalized_available_energy_kwh)
-            and normalized_available_energy_kwh >= 0.0
-        )
-        s.available_discharge_energy_kwh = (
-            normalized_available_energy_kwh if available_energy_usable else 0.0
-        )
-        s.available_discharge_energy_trusted = bool(
             available_energy_observation.available
-            and available_energy_usable
-            and available_energy_observation.fresh
+            and available_energy_unit_supported
+            and math.isfinite(normalized_available_energy_kwh)
+            and normalized_available_energy_kwh >= 0.0
+            and available_energy_capacity_consistent
+        )
+        if not available_energy_usable:
+            s.available_discharge_energy_kwh = 0.0
+        elif s.battery_capacity_trusted:
+            s.available_discharge_energy_kwh = min(
+                normalized_available_energy_kwh,
+                s.battery_capacity_kwh,
+            )
+        else:
+            s.available_discharge_energy_kwh = normalized_available_energy_kwh
+        s.available_discharge_energy_trusted = bool(
+            available_energy_usable and available_energy_observation.fresh
         )
 
         def _kw_from_sensor(raw: Optional[float]) -> float:
@@ -2044,6 +2066,12 @@ class SigEnergyOptimizer:
         available_discharge_energy_trusted = bool(
             available_discharge_energy_valid
             and s.available_discharge_energy_trusted is not False
+            and (
+                not battery_capacity_trusted
+                or available_energy_value
+                <= battery_capacity_value
+                + _AVAILABLE_ENERGY_CAPACITY_TOLERANCE_KWH
+            )
         )
 
         try:
@@ -2143,7 +2171,16 @@ class SigEnergyOptimizer:
 
         # ---- Battery capacity helpers --------------------------------
         cap = s.battery_capacity_kwh
-        bat_fill_need_kwh = max(0.0, cap - s.available_discharge_energy_kwh)
+        if not available_discharge_energy_trusted:
+            control_available_energy_kwh = 0.0
+        elif battery_capacity_trusted:
+            control_available_energy_kwh = min(
+                available_energy_value,
+                battery_capacity_value,
+            )
+        else:
+            control_available_energy_kwh = available_energy_value
+        bat_fill_need_kwh = max(0.0, cap - control_available_energy_kwh)
 
         # ---- Sunrise SoC target (dynamic calculation) ----------------
         soc_required = self._battery_soc_required_to_sunrise(s)

@@ -79,6 +79,7 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
         capacity_reported_at: datetime | str | None | object = _DEFAULT_REPORTED_AT,
         capacity_unit: object = "kWh",
         available_energy_state: object = "18.0",
+        available_energy_unit: object = "kWh",
         available_energy_observed_at: datetime | None = None,
         price_state: object = "0.30",
         price_is_estimate: bool = False,
@@ -166,10 +167,15 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
                 reported_at=capacity_reported_at,
             )
         if available_energy_state is not _MISSING:
+            available_energy_attributes = (
+                {}
+                if available_energy_unit is _MISSING
+                else {"unit_of_measurement": available_energy_unit}
+            )
             states[cfg.available_discharge_sensor] = self._entity(
                 available_energy_state,
                 when,
-                {"unit_of_measurement": "kWh"},
+                available_energy_attributes,
                 observed_at=available_energy_observed_at,
             )
 
@@ -483,7 +489,7 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
         self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
 
     def test_missing_capacity_cannot_authorize_morning_dump(self) -> None:
-        self._assert_no_deliberate_export(
+        _optimizer, state, decision = self._read_and_decide(
             when=self.MORNING,
             battery_soc_state="80.0",
             capacity_state=_MISSING,
@@ -491,6 +497,202 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
             feedin_state="0.05",
             solcast_detailed=self._morning_forecast(self.MORNING, 10.0),
             morning_dump_enabled=True,
+        )
+        self.assertFalse(bool(state.battery_capacity_trusted))
+        self.assertTrue(bool(state.available_discharge_energy_trusted))
+        self.assertFalse(bool(decision.trace_gates.get("morning_dump_active")))
+        self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+
+    def test_supported_available_energy_units_normalize_to_kwh(self) -> None:
+        cases = (
+            ("Wh", "18000", 18.0),
+            ("kWh", "18.0", 18.0),
+            ("MWh", "0.018", 18.0),
+            (" kWH ", "18.0", 18.0),
+        )
+        for unit, raw_energy, expected_kwh in cases:
+            with self.subTest(unit=unit):
+                _optimizer, state, decision = self._read_and_decide(
+                    capacity_state="30.0",
+                    available_energy_state=raw_energy,
+                    available_energy_unit=unit,
+                )
+                self.assertAlmostEqual(
+                    expected_kwh,
+                    state.available_discharge_energy_kwh,
+                )
+                self.assertTrue(bool(state.available_discharge_energy_trusted))
+                self.assertTrue(
+                    bool(
+                        decision.trace_gates.get(
+                            "available_discharge_energy_trusted"
+                        )
+                    )
+                )
+                self.assertAlmostEqual(
+                    12.0,
+                    decision.trace_values.get("bat_fill_need_kwh"),
+                )
+
+    def test_invalid_available_energy_value_or_unit_fails_closed(self) -> None:
+        cases = (
+            ("missing_unit", "18.0", _MISSING),
+            ("unsupported_unit", "18.0", "MJ"),
+            ("ambiguous_unit", "18.0", "kWh/Wh"),
+            ("malformed_unit", "18.0", ["kWh"]),
+            ("negative", "-0.01", "kWh"),
+            ("non_numeric", "eighteen", "kWh"),
+            ("nan", "nan", "kWh"),
+            ("positive_infinity", "inf", "kWh"),
+            ("negative_infinity", "-inf", "kWh"),
+        )
+        for label, raw_energy, unit in cases:
+            with self.subTest(case=label):
+                _optimizer, state, decision = self._read_and_decide(
+                    capacity_state="30.0",
+                    available_energy_state=raw_energy,
+                    available_energy_unit=unit,
+                )
+                self.assertEqual(0.0, state.available_discharge_energy_kwh)
+                self.assertFalse(bool(state.available_discharge_energy_trusted))
+                self.assertFalse(
+                    bool(
+                        decision.trace_gates.get(
+                            "available_discharge_energy_trusted"
+                        )
+                    )
+                )
+                self.assertEqual(
+                    30.0,
+                    decision.trace_values.get("bat_fill_need_kwh"),
+                )
+
+    def test_available_energy_materially_above_capacity_fails_closed(self) -> None:
+        _optimizer, state, decision = self._read_and_decide(
+            capacity_state="30.0",
+            available_energy_state="30.02",
+        )
+        self.assertEqual(0.0, state.available_discharge_energy_kwh)
+        self.assertFalse(bool(state.available_discharge_energy_trusted))
+        self.assertEqual(30.0, decision.trace_values.get("bat_fill_need_kwh"))
+
+    def test_available_energy_capacity_tolerance_boundary_is_clamped(self) -> None:
+        _optimizer, state, decision = self._read_and_decide(
+            capacity_state="30.0",
+            available_energy_state="30.01",
+        )
+        self.assertEqual(30.0, state.available_discharge_energy_kwh)
+        self.assertTrue(bool(state.available_discharge_energy_trusted))
+        self.assertEqual(0.0, decision.trace_values.get("bat_fill_need_kwh"))
+
+    def test_available_energy_above_capacity_tolerance_fails_closed(self) -> None:
+        _optimizer, state, decision = self._read_and_decide(
+            capacity_state="30.0",
+            available_energy_state="30.0101",
+        )
+        self.assertEqual(0.0, state.available_discharge_energy_kwh)
+        self.assertFalse(bool(state.available_discharge_energy_trusted))
+        self.assertEqual(30.0, decision.trace_values.get("bat_fill_need_kwh"))
+
+    def test_untrusted_available_energy_cannot_authorize_morning_dump(self) -> None:
+        _optimizer, _state, decision = self._read_and_decide(
+            when=self.MORNING,
+            battery_soc_state="80.0",
+            capacity_state="30.0",
+            available_energy_state="24.0",
+            available_energy_unit="MJ",
+            feedin_state="0.05",
+            solcast_detailed=self._morning_forecast(self.MORNING, 10.0),
+            morning_dump_enabled=True,
+        )
+        self.assertFalse(bool(decision.trace_gates.get("morning_dump_active")))
+        self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+
+    def test_untrusted_available_energy_cannot_enlarge_solar_override_cap(self) -> None:
+        common = {
+            "battery_soc_state": "95.0",
+            "capacity_state": "30.0",
+            "available_energy_state": "18.0",
+            "feedin_state": "0.20",
+            "pv_kw": 4.0,
+            "load_kw": 1.0,
+            "forecast_remaining_kwh": 100.0,
+        }
+        _optimizer, _valid_state, valid_decision = self._read_and_decide(**common)
+        _optimizer, _invalid_state, invalid_decision = self._read_and_decide(
+            **common,
+            available_energy_unit="MJ",
+        )
+
+        self.assertTrue(bool(valid_decision.trace_gates.get("export_solar_override")))
+        self.assertEqual(
+            "solar_override",
+            valid_decision.trace_values.get("battery_export_owner"),
+        )
+        self.assertEqual(BATTERY_EXPORT, valid_decision.export_intent)
+        self.assertFalse(bool(invalid_decision.trace_gates.get("export_solar_override")))
+        self.assertNotEqual(BATTERY_EXPORT, invalid_decision.export_intent)
+        self.assertEqual(
+            "none",
+            invalid_decision.trace_values.get("battery_export_owner"),
+        )
+        invalid_deliberate_export_cap = (
+            invalid_decision.export_limit
+            if invalid_decision.export_intent == BATTERY_EXPORT
+            else 0.0
+        )
+        self.assertLessEqual(
+            invalid_deliberate_export_cap,
+            valid_decision.export_limit,
+        )
+
+    def test_untrusted_available_energy_cannot_activate_morning_slow(self) -> None:
+        common = {
+            "when": self.MORNING.replace(hour=8),
+            "capacity_state": "30.0",
+            "available_energy_state": "18.0",
+            "feedin_state": "0.05",
+            "forecast_remaining_kwh": 100.0,
+            "morning_slow_charge_enabled": True,
+        }
+        _optimizer, _valid_state, valid_decision = self._read_and_decide(**common)
+        _optimizer, _invalid_state, invalid_decision = self._read_and_decide(
+            **common,
+            available_energy_unit="MJ",
+        )
+
+        self.assertTrue(
+            bool(valid_decision.trace_gates.get("morning_slow_charge_active"))
+        )
+        self.assertFalse(
+            bool(invalid_decision.trace_gates.get("morning_slow_charge_active"))
+        )
+
+    def test_untrusted_available_energy_cannot_activate_evening_boost(self) -> None:
+        common = {
+            "when": self.EVENING,
+            "battery_soc_state": "80.0",
+            "capacity_state": "30.0",
+            "available_energy_state": "18.0",
+            "feedin_state": "0.15",
+            "forecast_tomorrow_kwh": 120.0,
+            "solcast_detailed": self._morning_forecast(self.EVENING, 10.0),
+            "evening_boost_enabled": True,
+            "evening_boost_min_tomorrow_forecast_kwh": 100.0,
+        }
+        _optimizer, _valid_state, valid_decision = self._read_and_decide(**common)
+        _optimizer, _invalid_state, invalid_decision = self._read_and_decide(
+            **common,
+            available_energy_unit="MJ",
+        )
+
+        self.assertTrue(
+            bool(valid_decision.trace_gates.get("evening_export_boost_active"))
+        )
+        self.assertFalse(
+            bool(invalid_decision.trace_gates.get("evening_export_boost_active"))
         )
 
     def test_stale_high_available_energy_cannot_authorize_morning_dump(self) -> None:
