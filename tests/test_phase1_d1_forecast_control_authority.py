@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.models import BATTERY_EXPORT, EXPORT_BLOCKED, MSC_SURPLUS_CEILING
 from app.optimizer import MODE_MAX_SELF
@@ -235,6 +235,9 @@ class Phase1D1ForecastControlAuthorityTests(Haos49CharacterizationCase):
         }
 
         trusted_optimizer = self.optimizer(**settings)
+        trusted_optimizer._tz = timezone(
+            self.MORNING.astimezone().utcoffset() or timedelta()
+        )
         trusted = self.decide(
             trusted_optimizer,
             self._forecast_state(
@@ -245,6 +248,9 @@ class Phase1D1ForecastControlAuthorityTests(Haos49CharacterizationCase):
             self.MORNING,
         )
         untrusted_optimizer = self.optimizer(**settings)
+        untrusted_optimizer._tz = timezone(
+            self.MORNING.astimezone().utcoffset() or timedelta()
+        )
         untrusted = self.decide(
             untrusted_optimizer,
             self._forecast_state(

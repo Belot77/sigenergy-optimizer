@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.optimizer import MODE_CMD_DISCHARGE_PV, MODE_MAX_SELF
 from haos49_characterization_helpers import Haos49CharacterizationCase
@@ -145,8 +145,8 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
             standby_holdoff_enabled=True,
             pv_forecast_holdoff_kwh=50.0,
         )
+        optimizer._tz = timezone(when.astimezone().utcoffset() or timedelta())
         optimizer._negative_price_before_cutoff = lambda *args, **kwargs: True
-        optimizer._today_at = lambda _value: when + timedelta(hours=1)
         return optimizer
 
     def test_standby_holdoff_uses_snapshotted_floor_for_high_and_low_soc(self) -> None:

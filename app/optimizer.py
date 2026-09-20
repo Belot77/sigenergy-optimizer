@@ -1904,6 +1904,29 @@ class SigEnergyOptimizer:
             preferred_value_key=cfg.price_forecast_value_key,
             diagnostics=price_forecast_diagnostics,
         )
+        selected_price_forecast_entity = price_forecast_diagnostics.get("selected_entity")
+        selected_price_forecast_obj = (
+            bulk.get(selected_price_forecast_entity)
+            if selected_price_forecast_entity
+            else None
+        )
+        selected_price_forecast_available = bool(
+            selected_price_forecast_obj
+            and str(selected_price_forecast_obj.get("state", "")).strip().lower()
+            not in unavailable_states
+        )
+        selected_price_forecast_fresh = bool(
+            selected_price_forecast_available
+            and _metadata_is_fresh(selected_price_forecast_obj, forecast_max_age)
+        )
+        s.price_forecast_source_trusted = bool(
+            selected_price_forecast_available and selected_price_forecast_fresh
+        )
+        price_forecast_diagnostics.update({
+            "selected_source_available": selected_price_forecast_available,
+            "selected_source_fresh": selected_price_forecast_fresh,
+            "selected_source_trusted": s.price_forecast_source_trusted,
+        })
         self._warn_forecast_issue("Price forecast", price_forecast_diagnostics)
         feedin_forecast_diagnostics: dict[str, Any] = {}
         s.feedin_forecast_entries = extract_forecast_entries(
@@ -2231,7 +2254,9 @@ class SigEnergyOptimizer:
         d.min_soc_to_sunrise = soc_required
 
         # ---- Price forecasts -----------------------------------------
+        standby_holdoff_cutoff_ts = self._standby_holdoff_cutoff_ts(now_ts)
         negative_price_before_cutoff = self._negative_price_before_cutoff(s, now_ts)
+        price_forecast_source_trusted = s.price_forecast_source_trusted is not False
 
         # ---- Productive solar window ---------------------------------
         productive_solar_end_ts = (
@@ -2335,7 +2360,7 @@ class SigEnergyOptimizer:
             and forecast_today_observation_trusted
             and s.forecast_today_kwh >= cfg.pv_forecast_holdoff_kwh
             and negative_price_before_cutoff
-            and now < self._today_at(cfg.standby_holdoff_end_time)
+            and now_ts < standby_holdoff_cutoff_ts
             and import_price_trusted
             and s.current_price > cfg.import_threshold_low
             and battery_can_reach_from_pv
@@ -3832,6 +3857,7 @@ class SigEnergyOptimizer:
             "morning_slow_charge_active": morning_slow_charge_active,
             "standby_holdoff_active": standby_holdoff_active,
             "negative_price_before_cutoff": negative_price_before_cutoff,
+            "price_forecast_source_trusted": price_forecast_source_trusted,
             "battery_can_reach_from_pv": battery_can_reach_from_pv,
             "evening_export_boost_active": evening_export_boost_active,
             "export_spike_active": export_spike_active,
@@ -5574,36 +5600,74 @@ class SigEnergyOptimizer:
             block_reason="price_below_floor",
         )
 
-    def _negative_price_forecast_ahead(self, s: SolarState, now_ts: float) -> bool:
-        cutoff = now_ts + self.cfg.negative_price_forecast_lookahead_hours * 3600
+    def _negative_price_in_window(
+        self,
+        s: SolarState,
+        now_ts: float,
+        cutoff_ts: float,
+    ) -> bool:
+        if s.price_forecast_source_trusted is False:
+            return False
+        try:
+            now_ts = float(now_ts)
+            cutoff_ts = float(cutoff_ts)
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if (
+            not math.isfinite(now_ts)
+            or not math.isfinite(cutoff_ts)
+            or cutoff_ts < now_ts
+        ):
+            return False
         for f in s.price_forecast_entries:
             if not isinstance(f, dict):
                 continue
             try:
-                ts = self._parse_ts(forecast_entry_time(f, self.cfg.price_forecast_time_key))
+                raw_ts = forecast_entry_time(f, self.cfg.price_forecast_time_key)
+                if isinstance(raw_ts, bool):
+                    continue
+                ts = self._parse_ts(raw_ts)
                 price = forecast_entry_value(f, self.cfg.price_forecast_value_key)
-                if ts and ts <= cutoff and price < 0:
+                if (
+                    ts is not None
+                    and math.isfinite(ts)
+                    and price is not None
+                    and math.isfinite(price)
+                    and now_ts <= ts <= cutoff_ts
+                    and price < 0
+                ):
                     return True
-            except Exception:
-                pass
+            except (TypeError, ValueError, OverflowError):
+                continue
         return False
 
+    def _negative_price_forecast_ahead(self, s: SolarState, now_ts: float) -> bool:
+        cutoff_ts = now_ts + self.cfg.negative_price_forecast_lookahead_hours * 3600
+        return self._negative_price_in_window(s, now_ts, cutoff_ts)
+
+    def _standby_holdoff_cutoff_ts(self, now_ts: float) -> float:
+        now_local = datetime.fromtimestamp(now_ts, tz=self._tz)
+        try:
+            parts = self.cfg.standby_holdoff_end_time.split(":")
+            hour, minute = int(parts[0]), int(parts[1])
+            second = int(parts[2]) if len(parts) > 2 else 0
+            cutoff = now_local.replace(
+                hour=hour,
+                minute=minute,
+                second=second,
+                microsecond=0,
+            )
+        except (ValueError, IndexError, AttributeError):
+            logger.warning(
+                "Invalid time string in config: %r — using end of day",
+                self.cfg.standby_holdoff_end_time,
+            )
+            cutoff = now_local.replace(hour=23, minute=59, second=59, microsecond=0)
+        return cutoff.timestamp()
+
     def _negative_price_before_cutoff(self, s: SolarState, now_ts: float) -> bool:
-        cutoff_dt = self._today_at(self.cfg.standby_holdoff_end_time)
-        if datetime.now() >= cutoff_dt:
-            return False
-        cutoff_ts = cutoff_dt.timestamp()
-        for f in s.price_forecast_entries:
-            if not isinstance(f, dict):
-                continue
-            try:
-                ts = self._parse_ts(forecast_entry_time(f, self.cfg.price_forecast_time_key))
-                price = forecast_entry_value(f, self.cfg.price_forecast_value_key)
-                if ts and ts <= cutoff_ts and price < 0:
-                    return True
-            except Exception:
-                pass
-        return False
+        cutoff_ts = self._standby_holdoff_cutoff_ts(now_ts)
+        return self._negative_price_in_window(s, now_ts, cutoff_ts)
 
     def _normalize_detailed_forecast(
         self,

@@ -176,6 +176,7 @@ class SolarState:
     solcast_detailed: list = field(default_factory=list)
     solcast_detailed_source_trusted: Optional[bool] = None
     price_forecast_entries: list = field(default_factory=list)  # [{start_time, per_kwh}, ...]
+    price_forecast_source_trusted: Optional[bool] = None
     feedin_forecast_entries: list = field(default_factory=list)
 
     # Session tracking

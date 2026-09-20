@@ -74,6 +74,9 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
         current_price: float = 0.30,
         feedin_price: float = 0.0,
         include_negative_price_forecast: bool = False,
+        price_forecast_entries: object = _MISSING,
+        price_forecast_state: object = "available",
+        price_forecast_observed_at: datetime | None = None,
     ) -> dict[str, dict[str, object]]:
         cfg = optimizer.cfg
         inferred_above = 7 <= when.hour < 18
@@ -166,20 +169,26 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
                     attributes,
                     observed_at=observed_at,
                 )
-        if include_negative_price_forecast:
+        if include_negative_price_forecast or price_forecast_entries is not _MISSING:
+            resolved_price_forecast_entries = (
+                [
+                    {
+                        cfg.price_forecast_time_key: (
+                            when + timedelta(hours=1)
+                        ).isoformat(),
+                        cfg.price_forecast_value_key: -0.20,
+                    }
+                ]
+                if price_forecast_entries is _MISSING
+                else price_forecast_entries
+            )
             states[cfg.price_forecast_sensor] = self._entity(
-                "available",
+                price_forecast_state,
                 when,
                 {
-                    cfg.price_forecast_attribute: [
-                        {
-                            cfg.price_forecast_time_key: (
-                                when + timedelta(hours=1)
-                            ).isoformat(),
-                            cfg.price_forecast_value_key: -0.20,
-                        }
-                    ]
+                    cfg.price_forecast_attribute: resolved_price_forecast_entries
                 },
+                observed_at=price_forecast_observed_at,
             )
         return states
 
@@ -330,6 +339,88 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
                 "pv_forecast_holdoff_kwh": 50.0,
             },
         )
+        self.assertFalse(decision.standby_holdoff_active)
+
+    def test_stale_selected_price_forecast_cannot_activate_standby_holdoff(self) -> None:
+        stale_at = self.HOLD_OFF_MORNING - timedelta(hours=2)
+        _optimizer, state, decision = self._read_and_decide(
+            when=self.HOLD_OFF_MORNING,
+            forecast_today_state="100.0",
+            forecast_remaining_state="100.0",
+            include_negative_price_forecast=True,
+            price_forecast_observed_at=stale_at,
+            battery_soc=90.0,
+            available_discharge_kwh=27.0,
+            settings={
+                "standby_holdoff_enabled": True,
+                "standby_holdoff_end_time": "11:00",
+                "pv_forecast_holdoff_kwh": 50.0,
+            },
+        )
+        self.assertTrue(state.price_forecast_entries)
+        self.assertFalse(state.price_forecast_source_trusted)
+        self.assertFalse(decision.trace_gates["price_forecast_source_trusted"])
+        self.assertFalse(decision.standby_holdoff_active)
+
+    def test_fresh_selected_price_forecast_preserves_standby_holdoff(self) -> None:
+        _optimizer, state, decision = self._read_and_decide(
+            when=self.HOLD_OFF_MORNING,
+            forecast_today_state="100.0",
+            forecast_remaining_state="100.0",
+            include_negative_price_forecast=True,
+            battery_soc=90.0,
+            available_discharge_kwh=27.0,
+            settings={
+                "standby_holdoff_enabled": True,
+                "standby_holdoff_end_time": "11:00",
+                "pv_forecast_holdoff_kwh": 50.0,
+            },
+        )
+        self.assertTrue(state.price_forecast_source_trusted)
+        self.assertTrue(decision.trace_gates["price_forecast_source_trusted"])
+        self.assertTrue(decision.standby_holdoff_active)
+        self.assertEqual("none", decision.trace_values["battery_export_owner"])
+
+    def test_unavailable_selected_price_forecast_cannot_activate_standby_holdoff(self) -> None:
+        _optimizer, state, decision = self._read_and_decide(
+            when=self.HOLD_OFF_MORNING,
+            forecast_today_state="100.0",
+            forecast_remaining_state="100.0",
+            include_negative_price_forecast=True,
+            price_forecast_state="unavailable",
+            battery_soc=90.0,
+            available_discharge_kwh=27.0,
+            settings={
+                "standby_holdoff_enabled": True,
+                "standby_holdoff_end_time": "11:00",
+                "pv_forecast_holdoff_kwh": 50.0,
+            },
+        )
+        self.assertTrue(state.price_forecast_entries)
+        self.assertFalse(state.price_forecast_source_trusted)
+        self.assertFalse(decision.standby_holdoff_active)
+
+    def test_expired_price_forecast_cannot_activate_standby_holdoff(self) -> None:
+        expired_entry = {
+            "start_time": (self.HOLD_OFF_MORNING - timedelta(minutes=30)).isoformat(),
+            "per_kwh": -0.20,
+        }
+        _optimizer, state, decision = self._read_and_decide(
+            when=self.HOLD_OFF_MORNING,
+            forecast_today_state="100.0",
+            forecast_remaining_state="100.0",
+            price_forecast_entries=[expired_entry],
+            battery_soc=90.0,
+            available_discharge_kwh=27.0,
+            settings={
+                "standby_holdoff_enabled": True,
+                "standby_holdoff_end_time": "11:00",
+                "pv_forecast_holdoff_kwh": 50.0,
+            },
+        )
+        self.assertTrue(state.price_forecast_source_trusted)
+        self.assertEqual([expired_entry], state.price_forecast_entries)
+        self.assertFalse(decision.trace_gates["negative_price_before_cutoff"])
         self.assertFalse(decision.standby_holdoff_active)
 
     # Morning Dump and detailed forecast trust.

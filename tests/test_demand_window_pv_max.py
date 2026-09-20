@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.config import Settings
 from app.models import SolarState
@@ -147,7 +147,7 @@ class DemandWindowPVMaxTests(unittest.TestCase):
             standby_holdoff_enabled=True,
             pv_forecast_holdoff_kwh=120.0,
         )
-        optimizer._today_at = lambda _time: datetime.now() + timedelta(hours=1)
+        optimizer._standby_holdoff_cutoff_ts = lambda reference_ts: reference_ts + 3600
         state = self._state(
             now_ts,
             demand_window_active=True,
@@ -155,7 +155,7 @@ class DemandWindowPVMaxTests(unittest.TestCase):
             forecast_remaining_kwh=150.0,
             forecast_today_kwh=150.0,
             price_forecast_entries=[
-                {"start_time": now_ts, "per_kwh": -0.10},
+                {"start_time": now_ts + 1800, "per_kwh": -0.10},
             ],
             current_pv_max_power_limit=25.0,
         )
