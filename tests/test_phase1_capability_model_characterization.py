@@ -386,6 +386,7 @@ class Phase1CapabilityModelCharacterizationTests(unittest.TestCase):
             False,
             False,
             feedin_price_trusted=True,
+            forecast_tomorrow_trusted=True,
         )
 
         self.assertLessEqual(float(request), 10.0)

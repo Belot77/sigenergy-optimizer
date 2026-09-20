@@ -554,6 +554,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             is_evening_or_night=False,
             morning_slow_charge_active=False,
             within_morning_grace=False,
+            forecast_tomorrow_trusted=True,
         )
         advisory = self._advisory(optimizer, state, desired_export_limit=desired)
 

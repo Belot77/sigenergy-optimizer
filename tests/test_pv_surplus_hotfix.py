@@ -94,6 +94,7 @@ class PVSurplusHotfixTests(unittest.TestCase):
             False,   # is_evening_or_night
             morning_slow,
             False,   # within_morning_grace
+            forecast_tomorrow_trusted=True,
         )
 
     def test_morning_slow_charge_uses_configured_charge_rate(self) -> None:

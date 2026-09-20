@@ -59,7 +59,13 @@ class PoorTomorrowExportTests(unittest.TestCase):
             sun_above_horizon=True,
         )
 
-    def _desired_export(self, optimizer: SigEnergyOptimizer, state: SolarState) -> float:
+    def _desired_export(
+        self,
+        optimizer: SigEnergyOptimizer,
+        state: SolarState,
+        *,
+        forecast_tomorrow_trusted: bool = True,
+    ) -> float:
         return optimizer._desired_export_limit(
             state,
             spike=False,
@@ -80,6 +86,7 @@ class PoorTomorrowExportTests(unittest.TestCase):
             is_evening_or_night=False,
             morning_slow_charge_active=False,
             within_morning_grace=False,
+            forecast_tomorrow_trusted=forecast_tomorrow_trusted,
         )
 
     def test_low_tomorrow_forecast_caps_full_battery_export_to_measured_surplus(self) -> None:
@@ -97,6 +104,18 @@ class PoorTomorrowExportTests(unittest.TestCase):
         desired = self._desired_export(optimizer, state)
 
         self.assertEqual(desired, 3.5)
+
+    def test_same_good_tomorrow_scalar_when_untrusted_uses_poor_tomorrow_cap(self) -> None:
+        optimizer = self._optimizer()
+        state = self._state(forecast_tomorrow_kwh=80.0)
+
+        desired = self._desired_export(
+            optimizer,
+            state,
+            forecast_tomorrow_trusted=False,
+        )
+
+        self.assertEqual(desired, 1.2)
 
 
 if __name__ == "__main__":

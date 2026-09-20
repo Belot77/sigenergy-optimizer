@@ -2277,6 +2277,7 @@ class SigEnergyOptimizer:
                 now_ts,
                 morning_slow_charge_end_ts,
                 feedin_price_trusted=feedin_price_trusted,
+                forecast_remaining_trusted=forecast_remaining_observation_trusted,
             )
         )
         d.morning_slow_charge_active = morning_slow_charge_active
@@ -2439,13 +2440,20 @@ class SigEnergyOptimizer:
         tomorrow_kwh = s.forecast_tomorrow_kwh
         low_today = (
             not load_power_trusted
+            or not forecast_remaining_observation_trusted
             or (
                 s.forecast_remaining_kwh > 0
                 and net_forecast
                 <= bat_fill_need_kwh * cfg.forecast_safety_charging
             )
         )
-        low_tomorrow = is_evening_or_night and tomorrow_kwh < cap * cfg.forecast_safety_charging
+        low_tomorrow = bool(
+            is_evening_or_night
+            and (
+                not forecast_tomorrow_observation_trusted
+                or tomorrow_kwh < cap * cfg.forecast_safety_charging
+            )
+        )
         pv_safeguard_active = (
             not full_export_override_check
             and not positive_fit_override
@@ -2533,10 +2541,12 @@ class SigEnergyOptimizer:
             hours_to_sunset,
             close_to_sunset,
             load_power_trusted=load_power_trusted,
+            forecast_remaining_trusted=forecast_remaining_observation_trusted,
         )
         export_forecast_guard = self._export_forecast_guard(
             s, sunrise_fill_need_kwh, is_evening_or_night,
-            evening_export_boost_active, close_to_sunset
+            evening_export_boost_active, close_to_sunset,
+            forecast_remaining_trusted=forecast_remaining_observation_trusted,
         )
         export_blocked_effective = export_blocked_for_forecast
 
@@ -2571,6 +2581,7 @@ class SigEnergyOptimizer:
                 # Forecast potential avoids the old self-curtailed measured-PV loop.
                 control_pv_surplus_kw, is_evening_or_night, morning_slow_for_policy,
                 within_morning_grace, feedin_price_trusted,
+                forecast_tomorrow_trusted=forecast_tomorrow_observation_trusted,
                 measured_pv_surplus=control_measured_pv_surplus_kw,
             )
             return (
@@ -2891,6 +2902,8 @@ class SigEnergyOptimizer:
             automatic_control_mode
             and math.isfinite(feedin_price_for_pv_only)
             and ordinary_msc_economic_policy_active
+            and forecast_remaining_observation_trusted
+            and forecast_tomorrow_observation_trusted
             and feedin_price_for_pv_only < cfg.export_threshold_high
             and not s.feedin_is_negative
             and not s.price_is_negative
@@ -3003,6 +3016,8 @@ class SigEnergyOptimizer:
         pv_only_msc_transition_ready = bool(
             observed_automated_control_mode
             and pv_surplus_common_conditions
+            and forecast_remaining_observation_trusted
+            and forecast_tomorrow_observation_trusted
             and topoff_target_met
             and ordinary_msc_flow_ok
             and live_pv_plausible_for_msc_ceiling
@@ -5782,6 +5797,7 @@ class SigEnergyOptimizer:
         slow_end_ts: float,
         *,
         feedin_price_trusted: bool | None = None,
+        forecast_remaining_trusted: bool,
     ) -> bool:
         if self._morning_slow_charge_runtime_disabled:
             if not self._morning_slow_disable_logged:
@@ -5804,6 +5820,8 @@ class SigEnergyOptimizer:
         if not feedin_price_trusted:
             return False
         if s.feedin_price < cfg.morning_slow_charge_min_feedin_price:
+            return False
+        if not forecast_remaining_trusted:
             return False
 
         # Use remaining-forecast energy from now; this is more robust than requiring
@@ -5942,6 +5960,7 @@ class SigEnergyOptimizer:
         close_to_sunset: bool,
         *,
         load_power_trusted: bool | None = None,
+        forecast_remaining_trusted: bool,
     ) -> bool:
         cfg = self.cfg
         if s.battery_soc >= cfg.export_guard_relax_soc or close_to_sunset:
@@ -5953,7 +5972,11 @@ class SigEnergyOptimizer:
             and not is_evening_or_night
             and pv_surplus > cfg.min_grid_transfer_kw
         )
-        if is_evening_or_night or allow_full or s.forecast_remaining_kwh == 0:
+        if is_evening_or_night or allow_full:
+            return False
+        if not forecast_remaining_trusted:
+            return True
+        if s.forecast_remaining_kwh == 0:
             return False
         est_load = s.load_kw * hours_to_sunset
         net_fc = s.forecast_remaining_kwh - est_load
@@ -5961,7 +5984,8 @@ class SigEnergyOptimizer:
 
     def _export_forecast_guard(self, s: SolarState, sunrise_fill_need_kwh: float,
                                 is_evening_or_night: bool, evening_boost: bool,
-                                close_to_sunset: bool) -> bool:
+                                close_to_sunset: bool, *,
+                                forecast_remaining_trusted: bool) -> bool:
         cfg = self.cfg
         if s.battery_soc >= cfg.export_guard_relax_soc or close_to_sunset:
             return False
@@ -5970,6 +5994,8 @@ class SigEnergyOptimizer:
             return s.battery_soc < floor
         if sunrise_fill_need_kwh <= 0:
             return False
+        if not forecast_remaining_trusted:
+            return True
         required = sunrise_fill_need_kwh * cfg.forecast_safety_export
         return s.forecast_remaining_kwh < required
 
@@ -6034,7 +6060,8 @@ class SigEnergyOptimizer:
                                morning_slow_charge_active: bool,
                                within_morning_grace: bool,
                                feedin_price_trusted: bool | None = None,
-                               measured_pv_surplus: float | None = None) -> float:
+                               measured_pv_surplus: float | None = None, *,
+                               forecast_tomorrow_trusted: bool) -> float:
         cfg = self.cfg
         fit_cents = s.feedin_price_cents
         bsoc = s.battery_soc
@@ -6104,7 +6131,10 @@ class SigEnergyOptimizer:
 
         poor_tomorrow_forecast = (
             not is_evening_or_night
-            and s.forecast_tomorrow_kwh < cap * cfg.forecast_safety_charging
+            and (
+                not forecast_tomorrow_trusted
+                or s.forecast_tomorrow_kwh < cap * cfg.forecast_safety_charging
+            )
         )
 
         bypass_min_soc = high_price or spike or surplus_bypass or positive_fit_override

@@ -154,6 +154,7 @@ class Haos52ControlCleanupTests(unittest.TestCase):
                 now,
                 now_ts,
                 slow_end_ts=now_ts + 3600,
+                forecast_remaining_trusted=True,
             )
         )
         state.feedin_price = 0.0099
@@ -163,6 +164,7 @@ class Haos52ControlCleanupTests(unittest.TestCase):
                 now,
                 now_ts,
                 slow_end_ts=now_ts + 3600,
+                forecast_remaining_trusted=True,
             )
         )
 
