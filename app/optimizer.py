@@ -4872,8 +4872,14 @@ class SigEnergyOptimizer:
             return
 
         notify = lambda title, msg: self.ha.send_notification(cfg.notification_service, title, msg)
+        measured_export_kw, _ = self._grid_export_kw_for_ordinary_msc_check(s)
+        meaningful_export_threshold_kw = float(cfg.min_grid_transfer_kw)
+        measured_export_active = bool(
+            measured_export_kw is not None
+            and measured_export_kw >= meaningful_export_threshold_kw
+        )
         if prev is None:
-            self._notif_export_active = d.export_limit > 0.011
+            self._notif_export_active = measured_export_active
             self._prev_demand_window = s.demand_window_active
             self._battery_full_alert_armed = s.battery_soc < 98.0
             self._battery_empty_alert_armed = s.battery_soc > 2.0
@@ -4882,12 +4888,26 @@ class SigEnergyOptimizer:
         export_session_kwh = max(0.0, s.daily_export_kwh - s.export_session_start_kwh)
         import_session_kwh = max(0.0, s.daily_import_kwh - s.import_session_start_kwh)
 
-        # Debounce export start notifications so tiny control flaps do not spam users.
-        export_near_zero = 0.011
-        export_active_now = d.export_limit > export_near_zero
+        # Notify only on trusted, meaningful physical grid export. An export limit
+        # is permission, not evidence that any energy is actually being exported.
         export_active_prev = self._notif_export_active
         if export_active_prev is None:
-            export_active_prev = prev.export_limit > export_near_zero
+            previous_export_kw = None
+            if prev_state is not None:
+                previous_export_kw, _ = self._grid_export_kw_for_ordinary_msc_check(
+                    prev_state
+                )
+            export_active_prev = bool(
+                previous_export_kw is not None
+                and previous_export_kw >= meaningful_export_threshold_kw
+            )
+        # Untrusted telemetry cannot establish either edge. Preserve the last
+        # trustworthy classification until a fresh observation resumes.
+        export_active_now = (
+            export_active_prev
+            if measured_export_kw is None
+            else measured_export_active
+        )
         export_started = (not export_active_prev) and export_active_now
         export_stopped = export_active_prev and (not export_active_now)
         self._notif_export_active = export_active_now
