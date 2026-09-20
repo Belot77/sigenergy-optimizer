@@ -91,6 +91,11 @@ _TRIGGER_ENTITY_ATTRS = [
 ]
 
 _POWER_LIMIT_MAX_KW = 100.0
+# The four values used to derive instantaneous battery flow must describe the
+# same physical moment.  The live reader already accepts up to five seconds of
+# timestamp jitter; keep derived-flow coherence equally narrow and independent
+# of the much wider per-sensor freshness window.
+_DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
 # One 0.01 kWh sensor-resolution step may be rounding noise; larger excess is
 # materially inconsistent with a trusted rated capacity.
 _AVAILABLE_ENERGY_CAPACITY_TOLERANCE_KWH = 0.01
@@ -741,17 +746,47 @@ class SigEnergyOptimizer:
         load_kw = float(inputs.load_power.value)
         measured_opportunity = max(pv_kw - load_kw, 0.0)
 
+        direct_battery_power_kw: Optional[float] = None
         if inputs.battery_power.available and inputs.battery_power.fresh:
-            battery_discharge = max(0.0, -float(inputs.battery_power.value))
+            try:
+                candidate = float(inputs.battery_power.value)
+            except (TypeError, ValueError, OverflowError):
+                candidate = math.nan
+            if math.isfinite(candidate):
+                direct_battery_power_kw = candidate
+
+        if direct_battery_power_kw is not None:
+            battery_discharge = max(0.0, -direct_battery_power_kw)
             battery_flow_source = "direct_battery_sensor"
-        elif (
-            inputs.grid_import_power.available
-            and inputs.grid_import_power.fresh
-            and inputs.grid_export_power.available
-            and inputs.grid_export_power.fresh
+        elif all(
+            reading.available and reading.fresh
+            for reading in (
+                inputs.grid_import_power,
+                inputs.grid_export_power,
+            )
         ):
-            measured_import = max(float(inputs.grid_import_power.value), 0.0)
-            measured_export = max(float(inputs.grid_export_power.value), 0.0)
+            if inputs.live_snapshot and s.derived_power_flow_coherent is not True:
+                return _result(
+                    "unavailable",
+                    "battery_flow_incoherent",
+                    data_fresh=False,
+                )
+            try:
+                measured_import = float(inputs.grid_import_power.value)
+                measured_export = float(inputs.grid_export_power.value)
+            except (TypeError, ValueError, OverflowError):
+                measured_import = math.nan
+                measured_export = math.nan
+            derived_values = (pv_kw, load_kw, measured_import, measured_export)
+            if not all(
+                math.isfinite(value) and value >= 0.0
+                for value in derived_values
+            ):
+                return _result(
+                    "unavailable",
+                    "battery_flow_unavailable",
+                    data_fresh=False,
+                )
             battery_power_kw = pv_kw + measured_import - measured_export - load_kw
             battery_discharge = max(0.0, -battery_power_kw)
             battery_flow_source = "measured_grid_flow"
@@ -1325,6 +1360,11 @@ class SigEnergyOptimizer:
         def _positive_power_kw(value: float) -> float:
             return value / 1000.0 if value > 100 else value
 
+        def _directional_power_kw(value: float) -> float:
+            if value < 0.0:
+                raise ValueError("directional grid power cannot be negative")
+            return _positive_power_kw(value)
+
         def _battery_power_kw(value: float) -> float:
             value = value / 1000.0 if abs(value) > 100 else value
             return -value if cfg.battery_power_sensor_invert else value
@@ -1381,12 +1421,12 @@ class SigEnergyOptimizer:
         )
         grid_import_power_observation = _observed_number(
             cfg.grid_import_power_sensor,
-            _positive_power_kw,
+            _directional_power_kw,
             max_age_seconds=live_max_age,
         )
         grid_export_power_observation = _observed_number(
             cfg.grid_export_power_sensor,
-            _positive_power_kw,
+            _directional_power_kw,
             max_age_seconds=live_max_age,
         )
         derived_power_observations = (
@@ -1415,11 +1455,15 @@ class SigEnergyOptimizer:
             ).total_seconds()
         s.derived_power_flow_coherent = bool(
             all(
-                observation.available and observation.fresh
+                observation.available
+                and observation.fresh
+                and observation.value is not None
+                and float(observation.value) >= 0.0
                 for observation in derived_power_observations
             )
             and s.derived_power_flow_span_seconds is not None
-            and s.derived_power_flow_span_seconds <= live_max_age
+            and s.derived_power_flow_span_seconds
+            <= _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS
         )
 
         s.hvac_solar_inputs = HVACSolarInputContext(
@@ -1465,14 +1509,10 @@ class SigEnergyOptimizer:
             and load_power_observation.value is not None
             and float(load_power_observation.value) >= 0.0
         )
-        if cfg.grid_import_power_sensor:
-            grid_import_raw = _fv(cfg.grid_import_power_sensor, None)
-            if grid_import_raw is not None:
-                s.grid_import_power_kw = grid_import_raw / 1000 if grid_import_raw > 100 else grid_import_raw
-        if cfg.grid_export_power_sensor:
-            grid_export_raw = _fv(cfg.grid_export_power_sensor, None)
-            if grid_export_raw is not None:
-                s.grid_export_power_kw = grid_export_raw / 1000 if grid_export_raw > 100 else grid_export_raw
+        if grid_import_power_observation.available:
+            s.grid_import_power_kw = float(grid_import_power_observation.value)
+        if grid_export_power_observation.available:
+            s.grid_export_power_kw = float(grid_export_power_observation.value)
         if cfg.battery_power_sensor:
             battery_power_raw = _fv(cfg.battery_power_sensor, None)
             if isinstance(battery_power_raw, (int, float)):
@@ -3886,7 +3926,7 @@ class SigEnergyOptimizer:
             "sun_state_observation_trusted": sun_state_observation_trusted,
             "sunrise_observation_trusted": sunrise_observation_trusted,
             "sunset_observation_trusted": sunset_observation_trusted,
-            "derived_power_flow_coherent": s.derived_power_flow_coherent is not False,
+            "derived_power_flow_coherent": s.derived_power_flow_coherent is True,
             "import_cost_floor_trusted": import_cost_floor_trusted,
             "import_cost_floor_unknown": import_cost_floor_unknown,
             "import_cost_floor_block_active": export_value_gate_block_reason in {
@@ -3975,6 +4015,7 @@ class SigEnergyOptimizer:
             "battery_discharge_kw_for_pv_only": battery_discharge_kw_for_pv_only,
             "battery_flow_source_for_pv_only": battery_flow_source_for_pv_only,
             "derived_power_flow_span_seconds": s.derived_power_flow_span_seconds,
+            "derived_power_flow_max_skew_seconds": _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS,
             "pv_only_discharge_tolerance_kw": pv_only_discharge_tolerance_kw,
             "ordinary_msc_grid_export_kw": ordinary_grid_export_kw,
             "ordinary_msc_grid_export_source": ordinary_grid_export_flow_source,
@@ -5208,7 +5249,7 @@ class SigEnergyOptimizer:
                 for observation in derived_observations
             ):
                 return None, "unknown"
-            if s.derived_power_flow_coherent is False:
+            if s.derived_power_flow_coherent is not True:
                 return None, "unknown"
             try:
                 measured_import, measured_export, pv_kw, load_kw = (
@@ -5221,10 +5262,15 @@ class SigEnergyOptimizer:
                 for value in (measured_import, measured_export, pv_kw, load_kw)
             ):
                 return None, "unknown"
+            if any(
+                value < 0.0
+                for value in (measured_import, measured_export, pv_kw, load_kw)
+            ):
+                return None, "unknown"
             battery_power_kw = (
                 pv_kw
-                + max(measured_import, 0.0)
-                - max(measured_export, 0.0)
+                + measured_import
+                - measured_export
                 - load_kw
             )
             return max(0.0, -battery_power_kw), "measured_grid_flow"
@@ -5245,8 +5291,10 @@ class SigEnergyOptimizer:
             )
             if not all(math.isfinite(value) for value in derived_inputs):
                 return None, "unknown"
-            measured_import = max(derived_inputs[0], 0.0)
-            measured_export = max(derived_inputs[1], 0.0)
+            if any(value < 0.0 for value in derived_inputs):
+                return None, "unknown"
+            measured_import = derived_inputs[0]
+            measured_export = derived_inputs[1]
             battery_power_kw = derived_inputs[2] + measured_import - measured_export - derived_inputs[3]
             return max(0.0, -battery_power_kw), "measured_grid_flow"
         return None, "unknown"
@@ -5267,7 +5315,9 @@ class SigEnergyOptimizer:
                 return None, "unknown"
             if not math.isfinite(grid_export_kw):
                 return None, "unknown"
-            return max(grid_export_kw, 0.0), "direct_grid_export_sensor"
+            if grid_export_kw < 0.0:
+                return None, "unknown"
+            return grid_export_kw, "direct_grid_export_sensor"
 
         # Hand-built unit SolarState objects predate the freshness evidence above.
         if s.grid_export_power_kw is None:
@@ -5278,7 +5328,9 @@ class SigEnergyOptimizer:
             return None, "unknown"
         if not math.isfinite(grid_export_kw):
             return None, "unknown"
-        return max(grid_export_kw, 0.0), "raw_grid_export_field"
+        if grid_export_kw < 0.0:
+            return None, "unknown"
+        return grid_export_kw, "raw_grid_export_field"
 
     def _optimizer_import_topup_summary_today(self) -> dict[str, Any]:
         return self._state_store.optimizer_import_topup_summary(

@@ -1229,6 +1229,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                     ),
                     live_snapshot=True,
                 ),
+                False,
                 None,
                 "unknown",
             ),
@@ -1247,6 +1248,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                     ),
                     live_snapshot=True,
                 ),
+                False,
                 None,
                 "unknown",
             ),
@@ -1267,14 +1269,22 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                     ),
                     live_snapshot=True,
                 ),
+                True,
                 0.0,
                 "measured_grid_flow",
             ),
         )
 
-        for name, inputs, expected_discharge, expected_source in cases:
+        for (
+            name,
+            inputs,
+            derived_power_flow_coherent,
+            expected_discharge,
+            expected_source,
+        ) in cases:
             with self.subTest(name=name):
                 state.hvac_solar_inputs = inputs
+                state.derived_power_flow_coherent = derived_power_flow_coherent
                 discharge, source = optimizer._battery_discharge_kw_for_pv_only_check(
                     state
                 )

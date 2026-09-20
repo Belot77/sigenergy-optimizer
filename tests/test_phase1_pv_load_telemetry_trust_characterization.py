@@ -41,7 +41,10 @@ class Phase1PVLoadTelemetryTrustCharacterizationTests(Haos49CharacterizationCase
         load_observed_at: datetime | None = None,
         battery_power_state: object = "0.0",
         battery_power_observed_at: datetime | None = None,
+        grid_import_state: object = 0.0,
+        grid_import_observed_at: datetime | None = None,
         grid_export_kw: float = 0.0,
+        grid_export_observed_at: datetime | None = None,
         grid_export_limit_kw: float = 0.01,
         battery_soc: float = 100.0,
         feedin_price: float = 0.095,
@@ -54,8 +57,16 @@ class Phase1PVLoadTelemetryTrustCharacterizationTests(Haos49CharacterizationCase
                 when,
                 observed_at=battery_power_observed_at,
             ),
-            cfg.grid_import_power_sensor: self._entity(0.0, when),
-            cfg.grid_export_power_sensor: self._entity(grid_export_kw, when),
+            cfg.grid_import_power_sensor: self._entity(
+                grid_import_state,
+                when,
+                observed_at=grid_import_observed_at,
+            ),
+            cfg.grid_export_power_sensor: self._entity(
+                grid_export_kw,
+                when,
+                observed_at=grid_export_observed_at,
+            ),
             cfg.battery_soc_sensor: self._entity(battery_soc, when),
             cfg.rated_capacity_sensor: self._entity(
                 30.0,
@@ -386,11 +397,13 @@ class Phase1PVLoadTelemetryTrustCharacterizationTests(Haos49CharacterizationCase
             "direct_battery_sensor",
             decision.trace_values.get("battery_flow_source_for_pv_only"),
         )
+        self.assertFalse(state.derived_power_flow_coherent)
+        self.assertAlmostEqual(100.0, state.derived_power_flow_span_seconds or 0.0)
         self.assertTrue(
             bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active"))
         )
 
-    def test_observational_flapping_reproduces_open_close_open_from_skewed_snapshot(
+    def test_incoherent_skewed_snapshot_fails_closed_between_coherent_cycles(
         self,
     ) -> None:
         when = self.FIXED_AFTERNOON
@@ -449,7 +462,7 @@ class Phase1PVLoadTelemetryTrustCharacterizationTests(Haos49CharacterizationCase
         self.assertEqual(
             [
                 "battery_within_tolerance",
-                "simultaneous_battery_discharge_and_grid_export",
+                "unknown",
                 "battery_within_tolerance",
             ],
             [
@@ -458,19 +471,199 @@ class Phase1PVLoadTelemetryTrustCharacterizationTests(Haos49CharacterizationCase
             ],
         )
         self.assertEqual(
-            ["measured_grid_flow", "measured_grid_flow", "measured_grid_flow"],
+            ["measured_grid_flow", "unknown", "measured_grid_flow"],
             [
                 d.trace_values.get("battery_flow_source_for_pv_only")
                 for d in decisions
             ],
         )
         self.assertAlmostEqual(-0.006, states[1].battery_power_sensor_kw)
-        self.assertAlmostEqual(
-            1.2,
-            decisions[1].trace_values.get("battery_discharge_kw_for_pv_only"),
+        self.assertIsNone(
+            decisions[1].trace_values.get("battery_discharge_kw_for_pv_only")
         )
         self.assertTrue(states[1].hvac_solar_inputs.pv_power.fresh)
         self.assertTrue(states[1].hvac_solar_inputs.load_power.fresh)
+        self.assertFalse(states[1].derived_power_flow_coherent)
+
+    def test_derived_flow_coherence_boundary_is_five_seconds(self) -> None:
+        cases = (
+            ("at_boundary", timedelta(seconds=5), True),
+            ("just_outside", timedelta(seconds=5, microseconds=1), False),
+        )
+        for name, skew, expected_coherent in cases:
+            with self.subTest(name=name):
+                optimizer, state, decision = self._read_and_decide(
+                    pv_state="6.0",
+                    pv_observed_at=self.FIXED_AFTERNOON - skew,
+                    load_state="1.0",
+                    battery_power_state="unavailable",
+                    grid_import_state=0.0,
+                    grid_export_kw=5.0,
+                    grid_export_limit_kw=0.01,
+                )
+
+                self.assertEqual(expected_coherent, state.derived_power_flow_coherent)
+                self.assertAlmostEqual(
+                    skew.total_seconds(),
+                    state.derived_power_flow_span_seconds or 0.0,
+                )
+                self.assertEqual(
+                    5.0,
+                    decision.trace_values.get(
+                        "derived_power_flow_max_skew_seconds"
+                    ),
+                )
+                self.assertEqual(
+                    "measured_grid_flow" if expected_coherent else "unknown",
+                    decision.trace_values.get("battery_flow_source_for_pv_only"),
+                )
+                self.assertEqual(
+                    0.0 if expected_coherent else None,
+                    decision.trace_values.get("battery_discharge_kw_for_pv_only"),
+                )
+                self.assertEqual(
+                    optimizer.cfg.export_limit_high if expected_coherent else 0.0,
+                    decision.export_limit,
+                )
+                self.assertEqual(
+                    MSC_SURPLUS_CEILING if expected_coherent else EXPORT_BLOCKED,
+                    decision.export_intent,
+                )
+                self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+
+                permission = self._evaluate_hvac(optimizer, state, decision)
+                if expected_coherent:
+                    self.assertEqual("start", permission.state)
+                    self.assertEqual("measured_grid_flow", permission.battery_flow_source)
+                else:
+                    self.assertEqual("unavailable", permission.state)
+                    self.assertEqual("battery_flow_incoherent", permission.reason_code)
+                    self.assertEqual("unavailable", permission.battery_flow_source)
+
+    def test_same_incoherent_readings_cannot_prove_load_serving_discharge(self) -> None:
+        common = {
+            "pv_state": "0.8",
+            "load_state": "1.0",
+            "battery_power_state": "unavailable",
+            "grid_import_state": 0.0,
+            "grid_export_kw": 0.0,
+            "grid_export_limit_kw": 0.01,
+            "battery_soc": 60.0,
+            "feedin_price": 0.15,
+        }
+        optimizer, coherent_state, coherent = self._read_and_decide(**common)
+        _optimizer, incoherent_state, incoherent = self._read_and_decide(
+            optimizer=optimizer,
+            ha=optimizer.ha,
+            pv_observed_at=self.FIXED_AFTERNOON
+            - timedelta(seconds=5, microseconds=1),
+            **common,
+        )
+
+        self.assertTrue(coherent_state.derived_power_flow_coherent)
+        self.assertAlmostEqual(
+            0.2,
+            coherent.trace_values.get("battery_discharge_kw_for_pv_only"),
+        )
+        self.assertEqual(
+            "load_serving_battery_discharge",
+            coherent.trace_values.get("ordinary_msc_flow_classification"),
+        )
+        self.assertTrue(bool(coherent.trace_gates.get("ordinary_msc_flow_safe")))
+        self.assertEqual(optimizer.cfg.export_limit_high, coherent.export_limit)
+
+        self.assertFalse(incoherent_state.derived_power_flow_coherent)
+        self.assertIsNone(
+            incoherent.trace_values.get("battery_discharge_kw_for_pv_only")
+        )
+        self.assertEqual(
+            "unknown",
+            incoherent.trace_values.get("ordinary_msc_flow_classification"),
+        )
+        self.assertFalse(bool(incoherent.trace_gates.get("ordinary_msc_flow_safe")))
+        self.assertEqual(0.0, incoherent.export_limit)
+        self.assertEqual(EXPORT_BLOCKED, incoherent.export_intent)
+        self.assertEqual("none", incoherent.trace_values.get("battery_export_owner"))
+
+    def test_negative_directional_grid_power_is_untrusted_and_fails_closed(self) -> None:
+        cases = (
+            ("import", {"grid_import_state": -0.25}),
+            ("export", {"grid_export_kw": -0.25}),
+        )
+        for sensor, overrides in cases:
+            with self.subTest(sensor=sensor):
+                _optimizer, state, decision = self._read_and_decide(
+                    battery_power_state="unavailable",
+                    battery_soc=60.0,
+                    feedin_price=0.15,
+                    grid_export_limit_kw=0.01,
+                    **overrides,
+                )
+                observation = (
+                    state.hvac_solar_inputs.grid_import_power
+                    if sensor == "import"
+                    else state.hvac_solar_inputs.grid_export_power
+                )
+                scalar = (
+                    state.grid_import_power_kw
+                    if sensor == "import"
+                    else state.grid_export_power_kw
+                )
+
+                self.assertFalse(observation.available)
+                self.assertFalse(observation.fresh)
+                self.assertIsNone(scalar)
+                self.assertFalse(state.derived_power_flow_coherent)
+                self.assertEqual(
+                    "unknown",
+                    decision.trace_values.get("battery_flow_source_for_pv_only"),
+                )
+                self.assertIsNone(
+                    decision.trace_values.get("battery_discharge_kw_for_pv_only")
+                )
+                self.assertFalse(
+                    bool(decision.trace_gates.get("ordinary_msc_flow_trusted"))
+                )
+                self.assertFalse(
+                    bool(decision.trace_gates.get("ordinary_msc_flow_safe"))
+                )
+                self.assertEqual(0.0, decision.export_limit)
+                self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                self.assertEqual(
+                    "none", decision.trace_values.get("battery_export_owner")
+                )
+                if sensor == "export":
+                    self.assertIsNone(
+                        decision.trace_values.get("ordinary_msc_grid_export_kw")
+                    )
+
+    def test_zero_and_positive_directional_grid_power_remain_trusted(self) -> None:
+        for grid_import_kw, grid_export_kw in ((0.0, 0.0), (0.25, 0.5)):
+            with self.subTest(
+                grid_import_kw=grid_import_kw,
+                grid_export_kw=grid_export_kw,
+            ):
+                optimizer, state, decision = self._read_and_decide(
+                    battery_power_state="unavailable",
+                    grid_import_state=grid_import_kw,
+                    grid_export_kw=grid_export_kw,
+                )
+
+                self.assertTrue(state.hvac_solar_inputs.grid_import_power.available)
+                self.assertTrue(state.hvac_solar_inputs.grid_import_power.fresh)
+                self.assertTrue(state.hvac_solar_inputs.grid_export_power.available)
+                self.assertTrue(state.hvac_solar_inputs.grid_export_power.fresh)
+                self.assertEqual(grid_import_kw, state.grid_import_power_kw)
+                self.assertEqual(grid_export_kw, state.grid_export_power_kw)
+                self.assertTrue(state.derived_power_flow_coherent)
+                self.assertEqual(
+                    "measured_grid_flow",
+                    decision.trace_values.get("battery_flow_source_for_pv_only"),
+                )
+                self.assertTrue(
+                    bool(decision.trace_gates.get("ordinary_msc_flow_trusted"))
+                )
+                self.assertEqual(optimizer.cfg.export_limit_high, decision.export_limit)
 
 
 if __name__ == "__main__":
