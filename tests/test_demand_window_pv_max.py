@@ -82,6 +82,7 @@ class DemandWindowPVMaxTests(unittest.TestCase):
             hours_to_sunset=hours_to_sunset,
             sun_above_horizon=True,
             demand_window_active=demand_window_active,
+            demand_window_observed=True,
             current_export_limit=0.0,
             current_import_limit=0.0,
             current_pv_max_power_limit=2.0,

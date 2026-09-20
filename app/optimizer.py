@@ -71,6 +71,11 @@ _DEBOUNCE_SECONDS = 3.0
 _HA_CONTROL_ENABLE_RETRY_SECONDS = 60.0
 _HA_CONTROL_WARNING_INTERVAL_SECONDS = 300.0
 
+# Amber Express reports unchanged Demand Window state on an approximately
+# five-minute coordinator heartbeat. Allow normal scheduling/network jitter
+# without weakening the separate 120-second inverter-telemetry boundary.
+_DEMAND_WINDOW_MAX_AGE_SECONDS = 360.0
+
 # Config attribute names whose entity IDs should trigger immediate cycles
 _TRIGGER_ENTITY_ATTRS = [
     "pv_power_sensor",
@@ -1139,6 +1144,135 @@ class SigEnergyOptimizer:
     # 1. Read all HA entities into a SolarState snapshot
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _parse_aware_metadata_timestamp(
+        raw_timestamp: object,
+    ) -> Optional[datetime]:
+        if not raw_timestamp:
+            return None
+        try:
+            parsed = datetime.fromisoformat(
+                str(raw_timestamp).replace("Z", "+00:00")
+            )
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                return None
+            return parsed.astimezone(timezone.utc)
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    async def _enrich_state_report_metadata(
+        self,
+        bulk: dict[str, dict[str, Any]],
+        entity_ids: list[str],
+    ) -> dict[str, dict[str, Any]]:
+        """Merge only correlated State-object ``last_reported`` metadata."""
+        report_metadata_reader = getattr(self.ha, "get_state_report_metadata", None)
+        if not callable(report_metadata_reader):
+            return bulk
+
+        report_entity_ids = list(dict.fromkeys(filter(None, entity_ids)))
+        # Never use an unverified REST last_reported value when the reliable
+        # metadata path is available. A failed enrichment safely falls back to
+        # genuine state-change time via last_updated.
+        for entity_id in report_entity_ids:
+            snapshot = bulk.get(entity_id)
+            if isinstance(snapshot, dict):
+                sanitized = dict(snapshot)
+                sanitized.pop("last_reported", None)
+                bulk[entity_id] = sanitized
+
+        try:
+            report_metadata = await report_metadata_reader(report_entity_ids)
+        except Exception as exc:
+            logger.warning("State report metadata enrichment failed: %s", exc)
+            report_metadata = {}
+        if not isinstance(report_metadata, dict):
+            report_metadata = {}
+
+        for entity_id in report_entity_ids:
+            snapshot = bulk.get(entity_id)
+            metadata = report_metadata.get(entity_id)
+            if not isinstance(snapshot, dict) or not isinstance(metadata, dict):
+                continue
+            if metadata.get("entity_id") != entity_id:
+                continue
+            if snapshot.get("state") != metadata.get("state"):
+                continue
+            snapshot_updated_at = self._parse_aware_metadata_timestamp(
+                snapshot.get("last_updated")
+            )
+            metadata_updated_at = self._parse_aware_metadata_timestamp(
+                metadata.get("last_updated")
+            )
+            metadata_reported_at = self._parse_aware_metadata_timestamp(
+                metadata.get("last_reported")
+            )
+            if (
+                snapshot_updated_at is None
+                or metadata_updated_at is None
+                or metadata_reported_at is None
+                or snapshot_updated_at != metadata_updated_at
+            ):
+                continue
+            enriched = dict(snapshot)
+            enriched["last_reported"] = metadata_reported_at.isoformat()
+            bulk[entity_id] = enriched
+        return bulk
+
+    @classmethod
+    def _state_metadata_timestamp(
+        cls,
+        obj: dict[str, Any],
+    ) -> Optional[datetime]:
+        for field in ("last_reported", "last_updated"):
+            parsed = cls._parse_aware_metadata_timestamp(obj.get(field))
+            if parsed is not None:
+                return parsed
+        return None
+
+    @classmethod
+    def _state_metadata_is_fresh(
+        cls,
+        obj: dict[str, Any],
+        max_age_seconds: float,
+        *,
+        observed_at: datetime,
+    ) -> bool:
+        updated_at = cls._state_metadata_timestamp(obj)
+        if updated_at is None:
+            return False
+        try:
+            age_seconds = (observed_at - updated_at).total_seconds()
+            return -5.0 <= age_seconds <= max_age_seconds
+        except (TypeError, ValueError):
+            return False
+
+    async def _read_trusted_live_number(
+        self,
+        entity_id: str,
+    ) -> tuple[Optional[float], bool]:
+        """Read a finite dynamic number and its independently proven liveness."""
+        bulk = await self.ha.bulk_states([entity_id])
+        bulk = await self._enrich_state_report_metadata(bulk, [entity_id])
+        obj = bulk.get(entity_id)
+        if not isinstance(obj, dict):
+            return None, False
+        raw_value = obj.get("state", "")
+        if str(raw_value).strip().lower() in {"unknown", "unavailable", "none", ""}:
+            return None, False
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError, OverflowError):
+            return None, False
+        if not math.isfinite(value):
+            return None, False
+        trusted = self._state_metadata_is_fresh(
+            obj,
+            self.cfg.hvac_solar_data_max_age_seconds,
+            observed_at=datetime.now(timezone.utc),
+        )
+        return value, trusted
+
     async def _read_state(self) -> SolarState:
         cfg = self.cfg
         s = SolarState()
@@ -1179,87 +1313,28 @@ class SigEnergyOptimizer:
                 entity_ids.append(candidate)
         bulk = await self.ha.bulk_states(entity_ids)
 
-        def _parse_aware_metadata_timestamp(raw_timestamp: object) -> Optional[datetime]:
-            if not raw_timestamp:
-                return None
-            try:
-                parsed = datetime.fromisoformat(
-                    str(raw_timestamp).replace("Z", "+00:00")
-                )
-                if parsed.tzinfo is None or parsed.utcoffset() is None:
-                    return None
-                return parsed.astimezone(timezone.utc)
-            except (TypeError, ValueError, OverflowError):
-                return None
-
         # REST state JSON may retain a frozen last_reported value for unchanged
         # entities.  Only the optimizer's freshness-sensitive observations request
         # current State-object metadata; other bulk_states consumers remain a
         # single-request read path.
-        report_metadata_reader = getattr(self.ha, "get_state_report_metadata", None)
-        if callable(report_metadata_reader):
-            report_entity_ids = list(dict.fromkeys(filter(None, (
-                cfg.pv_power_sensor,
-                cfg.consumed_power_sensor,
-                cfg.battery_soc_sensor,
-                cfg.available_discharge_sensor,
-                cfg.sun_entity,
-                cfg.battery_power_sensor,
-                cfg.grid_import_power_sensor,
-                cfg.grid_export_power_sensor,
-                cfg.forecast_remaining_sensor,
-                cfg.forecast_today_sensor,
-                cfg.forecast_tomorrow_sensor,
-                cfg.solar_power_now_sensor,
-                cfg.grid_export_limit,
-            ))))
-
-            # Never use an unverified REST last_reported value when the reliable
-            # metadata path is available.  A failed enrichment safely falls back
-            # to genuine state-change time via last_updated.
-            for entity_id in report_entity_ids:
-                snapshot = bulk.get(entity_id)
-                if isinstance(snapshot, dict):
-                    sanitized = dict(snapshot)
-                    sanitized.pop("last_reported", None)
-                    bulk[entity_id] = sanitized
-
-            try:
-                report_metadata = await report_metadata_reader(report_entity_ids)
-            except Exception as exc:
-                logger.warning("State report metadata enrichment failed: %s", exc)
-                report_metadata = {}
-            if not isinstance(report_metadata, dict):
-                report_metadata = {}
-
-            for entity_id in report_entity_ids:
-                snapshot = bulk.get(entity_id)
-                metadata = report_metadata.get(entity_id)
-                if not isinstance(snapshot, dict) or not isinstance(metadata, dict):
-                    continue
-                if metadata.get("entity_id") != entity_id:
-                    continue
-                if snapshot.get("state") != metadata.get("state"):
-                    continue
-                snapshot_updated_at = _parse_aware_metadata_timestamp(
-                    snapshot.get("last_updated")
-                )
-                metadata_updated_at = _parse_aware_metadata_timestamp(
-                    metadata.get("last_updated")
-                )
-                metadata_reported_at = _parse_aware_metadata_timestamp(
-                    metadata.get("last_reported")
-                )
-                if (
-                    snapshot_updated_at is None
-                    or metadata_updated_at is None
-                    or metadata_reported_at is None
-                    or snapshot_updated_at != metadata_updated_at
-                ):
-                    continue
-                enriched = dict(snapshot)
-                enriched["last_reported"] = metadata_reported_at.isoformat()
-                bulk[entity_id] = enriched
+        report_entity_ids = list(dict.fromkeys(filter(None, (
+            cfg.pv_power_sensor,
+            cfg.consumed_power_sensor,
+            cfg.battery_soc_sensor,
+            cfg.available_discharge_sensor,
+            cfg.sun_entity,
+            cfg.battery_power_sensor,
+            cfg.grid_import_power_sensor,
+            cfg.grid_export_power_sensor,
+            cfg.forecast_remaining_sensor,
+            cfg.forecast_today_sensor,
+            cfg.forecast_tomorrow_sensor,
+            cfg.solar_power_now_sensor,
+            cfg.grid_export_limit,
+            cfg.grid_import_limit,
+            cfg.demand_window_sensor,
+        ))))
+        bulk = await self._enrich_state_report_metadata(bulk, report_entity_ids)
 
         def _fv(eid: str, default: Optional[float] = 0.0) -> Optional[float]:
             obj = bulk.get(eid)
@@ -1291,26 +1366,17 @@ class SigEnergyOptimizer:
         unavailable_states = {"unknown", "unavailable", "none", ""}
 
         def _metadata_timestamp(obj: dict[str, Any]) -> Optional[datetime]:
-            for field in ("last_reported", "last_updated"):
-                parsed = _parse_aware_metadata_timestamp(obj.get(field))
-                if parsed is not None:
-                    return parsed
-            return None
+            return self._state_metadata_timestamp(obj)
 
         def _metadata_is_fresh(
             obj: dict[str, Any],
             max_age_seconds: float,
         ) -> bool:
-            updated_at = _metadata_timestamp(obj)
-            if updated_at is None:
-                return False
-            try:
-                age_seconds = (
-                    observed_at - updated_at
-                ).total_seconds()
-                return -5.0 <= age_seconds <= max_age_seconds
-            except (TypeError, ValueError):
-                return False
+            return self._state_metadata_is_fresh(
+                obj,
+                max_age_seconds,
+                observed_at=observed_at,
+            )
 
         def _observed_number(
             eid: str,
@@ -1666,8 +1732,18 @@ class SigEnergyOptimizer:
                 return maximum_kw if 0.0 <= maximum_kw <= _POWER_LIMIT_MAX_KW else None
             return maximum_kw if 0.0 < maximum_kw <= _POWER_LIMIT_MAX_KW else None
 
-        current_export_limit = _fv(cfg.grid_export_limit, None)
-        s.current_export_limit_observed = current_export_limit is not None
+        export_limit_observation = _observed_number(
+            cfg.grid_export_limit,
+            max_age_seconds=live_max_age,
+        )
+        current_export_limit = (
+            float(export_limit_observation.value)
+            if export_limit_observation.available
+            else None
+        )
+        s.current_export_limit_observed = bool(
+            export_limit_observation.available and export_limit_observation.fresh
+        )
         s.current_export_limit = (
             float(current_export_limit) if current_export_limit is not None else 0.0
         )
@@ -1675,8 +1751,18 @@ class SigEnergyOptimizer:
             cfg.grid_export_limit,
             allow_zero=True,
         )
-        current_import_limit = _fv(cfg.grid_import_limit, None)
-        s.current_import_limit_observed = current_import_limit is not None
+        import_limit_observation = _observed_number(
+            cfg.grid_import_limit,
+            max_age_seconds=live_max_age,
+        )
+        current_import_limit = (
+            float(import_limit_observation.value)
+            if import_limit_observation.available
+            else None
+        )
+        s.current_import_limit_observed = bool(
+            import_limit_observation.available and import_limit_observation.fresh
+        )
         s.current_import_limit = (
             float(current_import_limit) if current_import_limit is not None else 0.0
         )
@@ -1800,18 +1886,21 @@ class SigEnergyOptimizer:
         s.price_is_negative = s.price_is_actual and s.current_price < 0
         s.feedin_is_negative = fit_available and s.feedin_price < 0
         s.price_spike_active = _bv(cfg.price_spike_sensor)
-        demand_window_obj = bulk.get(cfg.demand_window_sensor)
+        demand_window_observation = _observed_text(
+            cfg.demand_window_sensor,
+            max_age_seconds=_DEMAND_WINDOW_MAX_AGE_SECONDS,
+        )
         demand_window_state = (
-            str(demand_window_obj.get("state", "")).strip().lower()
-            if demand_window_obj
+            str(demand_window_observation.value).strip().lower()
+            if demand_window_observation.available
             else ""
         )
-        s.demand_window_observed = demand_window_state in {"on", "off"}
-        # The existing active flag is the import-blocking input throughout decision
-        # logic. Untrustworthy observation therefore fails closed here, while the
-        # separate observed flag preserves the distinction from an observed ON state.
-        s.demand_window_active = (
-            demand_window_state == "on" or not s.demand_window_observed
+        demand_window_value_valid = demand_window_state in {"on", "off"}
+        s.demand_window_active = bool(
+            demand_window_value_valid and demand_window_state == "on"
+        )
+        s.demand_window_observed = bool(
+            demand_window_value_valid and demand_window_observation.fresh
         )
 
         # ---- Forecasts ------------------------------------------------
@@ -2026,6 +2115,13 @@ class SigEnergyOptimizer:
         d = Decision()
         now = datetime.now()
         now_ts = now.timestamp()
+        demand_window_observation_trusted = bool(s.demand_window_observed)
+        trusted_demand_window_active = bool(
+            s.demand_window_active and demand_window_observation_trusted
+        )
+        demand_window_import_blocked = bool(
+            s.demand_window_active or not demand_window_observation_trusted
+        )
 
         # ---- Time windows -------------------------------------------
         day_start_ts, day_end_ts = self._day_window(s)
@@ -2687,7 +2783,7 @@ class SigEnergyOptimizer:
             }
             and (
                 export_solar_override
-                or s.demand_window_active
+                or trusted_demand_window_active
                 or evening_export_boost_active
             )
         )
@@ -3087,7 +3183,7 @@ class SigEnergyOptimizer:
             and ordinary_msc_flow_ok
             and live_pv_plausible_for_msc_ceiling
             and not s.price_is_negative
-            and not s.demand_window_active
+            and not trusted_demand_window_active
             and not morning_slow_charge_active
             and not standby_holdoff_active
             and not battery_full_safeguard_block
@@ -3521,7 +3617,7 @@ class SigEnergyOptimizer:
 
         # ---- Import limit (grid_limit_base → desired_import_limit) --
         desired_import_limit = self._desired_import_limit(
-            s, morning_dump_active, demand_window_active=s.demand_window_active,
+            s, morning_dump_active, demand_window_active=demand_window_import_blocked,
             standby_holdoff_active=standby_holdoff_active,
             import_price_trusted=import_price_trusted,
             feedin_price_trusted=feedin_price_trusted,
@@ -3545,6 +3641,7 @@ class SigEnergyOptimizer:
             battery_soc_trusted=battery_soc_trusted,
             battery_capacity_trusted=battery_capacity_trusted,
             forecast_remaining_trusted=forecast_remaining_observation_trusted,
+            demand_window_import_blocked=demand_window_import_blocked,
         )
         if (
             morning_slow_charge_active
@@ -3793,7 +3890,8 @@ class SigEnergyOptimizer:
             )
         d.import_reason = self._import_reason(
             s, morning_dump_active, standby_holdoff_active,
-            sunrise_soc_target, desired_import_limit, pv_surplus_actual
+            sunrise_soc_target, desired_import_limit, pv_surplus_actual,
+            demand_window_import_blocked=demand_window_import_blocked,
         )
         eta_label = ""
         if d.battery_eta_formatted not in ("idle", "Full", "Empty"):
@@ -3840,8 +3938,12 @@ class SigEnergyOptimizer:
         import_branch = "blocked"
         if morning_dump_active:
             import_branch = "morning_dump_block"
-        elif s.demand_window_active:
-            import_branch = "demand_window_block"
+        elif demand_window_import_blocked:
+            import_branch = (
+                "demand_window_block"
+                if s.demand_window_active and demand_window_observation_trusted
+                else "demand_window_untrusted_block"
+            )
         elif standby_holdoff_active:
             import_branch = "standby_holdoff_block"
         elif desired_import_limit > 0 and s.price_is_negative:
@@ -3877,6 +3979,9 @@ class SigEnergyOptimizer:
             "ha_control_switch_available": s.ha_control_switch_available,
             "needs_ha_control_switch": d.needs_ha_control_switch,
             "demand_window_active": s.demand_window_active,
+            "demand_window_observed": demand_window_observation_trusted,
+            "trusted_demand_window_active": trusted_demand_window_active,
+            "demand_window_import_blocked": demand_window_import_blocked,
             "price_is_negative": s.price_is_negative,
             "feedin_is_negative": s.feedin_is_negative,
             "export_value_gate_enabled": bool(cfg.export_value_gate_enabled),
@@ -4073,6 +4178,8 @@ class SigEnergyOptimizer:
             "holdoff_entry_floor": self._holdoff_entry_floor,
             "current_export_limit": s.current_export_limit,
             "current_import_limit": s.current_import_limit,
+            "current_export_limit_observed": bool(s.current_export_limit_observed),
+            "current_import_limit_observed": bool(s.current_import_limit_observed),
             "current_pv_max_power_limit": s.current_pv_max_power_limit,
             "current_ems_mode": s.current_ems_mode,
             "sigenergy_mode": s.sigenergy_mode,
@@ -4142,19 +4249,28 @@ class SigEnergyOptimizer:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_s
         while loop.time() < deadline:
-            raw_value = await self.ha.get_state_value(entity_id, None)
-            try:
-                numeric_value = float(raw_value) if raw_value is not None else None
-                if (
-                    numeric_value is not None
-                    and math.isfinite(numeric_value)
-                    and numeric_value <= maximum + tolerance
-                ):
-                    return True
-            except (TypeError, ValueError):
-                pass
+            numeric_value, trusted = await self._read_trusted_live_number(entity_id)
+            if (
+                trusted
+                and numeric_value is not None
+                and numeric_value <= maximum + tolerance
+            ):
+                return True
             await asyncio.sleep(0.3)
         return False
+
+    @staticmethod
+    def _grid_limit_is_observed(
+        value: float,
+        observed: Optional[bool],
+    ) -> bool:
+        try:
+            finite = math.isfinite(float(value))
+        except (TypeError, ValueError, OverflowError):
+            return False
+        # Missing provenance is never current actuator proof. Hand-built states
+        # that intentionally model a live readback must opt in explicitly.
+        return observed is True and finite
 
     async def _apply(
         self,
@@ -4257,9 +4373,21 @@ class SigEnergyOptimizer:
                 drifted_keys: list[str] = []
                 if s.current_ems_mode != str(manual_targets["ems_mode"]):
                     drifted_keys.append("ems_mode")
-                if abs(float(manual_targets["grid_export_limit"]) - s.current_export_limit) >= threshold:
+                if (
+                    not self._grid_limit_is_observed(
+                        s.current_export_limit,
+                        s.current_export_limit_observed,
+                    )
+                    or abs(float(manual_targets["grid_export_limit"]) - s.current_export_limit) >= threshold
+                ):
                     drifted_keys.append("grid_export_limit")
-                if abs(float(manual_targets["grid_import_limit"]) - s.current_import_limit) >= threshold:
+                if (
+                    not self._grid_limit_is_observed(
+                        s.current_import_limit,
+                        s.current_import_limit_observed,
+                    )
+                    or abs(float(manual_targets["grid_import_limit"]) - s.current_import_limit) >= threshold
+                ):
                     drifted_keys.append("grid_import_limit")
                 if abs(float(manual_targets["pv_max_power_limit"]) - s.current_pv_max_power_limit) >= threshold:
                     drifted_keys.append("pv_max_power_limit")
@@ -4385,22 +4513,11 @@ class SigEnergyOptimizer:
         ems_mode_to_apply = d.ems_mode
         near_zero = 0.011
 
-        def _grid_limit_is_observed(value: float, observed: Optional[bool]) -> bool:
-            try:
-                finite = math.isfinite(float(value))
-            except (TypeError, ValueError, OverflowError):
-                return False
-            if observed is None:
-                # Legacy/hand-built states have no provenance. Zero was historically
-                # the unavailable fallback; do not let it prove a safety closure.
-                return finite and float(value) != 0.0
-            return bool(observed) and finite
-
-        export_limit_observed = _grid_limit_is_observed(
+        export_limit_observed = self._grid_limit_is_observed(
             s.current_export_limit,
             s.current_export_limit_observed,
         )
-        import_limit_observed = _grid_limit_is_observed(
+        import_limit_observed = self._grid_limit_is_observed(
             s.current_import_limit,
             s.current_import_limit_observed,
         )
@@ -4408,6 +4525,19 @@ class SigEnergyOptimizer:
             s,
             d.export_limit if d.export_limit > 0 else 0.01,
         )
+        deliberate_battery_export = bool(
+            d.export_intent == BATTERY_EXPORT and export_val > near_zero
+        )
+        ownerless_export_opening_withheld = bool(
+            not export_limit_observed
+            and export_val > near_zero
+            and not deliberate_battery_export
+        )
+        if ownerless_export_opening_withheld:
+            export_val = safe_export_close_kw
+            application_failures.append(
+                "permissive export withheld because current export-limit readback is untrusted"
+            )
         export_turning_on = bool(
             export_limit_observed
             and s.current_export_limit <= near_zero
@@ -4419,11 +4549,12 @@ class SigEnergyOptimizer:
             and export_val <= near_zero
         )
         pv_only_over_cap_correction_required = bool(
-            d.requires_verified_msc_before_export
+            export_limit_observed
+            and d.requires_verified_msc_before_export
             and float(s.current_export_limit or 0.0) > export_val + 1e-6
         )
         export_write_required = bool(
-            export_val <= near_zero
+            export_val <= near_zero or deliberate_battery_export
             if not export_limit_observed
             else (
                 abs(export_val - s.current_export_limit) >= cfg.min_change_threshold
@@ -4459,7 +4590,8 @@ class SigEnergyOptimizer:
                     return await _safe_fallback(
                         "export limit did not close before Maximum Self Consumption transition"
                     )
-                export_write_required = True
+                export_write_required = export_val > near_zero
+                export_written = export_val <= near_zero
 
             # The decision snapshot can race an external EMS writer. Reassert and
             # confirm exact MSC immediately before deliberately opening the high
@@ -4477,7 +4609,8 @@ class SigEnergyOptimizer:
         prepare_export_before_discharge = bool(
             ems_mode_to_apply in DISCHARGE_MODES
             and (
-                s.current_ems_mode != ems_mode_to_apply
+                not export_limit_observed
+                or s.current_ems_mode != ems_mode_to_apply
                 or export_val + 1e-6 < float(s.current_export_limit or 0.0)
             )
         )
@@ -4529,18 +4662,14 @@ class SigEnergyOptimizer:
                     f"PV-only export limit did not settle at or below {export_val:.2f}kW"
                 )
             if export_val <= near_zero and not pv_only_over_cap_correction_required:
-                observed_export_limit = await ha.get_state_value(
-                    cfg.grid_export_limit,
-                    None,
+                observed_export_limit_kw, export_close_trusted = (
+                    await self._read_trusted_live_number(cfg.grid_export_limit)
                 )
-                try:
-                    observed_export_limit_kw = float(observed_export_limit)
-                    export_close_observed = bool(
-                        math.isfinite(observed_export_limit_kw)
-                        and observed_export_limit_kw <= near_zero
-                    )
-                except (TypeError, ValueError, OverflowError):
-                    export_close_observed = False
+                export_close_observed = bool(
+                    export_close_trusted
+                    and observed_export_limit_kw is not None
+                    and observed_export_limit_kw <= near_zero
+                )
                 if not export_close_observed:
                     return _ActuatorApplicationResult(
                         succeeded=False,
@@ -4554,6 +4683,14 @@ class SigEnergyOptimizer:
         import_val = 0.01 if d.import_limit == 0 else d.import_limit
         if standby := d.standby_holdoff_active:
             import_val = 0.01
+        permissive_import_opening_withheld = bool(
+            not import_limit_observed and import_val > near_zero
+        )
+        if permissive_import_opening_withheld:
+            import_val = 0.01
+            application_failures.append(
+                "permissive import withheld because current import-limit readback is untrusted"
+            )
         import_turning_on = bool(
             import_limit_observed
             and s.current_import_limit <= near_zero
@@ -4999,7 +5136,8 @@ class SigEnergyOptimizer:
         )
         if prev is None:
             self._notif_export_active = measured_export_active
-            self._prev_demand_window = s.demand_window_active
+            if s.demand_window_observed:
+                self._prev_demand_window = s.demand_window_active
             self._battery_full_alert_armed = s.battery_soc < 98.0
             self._battery_empty_alert_armed = s.battery_soc > 2.0
             return
@@ -5136,10 +5274,17 @@ class SigEnergyOptimizer:
             await notify("📈 Price Spike Active",
                 f"Buy: ${s.current_price:.3f}/kWh\nFIT: ${s.feedin_price:.3f}/kWh")
 
-        if cfg.notify_demand_window_alert and s.demand_window_active and not self._prev_demand_window:
-            await notify("⏱️ Demand Window In Effect",
-                "Demand window active; import is blocked until it ends.")
-        self._prev_demand_window = s.demand_window_active
+        # Trust loss is not a Demand Window edge. Preserve the last trustworthy
+        # classification until a current ON/OFF observation resumes.
+        if s.demand_window_observed:
+            if (
+                cfg.notify_demand_window_alert
+                and s.demand_window_active
+                and not self._prev_demand_window
+            ):
+                await notify("⏱️ Demand Window In Effect",
+                    "Demand window active; import is blocked until it ends.")
+            self._prev_demand_window = s.demand_window_active
 
     async def _handle_daily_summaries(self, s: SolarState, d: Decision) -> None:
         cfg = self.cfg
@@ -6424,7 +6569,8 @@ class SigEnergyOptimizer:
                            feedin_price_trusted: bool,
                            battery_soc_trusted: bool,
                            battery_capacity_trusted: bool,
-                           forecast_remaining_trusted: bool | None = None) -> str:
+                           forecast_remaining_trusted: bool | None = None,
+                           demand_window_import_blocked: bool) -> str:
         cfg = self.cfg
         bsoc = s.battery_soc
         currently_charging = s.current_ems_mode in CHARGE_MODES
@@ -6436,7 +6582,7 @@ class SigEnergyOptimizer:
 
         if morning_dump:
             return MODE_CMD_DISCHARGE_PV
-        if s.demand_window_active:
+        if demand_window_import_blocked:
             return (
                 MODE_CMD_DISCHARGE_PV
                 if export_intent == BATTERY_EXPORT and desired_export > 0.01
@@ -6498,7 +6644,7 @@ class SigEnergyOptimizer:
         bsoc = s.battery_soc
 
         spike_low_soc = s.price_spike_active and bsoc < cfg.export_spike_min_soc
-        if s.demand_window_active:
+        if s.demand_window_active or not bool(s.demand_window_observed):
             return 0.0
         if price <= cfg.import_threshold_high and s.price_is_actual:
             return min(cfg.import_limit_high, s.ess_max_charge_kw)
@@ -6708,7 +6854,8 @@ class SigEnergyOptimizer:
 
     def _import_reason(self, s: SolarState, morning_dump: bool, standby_holdoff: bool,
                         sunrise_soc_target: float, desired_import: float,
-                        pv_surplus: float) -> str:
+                        pv_surplus: float, *,
+                        demand_window_import_blocked: bool) -> str:
         cfg = self.cfg
         c = s.current_price_cents
         c_d = f"{c:.0f}" if abs(c) >= 1 else f"{c:.1f}"
@@ -6720,8 +6867,12 @@ class SigEnergyOptimizer:
 
         if morning_dump:
             return "Import blocked, morning dump"
-        if s.demand_window_active:
-            return "Import blocked, demand window"
+        if demand_window_import_blocked:
+            return (
+                "Import blocked, demand window"
+                if s.demand_window_active and s.demand_window_observed
+                else "Import blocked, demand window observation untrusted"
+            )
         if standby_holdoff:
             return "Import blocked, charge holdoff"
         if not (s.price_is_actual or s.price_is_estimated):

@@ -123,8 +123,9 @@ class SolarState:
     # Grid
     current_export_limit: float = 0.0
     current_import_limit: float = 0.0
-    # Live reads always set these explicitly. None means observation provenance was
-    # not supplied (for example by a hand-built state in a decision test).
+    # Live reads set these only when the finite value also has trustworthy current
+    # report provenance. None means provenance was not supplied (for example by a
+    # hand-built state); it is not permissive actuator proof.
     current_export_limit_observed: Optional[bool] = None
     current_import_limit_observed: Optional[bool] = None
     current_pv_max_power_limit: float = 25.0
@@ -150,6 +151,9 @@ class SolarState:
     feedin_is_negative: bool = False
     price_spike_active: bool = False
     demand_window_active: bool = False
+    # True means the syntactically valid ON/OFF value also has trustworthy current
+    # report provenance. Active and trust remain separate so uncertainty blocks
+    # import without manufacturing the wider effects of an observed ON state.
     demand_window_observed: bool = False
 
     # Forecasts

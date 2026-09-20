@@ -62,14 +62,14 @@ class _ScriptedActuatorHA(RecordingHA):
         self.calls.append(("select_option", entity_id, value))
         outcome = self._next_outcome("select_option", entity_id)
         if outcome is True and self.settle_selects:
-            self.state_values[entity_id] = value
+            self._record_state_value(entity_id, value)
         return outcome
 
     async def set_number(self, entity_id: str, value: float) -> object:
         self.calls.append(("set_number", entity_id, value))
         outcome = self._next_outcome("set_number", entity_id)
         if outcome is True and self.settle_numbers:
-            self.state_values[entity_id] = value
+            self._record_state_value(entity_id, value)
         return outcome
 
 
@@ -335,20 +335,16 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         )
         decision = self.decide(optimizer, state, self.MORNING)
 
-        asyncio.run(optimizer._apply(state, decision))
+        result = asyncio.run(optimizer._apply(state, decision))
 
-        close_index = ha.calls.index(
-            ("set_number", optimizer.cfg.grid_export_limit, 0.01)
-        )
         self.assertTrue(
             any(
-                call[0] == "get_state_value"
-                and call[1] == optimizer.cfg.grid_export_limit
-                and index > close_index
-                for index, call in enumerate(ha.calls)
+                optimizer.cfg.grid_export_limit in entity_ids
+                for entity_ids in ha.bulk_state_calls
             ),
-            "ordinary safety closure needs observed readback, not request success alone",
+            "ordinary safety closure needs a provenance-bearing readback, not request success alone",
         )
+        self.assertFalse(result.succeeded)
 
     def test_primary_export_failure_attempts_full_fallback_in_safety_order(self) -> None:
         ha = _ScriptedActuatorHA()

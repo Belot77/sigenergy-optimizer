@@ -24,12 +24,19 @@ class ScriptedReadbackHA(RecordingHA):
         super().__init__(settle_numbers=False, settle_selects=False)
         self._readbacks = {entity_id: list(values) for entity_id, values in readbacks.items()}
 
+    async def bulk_states(self, entity_ids: list[str]) -> dict[str, dict[str, object]]:
+        for entity_id in entity_ids:
+            queued = self._readbacks.get(entity_id, [])
+            if queued:
+                self._record_state_value(entity_id, queued.pop(0))
+        return await super().bulk_states(entity_ids)
+
     async def get_state_value(self, entity_id: str, default: object = "") -> object:
         self.calls.append(("get_state_value", entity_id, default))
         queued = self._readbacks.get(entity_id, [])
         if queued:
             observed = queued.pop(0)
-            self.state_values[entity_id] = observed
+            self._record_state_value(entity_id, observed)
             return observed
         return self.state_values.get(entity_id, default)
 
@@ -761,12 +768,11 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         mode_index = ha.calls.index(mode_call)
         self.assertTrue(
             any(
-                call[0] == "get_state_value"
-                and call[1] == optimizer.cfg.grid_export_limit
-                and export_index < index < mode_index
-                for index, call in enumerate(ha.calls)
+                optimizer.cfg.grid_export_limit in entity_ids
+                for entity_ids in ha.bulk_state_calls
             )
         )
+        self.assertLess(export_index, mode_index)
 
     def test_reserve_and_forecast_guards_block_deliberate_battery_export(
         self,

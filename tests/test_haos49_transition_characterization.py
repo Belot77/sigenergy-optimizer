@@ -169,14 +169,14 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
         asyncio.run(optimizer._apply(state, decision))
 
         export_call = ("set_number", optimizer.cfg.grid_export_limit, 12.0)
-        read_call = ("get_state_value", optimizer.cfg.grid_export_limit, None)
+        read_call = ("bulk_states", optimizer.cfg.grid_export_limit, None)
         mode_call = (
             "select_option",
             optimizer.cfg.ems_mode_select,
             MODE_CMD_DISCHARGE_PV,
         )
-        self.assertLess(ha.calls.index(export_call), ha.calls.index(read_call))
-        self.assertLess(ha.calls.index(read_call), ha.calls.index(mode_call))
+        self.assertLess(ha.events.index(export_call), ha.events.index(read_call))
+        self.assertLess(ha.events.index(read_call), ha.events.index(mode_call))
 
     def test_transition_out_of_discharge_requests_msc_before_export_close(self) -> None:
         ha = RecordingHA()

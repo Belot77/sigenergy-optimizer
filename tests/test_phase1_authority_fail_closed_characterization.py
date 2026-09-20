@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from datetime import datetime, timezone
 
 from app.models import Decision, SolarState
 from app.optimizer import (
@@ -40,14 +41,22 @@ class Phase1AuthorityFailClosedCharacterizationTests(Haos49CharacterizationCase)
         optimizer,
         ha: RecordingHA,
         raw_state: str | None,
-    ) -> bool:
+    ) -> tuple[bool, bool]:
         ha.states = {}
         if raw_state is not None:
+            observed_at = datetime.fromtimestamp(
+                self.FIXED_AFTERNOON.timestamp(),
+                timezone.utc,
+            ).isoformat()
             ha.states[optimizer.cfg.demand_window_sensor] = {
                 "state": raw_state,
                 "attributes": {},
+                "last_updated": observed_at,
+                "last_reported": observed_at,
             }
-        return asyncio.run(optimizer._read_state()).demand_window_active
+        with self.optimizer_time(self.FIXED_AFTERNOON):
+            state = asyncio.run(optimizer._read_state())
+        return state.demand_window_active, state.demand_window_observed
 
     @staticmethod
     def _automatic_actuator_calls(optimizer, calls):
@@ -269,10 +278,15 @@ class Phase1AuthorityFailClosedCharacterizationTests(Haos49CharacterizationCase)
                 with self.subTest(price=price_name, demand=demand_name):
                     ha = RecordingHA()
                     optimizer = self.optimizer(ha)
-                    parsed_active = self._read_demand_window(optimizer, ha, raw_demand)
+                    parsed_active, parsed_observed = self._read_demand_window(
+                        optimizer,
+                        ha,
+                        raw_demand,
+                    )
                     state = self.state(
                         self.FIXED_AFTERNOON,
                         demand_window_active=parsed_active,
+                        demand_window_observed=parsed_observed,
                         battery_soc=30.0,
                         available_discharge_energy_kwh=9.0,
                         current_price=price,

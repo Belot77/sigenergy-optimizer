@@ -4,7 +4,7 @@ import os
 import tempfile
 import unittest
 from contextlib import contextmanager
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from unittest.mock import patch
 
 from app.config import Settings
@@ -27,47 +27,90 @@ class RecordingHA:
     ) -> None:
         self.states = dict(states or {})
         self.state_values = dict(state_values or {})
+        now = datetime.now(timezone.utc).isoformat()
+        self._state_value_metadata = {
+            entity_id: {"last_updated": now, "last_reported": now}
+            for entity_id in self.state_values
+        }
         self.settle_numbers = settle_numbers
         self.settle_selects = settle_selects
         self.settle_switch = settle_switch
         self.turn_on_result = turn_on_result
         self.calls: list[tuple[str, str, object]] = []
+        self.events: list[tuple[str, str, object]] = []
+        self.bulk_state_calls: list[list[str]] = []
+        self.report_metadata_calls: list[list[str]] = []
 
     async def bulk_states(self, entity_ids: list[str]) -> dict[str, dict[str, object]]:
-        return {
+        self.bulk_state_calls.append(list(entity_ids))
+        for entity_id in entity_ids:
+            self.events.append(("bulk_states", entity_id, None))
+        result = {
             entity_id: self.states[entity_id]
             for entity_id in entity_ids
             if entity_id in self.states
         }
+        for entity_id in entity_ids:
+            if entity_id not in self.state_values:
+                continue
+            metadata = self._state_value_metadata.get(entity_id)
+            if metadata is None:
+                continue
+            result[entity_id] = {
+                "state": self.state_values[entity_id],
+                "attributes": {},
+                **metadata,
+            }
+        return result
+
+    def _record_state_value(self, entity_id: str, value: object) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self.state_values[entity_id] = value
+        self._state_value_metadata[entity_id] = {
+            "last_updated": now,
+            "last_reported": now,
+        }
 
     async def turn_on(self, entity_id: str) -> bool:
-        self.calls.append(("turn_on", entity_id, True))
+        call = ("turn_on", entity_id, True)
+        self.calls.append(call)
+        self.events.append(call)
         if self.turn_on_result and self.settle_switch:
-            self.state_values[entity_id] = "on"
+            self._record_state_value(entity_id, "on")
         return self.turn_on_result
 
     async def select_option(self, entity_id: str, value: str) -> bool:
-        self.calls.append(("select_option", entity_id, value))
+        call = ("select_option", entity_id, value)
+        self.calls.append(call)
+        self.events.append(call)
         if self.settle_selects:
-            self.state_values[entity_id] = value
+            self._record_state_value(entity_id, value)
         return True
 
     async def set_number(self, entity_id: str, value: float) -> bool:
-        self.calls.append(("set_number", entity_id, value))
+        call = ("set_number", entity_id, value)
+        self.calls.append(call)
+        self.events.append(call)
         if self.settle_numbers:
-            self.state_values[entity_id] = value
+            self._record_state_value(entity_id, value)
         return True
 
     async def set_input_text(self, entity_id: str, value: str) -> bool:
-        self.calls.append(("set_input_text", entity_id, value))
+        call = ("set_input_text", entity_id, value)
+        self.calls.append(call)
+        self.events.append(call)
         return True
 
     async def set_input_number(self, entity_id: str, value: float) -> bool:
-        self.calls.append(("set_input_number", entity_id, value))
+        call = ("set_input_number", entity_id, value)
+        self.calls.append(call)
+        self.events.append(call)
         return True
 
     async def get_state_value(self, entity_id: str, default: object = "") -> object:
-        self.calls.append(("get_state_value", entity_id, default))
+        call = ("get_state_value", entity_id, default)
+        self.calls.append(call)
+        self.events.append(call)
         return self.state_values.get(entity_id, default)
 
 
@@ -172,12 +215,15 @@ class Haos49CharacterizationCase(unittest.TestCase):
             sun_above_horizon=sun_above_horizon,
             current_export_limit=0.01,
             current_import_limit=0.01,
+            current_export_limit_observed=True,
+            current_import_limit_observed=True,
             current_pv_max_power_limit=25.0,
             current_ess_charge_limit=25.0,
             current_ess_discharge_limit=25.0,
             ha_control_enabled=True,
             ha_control_switch_available=True,
             ha_control_switch_state="on",
+            demand_window_observed=True,
             timestamp=when,
         )
         for key, value in overrides.items():

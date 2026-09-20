@@ -4,7 +4,7 @@ import asyncio
 import os
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.config import Settings
 from app.models import (
@@ -41,22 +41,49 @@ class _RecordingHA:
     ) -> None:
         self.calls: list[tuple[str, str, object]] = []
         self.state_values = dict(state_values or {})
+        now = datetime.now(timezone.utc).isoformat()
+        self._state_value_metadata = {
+            entity_id: {"last_updated": now, "last_reported": now}
+            for entity_id in self.state_values
+        }
         self.failed_select_values = set(failed_select_values or set())
         self.settle_numbers = settle_numbers
         self.settle_selects = settle_selects
+
+    async def bulk_states(self, entity_ids: list[str]) -> dict[str, dict[str, object]]:
+        result: dict[str, dict[str, object]] = {}
+        for entity_id in entity_ids:
+            self.calls.append(("bulk_states", entity_id, None))
+            metadata = self._state_value_metadata.get(entity_id)
+            if entity_id not in self.state_values or metadata is None:
+                continue
+            result[entity_id] = {
+                "state": self.state_values[entity_id],
+                "attributes": {},
+                **metadata,
+            }
+        return result
+
+    def _record_state_value(self, entity_id: str, value: object) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self.state_values[entity_id] = value
+        self._state_value_metadata[entity_id] = {
+            "last_updated": now,
+            "last_reported": now,
+        }
 
     async def select_option(self, entity_id: str, value: str) -> bool:
         self.calls.append(("select_option", entity_id, value))
         if value in self.failed_select_values:
             return False
         if self.settle_selects:
-            self.state_values[entity_id] = value
+            self._record_state_value(entity_id, value)
         return True
 
     async def set_number(self, entity_id: str, value: float) -> bool:
         self.calls.append(("set_number", entity_id, value))
         if self.settle_numbers:
-            self.state_values[entity_id] = value
+            self._record_state_value(entity_id, value)
         return True
 
     async def turn_on(self, entity_id: str) -> bool:
@@ -186,8 +213,11 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             "current_ems_mode": MODE_MAX_SELF,
             "ems_mode_observed": True,
             "current_export_limit": 0.01,
+            "current_export_limit_observed": True,
             "current_import_limit": 0.0,
+            "current_import_limit_observed": True,
             "current_pv_max_power_limit": 25.0,
+            "demand_window_observed": True,
         }
         values.update(overrides)
         return self._state(**values)
@@ -240,8 +270,11 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             "current_ems_mode": MODE_MAX_SELF,
             "ems_mode_observed": True,
             "current_export_limit": 0.01,
+            "current_export_limit_observed": True,
             "current_import_limit": 0.0,
+            "current_import_limit_observed": True,
             "current_pv_max_power_limit": 25.0,
+            "demand_window_observed": True,
         }
         values.update(overrides)
         return self._state(**values)
@@ -1735,7 +1768,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             index
             for index, call in enumerate(control_calls)
             if index > close_index
-            and call[0] == "get_state_value"
+            and call[0] == "bulk_states"
             and call[1] == optimizer.cfg.grid_export_limit
         )
         readback_index = next(
@@ -1812,7 +1845,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 self.assertLess(ha.calls.index(select_call), ha.calls.index(lower_call))
                 self.assertTrue(
                     any(
-                        call[0] == "get_state_value"
+                        call[0] == "bulk_states"
                         and call[1] == optimizer.cfg.grid_export_limit
                         for call in ha.calls[ha.calls.index(lower_call) + 1 :]
                     )
@@ -1952,7 +1985,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertLess(ha.calls.index(lower_call), ha.calls.index(discharge_call))
         self.assertTrue(
             any(
-                call[0] == "get_state_value"
+                call[0] == "bulk_states"
                 and call[1] == optimizer.cfg.grid_export_limit
                 for call in ha.calls[: ha.calls.index(discharge_call)]
             )
@@ -2041,7 +2074,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertLess(ha.calls.index(export_call), ha.calls.index(discharge_call))
         self.assertTrue(
             any(
-                call[0] == "get_state_value"
+                call[0] == "bulk_states"
                 and call[1] == optimizer.cfg.grid_export_limit
                 for call in ha.calls[: ha.calls.index(discharge_call)]
             )
