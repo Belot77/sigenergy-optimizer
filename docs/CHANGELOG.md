@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-21 - 2.3.47-haos58 candidate
+
+- Carry forward the Phase 1 telemetry, freshness, provenance, coherence, forecast, tariff, battery, Demand Window, and actuator-position trust hardening so unsafe or missing evidence fails closed.
+- Preserve independent restrictive-close safety, non-negative trusted grid-limit readback requirements, and the rule that service-call success is not observed settlement.
+- Include the MSC/PV-only Solar Surplus redesign with strict aggregate energy budgeting, required detailed timing evidence while battery fill remains, no Solar-owned ESS charge cap, and no battery-export or discharge-EMS authority.
+- Include Solar ownership/fail-reason/budget/timing/threshold diagnostics and the associated `/set_ess`, configuration validation/persistence, API/settings/UI, Evening Boost, and export-notification repairs.
+- This is local candidate preparation only. `2.3.47-haos58` has not been committed, tagged, built, published, installed, restarted, or live-accepted. Current live remains `2.3.46-haos57`.
+
 ## 2026-09-21 - Phase 1 repository implementation checkpoint
 
 - Complete D1-D7 telemetry, freshness, provenance, coherence, forecast, battery, tariff, Demand Window, and actuator-position trust hardening. Demand Window uses its evidence-based 360-second boundary while dynamic inverter/grid-limit readbacks retain 120 seconds.

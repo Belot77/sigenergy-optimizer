@@ -7,7 +7,7 @@ Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md
 ## Live baseline and rollback
 
 - Current live release: `2.3.46-haos57`, commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
-- The new Phase 1 candidate is not live and has not received live acceptance.
+- Candidate being prepared locally: `2.3.47-haos58`. It is not yet committed, tagged, built, published, installed, restarted, or live-tested.
 - Known-good deeper rollback: `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`.
 - The exact-full repair in `.57` was live-proven earlier; later remediation and Solar changes are branch-only.
 
@@ -15,8 +15,9 @@ Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
-- Validated checkpoint HEAD: `1e0c61d129fecf0c073ab87eaf5340d60cd81541`
-- At that checkpoint the branch was clean and synchronized `0/0` with `origin/fix/phase1-audit-remediation`.
+- Pre-preparation committed HEAD: `4687f5e8cb65048870368395889ce217f0156afe`.
+- The worktree was clean before local candidate preparation began. Do not assign a final candidate commit SHA until the candidate diff is reviewed and committed.
+- The repository implementation gate was validated at `1e0c61d129fecf0c073ab87eaf5340d60cd81541`; later documentation synchronization did not change production or test behavior.
 
 The Phase 1 repository implementation gate passed. Completed work includes D1-D7 telemetry/freshness/trust hardening, F1/R9 restrictive-close hardening, retained 120-second dynamic readback trust based on live cadence evidence, `/set_ess` hardening, configuration validation/persistence, settings/UI cleanup, Evening Boost safety repair, export-notification correction, and the Solar Surplus redesign and diagnostics. Package 6B implementation remains deferred.
 
@@ -61,4 +62,4 @@ Diagnostics expose final `solar_surplus_policy_active`, fail reason, aggregate b
 
 ## Exact next action
 
-Continue in the **CURRENT Codex session** if preparing the candidate/release immediately, using **High reasoning** and **Standard speed**. Prepare the candidate from the validated checkpoint, then conduct controlled Phase 1 live acceptance. Do not begin Phase 2 until live acceptance passes.
+Review the local `2.3.47-haos58` candidate-preparation diff. Candidate commit and push are the next boundary and require approval. Tag, build, and publication require separate approval afterward; installation, restart, and controlled live acceptance are also separate protected boundaries. Do not begin Phase 2 until live acceptance passes.

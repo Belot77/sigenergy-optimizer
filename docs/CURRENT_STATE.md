@@ -7,7 +7,7 @@ Last consolidated: 2026-09-21
 ## Live release and rollback
 
 - Current live release: `2.3.46-haos57`, from commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
-- The new Phase 1 candidate is not live and has not received live acceptance.
+- `2.3.47-haos58` is being prepared locally as the new Phase 1 candidate. It is not committed, tagged, built, published, installed, restarted, or live-tested.
 - No rollback from `.57` has occurred.
 - Known-good deeper rollback: `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`.
 
@@ -17,9 +17,9 @@ The exact-full Cheap-FiT repair in `.57` was live-proven earlier. The later Phas
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
-- Validated checkpoint HEAD: `1e0c61d129fecf0c073ab87eaf5340d60cd81541` (`Update Solar Surplus D2 fixture`)
-- At that checkpoint the branch was clean and synchronized `0/0` with `origin/fix/phase1-audit-remediation`.
-- This documentation sync is a child of that validated production/test checkpoint.
+- Pre-preparation committed HEAD: `4687f5e8cb65048870368395889ce217f0156afe`.
+- The worktree was clean before local `2.3.47-haos58` candidate preparation began.
+- The repository implementation gate was validated at `1e0c61d129fecf0c073ab87eaf5340d60cd81541`; subsequent documentation synchronization did not change production or test behavior.
 
 Phase 1 repository implementation is checkpointed and its repository gate has passed. Material completed work includes Packages 1-5 and 6A, `/set_ess` hardening, configuration validation and persistence hardening, settings/UI cleanup, Evening Boost safety repair, D1-D7 telemetry/freshness/trust hardening, the export-notification correction, restrictive-close F1/R9 hardening, and the Solar Surplus redesign with operator-facing diagnostics. Package 6B investigation/design is complete; implementation remains deferred.
 
@@ -34,7 +34,7 @@ Command: `python -B -m pytest -p no:cacheprovider`
 - `python -m compileall -q app`: passed.
 - `git diff --check`: passed.
 
-This is a **PASS for the Phase 1 repository implementation checkpoint**. It is not live proof. New-candidate Phase 1 live acceptance remains pending.
+This is a **PASS for the Phase 1 repository implementation checkpoint**. It is not live proof. `2.3.47-haos58` live acceptance remains pending.
 
 ## Phase 1 trust and safety result
 
@@ -86,4 +86,4 @@ They are not Phase 1 failures and must not be described as solved. Phase 2 must 
 
 ## Exact next action
 
-Prepare the Phase 1 candidate/release from the validated checkpoint, then perform the required controlled Phase 1 live acceptance. Do not claim the candidate is live or live-proven before that evidence exists, and do not begin Phase 2 until acceptance passes.
+Review the local `2.3.47-haos58` candidate-preparation diff. Candidate commit and push require the next approval. Tag, build, and publication require separate approval after that; installation, restart, and controlled Phase 1 live acceptance are also separate protected boundaries. Do not begin Phase 2 until live acceptance passes.
