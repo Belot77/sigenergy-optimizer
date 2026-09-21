@@ -3752,6 +3752,7 @@ const _CONFIG_SECTIONS = [
   ]},
   { key:'solar_surplus_bypass', title:'Solar Surplus Bypass', fields:[
     ['solar_surplus_bypass_enabled', 'Solar Surplus Bypass Enabled', 'bool'],
+    ['solar_surplus_forecast_safety_factor', 'Solar Surplus Forecast Safety', 'number', '0.05'],
     ['solar_surplus_start_multiplier', 'Start Multiplier', 'number', '0.1'],
     ['solar_surplus_stop_multiplier', 'Stop Multiplier', 'number', '0.1'],
     ['solar_surplus_min_pv_margin', 'Min PV Margin', 'number', '0.1'],
@@ -3857,6 +3858,7 @@ function configFieldHelp(key, label, type) {
     morning_dump_min_soc: 'Affects: hard Morning Dump battery floor. Morning Dump cannot start or continue at or below this SoC, regardless of forecast. Higher -> preserves more battery. Lower -> permits deeper Morning Dump discharge.',
     battery_full_forecast_multiplier: 'Forecast multiplier used by battery-full safeguard to decide if export should be blocked.',
     solar_surplus_bypass_enabled: 'Affects: Solar Surplus Bypass branch that allows stronger export/discharge when PV is abundant. Off -> bypass never used. On -> bypass can activate when thresholds are met.',
+    solar_surplus_forecast_safety_factor: 'Forecast safety factor used only by Solar Surplus. 1.00 uses the calculated energy requirement as-is. 1.20 requires 20% more PV Forecast Remaining Today than the calculated remaining-load plus battery-fill requirement. Higher values make Solar Surplus more conservative.',
     solar_surplus_start_multiplier: 'Affects: start threshold for Solar Surplus Bypass relative to battery capacity. Lower -> bypass starts more easily. Higher -> bypass requires much stronger forecast surplus.',
     solar_surplus_stop_multiplier: 'Affects: stop threshold for Solar Surplus Bypass hysteresis. Lower -> bypass drops out sooner after conditions soften. Higher -> bypass stays active longer once started.',
     solar_surplus_min_pv_margin: 'Affects: minimum real-time PV surplus margin above load for bypass activation. Lower -> bypass can trigger with smaller surplus. Higher -> requires clear surplus before enabling.',

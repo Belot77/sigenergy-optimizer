@@ -42,6 +42,7 @@ _TIME_KEYS: set[str] = {
 }
 _SOLAR_SURPLUS_START_PV_MARGIN_KEY = "solar_surplus_min_pv_margin"
 _SOLAR_SURPLUS_STOP_PV_MARGIN_KEY = "solar_surplus_stop_pv_margin"
+_SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR_KEY = "solar_surplus_forecast_safety_factor"
 
 
 def _opt(request: Request):
@@ -124,6 +125,12 @@ def _validate_config_value(cfg: Any, key: str, value: Any) -> str | None:
         return "masked placeholder is not a valid value"
     if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
         return "must be a finite number"
+    if (
+        key == _SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR_KEY
+        and isinstance(value, (int, float))
+        and float(value) < 1.0
+    ):
+        return "must be greater than or equal to 1.0"
     if key in _TIME_KEYS and not _is_valid_time(str(value)):
         return "must be HH:MM or HH:MM:SS"
     if key.endswith("_limit") or key.endswith("_limit_low") or key.endswith("_limit_medium") or key.endswith("_limit_high"):
@@ -403,6 +410,9 @@ def _live_outcome_reason(mode: str, d: Any, cfg: Any) -> str | None:
 def _coerce_config_value(cfg: Any, key: str, raw: Any) -> Any:
     current = getattr(cfg, key)
     current_type = type(current)
+
+    if key == _SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR_KEY and isinstance(raw, bool):
+        raise ValueError("must be numeric")
 
     if current_type is bool:
         if isinstance(raw, bool):

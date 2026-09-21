@@ -5,7 +5,7 @@ Every setting here maps 1:1 to a blueprint input from the original YAML automati
 from __future__ import annotations
 import math
 from pydantic_settings import BaseSettings
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 
 class Settings(BaseSettings):
@@ -296,6 +296,12 @@ class Settings(BaseSettings):
     # Solar surplus bypass
     # ------------------------------------------------------------------
     solar_surplus_bypass_enabled: bool = Field(True, env="SOLAR_SURPLUS_BYPASS_ENABLED")
+    solar_surplus_forecast_safety_factor: float = Field(
+        1.20,
+        ge=1.0,
+        allow_inf_nan=False,
+        env="SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR",
+    )
     solar_surplus_start_multiplier: float = Field(2.0, env="SOLAR_SURPLUS_START_MULTIPLIER")
     solar_surplus_stop_multiplier: float = Field(1.25, env="SOLAR_SURPLUS_STOP_MULTIPLIER")
     solar_surplus_min_pv_margin: float = Field(0.5, env="SOLAR_SURPLUS_MIN_PV_MARGIN")
@@ -316,6 +322,13 @@ class Settings(BaseSettings):
     export_limit_value: float = Field(30.0, env="EXPORT_LIMIT_VALUE")
     import_limit_value: float = Field(30.0, env="IMPORT_LIMIT_VALUE")
     pv_max_power_value: float = Field(30.0, env="PV_MAX_POWER_VALUE")
+
+    @field_validator("solar_surplus_forecast_safety_factor", mode="before")
+    @classmethod
+    def _validate_solar_surplus_forecast_safety_factor_type(cls, value: object) -> object:
+        if isinstance(value, bool):
+            raise ValueError("must be numeric")
+        return value
 
     @model_validator(mode="after")
     def _normalize_hvac_solar_permission_settings(self) -> "Settings":

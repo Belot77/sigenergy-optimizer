@@ -6,11 +6,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.config import Settings
 from app.routers.api import (
     ConfigBatchUpdateRequest,
     ConfigUpdateRequest,
+    _config_key_to_env_var,
     _sanitize_preset_payload,
     _validate_config_value,
     update_config,
@@ -117,6 +119,160 @@ class ApiValidationTests(unittest.TestCase):
 
         self.assertTrue(response["ok"])
         self.assertEqual(0.3, cfg.solar_surplus_stop_pv_margin)
+
+    def test_solar_surplus_forecast_safety_factor_default_is_1_20(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            cfg = Settings(_env_file=None)
+
+        self.assertEqual(1.20, cfg.solar_surplus_forecast_safety_factor)
+
+    def test_solar_surplus_forecast_safety_factor_loads_expected_env_key(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR": "1.35"},
+            clear=True,
+        ):
+            cfg = Settings(_env_file=None)
+
+        self.assertEqual(1.35, cfg.solar_surplus_forecast_safety_factor)
+
+    def test_solar_surplus_forecast_safety_factor_model_accepts_valid_values(self) -> None:
+        for value in (1.0, 1.25, 1_000_000.0):
+            with self.subTest(value=value):
+                cfg = Settings(solar_surplus_forecast_safety_factor=value)
+                self.assertEqual(value, cfg.solar_surplus_forecast_safety_factor)
+
+    def test_solar_surplus_forecast_safety_factor_model_rejects_invalid_values(self) -> None:
+        for value in (
+            0.99,
+            float("nan"),
+            float("inf"),
+            float("-inf"),
+            "not-a-number",
+            True,
+        ):
+            with self.subTest(value=value):
+                with self.assertRaises(ValidationError):
+                    Settings(solar_surplus_forecast_safety_factor=value)
+
+    def test_single_solar_surplus_forecast_safety_factor_accepts_valid_value(self) -> None:
+        cfg = Settings(solar_surplus_forecast_safety_factor=1.20)
+
+        response = self._single_update(
+            cfg,
+            "solar_surplus_forecast_safety_factor",
+            1.25,
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(1.25, cfg.solar_surplus_forecast_safety_factor)
+
+    def test_single_solar_surplus_forecast_safety_factor_accepts_exactly_one(self) -> None:
+        cfg = Settings(solar_surplus_forecast_safety_factor=1.20)
+
+        response = self._single_update(
+            cfg,
+            "solar_surplus_forecast_safety_factor",
+            1.0,
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(1.0, cfg.solar_surplus_forecast_safety_factor)
+
+    def test_single_solar_surplus_forecast_safety_factor_rejects_below_one_without_mutation(self) -> None:
+        cfg = Settings(solar_surplus_forecast_safety_factor=1.20)
+
+        with self.assertRaises(HTTPException) as raised:
+            self._single_update(
+                cfg,
+                "solar_surplus_forecast_safety_factor",
+                0.99,
+            )
+
+        self.assertEqual(422, raised.exception.status_code)
+        self.assertEqual(1.20, cfg.solar_surplus_forecast_safety_factor)
+
+    def test_single_solar_surplus_forecast_safety_factor_rejects_nonfinite_without_mutation(self) -> None:
+        for value in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(value=value):
+                cfg = Settings(solar_surplus_forecast_safety_factor=1.20)
+
+                with self.assertRaises(HTTPException) as raised:
+                    self._single_update(
+                        cfg,
+                        "solar_surplus_forecast_safety_factor",
+                        value,
+                    )
+
+                self.assertEqual(422, raised.exception.status_code)
+                self.assertEqual(1.20, cfg.solar_surplus_forecast_safety_factor)
+
+    def test_single_solar_surplus_forecast_safety_factor_rejects_non_numeric_without_mutation(self) -> None:
+        for value in ("not-a-number", True):
+            with self.subTest(value=value):
+                cfg = Settings(solar_surplus_forecast_safety_factor=1.20)
+
+                with self.assertRaises(HTTPException) as raised:
+                    self._single_update(
+                        cfg,
+                        "solar_surplus_forecast_safety_factor",
+                        value,
+                    )
+
+                self.assertEqual(400, raised.exception.status_code)
+                self.assertEqual(1.20, cfg.solar_surplus_forecast_safety_factor)
+
+    def test_batch_invalid_solar_surplus_forecast_safety_factor_is_atomic(self) -> None:
+        cfg = Settings(
+            export_limit_low=5.0,
+            solar_surplus_forecast_safety_factor=1.20,
+        )
+
+        with self.assertRaises(HTTPException) as raised:
+            self._batch_update(
+                cfg,
+                [
+                    ("export_limit_low", 3.0),
+                    ("solar_surplus_forecast_safety_factor", 0.99),
+                ],
+            )
+
+        self.assertEqual(422, raised.exception.status_code)
+        self.assertEqual(5.0, cfg.export_limit_low)
+        self.assertEqual(1.20, cfg.solar_surplus_forecast_safety_factor)
+
+    def test_solar_surplus_forecast_safety_factor_persists_with_expected_env_key(self) -> None:
+        cfg = Settings(solar_surplus_forecast_safety_factor=1.20)
+        request = self._request(cfg)
+        env_key = "SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR"
+
+        self.assertEqual(
+            env_key,
+            _config_key_to_env_var("solar_surplus_forecast_safety_factor"),
+        )
+        with patch(
+            "app.routers.api._persist_config_keys_to_env",
+            return_value=[env_key],
+        ) as persist:
+            response = asyncio.run(
+                update_config(
+                    request,
+                    ConfigUpdateRequest(
+                        key="solar_surplus_forecast_safety_factor",
+                        value=1.25,
+                        persist=True,
+                    ),
+                )
+            )
+
+        persist.assert_called_once_with(
+            cfg,
+            ["solar_surplus_forecast_safety_factor"],
+            {"solar_surplus_forecast_safety_factor": 1.25},
+        )
+        self.assertEqual(1.25, cfg.solar_surplus_forecast_safety_factor)
+        self.assertTrue(response["persisted"])
+        self.assertEqual([env_key], response["persisted_keys"])
 
     def test_single_runtime_only_update_preserves_existing_behavior(self) -> None:
         cfg = Settings(export_limit_low=5.0)
