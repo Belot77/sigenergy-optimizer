@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.models import (
     BATTERY_EXPORT,
@@ -306,6 +306,21 @@ class Phase1D2PowerScalarTrustTests(Haos49CharacterizationCase):
             battery_soc=60.0,
             feedin_price=0.12,
             current_ems_mode=MODE_MAX_SELF,
+            pv_load_observations_coherent=True,
+            solcast_detailed_source_trusted=True,
+            solcast_detailed=[
+                {
+                    "period_start": datetime.fromtimestamp(
+                        (
+                            self.FIXED_AFTERNOON
+                            + timedelta(minutes=30 * index)
+                        ).timestamp(),
+                        tz=timezone.utc,
+                    ).isoformat(),
+                    "pv_estimate": 5.0,
+                }
+                for index in range(8)
+            ],
         )
         surplus = self.decide(
             surplus_optimizer,
@@ -313,6 +328,7 @@ class Phase1D2PowerScalarTrustTests(Haos49CharacterizationCase):
             self.FIXED_AFTERNOON,
         )
         self.assertTrue(surplus.solar_surplus_bypass)
+        self.assertTrue(surplus.solar_surplus_policy_active)
         self.assertEqual(MSC_SURPLUS_CEILING, surplus.export_intent)
         self.assertEqual("none", surplus.trace_values["battery_export_owner"])
         self.assertEqual(MODE_MAX_SELF, surplus.ems_mode)
