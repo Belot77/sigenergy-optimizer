@@ -102,6 +102,11 @@ class SolarState:
     # decision states used by unit-level callers as legacy observations.
     pv_power_trusted: Optional[bool] = None
     load_power_trusted: Optional[bool] = None
+    # Solar Surplus combines PV and load into one instantaneous surplus value.
+    # Keep the pair's timestamp coherence explicit and narrowly scoped instead
+    # of treating independently fresh observations as simultaneous.
+    pv_load_observations_coherent: Optional[bool] = None
+    pv_load_observation_span_seconds: Optional[float] = None
     grid_import_power_kw: Optional[float] = None
     grid_export_power_kw: Optional[float] = None
     battery_power_sensor_kw: Optional[float] = None
@@ -232,6 +237,9 @@ class Decision:
     morning_slow_charge_active: bool = False
     evening_export_boost_active: bool = False
     solar_surplus_bypass: bool = False
+    # True only when final arbitration selected Solar Surplus as the decision's
+    # MSC surplus-ceiling owner.  This is policy ownership, not settlement proof.
+    solar_surplus_policy_active: bool = False
     pv_safeguard_active: bool = False
 
     # Runtime-computed (set in _decide / _apply)

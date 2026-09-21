@@ -503,9 +503,17 @@ class Phase1PVLoadTelemetryTrustCharacterizationTests(Haos49CharacterizationCase
                 )
 
                 self.assertEqual(expected_coherent, state.derived_power_flow_coherent)
+                self.assertEqual(
+                    expected_coherent,
+                    state.pv_load_observations_coherent,
+                )
                 self.assertAlmostEqual(
                     skew.total_seconds(),
                     state.derived_power_flow_span_seconds or 0.0,
+                )
+                self.assertAlmostEqual(
+                    skew.total_seconds(),
+                    state.pv_load_observation_span_seconds or 0.0,
                 )
                 self.assertEqual(
                     5.0,

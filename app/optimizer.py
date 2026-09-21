@@ -161,6 +161,10 @@ def _solar_surplus_energy_budget(
     required_energy_kwh = remaining_load_kwh + fill_need_kwh
     protected_requirement_kwh = factor * required_energy_kwh
     raw_exportable_kwh = forecast_kwh - protected_requirement_kwh
+    # Preserve the strict mathematical ``> 0`` policy at decimal equality;
+    # binary floating-point round-off must not manufacture export permission.
+    if math.isclose(raw_exportable_kwh, 0.0, rel_tol=0.0, abs_tol=1e-12):
+        raw_exportable_kwh = 0.0
     calculated = (
         remaining_load_kwh,
         fill_need_kwh,
@@ -478,6 +482,23 @@ class SigEnergyOptimizer:
             discharge_cap = fallback
 
         return charge_cap, discharge_cap
+
+    def _trusted_charge_capability_kw(
+        self,
+        s: Optional[SolarState] = None,
+    ) -> Optional[float]:
+        """Return Package-6A charge capability without its configured fallback."""
+        state = s if s is not None else self._last_state
+        candidates: list[float] = []
+        if state and self._valid_hw_cap_kw(state.ess_charge_limit_entity_max_kw):
+            candidates.append(float(state.ess_charge_limit_entity_max_kw))
+        if state and self._valid_hw_cap_kw(state.ess_max_charge_kw):
+            candidates.append(float(state.ess_max_charge_kw))
+        if candidates:
+            return min(candidates)
+        if self._valid_hw_cap_kw(self._last_hw_charge_cap_kw):
+            return float(self._last_hw_charge_cap_kw)
+        return None
 
     def _validate_time_config(self) -> list[str]:
         warnings: list[str] = []
@@ -1643,6 +1664,26 @@ class SigEnergyOptimizer:
             _positive_power_kw,
             max_age_seconds=live_max_age,
         )
+        pv_load_timestamps = tuple(
+            _metadata_timestamp(bulk.get(entity_id) or {})
+            for entity_id in (cfg.pv_power_sensor, cfg.consumed_power_sensor)
+        )
+        if all(timestamp is not None for timestamp in pv_load_timestamps):
+            usable_pv_load_timestamps = tuple(
+                timestamp for timestamp in pv_load_timestamps if timestamp is not None
+            )
+            s.pv_load_observation_span_seconds = (
+                max(usable_pv_load_timestamps) - min(usable_pv_load_timestamps)
+            ).total_seconds()
+        s.pv_load_observations_coherent = bool(
+            pv_power_observation.available
+            and pv_power_observation.fresh
+            and load_power_observation.available
+            and load_power_observation.fresh
+            and s.pv_load_observation_span_seconds is not None
+            and s.pv_load_observation_span_seconds
+            <= _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS
+        )
         battery_power_observation = _observed_number(
             cfg.battery_power_sensor,
             _battery_power_kw,
@@ -2794,33 +2835,196 @@ class SigEnergyOptimizer:
         # ---- Solar surplus bypass -----------------------------------
         previous_cycle_solar_surplus_policy_owned = bool(
             self._last_decision
-            and (
-                self._last_decision.solar_surplus_bypass
-                or self._last_decision.trace_values.get("pv_only_branch_source")
-                == "solar_surplus_bypass"
-            )
+            and self._last_decision.solar_surplus_policy_active
         )
-        solar_surplus_bypass = bool(
+
+        try:
+            solar_fit_cents = float(s.feedin_price_cents)
+        except (TypeError, ValueError, OverflowError):
+            solar_fit_cents = float("nan")
+        solar_fit_at_least_one_cent = bool(
             feedin_price_trusted
-            and pv_power_trusted
+            and math.isfinite(solar_fit_cents)
+            and solar_fit_cents >= 1.0
+        )
+        solar_pv_load_observations_coherent = bool(
+            s.pv_load_observations_coherent is True
+            if s.hvac_solar_inputs.live_snapshot
+            else s.pv_load_observations_coherent is not False
+        )
+        try:
+            solar_safety_factor = float(cfg.solar_surplus_forecast_safety_factor)
+        except (TypeError, ValueError, OverflowError):
+            solar_safety_factor = float("nan")
+        solar_safety_factor_valid = bool(
+            math.isfinite(solar_safety_factor) and solar_safety_factor >= 1.0
+        )
+        solar_forecast_remaining_valid = False
+        try:
+            solar_forecast_remaining_valid = bool(
+                forecast_remaining_observation_trusted
+                and math.isfinite(float(s.forecast_remaining_kwh))
+                and float(s.forecast_remaining_kwh) >= 0.0
+            )
+        except (TypeError, ValueError, OverflowError):
+            pass
+
+        solar_same_local_day_sunset = False
+        solar_hours_to_sunset: Optional[float] = None
+        if sunset_observation_trusted:
+            try:
+                solar_same_local_day_sunset = bool(
+                    sunset_ts > now_ts
+                    and datetime.fromtimestamp(sunset_ts, tz=self._tz).date()
+                    == datetime.fromtimestamp(now_ts, tz=self._tz).date()
+                )
+                if solar_same_local_day_sunset:
+                    solar_hours_to_sunset = (sunset_ts - now_ts) / 3600.0
+            except (OSError, OverflowError, ValueError):
+                solar_same_local_day_sunset = False
+                solar_hours_to_sunset = None
+        solar_sunset_horizon_trusted = bool(
+            sun_state_observation_trusted
+            and s.sun_above_horizon
+            and sunset_observation_trusted
+            and solar_same_local_day_sunset
+            and solar_hours_to_sunset is not None
+            and math.isfinite(solar_hours_to_sunset)
+            and solar_hours_to_sunset > 0.0
+        )
+
+        solar_energy_budget: Optional[dict[str, float | bool]] = None
+        solar_energy_budget_error: Optional[str] = None
+        solar_energy_evidence_trusted = bool(
+            pv_power_trusted
             and load_power_trusted
-            and forecast_remaining_observation_trusted
+            and solar_pv_load_observations_coherent
+            and solar_forecast_remaining_valid
+            and battery_soc_trusted
+            and battery_capacity_trusted
+            and solar_sunset_horizon_trusted
+            and solar_safety_factor_valid
+        )
+        if solar_energy_evidence_trusted and solar_hours_to_sunset is not None:
+            try:
+                solar_energy_budget = _solar_surplus_energy_budget(
+                    remaining_forecast_kwh=s.forecast_remaining_kwh,
+                    current_load_kw=control_load_kw,
+                    hours_to_sunset=solar_hours_to_sunset,
+                    rated_capacity_kwh=battery_capacity_value,
+                    battery_soc_pct=battery_soc_value,
+                    safety_factor=solar_safety_factor,
+                )
+            except ValueError as exc:
+                solar_energy_budget_error = str(exc)
+
+        solar_detailed_timing_required = bool(
+            solar_energy_budget is not None
+            and float(solar_energy_budget["fill_need_kwh"]) > 0.0
+        )
+        solar_detailed_forecast_coverage = False
+        solar_charge_capability_kw: Optional[float] = None
+        solar_timing_budget: Optional[dict[str, float | bool]] = None
+        solar_timing_error: Optional[str] = None
+        solar_timing_passed = bool(
+            solar_energy_budget is not None and not solar_detailed_timing_required
+        )
+        if solar_detailed_timing_required:
+            solar_detailed_forecast_coverage = bool(
+                solcast_detailed_source_trusted
+                and self._detailed_forecast_covers(
+                    detailed_forecast_periods,
+                    now_ts,
+                    sunset_ts,
+                )
+            )
+            solar_charge_capability_kw = self._trusted_charge_capability_kw(s)
+            if (
+                solar_detailed_forecast_coverage
+                and solar_charge_capability_kw is not None
+                and detailed_forecast_periods is not None
+            ):
+                try:
+                    solar_timing_budget = _solar_surplus_timing_budget(
+                        detailed_forecast_periods,
+                        forecast_period_hours=cfg.solcast_forecast_period_hours,
+                        now_ts=now_ts,
+                        sunset_ts=sunset_ts,
+                        current_load_kw=control_load_kw,
+                        charge_capability_kw=solar_charge_capability_kw,
+                        fill_need_kwh=float(solar_energy_budget["fill_need_kwh"]),
+                        safety_factor=solar_safety_factor,
+                    )
+                    solar_timing_passed = bool(
+                        solar_timing_budget["timing_passed"]
+                    )
+                except ValueError as exc:
+                    solar_timing_error = str(exc)
+
+        solar_measured_surplus_kw = control_measured_pv_surplus_kw
+        solar_surplus_threshold_kw = (
+            0.2 if previous_cycle_solar_surplus_policy_owned else 0.5
+        )
+        solar_measured_surplus_gate = bool(
+            solar_measured_surplus_kw > solar_surplus_threshold_kw
+        )
+        solar_energy_budget_passed = bool(
+            solar_energy_budget is not None
+            and solar_energy_budget["budget_passed"]
+        )
+
+        if not cfg.solar_surplus_bypass_enabled:
+            solar_surplus_fail_reason = "disabled"
+        elif morning_slow_charge_active:
+            solar_surplus_fail_reason = "morning_slow_charge_active"
+        elif not solar_fit_at_least_one_cent:
+            solar_surplus_fail_reason = "feedin_tariff_below_one_cent_or_untrusted"
+        elif not pv_power_trusted:
+            solar_surplus_fail_reason = "pv_power_untrusted_or_invalid"
+        elif not load_power_trusted:
+            solar_surplus_fail_reason = "load_power_untrusted_or_invalid"
+        elif not solar_pv_load_observations_coherent:
+            solar_surplus_fail_reason = "pv_load_observations_incoherent"
+        elif not solar_forecast_remaining_valid:
+            solar_surplus_fail_reason = "remaining_forecast_untrusted_or_invalid"
+        elif not battery_soc_trusted:
+            solar_surplus_fail_reason = "battery_soc_untrusted_or_invalid"
+        elif not battery_capacity_trusted:
+            solar_surplus_fail_reason = "rated_capacity_untrusted_or_invalid"
+        elif not solar_sunset_horizon_trusted:
+            solar_surplus_fail_reason = "same_day_sunset_horizon_untrusted_or_invalid"
+        elif not solar_safety_factor_valid:
+            solar_surplus_fail_reason = "solar_safety_factor_invalid"
+        elif solar_energy_budget_error is not None:
+            solar_surplus_fail_reason = f"energy_budget_invalid: {solar_energy_budget_error}"
+        elif not solar_energy_budget_passed:
+            solar_surplus_fail_reason = "energy_budget_not_positive"
+        elif solar_detailed_timing_required and not solcast_detailed_source_trusted:
+            solar_surplus_fail_reason = "detailed_forecast_untrusted_or_invalid"
+        elif solar_detailed_timing_required and not solar_detailed_forecast_coverage:
+            solar_surplus_fail_reason = "detailed_forecast_does_not_cover_horizon"
+        elif solar_detailed_timing_required and solar_charge_capability_kw is None:
+            solar_surplus_fail_reason = "trusted_charge_capability_unavailable"
+        elif solar_timing_error is not None:
+            solar_surplus_fail_reason = f"timing_budget_invalid: {solar_timing_error}"
+        elif not solar_timing_passed:
+            solar_surplus_fail_reason = "timed_charge_opportunity_insufficient"
+        elif not solar_measured_surplus_gate:
+            solar_surplus_fail_reason = "measured_pv_surplus_below_hysteresis_threshold"
+        else:
+            solar_surplus_fail_reason = "eligible_pending_final_arbitration"
+
+        solar_surplus_bypass = bool(
+            solar_fit_at_least_one_cent
+            and solar_energy_evidence_trusted
+            and solar_energy_budget_passed
+            and solar_timing_passed
             and self._solar_surplus_bypass(
                 s,
                 morning_slow_charge_active,
                 cap,
-                control_measured_pv_surplus_kw,
-                previously_active=bool(
-                    self._last_decision
-                    and self._last_decision.trace_gates.get(
-                        "pv_only_branch_high_ceiling_active"
-                    )
-                    and self._last_decision.trace_gates.get(
-                        "observed_automated_control_mode"
-                    )
-                    and self._last_decision.trace_values.get("pv_only_branch_source")
-                    == "solar_surplus_bypass"
-                ),
+                solar_measured_surplus_kw,
+                previously_active=previous_cycle_solar_surplus_policy_owned,
             )
         )
         d.solar_surplus_bypass = solar_surplus_bypass
@@ -2952,7 +3156,6 @@ class SigEnergyOptimizer:
             }
             and (
                 export_solar_override
-                or trusted_demand_window_active
                 or evening_export_boost_active
             )
         )
@@ -3888,6 +4091,35 @@ class SigEnergyOptimizer:
         if actual_import_cost_guard_blocking and desired_ems_mode in DISCHARGE_MODES:
             desired_ems_mode = MODE_MAX_SELF
         d.ems_mode = desired_ems_mode
+        d.solar_surplus_policy_active = bool(
+            solar_surplus_bypass
+            and solar_surplus_pv_only_high_ceiling_requested
+            and pv_only_branch_high_ceiling_active
+            and desired_export_source == "solar_surplus_pv_high"
+            and desired_export_limit > 0.01
+            and d.export_intent == MSC_SURPLUS_CEILING
+            and battery_export_owner == "none"
+            and desired_ems_mode == MODE_MAX_SELF
+        )
+        if d.solar_surplus_policy_active:
+            solar_surplus_fail_reason = "active_final_solar_surplus_owner"
+        elif solar_surplus_bypass:
+            if pv_only_branch_battery_safety_blocked:
+                solar_surplus_fail_reason = "battery_flow_protection_rejected_solar"
+            elif pv_only_branch_automated_ownership_blocked:
+                solar_surplus_fail_reason = "automated_authority_unavailable"
+            elif desired_export_source != "solar_surplus_pv_high":
+                solar_surplus_fail_reason = (
+                    f"final_policy_source_is_{desired_export_source}"
+                )
+            elif desired_export_limit <= 0.01:
+                solar_surplus_fail_reason = "final_solar_export_ceiling_closed"
+            elif d.export_intent != MSC_SURPLUS_CEILING:
+                solar_surplus_fail_reason = (
+                    f"final_export_intent_is_{d.export_intent}"
+                )
+            else:
+                solar_surplus_fail_reason = "solar_not_selected_by_final_arbitration"
 
         # ---- PV max power ---------------------------------------------
         desired_pv_max = self._desired_pv_max_power(
@@ -4139,6 +4371,19 @@ class SigEnergyOptimizer:
             "pv_safeguard_active": pv_safeguard_active,
             "solar_surplus_bypass": solar_surplus_bypass,
             "previous_cycle_solar_surplus_policy_owned": previous_cycle_solar_surplus_policy_owned,
+            "solar_surplus_enabled": bool(cfg.solar_surplus_bypass_enabled),
+            "solar_fit_at_least_one_cent": solar_fit_at_least_one_cent,
+            "solar_pv_load_observations_coherent": solar_pv_load_observations_coherent,
+            "solar_forecast_remaining_valid": solar_forecast_remaining_valid,
+            "solar_safety_factor_valid": solar_safety_factor_valid,
+            "solar_sunset_horizon_trusted": solar_sunset_horizon_trusted,
+            "solar_energy_evidence_trusted": solar_energy_evidence_trusted,
+            "solar_energy_budget_passed": solar_energy_budget_passed,
+            "solar_detailed_timing_required": solar_detailed_timing_required,
+            "solar_detailed_forecast_coverage": solar_detailed_forecast_coverage,
+            "solar_timing_passed": solar_timing_passed,
+            "solar_measured_surplus_gate": solar_measured_surplus_gate,
+            "solar_surplus_policy_active": d.solar_surplus_policy_active,
             "battery_full_safeguard_block": battery_full_safeguard_block,
             "export_blocked_for_forecast": export_blocked_for_forecast,
             "export_forecast_guard": export_forecast_guard,
@@ -4256,6 +4501,49 @@ class SigEnergyOptimizer:
             "control_solar_potential_kw": control_solar_potential_kw,
             "control_pv_surplus_kw": control_pv_surplus_kw,
             "control_measured_pv_surplus_kw": control_measured_pv_surplus_kw,
+            "solar_measured_pv_surplus_kw": solar_measured_surplus_kw,
+            "solar_surplus_threshold_kw": solar_surplus_threshold_kw,
+            "solar_remaining_forecast_kwh": s.forecast_remaining_kwh,
+            "solar_expected_remaining_load_kwh": (
+                solar_energy_budget["remaining_load_kwh"]
+                if solar_energy_budget is not None
+                else None
+            ),
+            "solar_fill_need_to_full_kwh": (
+                solar_energy_budget["fill_need_kwh"]
+                if solar_energy_budget is not None
+                else None
+            ),
+            "solar_forecast_safety_factor": solar_safety_factor,
+            "solar_protected_required_energy_kwh": (
+                solar_energy_budget["protected_requirement_kwh"]
+                if solar_energy_budget is not None
+                else None
+            ),
+            "solar_raw_exportable_energy_kwh": (
+                solar_energy_budget["raw_exportable_kwh"]
+                if solar_energy_budget is not None
+                else None
+            ),
+            "solar_exportable_energy_kwh": (
+                solar_energy_budget["exportable_kwh"]
+                if solar_energy_budget is not None
+                else None
+            ),
+            "solar_timed_charge_opportunity_kwh": (
+                solar_timing_budget["timed_charge_opportunity_kwh"]
+                if solar_timing_budget is not None
+                else 0.0
+            ),
+            "solar_safe_timed_charge_opportunity_kwh": (
+                solar_timing_budget["safe_timed_charge_opportunity_kwh"]
+                if solar_timing_budget is not None
+                else 0.0
+            ),
+            "solar_trusted_charge_capability_kw": solar_charge_capability_kw,
+            "solar_hours_to_same_day_sunset": solar_hours_to_sunset,
+            "solar_surplus_fail_reason": solar_surplus_fail_reason,
+            "pv_load_observation_span_seconds": s.pv_load_observation_span_seconds,
             "load_kw": s.load_kw,
             "grid_import_power_kw": s.grid_import_power_kw,
             "grid_export_power_kw": s.grid_export_power_kw,
@@ -5080,8 +5368,13 @@ class SigEnergyOptimizer:
         if mode_label != self.cfg.automated_option:
             decision.export_intent = EXPORT_BLOCKED
             decision.requires_verified_msc_before_export = False
+            decision.solar_surplus_policy_active = False
             decision.trace_gates["observed_automated_control_mode"] = False
             decision.trace_gates["pv_only_branch_high_ceiling_active"] = False
+            decision.trace_gates["solar_surplus_policy_active"] = False
+            decision.trace_values["solar_surplus_fail_reason"] = (
+                f"operator_mode_user_owned: {mode_label}"
+            )
             decision.trace_gates["pv_only_msc_transition_ready"] = False
             decision.trace_gates["pv_only_msc_stage1_active"] = False
             decision.trace_gates["pv_only_msc_high_ceiling_active"] = False
@@ -6336,18 +6629,13 @@ class SigEnergyOptimizer:
         cfg = self.cfg
         if not cfg.solar_surplus_bypass_enabled or morning_slow_charge_active:
             return False
-        start_thresh = cap * cfg.solar_surplus_start_multiplier
-        stop_thresh = cap * cfg.solar_surplus_stop_multiplier
-        start_ok = (
-            pv_surplus > cfg.solar_surplus_min_pv_margin
-            and s.forecast_remaining_kwh >= start_thresh
-        )
-        continue_ok = (
-            pv_surplus > cfg.solar_surplus_stop_pv_margin
-            and s.forecast_remaining_kwh >= stop_thresh
-            and previously_active
-        )
-        return start_ok or continue_ok
+        # Aggregate energy and detailed timing are proved by the caller.  This
+        # helper retains only the locked measured-surplus hysteresis and its
+        # compatibility signature; legacy capacity multipliers no longer grant or
+        # withhold Solar Surplus ownership.
+        del s, cap
+        threshold_kw = 0.2 if previously_active else 0.5
+        return pv_surplus > threshold_kw
 
     def _battery_full_safeguard_block(
         self,
@@ -6636,12 +6924,9 @@ class SigEnergyOptimizer:
                 "positive_fit_override",
             )
 
-        # Solar-surplus bypass still respects the configured export price threshold.
-        # Once export is economically permitted, Maximum Self Consumption receives
-        # the configured high export ceiling and naturally limits actual export to PV.
+        # Solar Surplus has its own 1c/kWh minimum, enforced by the common fail-closed
+        # check above.  Do not reuse ordinary tier thresholds for this PV-only policy.
         if surplus_bypass:
-            if tier_limit <= 0:
-                return choice(0.0, "solar_surplus_closed")
             ceiling, _authoritative_cap_kw = self._bounded_pv_only_high_ceiling(s)
             if ceiling <= 0.01:
                 return choice(0.0, "solar_surplus_pv_closed")

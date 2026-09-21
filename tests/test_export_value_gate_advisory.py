@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import tempfile
 import unittest
@@ -239,32 +240,41 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self,
         optimizer: SigEnergyOptimizer,
         now_ts: float,
-        **overrides: float | bool | str | None,
+        **overrides: object,
     ) -> SolarState:
-        values: dict[str, float | bool | str | None] = {
+        values: dict[str, object] = {
             "sigenergy_mode": optimizer.cfg.automated_option,
             "sigenergy_mode_observed": True,
             "battery_soc": 72.0,
+            "battery_soc_trusted": True,
             "battery_capacity_kwh": 30.0,
+            "battery_capacity_trusted": True,
             "available_discharge_energy_kwh": 21.6,
+            "available_discharge_energy_trusted": True,
             "current_price": 0.30,
             "current_price_cents": 30.0,
             "feedin_price": 0.10,
             "feedin_price_cents": 10.0,
             "pv_kw": 6.0,
+            "pv_power_trusted": True,
             "solar_power_now_kw": 6.0,
             "load_kw": 1.0,
+            "load_power_trusted": True,
+            "pv_load_observations_coherent": True,
             "battery_power_sensor_kw": 0.0,
             "grid_import_power_kw": 0.0,
             "grid_export_power_kw": 0.0,
             "forecast_remaining_kwh": 70.0,
+            "forecast_remaining_observation_trusted": True,
             "forecast_tomorrow_kwh": 73.0,
             "ess_max_charge_kw": 25.0,
             "ess_max_discharge_kw": 25.0,
             "price_is_actual": True,
             "sun_above_horizon": True,
+            "sun_state_observation_trusted": True,
             "next_sunrise_ts": now_ts + (10.0 * 3600),
             "next_sunset_ts": now_ts + (6.0 * 3600),
+            "sunset_observation_trusted": True,
             "hours_to_sunrise": 10.0,
             "hours_to_sunset": 6.0,
             "current_ems_mode": MODE_MAX_SELF,
@@ -277,6 +287,24 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             "demand_window_observed": True,
         }
         values.update(overrides)
+        if "solcast_detailed" not in overrides:
+            period_hours = float(optimizer.cfg.solcast_forecast_period_hours)
+            sunset_ts = float(values["next_sunset_ts"])
+            period_count = max(
+                1,
+                math.ceil((sunset_ts - now_ts) / (period_hours * 3600.0)),
+            ) + 1
+            values["solcast_detailed"] = [
+                {
+                    "period_start": datetime.fromtimestamp(
+                        now_ts + ((index - 1) * period_hours * 3600.0),
+                        tz=timezone.utc,
+                    ).isoformat(),
+                    "pv_estimate": 30.0,
+                }
+                for index in range(period_count)
+            ]
+        values.setdefault("solcast_detailed_source_trusted", True)
         return self._state(**values)
 
     def _solar_surplus_margin_decision(
@@ -2592,7 +2620,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
         self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_bypassed_for_pv_surplus_only")))
 
-    def test_observed_style_solar_margin_gate_changes_below_threshold_but_outputs_stay_closed(self) -> None:
+    def test_solar_specific_one_cent_rule_operates_below_ordinary_tier_threshold(self) -> None:
         now_ts = datetime.now().timestamp()
         optimizer = self._optimizer(
             battery_full_safeguard_enabled=False,
@@ -2610,11 +2638,17 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            [True, False, True],
+            [True, True, True],
             [decision.solar_surplus_bypass for decision in decisions],
         )
-        self.assertEqual([0.0, 0.0, 0.0], [decision.export_limit for decision in decisions])
-        self.assertEqual([EXPORT_BLOCKED] * 3, [decision.export_intent for decision in decisions])
+        self.assertEqual(
+            [optimizer.cfg.export_limit_high] * 3,
+            [decision.export_limit for decision in decisions],
+        )
+        self.assertEqual(
+            [MSC_SURPLUS_CEILING] * 3,
+            [decision.export_intent for decision in decisions],
+        )
         self.assertEqual([MODE_MAX_SELF] * 3, [decision.ems_mode for decision in decisions])
         self.assertEqual(
             [optimizer.cfg.pv_max_power_normal] * 3,
@@ -2796,7 +2830,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             )
         )
 
-    def test_solar_surplus_previous_cycle_ownership_holds_only_forecast_hysteresis(self) -> None:
+    def test_solar_surplus_energy_budget_replaces_forecast_multiplier_hysteresis(self) -> None:
         now_ts = datetime.now().timestamp()
         optimizer = self._optimizer(
             battery_full_safeguard_enabled=False,
@@ -2838,6 +2872,11 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertLess(60.0, 40.3 * optimizer.cfg.solar_surplus_start_multiplier)
         self.assertGreater(60.0, 40.3 * optimizer.cfg.solar_surplus_stop_multiplier)
         self.assertTrue(continued.solar_surplus_bypass)
+        self.assertTrue(continued.solar_surplus_policy_active)
+        self.assertGreater(
+            continued.trace_values.get("solar_raw_exportable_energy_kwh"),
+            0.0,
+        )
         self.assertTrue(bool(continued.trace_gates.get("pv_only_branch_high_ceiling_active")))
         self.assertEqual(optimizer.cfg.export_limit_high, continued.export_limit)
         self.assertEqual(MSC_SURPLUS_CEILING, continued.export_intent)
@@ -2862,7 +2901,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             forecast_remaining_kwh=60.0,
         )
 
-        self.assertFalse(inactive.solar_surplus_bypass)
+        self.assertTrue(inactive.solar_surplus_bypass)
+        self.assertTrue(inactive.solar_surplus_policy_active)
         self.assertNotEqual(BATTERY_EXPORT, inactive.export_intent)
 
     def test_unrelated_previous_msc_ceiling_cannot_use_solar_surplus_stop_margin(self) -> None:
@@ -3099,7 +3139,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             (
                 "demand_window",
                 {"demand_window_active": True},
-                "ordinary_msc_surplus_ceiling",
+                "solar_surplus_pv_high",
             ),
             (
                 "evening_boost",
@@ -3117,15 +3157,21 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 state = self._qualifying_solar_bypass_state(
                     optimizer,
                     now_ts,
-                    battery_power_sensor_kw=-0.2,
+                    battery_power_sensor_kw=(0.0 if name == "demand_window" else -0.2),
                     **overrides,
                 )
 
                 decision = optimizer._decide(state)
 
                 self.assertTrue(bool(decision.trace_gates.get("solar_surplus_bypass")))
-                self.assertTrue(bool(decision.trace_gates.get("pv_only_branch_policy_deferred")))
-                self.assertFalse(bool(decision.trace_gates.get("solar_surplus_pv_only_high_ceiling_requested")))
+                self.assertEqual(
+                    name != "demand_window",
+                    bool(decision.trace_gates.get("pv_only_branch_policy_deferred")),
+                )
+                self.assertEqual(
+                    name == "demand_window",
+                    bool(decision.trace_gates.get("solar_surplus_pv_only_high_ceiling_requested")),
+                )
                 self.assertFalse(bool(decision.trace_gates.get("pv_only_branch_battery_safety_blocked")))
                 self.assertEqual(
                     "solar_surplus_pv_high",
@@ -3136,6 +3182,11 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                     decision.trace_values.get("desired_export_source"),
                 )
                 if name == "demand_window":
+                    self.assertEqual(
+                        "solar_surplus_pv_high",
+                        decision.trace_values.get("desired_export_source"),
+                    )
+                    self.assertTrue(decision.solar_surplus_policy_active)
                     self.assertEqual(
                         "pv_surplus_only",
                         decision.trace_values.get("export_value_gate_export_type"),
@@ -3199,21 +3250,22 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 decision = optimizer._decide(state)
 
                 self.assertTrue(decision.solar_surplus_bypass)
-                self.assertTrue(bool(decision.trace_gates.get("pv_only_branch_policy_deferred")))
+                self.assertEqual(
+                    name != "demand_window",
+                    bool(decision.trace_gates.get("pv_only_branch_policy_deferred")),
+                )
                 self.assertEqual(
                     "solar_surplus_pv_closed",
                     decision.trace_values.get("initial_desired_export_source"),
                 )
-                self.assertEqual(
-                    expected_source,
-                    decision.trace_values.get("desired_export_source"),
-                )
-                self.assertFalse(
-                    str(decision.trace_values.get("desired_export_source", "")).startswith(
-                        "solar_surplus_"
-                    )
-                )
-                self.assertFalse(bool(decision.trace_gates.get("pv_only_branch_zero_ceiling")))
+                final_source = decision.trace_values.get("desired_export_source")
+                if name == "demand_window":
+                    self.assertEqual("solar_surplus_pv_closed", final_source)
+                    self.assertTrue(bool(decision.trace_gates.get("pv_only_branch_zero_ceiling")))
+                else:
+                    self.assertEqual(expected_source, final_source)
+                    self.assertFalse(str(final_source).startswith("solar_surplus_"))
+                    self.assertFalse(bool(decision.trace_gates.get("pv_only_branch_zero_ceiling")))
                 self.assertFalse(
                     bool(
                         decision.trace_gates.get(
@@ -3317,13 +3369,20 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             now_ts + 60.0,
             forecast_remaining_kwh=50.0,
             battery_power_sensor_kw=0.0,
+            pv_kw=1.3,
+            solar_power_now_kw=1.3,
+            load_kw=1.0,
             current_export_limit=0.01,
         )
         continuation = optimizer._decide(continuation_state)
 
         self.assertFalse(continuation.solar_surplus_bypass)
+        self.assertFalse(continuation.solar_surplus_policy_active)
         self.assertFalse(bool(continuation.trace_gates.get("pv_only_branch_high_ceiling_requested")))
-        self.assertNotEqual(optimizer.cfg.export_limit_high, continuation.export_limit)
+        self.assertNotEqual(
+            "solar_surplus_pv_high",
+            continuation.trace_values.get("desired_export_source"),
+        )
 
     def test_zero_capped_solar_bypass_does_not_seed_continuation_hysteresis(self) -> None:
         now_ts = datetime.now().timestamp()
@@ -3357,13 +3416,20 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 optimizer,
                 now_ts + 60.0,
                 forecast_remaining_kwh=50.0,
+                pv_kw=1.3,
+                solar_power_now_kw=1.3,
+                load_kw=1.0,
                 grid_export_limit_entity_max_kw=25.0,
             )
         )
 
         self.assertFalse(continuation.solar_surplus_bypass)
+        self.assertFalse(continuation.solar_surplus_policy_active)
         self.assertFalse(bool(continuation.trace_gates.get("pv_only_branch_high_ceiling_requested")))
-        self.assertNotEqual(optimizer.cfg.export_limit_high, continuation.export_limit)
+        self.assertNotEqual(
+            "solar_surplus_pv_high",
+            continuation.trace_values.get("desired_export_source"),
+        )
 
     def test_unobserved_automated_rejects_morning_and_solar_pv_only_high_ceiling(self) -> None:
         now_ts = datetime.now().timestamp()
@@ -3573,6 +3639,9 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                         battery_soc=20.0,
                         available_discharge_energy_kwh=6.0,
                         forecast_remaining_kwh=50.0,
+                        pv_kw=1.3,
+                        solar_power_now_kw=1.3,
+                        load_kw=1.0,
                         current_export_limit=0.01,
                         current_ems_mode=MODE_MAX_SELF,
                         sigenergy_mode=optimizer.cfg.automated_option,
@@ -3580,6 +3649,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                     )
                 )
                 self.assertFalse(returned_to_auto.solar_surplus_bypass)
+                self.assertFalse(returned_to_auto.solar_surplus_policy_active)
                 self.assertFalse(
                     bool(
                         returned_to_auto.trace_gates.get(
@@ -3587,8 +3657,10 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                         )
                     )
                 )
-                self.assertLessEqual(returned_to_auto.export_limit, 0.01)
-                self.assertFalse(returned_to_auto.requires_verified_msc_before_export)
+                self.assertNotEqual(
+                    "solar_surplus_pv_high",
+                    returned_to_auto.trace_values.get("desired_export_source"),
+                )
 
     def test_genuinely_automated_solar_cycle_still_seeds_continuation(self) -> None:
         now_ts = datetime.now().timestamp()

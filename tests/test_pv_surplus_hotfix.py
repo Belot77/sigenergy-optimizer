@@ -169,10 +169,10 @@ class PVSurplusHotfixTests(unittest.TestCase):
         self.assertEqual(limit, 18.06)
         self.assertLessEqual(limit, state.grid_export_limit_entity_max_kw)
 
-    def test_solar_bypass_still_exports_nothing_below_price_threshold(self) -> None:
+    def test_solar_bypass_still_exports_nothing_below_one_cent(self) -> None:
         optimizer = self.optimizer()
         state = self.state(
-            fit=optimizer.cfg.export_threshold_low - 0.001,
+            fit=0.0099,
             pv=10.0,
             load=1.0,
         )
@@ -196,7 +196,7 @@ class PVSurplusHotfixTests(unittest.TestCase):
 
         self.assertEqual(limit, 0.0)
 
-    def test_solar_bypass_hysteresis_continues_under_msc(self) -> None:
+    def test_solar_bypass_hysteresis_ignores_legacy_capacity_multipliers(self) -> None:
         optimizer = self.optimizer(
             solar_surplus_start_multiplier=2.0,
             solar_surplus_stop_multiplier=1.25,
@@ -204,7 +204,7 @@ class PVSurplusHotfixTests(unittest.TestCase):
         state = self.state(fit=0.12, pv=8.0, load=1.0)
         state.forecast_remaining_kwh = 50.0
 
-        self.assertFalse(
+        self.assertTrue(
             optimizer._solar_surplus_bypass(
                 state,
                 False,
@@ -213,12 +213,12 @@ class PVSurplusHotfixTests(unittest.TestCase):
                 previously_active=False,
             )
         )
-        self.assertTrue(
+        self.assertFalse(
             optimizer._solar_surplus_bypass(
                 state,
                 False,
                 40.0,
-                7.0,
+                0.2,
                 previously_active=True,
             )
         )

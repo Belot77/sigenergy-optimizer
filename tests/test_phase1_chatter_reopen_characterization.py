@@ -244,6 +244,7 @@ class Phase1ChatterReopenCharacterizationTests(Haos49CharacterizationCase):
                 "solar_surplus_owner",
                 Decision(
                     solar_surplus_bypass=True,
+                    solar_surplus_policy_active=True,
                     trace_gates={"pv_only_branch_high_ceiling_active": True},
                     trace_values={"pv_only_branch_source": "solar_surplus_bypass"},
                 ),
