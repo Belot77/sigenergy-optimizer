@@ -59,15 +59,65 @@ For ordinary MSC flow interpretation:
 - meaningful simultaneous battery discharge and grid export is not presumed benign and closes conservatively;
 - unknown, stale, unavailable, or non-finite safety evidence cannot broaden permission.
 
-## Solar Surplus Bypass
+## Solar Surplus
 
-The approved Solar Surplus direction is an MSC/PV-only surplus policy and never owns deliberate battery export. Its energy order is PV serving house load first, then enough battery charging to remain safely on the fill trajectory, then export of genuinely remaining PV while FiT is positive.
+Solar Surplus is a Phase 1 energy-gate-only MSC/PV-only export-permission policy. It:
 
-The primary energy budget is remaining-today forecast minus expected remaining load, battery fill need, and a conservative buffer. Detailed Solcast timing may refine that budget. Current measured PV-load surplus must independently support export, and the budget must be recalculated every cycle so export is reduced or stopped as conditions deteriorate. The old battery-capacity-times-2 and 1.25-times forecast heuristics are not the primary trigger.
+- remains in Maximum Self Consumption;
+- retains normal PV MAX;
+- never owns `BATTERY_EXPORT` or deliberately selects a discharge EMS;
+- never owns an ESS charge cap in Phase 1;
+- does not own grid import;
+- treats a high export ceiling as permission for genuine PV surplus, never as an instruction to discharge or proof that physical export settled.
 
-Entry requires positive FiT, trusted qualifying inputs, strong net-energy proof, and current measured PV-load surplus strictly above `0.5 kW`. Continuation uses the same budget model with a smaller hysteresis margin and current measured surplus strictly above `0.2 kW`. Loss of trust, non-positive FiT, or a budget that no longer supports export ends the policy; re-entry must satisfy the full entry contract.
+Its energy order is PV to current house load, preserve enough opportunity to fill the battery safely, then permit export of genuinely remaining PV. Eligibility is recalculated every cycle and requires all of the following:
 
-Solar Surplus may cap charging to expose genuine surplus only when the fill trajectory remains safely supported. It must never discharge the battery merely to create Solar Surplus export, must remain in Maximum Self Consumption, and must not create a `BATTERY_EXPORT` owner. The charging-cap, timing, and priority architecture requires a bounded design before implementation.
+- FiT at least `1 cent/kWh`;
+- trusted finite PV and load values with coherent observations;
+- measured PV-load surplus strictly above `0.5 kW` for entry;
+- for genuinely owned continuation only, measured surplus strictly above `0.2 kW`;
+- trusted Remaining Today aggregate forecast;
+- trusted battery SoC and rated battery capacity;
+- trusted same-day future sunset while the sun is above the horizon;
+- a finite Solar-specific forecast safety factor `K >= 1`;
+- a passing aggregate energy budget;
+- when battery fill remains, passing trusted detailed timing evidence using trusted effective charge capability.
+
+At or below the continuation threshold Solar stops. After stopping, full entry strictly above `0.5 kW` is required again. Missing, stale, malformed, incoherent, or otherwise unsafe evidence fails Solar closed.
+
+### Aggregate energy budget
+
+The Phase 1 energy model is:
+
+```text
+remaining_load_kwh = current trusted site load x hours to same-day sunset
+fill_need_kwh = trusted rated capacity x remaining SoC headroom to 100%
+required_energy_kwh = remaining_load_kwh + fill_need_kwh
+protected_requirement_kwh = K x required_energy_kwh
+```
+
+Solar requires trusted PV Forecast Remaining Today to be **strictly greater than** the protected requirement. Equality does not pass.
+
+The dedicated setting is `solar_surplus_forecast_safety_factor`, default `1.20`: `1.00` adds no margin, `1.20` requires 20% more aggregate Remaining Today than calculated load plus fill need, and higher values are more conservative. Legacy `solar_surplus_start_multiplier` and `solar_surplus_stop_multiplier` remain stored/configurable for compatibility but do not drive redesigned eligibility.
+
+### Detailed timing
+
+Detailed timing is required only when `fill_need_kwh > 0`. Trusted detailed Solcast intervals must cover the decision horizon through same-day sunset. Each interval deducts current trusted site load before estimating chargeable PV, bounds charge opportunity by trusted effective charge capability, and applies the same Solar safety factor conservatively. The resulting timed opportunity must prove the battery can fill to 100% by sunset.
+
+Aggregate Remaining Today energy and detailed interval energy are independent gates; they are not added together. If fill need is exactly zero, detailed timing is not required. Missing, gapped, truncated, untrusted, or insufficient detailed evidence fails Solar closed.
+
+### Ownership interactions
+
+- Morning Slow owns its charging behavior. Solar is off while Morning Slow is active and cannot alter its charge rate.
+- Morning Dump and other explicit deliberate `BATTERY_EXPORT` owners win over Solar. After Morning Dump ends, Solar must satisfy full entry again.
+- Demand Window continues to own import blocking; Solar does not take import ownership.
+- Exact-full remains a separate PV-only branch and its semantics must not be merged into Solar.
+- Manual and Force remain operator-owned; Solar continuation cannot survive as active control ownership through them.
+- Positive-FiT deliberate battery export remains separate. Solar itself never authorizes battery discharge.
+
+### Diagnostics
+
+`solar_surplus_policy_active` identifies final Solar policy ownership after arbitration. Operator diagnostics also expose the fail reason, aggregate budget evidence, detailed timing evidence, measured surplus and active threshold, and Solar safety factor. Policy-active status and an open ceiling do not prove physical inverter or grid export settlement.
 
 ## Explicit deliberate battery-export policies
 

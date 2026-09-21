@@ -17,15 +17,14 @@ Completed, committed, and pushed on `fix/phase1-audit-remediation`:
 - Evening Boost safety repair;
 - D1-D7 trust/freshness remediation;
 - export-notification correction;
-- post-D7 F1/R9 safety repair.
+- post-D7 F1/R9 safety repair;
+- Solar Surplus architecture, energy/timing model, control wiring, diagnostics/UI cleanup, and stale D2 fixture repair;
+- consolidated Phase 1 repository gate at `1e0c61d`: 646 collected, 644 passed, with only the two frozen Phase 2 failures; compileall and `git diff --check` passed.
 
 Remaining Phase 1 sequence:
 
-1. Complete a fresh bounded Solar Surplus architecture/design using the approved net-energy budget and MSC/PV-only contract.
-2. Implement and validate Solar Surplus without battery discharge merely to create export.
-3. Run the consolidated final-candidate gate.
-4. Prepare the release candidate.
-5. Obtain final live acceptance of the complete Phase 1 candidate.
+1. Prepare the release candidate from the validated repository checkpoint.
+2. Obtain controlled live acceptance of the complete Phase 1 candidate.
 
 Gate: Phase 1 is not complete until the complete candidate is validated and live-accepted. Branch-only automated validation is not live proof.
 

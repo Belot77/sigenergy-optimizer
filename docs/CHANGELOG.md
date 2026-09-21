@@ -1,14 +1,15 @@
 # Changelog
 
-## 2026-09-21 - Phase 1 trust-remediation branch checkpoint
+## 2026-09-21 - Phase 1 repository implementation checkpoint
 
-- Harden future-energy decisions so stale or untrusted aggregate forecasts, malformed negative-price forecast entries, and untrusted live PV/load/Solcast evidence cannot create permissive control authority.
-- Require coherent, fresh, finite, non-negative directional inputs for derived battery flow, while retaining trusted direct battery telemetry precedence; require explicit supported units and capability consistency for available discharge energy.
-- Give Demand Window its evidence-based 360-second freshness boundary while retaining 120 seconds for dynamic grid-limit readbacks. Unknown Demand Window state fails closed for import without creating battery-export ownership or reducing normal PV MAX.
-- Require fresh provenance and non-negative values for current grid-limit position proof. Unknown, stale, provenance-free, or negative values cannot authorize permissive opening, while restrictive closes remain allowed.
-- Preserve independent safety action: unproven export-close settlement no longer prevents an independent restrictive import-close attempt. Service-call success remains distinct from observed settlement.
-- Classify export start/stop notifications from trusted measured grid flow rather than changes to the export ceiling.
-- These changes are committed and pushed on `fix/phase1-audit-remediation` through `f2f0720`. They are not included in live `2.3.46-haos57`, are not released or deployed by this checkpoint, and do not complete Phase 1.
+- Complete D1-D7 telemetry, freshness, provenance, coherence, forecast, battery, tariff, Demand Window, and actuator-position trust hardening. Demand Window uses its evidence-based 360-second boundary while dynamic inverter/grid-limit readbacks retain 120 seconds.
+- Preserve independent restrictive-close actions and reject negative or untrusted grid-limit readbacks as closure or permissive-opening evidence. Service-call success remains distinct from observed settlement.
+- Harden `/set_ess`, configuration validation and persistence, settings/UI behavior, Evening Boost safety, and export notifications. Notifications classify physical export from trusted measured flow rather than ceiling changes.
+- Redesign Solar Surplus as an MSC/PV-only energy gate that owns neither battery export, import, nor an ESS charge cap. Entry requires FiT at least 1 cent/kWh, trusted coherent measured surplus above 0.5 kW, a strict aggregate load-plus-100%-fill energy budget using Solar-specific safety factor `K`, and, when fill remains, trusted detailed timing and effective charge capability through same-day sunset.
+- Retain owned continuation strictly above 0.2 kW; once stopped, require full entry again. Missing, gapped, stale, incoherent, or insufficient evidence fails Solar closed. Morning Slow, Morning Dump, Demand Window, Exact-full, Manual, and Force retain their separate ownership.
+- Add `solar_surplus_forecast_safety_factor` with default `1.20`; legacy start/stop forecast multipliers remain configurable only for compatibility and no longer drive redesigned eligibility.
+- Add operator diagnostics for final Solar ownership, fail reason, aggregate and timing evidence, measured surplus/active threshold, and safety factor while distinguishing policy ownership from physical export settlement.
+- Repository validation at `1e0c61d` collected 646 tests: 644 passed and only the two frozen Phase 2 transition-settlement tests failed; compileall and `git diff --check` passed. This implementation checkpoint is not released, deployed, or live-accepted. Current live remains `2.3.46-haos57`.
 
 ## 2026-09-15 - 2.3.46-haos57 candidate
 
