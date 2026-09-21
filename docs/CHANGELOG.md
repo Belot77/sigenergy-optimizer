@@ -6,7 +6,7 @@
 - Preserve independent restrictive-close safety, non-negative trusted grid-limit readback requirements, and the rule that service-call success is not observed settlement.
 - Include the MSC/PV-only Solar Surplus redesign with strict aggregate energy budgeting, required detailed timing evidence while battery fill remains, no Solar-owned ESS charge cap, and no battery-export or discharge-EMS authority.
 - Include Solar ownership/fail-reason/budget/timing/threshold diagnostics and the associated `/set_ess`, configuration validation/persistence, API/settings/UI, Evening Boost, and export-notification repairs.
-- This is local candidate preparation only. `2.3.47-haos58` has not been committed, tagged, built, published, installed, restarted, or live-accepted. Current live remains `2.3.46-haos57`.
+- Candidate preparation is committed at `a945dfd6703bdfd2741752a405cf9682359ebf5e` and pushed. `2.3.47-haos58` has not been tagged, built, published, installed, restarted, or live-accepted. Current live remains `2.3.46-haos57`.
 
 ## 2026-09-21 - Phase 1 repository implementation checkpoint
 

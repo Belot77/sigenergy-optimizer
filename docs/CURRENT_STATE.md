@@ -7,19 +7,19 @@ Last consolidated: 2026-09-21
 ## Live release and rollback
 
 - Current live release: `2.3.46-haos57`, from commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
-- `2.3.47-haos58` is being prepared locally as the new Phase 1 candidate. It is not committed, tagged, built, published, installed, restarted, or live-tested.
+- Phase 1 candidate: `2.3.47-haos58`, commit `a945dfd6703bdfd2741752a405cf9682359ebf5e`. It is committed and pushed, but not tagged, built, published, installed, restarted, or live-tested.
 - No rollback from `.57` has occurred.
 - Known-good deeper rollback: `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`.
 
-The exact-full Cheap-FiT repair in `.57` was live-proven earlier. The later Phase 1 remediation and Solar Surplus redesign described below are branch-only until a candidate is prepared, deployed, and accepted live.
+The exact-full Cheap-FiT repair in `.57` was live-proven earlier. The later Phase 1 remediation and Solar Surplus redesign described below are candidate-branch-only until `.58` is installed and accepted live.
 
 ## Active Phase 1 checkpoint
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
-- Pre-preparation committed HEAD: `4687f5e8cb65048870368395889ce217f0156afe`.
-- The worktree was clean before local `2.3.47-haos58` candidate preparation began.
-- The repository implementation gate was validated at `1e0c61d129fecf0c073ab87eaf5340d60cd81541`; subsequent documentation synchronization did not change production or test behavior.
+- Candidate commit: `a945dfd6703bdfd2741752a405cf9682359ebf5e`.
+- At this checkpoint the worktree was clean and the branch was pushed and synchronized `0/0` with `origin/fix/phase1-audit-remediation`.
+- The repository implementation gate was validated at `1e0c61d129fecf0c073ab87eaf5340d60cd81541`; no production or test behavior changed afterward, only mechanical release identity and documentation.
 
 Phase 1 repository implementation is checkpointed and its repository gate has passed. Material completed work includes Packages 1-5 and 6A, `/set_ess` hardening, configuration validation and persistence hardening, settings/UI cleanup, Evening Boost safety repair, D1-D7 telemetry/freshness/trust hardening, the export-notification correction, restrictive-close F1/R9 hardening, and the Solar Surplus redesign with operator-facing diagnostics. Package 6B investigation/design is complete; implementation remains deferred.
 
@@ -86,4 +86,4 @@ They are not Phase 1 failures and must not be described as solved. Phase 2 must 
 
 ## Exact next action
 
-Review the local `2.3.47-haos58` candidate-preparation diff. Candidate commit and push require the next approval. Tag, build, and publication require separate approval after that; installation, restart, and controlled Phase 1 live acceptance are also separate protected boundaries. Do not begin Phase 2 until live acceptance passes.
+Prepare candidate tagging, build, and publication for `2.3.47-haos58`, subject to separate approval. Installation, restart, and controlled Phase 1 live acceptance remain later separate protected boundaries. Do not begin Phase 2 until live acceptance passes.
