@@ -407,6 +407,83 @@ def _live_outcome_reason(mode: str, d: Any, cfg: Any) -> str | None:
     return d.outcome_reason if d else None
 
 
+def _solar_surplus_status(d: Any, *, manual_active: bool) -> dict[str, Any]:
+    """Present the optimizer's Solar Surplus evidence without recalculating it."""
+    trace_gates = d.trace_gates if d and isinstance(d.trace_gates, dict) else {}
+    trace_values = d.trace_values if d and isinstance(d.trace_values, dict) else {}
+
+    def gate(key: str) -> bool | None:
+        if key not in trace_gates:
+            return None
+        return bool(trace_gates[key])
+
+    policy_active = bool(
+        d
+        and not manual_active
+        and getattr(d, "solar_surplus_policy_active", False)
+    )
+    return {
+        "solar_surplus_policy_active": policy_active,
+        "solar_surplus_diagnostics": {
+            "policy_active": policy_active,
+            "enabled": gate("solar_surplus_enabled"),
+            "fail_reason": trace_values.get("solar_surplus_fail_reason"),
+            "fit_at_least_one_cent": gate("solar_fit_at_least_one_cent"),
+            "measured_pv_surplus_kw": trace_values.get(
+                "solar_measured_pv_surplus_kw"
+            ),
+            "required_surplus_threshold_kw": trace_values.get(
+                "solar_surplus_threshold_kw"
+            ),
+            "remaining_forecast_kwh": trace_values.get(
+                "solar_remaining_forecast_kwh"
+            ),
+            "expected_remaining_load_kwh": trace_values.get(
+                "solar_expected_remaining_load_kwh"
+            ),
+            "battery_fill_need_kwh": trace_values.get(
+                "solar_fill_need_to_full_kwh"
+            ),
+            "forecast_safety_factor": trace_values.get(
+                "solar_forecast_safety_factor"
+            ),
+            "protected_requirement_kwh": trace_values.get(
+                "solar_protected_required_energy_kwh"
+            ),
+            "raw_exportable_energy_kwh": trace_values.get(
+                "solar_raw_exportable_energy_kwh"
+            ),
+            "exportable_energy_kwh": trace_values.get(
+                "solar_exportable_energy_kwh"
+            ),
+            "energy_budget_passed": gate("solar_energy_budget_passed"),
+            "detailed_timing_required": gate("solar_detailed_timing_required"),
+            "detailed_forecast_trusted": gate(
+                "solcast_detailed_source_trusted"
+            ),
+            "detailed_forecast_coverage": gate(
+                "solar_detailed_forecast_coverage"
+            ),
+            "timed_charge_opportunity_kwh": trace_values.get(
+                "solar_timed_charge_opportunity_kwh"
+            ),
+            "safe_timed_charge_opportunity_kwh": trace_values.get(
+                "solar_safe_timed_charge_opportunity_kwh"
+            ),
+            "timing_passed": gate("solar_timing_passed"),
+            "previous_final_policy_active": gate(
+                "previous_cycle_solar_surplus_policy_owned"
+            ),
+            "pv_load_observations_coherent": gate(
+                "solar_pv_load_observations_coherent"
+            ),
+            "pv_load_observation_span_seconds": trace_values.get(
+                "pv_load_observation_span_seconds"
+            ),
+        },
+    }
+
+
 def _coerce_config_value(cfg: Any, key: str, raw: Any) -> Any:
     current = getattr(cfg, key)
     current_type = type(current)
@@ -761,6 +838,7 @@ async def get_status(request: Request) -> dict[str, Any]:
     display_ess_discharge = _manual_float("ess_discharge_limit", s.current_ess_discharge_limit if s else (d.ess_discharge_limit if d else None))
     trace_gates = d.trace_gates if d and isinstance(d.trace_gates, dict) else {}
     trace_values = d.trace_values if d and isinstance(d.trace_values, dict) else {}
+    solar_surplus_status = _solar_surplus_status(d, manual_active=manual_active)
     return {
         "runtime_signature": getattr(opt, "runtime_signature", "unknown"),
         "morning_slow_charge_runtime_disabled": bool(
@@ -805,6 +883,7 @@ async def get_status(request: Request) -> dict[str, Any]:
         "morning_slow_charge_active": (d.morning_slow_charge_active if d else None) if not manual_active else False,
         "evening_export_boost_active": d.evening_export_boost_active if d else None,
         "solar_surplus_bypass": d.solar_surplus_bypass if d else None,
+        **solar_surplus_status,
         "pv_safeguard_active": d.pv_safeguard_active if d else None,
         "battery_full_safeguard": d.battery_full_safeguard if d else None,
         "export_spike_active": d.export_spike_active if d else None,
@@ -1196,6 +1275,10 @@ async def ws_status(websocket: WebSocket) -> None:
             display_pv_max = _manual_float("pv_max_power_limit", s.current_pv_max_power_limit if s else (d.pv_max_power_limit if d else None))
             display_ess_charge = _manual_float("ess_charge_limit", s.current_ess_charge_limit if s else (d.ess_charge_limit if d else None))
             display_ess_discharge = _manual_float("ess_discharge_limit", s.current_ess_discharge_limit if s else (d.ess_discharge_limit if d else None))
+            solar_surplus_status = _solar_surplus_status(
+                d,
+                manual_active=manual_active,
+            )
             await websocket.send_json(
                 {
                     "ws_connected": opt.ws_connected,
@@ -1233,6 +1316,8 @@ async def ws_status(websocket: WebSocket) -> None:
                     "battery_power_kw": battery_power_kw,
                     "sunrise_soc_target": (d.sunrise_soc_target if d else None) if not manual_active else None,
                     "morning_slow_charge_active": (d.morning_slow_charge_active if d else None) if not manual_active else False,
+                    "solar_surplus_bypass": d.solar_surplus_bypass if d else None,
+                    **solar_surplus_status,
                     "outcome_reason": outcome_reason,
                     "last_cycle_started": opt.last_cycle_started.isoformat() if getattr(opt, "last_cycle_started", None) else None,
                     "last_cycle_completed": opt.last_cycle_completed.isoformat() if getattr(opt, "last_cycle_completed", None) else None,

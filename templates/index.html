@@ -681,6 +681,35 @@ html.theme-dark .cfg-help{color:#9fb3cf}
         <div class="glance-card"><div class="glance-lbl">Cycle Completed</div><div class="glance-sub" id="cycleDone">---</div></div>
         <div class="glance-card"><div class="glance-lbl">Control / Mode</div><div class="glance-sub"><span id="sCtrl">---</span> -- <span id="sMode">---</span></div></div>
         <div class="glance-card advisory-card">
+          <div class="glance-lbl">Solar Surplus Diagnostics</div>
+          <div class="advisory-note" id="solarPolicySummary">Waiting for optimizer evidence...</div>
+          <div class="advisory-grid">
+            <div class="advisory-item"><span class="advisory-k">Solar Surplus policy active</span><span class="advisory-v" id="solarPolicyActive">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">FiT ≥ 1c/kWh</span><span class="advisory-v" id="solarFitGate">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Threshold mode</span><span class="advisory-v" id="solarThresholdMode">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Measured PV surplus</span><span class="advisory-v" id="solarMeasuredSurplus">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Required threshold</span><span class="advisory-v" id="solarRequiredThreshold">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Forecast remaining today</span><span class="advisory-v" id="solarRemainingForecast">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Expected remaining load</span><span class="advisory-v" id="solarExpectedLoad">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Battery fill to 100%</span><span class="advisory-v" id="solarFillNeed">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Forecast safety</span><span class="advisory-v" id="solarSafetyFactor">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Protected requirement</span><span class="advisory-v" id="solarProtectedRequirement">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Raw spare forecast</span><span class="advisory-v" id="solarRawSpare">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Clamped spare forecast</span><span class="advisory-v" id="solarClampedSpare">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Aggregate budget passed</span><span class="advisory-v" id="solarBudgetPassed">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Detailed timing required</span><span class="advisory-v" id="solarTimingRequired">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Detailed forecast trusted</span><span class="advisory-v" id="solarDetailedTrusted">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Horizon coverage</span><span class="advisory-v" id="solarDetailedCoverage">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Timed charge opportunity</span><span class="advisory-v" id="solarTimedOpportunity">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Safety-adjusted opportunity</span><span class="advisory-v" id="solarSafeOpportunity">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Timing passed</span><span class="advisory-v" id="solarTimingPassed">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">Previous final ownership</span><span class="advisory-v" id="solarPreviousActive">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">PV/load coherent</span><span class="advisory-v" id="solarPvLoadCoherent">—</span></div>
+            <div class="advisory-item"><span class="advisory-k">PV/load observation span</span><span class="advisory-v" id="solarPvLoadSpan">—</span></div>
+            <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Why inactive / blocked</span><span class="advisory-v" id="solarFailReason">—</span></div>
+          </div>
+        </div>
+        <div class="glance-card advisory-card">
           <div class="glance-lbl">Advisory Export Value Gate</div>
           <div class="advisory-note" id="advModeNote">n/a</div>
           <div class="advisory-grid">
@@ -2368,6 +2397,12 @@ function fmtAdvisoryPrice(v){ return Number.isFinite(Number(v)) ? `${fcc(Number(
 function fmtAdvisoryCents(v){ return Number.isFinite(Number(v)) ? `${Number(v).toFixed(0)}c/kWh` : 'n/a'; }
 function fmtAdvisoryDiffCents(v){ return Number.isFinite(Number(v)) ? `${Number(v) >= 0 ? '+' : ''}${Number(v).toFixed(0)}c/kWh` : 'n/a'; }
 function fmtAdvisoryText(v){ const t = String(v ?? '').trim(); return t ? t : 'n/a'; }
+function fmtSolarBool(v){ return v === true ? 'Yes' : (v === false ? 'No' : '—'); }
+function fmtSolarMetric(v, unit, digits=2){
+  if (v == null || typeof v === 'boolean' || (typeof v === 'string' && !v.trim()) || !Number.isFinite(Number(v))) return '—';
+  return `${Number(v).toFixed(digits)}${unit ? ` ${unit}` : ''}`;
+}
+function fmtSolarText(v){ const t = String(v ?? '').trim(); return t ? t : '—'; }
 
 function setPendingBadge(id, on, status='pending', text='Pending...') {
   const el = document.getElementById(id);
@@ -2575,6 +2610,40 @@ function updateOverview() {
   setTextWithFlash('pvForecastToday', fc(s.forecast_today,2) + ' kWh');
   setTextWithFlash('pvForecastRemaining', fc(s.forecast_remaining,2) + ' kWh');
   setTextWithFlash('pvForecastTomorrow', fc(s.forecast_tomorrow,2) + ' kWh');
+  const solar = s.solar_surplus_diagnostics || {};
+  const operatorModeActive = !!s.sigenergy_mode && s.sigenergy_mode !== 'Automated';
+  const solarSummary = operatorModeActive
+    ? `Operator mode owns control (${s.sigenergy_mode}); Solar Surplus is not active control.`
+    : (solar.policy_active
+      ? 'Solar Surplus policy active — final policy ownership only; physical export is not implied.'
+      : `Solar Surplus policy inactive — ${fmtSolarText(solar.fail_reason)}`);
+  const solarThresholdMode = solar.previous_final_policy_active === true
+    ? 'Continuation'
+    : (solar.previous_final_policy_active === false ? 'Entry' : '—');
+  setTextWithFlash('solarPolicySummary', solarSummary);
+  setTextWithFlash('solarPolicyActive', fmtSolarBool(s.solar_surplus_policy_active));
+  setTextWithFlash('solarFitGate', fmtSolarBool(solar.fit_at_least_one_cent));
+  setTextWithFlash('solarThresholdMode', solarThresholdMode);
+  setTextWithFlash('solarMeasuredSurplus', fmtSolarMetric(solar.measured_pv_surplus_kw, 'kW'));
+  setTextWithFlash('solarRequiredThreshold', fmtSolarMetric(solar.required_surplus_threshold_kw, 'kW'));
+  setTextWithFlash('solarRemainingForecast', fmtSolarMetric(solar.remaining_forecast_kwh, 'kWh'));
+  setTextWithFlash('solarExpectedLoad', fmtSolarMetric(solar.expected_remaining_load_kwh, 'kWh'));
+  setTextWithFlash('solarFillNeed', fmtSolarMetric(solar.battery_fill_need_kwh, 'kWh'));
+  setTextWithFlash('solarSafetyFactor', fmtSolarMetric(solar.forecast_safety_factor, '×'));
+  setTextWithFlash('solarProtectedRequirement', fmtSolarMetric(solar.protected_requirement_kwh, 'kWh'));
+  setTextWithFlash('solarRawSpare', fmtSolarMetric(solar.raw_exportable_energy_kwh, 'kWh'));
+  setTextWithFlash('solarClampedSpare', fmtSolarMetric(solar.exportable_energy_kwh, 'kWh'));
+  setTextWithFlash('solarBudgetPassed', fmtSolarBool(solar.energy_budget_passed));
+  setTextWithFlash('solarTimingRequired', fmtSolarBool(solar.detailed_timing_required));
+  setTextWithFlash('solarDetailedTrusted', fmtSolarBool(solar.detailed_forecast_trusted));
+  setTextWithFlash('solarDetailedCoverage', fmtSolarBool(solar.detailed_forecast_coverage));
+  setTextWithFlash('solarTimedOpportunity', fmtSolarMetric(solar.timed_charge_opportunity_kwh, 'kWh'));
+  setTextWithFlash('solarSafeOpportunity', fmtSolarMetric(solar.safe_timed_charge_opportunity_kwh, 'kWh'));
+  setTextWithFlash('solarTimingPassed', fmtSolarBool(solar.timing_passed));
+  setTextWithFlash('solarPreviousActive', fmtSolarBool(solar.previous_final_policy_active));
+  setTextWithFlash('solarPvLoadCoherent', fmtSolarBool(solar.pv_load_observations_coherent));
+  setTextWithFlash('solarPvLoadSpan', fmtSolarMetric(solar.pv_load_observation_span_seconds, 's'));
+  setTextWithFlash('solarFailReason', operatorModeActive ? 'Operator mode owns control' : fmtSolarText(solar.fail_reason));
   setTextWithFlash('advWouldAllow', fmtAdvisoryBool(s.export_value_gate_would_allow));
   setTextWithFlash('advWouldBlock', fmtAdvisoryBool(s.export_value_gate_would_block));
   setTextWithFlash('advMode', fmtAdvisoryText(s.export_value_gate_mode));
@@ -3750,13 +3819,13 @@ const _CONFIG_SECTIONS = [
     ['battery_full_hours_before_sunset', 'Hours Before Sunset', 'number', '0.1'],
     ['battery_full_forecast_multiplier', 'Forecast Multiplier', 'number', '0.1'],
   ]},
-  { key:'solar_surplus_bypass', title:'Solar Surplus Bypass', fields:[
-    ['solar_surplus_bypass_enabled', 'Solar Surplus Bypass Enabled', 'bool'],
+  { key:'solar_surplus_bypass', title:'Solar Surplus', fields:[
+    ['solar_surplus_bypass_enabled', 'Solar Surplus Enabled', 'bool'],
     ['solar_surplus_forecast_safety_factor', 'Solar Surplus Forecast Safety', 'number', '0.05'],
-    ['solar_surplus_start_multiplier', 'Start Multiplier', 'number', '0.1'],
-    ['solar_surplus_stop_multiplier', 'Stop Multiplier', 'number', '0.1'],
-    ['solar_surplus_min_pv_margin', 'Min PV Margin', 'number', '0.1'],
-    ['solar_surplus_stop_pv_margin', 'Stop PV Margin', 'number', '0.1'],
+    ['solar_surplus_start_multiplier', 'Legacy Start Multiplier (unused)', 'number', '0.1'],
+    ['solar_surplus_stop_multiplier', 'Legacy Stop Multiplier (unused)', 'number', '0.1'],
+    ['solar_surplus_min_pv_margin', 'Start PV Surplus Margin', 'number', '0.1'],
+    ['solar_surplus_stop_pv_margin', 'Continuation PV Surplus Margin', 'number', '0.1'],
   ]},
   { key:'stability_hysteresis', title:'Stability & Hysteresis', fields:[
     ['soc_hysteresis', 'SoC Hysteresis', 'number', '0.1'],
@@ -3857,12 +3926,12 @@ function configFieldHelp(key, label, type) {
     morning_dump_hours_before_sunrise: 'Affects: total Morning Dump window duration, counted backward from its fixed end one hour after sunrise. For example, 0.5 starts 30 minutes after sunrise and can run for up to 30 minutes. The existing config key is retained for compatibility.',
     morning_dump_min_soc: 'Affects: hard Morning Dump battery floor. Morning Dump cannot start or continue at or below this SoC, regardless of forecast. Higher -> preserves more battery. Lower -> permits deeper Morning Dump discharge.',
     battery_full_forecast_multiplier: 'Forecast multiplier used by battery-full safeguard to decide if export should be blocked.',
-    solar_surplus_bypass_enabled: 'Affects: Solar Surplus Bypass branch that allows stronger export/discharge when PV is abundant. Off -> bypass never used. On -> bypass can activate when thresholds are met.',
+    solar_surplus_bypass_enabled: 'Allows PV-only export under Maximum Self Consumption when current PV surplus, forecast energy, battery-fill trajectory and timing evidence show genuine spare solar. Solar Surplus never deliberately discharges the battery.',
     solar_surplus_forecast_safety_factor: 'Forecast safety factor used only by Solar Surplus. 1.00 uses the calculated energy requirement as-is. 1.20 requires 20% more PV Forecast Remaining Today than the calculated remaining-load plus battery-fill requirement. Higher values make Solar Surplus more conservative.',
-    solar_surplus_start_multiplier: 'Affects: start threshold for Solar Surplus Bypass relative to battery capacity. Lower -> bypass starts more easily. Higher -> bypass requires much stronger forecast surplus.',
-    solar_surplus_stop_multiplier: 'Affects: stop threshold for Solar Surplus Bypass hysteresis. Lower -> bypass drops out sooner after conditions soften. Higher -> bypass stays active longer once started.',
-    solar_surplus_min_pv_margin: 'Affects: minimum real-time PV surplus margin above load for bypass activation. Lower -> bypass can trigger with smaller surplus. Higher -> requires clear surplus before enabling.',
-    solar_surplus_stop_pv_margin: 'Affects: real-time PV surplus continuation threshold after Solar Surplus Bypass has genuinely started. It cannot exceed the start margin. Lower -> stays active through smaller surplus. Higher -> stops sooner as surplus falls.',
+    solar_surplus_start_multiplier: 'Retained for configuration compatibility. The redesigned Solar Surplus policy does not use this value for eligibility.',
+    solar_surplus_stop_multiplier: 'Retained for configuration compatibility. The redesigned Solar Surplus policy does not use this value for eligibility.',
+    solar_surplus_min_pv_margin: 'Measured PV-minus-load threshold required to enter Solar Surplus. After Solar Surplus stops, it must satisfy this full start threshold again.',
+    solar_surplus_stop_pv_margin: 'Lower measured PV-minus-load threshold allowed only after Solar Surplus genuinely became active. After Solar Surplus stops, the full start threshold is required again.',
     export_threshold_low: 'Affects: FIT price band boundary for low export tier logic. Lower -> low-tier export allowed at lower prices. Higher -> low-tier threshold is harder to reach.',
     export_threshold_medium: 'Affects: FIT boundary for medium export tier and positive-FIT guards. Lower -> medium-tier behavior starts sooner. Higher -> needs better FIT before medium-tier behavior.',
     export_threshold_high: 'Affects: FIT boundary for high export tier/full export caps. Lower -> high-tier export unlocks sooner. Higher -> high-tier export requires stronger FIT.',
