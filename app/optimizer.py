@@ -104,7 +104,7 @@ _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
 # One 0.01 kWh sensor-resolution step may be rounding noise; larger excess is
 # materially inconsistent with a trusted rated capacity.
 _AVAILABLE_ENERGY_CAPACITY_TOLERANCE_KWH = 0.01
-_RUNTIME_SIGNATURE = "2.3.47-haos58"
+_RUNTIME_SIGNATURE = "2.3.48-haos59"
 
 
 def _solar_surplus_finite_number(name: str, value: object) -> float:
@@ -3430,11 +3430,12 @@ class SigEnergyOptimizer:
             pv_only_msc_authoritative_cap_kw,
         ) = self._bounded_pv_only_high_ceiling(s)
         pv_only_classification_cap_kw = pv_only_msc_high_ceiling_kw
+        # Eligibility belongs to the configured PV-surplus policy, not to the
+        # earlier refill/forecast result.  The independently observed MSC and
+        # physical-flow gates below decide whether its ceiling is safe to open.
         positive_fit_msc_surplus_policy_active = bool(
             positive_fit_override
             and not positive_fit_battery_export_authorized
-            and desired_export_source == "positive_fit_override"
-            and desired_export_limit > 0.01
         )
         ordinary_msc_economic_policy_active = bool(
             (
@@ -3467,7 +3468,14 @@ class SigEnergyOptimizer:
                 or pv_only_branch_policy_deferred
             )
             and not standby_holdoff_active
-            and not battery_full_safeguard_block
+            # Battery Full Safeguard is a refill preference.  It may close
+            # deliberate export.  Trusted PV and load evidence may permit a
+            # separately proven MSC surplus ceiling that creates no stored-
+            # battery export intent.
+            and (
+                not battery_full_safeguard_block
+                or (pv_power_trusted and load_power_trusted)
+            )
             and desired_export_source != "external_override"
         )
         ordinary_msc_surplus_ceiling_active = bool(

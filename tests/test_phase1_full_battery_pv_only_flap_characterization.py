@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import timedelta
 
 from app.models import (
     EXPORT_BLOCKED,
@@ -176,6 +177,74 @@ class Phase1FullBatteryPvOnlyFlapCharacterizationTests(
                 self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
                 self.assertEqual(0.0, decision.export_limit)
                 self.assertEqual("none", decision.trace_values["battery_export_owner"])
+
+    def test_near_full_positive_fit_msc_ceiling_ignores_available_energy_flap(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            battery_full_safeguard_enabled=True,
+            allow_low_medium_export_positive_fit=True,
+            allow_positive_fit_battery_discharging=False,
+            export_threshold_low=0.10,
+            export_limit_high=25.0,
+            min_grid_transfer_kw=1.0,
+        )
+        charging_context = replace(
+            self._fresh_live_context(),
+            battery_power=self._observed(4.75),
+            grid_export_power=self._observed(0.25),
+        )
+
+        for battery_soc in (96.0, 99.9):
+            with self.subTest(battery_soc=battery_soc):
+                decisions = []
+                for available_energy_trusted in (True, False, True):
+                    state = self._full_battery_msc_state(charging_context)
+                    state.battery_soc = battery_soc
+                    state.battery_capacity_kwh = 40.3
+                    state.available_discharge_energy_kwh = (
+                        40.3 * battery_soc / 100.0
+                        if available_energy_trusted
+                        else 0.0
+                    )
+                    state.available_discharge_energy_trusted = (
+                        available_energy_trusted
+                    )
+                    state.battery_power_sensor_kw = 4.75
+                    state.grid_export_power_kw = 0.25
+                    state.solcast_detailed = [
+                        {
+                            "period_start": (
+                                self.FIXED_AFTERNOON + timedelta(minutes=30)
+                            ).isoformat(),
+                            "pv_estimate": 10.0,
+                        }
+                    ]
+
+                    decisions.append(
+                        self.decide(optimizer, state, self.FIXED_AFTERNOON)
+                    )
+
+                self.assertFalse(decisions[0].battery_full_safeguard)
+                self.assertTrue(decisions[1].battery_full_safeguard)
+                self.assertFalse(decisions[2].battery_full_safeguard)
+                self.assertEqual(
+                    [25.0, 25.0, 25.0],
+                    [decision.export_limit for decision in decisions],
+                )
+                for decision in decisions:
+                    self.assertTrue(
+                        bool(
+                            decision.trace_gates[
+                                "ordinary_msc_surplus_ceiling_active"
+                            ]
+                        )
+                    )
+                    self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
+                    self.assertEqual(
+                        "none", decision.trace_values["battery_export_owner"]
+                    )
+                    self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
 
     def test_exact_full_untrusted_energy_still_rejects_unsafe_export_flow(
         self,
