@@ -104,7 +104,7 @@ _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
 # One 0.01 kWh sensor-resolution step may be rounding noise; larger excess is
 # materially inconsistent with a trusted rated capacity.
 _AVAILABLE_ENERGY_CAPACITY_TOLERANCE_KWH = 0.01
-_RUNTIME_SIGNATURE = "2.3.48-haos59"
+_RUNTIME_SIGNATURE = "2.3.49-haos60"
 
 
 def _solar_surplus_finite_number(name: str, value: object) -> float:
