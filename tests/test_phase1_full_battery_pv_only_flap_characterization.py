@@ -84,6 +84,168 @@ class Phase1FullBatteryPvOnlyFlapCharacterizationTests(
             hvac_solar_inputs=live_context,
         )
 
+    def test_exact_full_trusted_soc_ignores_fictitious_untrusted_energy_fill_need(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            battery_full_safeguard_enabled=True,
+            export_threshold_low=0.10,
+            export_limit_high=25.0,
+        )
+        state = self._full_battery_msc_state(self._fresh_live_context())
+        state.available_discharge_energy_kwh = 0.0
+        state.available_discharge_energy_trusted = False
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assertTrue(bool(decision.trace_gates["battery_soc_trusted"]))
+        self.assertFalse(
+            bool(decision.trace_gates["available_discharge_energy_trusted"])
+        )
+        self.assertEqual(40.0, decision.trace_values["bat_fill_need_kwh"])
+        self.assertFalse(decision.battery_full_safeguard)
+        self.assertTrue(
+            bool(decision.trace_gates["pv_only_msc_high_ceiling_active"])
+        )
+        self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
+        self.assertEqual(optimizer.cfg.export_limit_high, decision.export_limit)
+        self.assertEqual("none", decision.trace_values["battery_export_owner"])
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+
+    def test_trusted_low_available_energy_keeps_exact_full_safeguard_active(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            battery_full_safeguard_enabled=True,
+            export_threshold_low=0.10,
+            export_limit_high=25.0,
+        )
+        state = self._full_battery_msc_state(self._fresh_live_context())
+        state.available_discharge_energy_kwh = 10.0
+        state.available_discharge_energy_trusted = True
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assertTrue(bool(decision.trace_gates["battery_soc_trusted"]))
+        self.assertTrue(
+            bool(decision.trace_gates["available_discharge_energy_trusted"])
+        )
+        self.assertEqual(30.0, decision.trace_values["bat_fill_need_kwh"])
+        self.assertTrue(decision.battery_full_safeguard)
+        self.assertEqual(
+            "closed_battery_full_safeguard",
+            decision.trace_values["initial_desired_export_source"],
+        )
+        self.assertFalse(
+            bool(decision.trace_gates["pv_only_msc_high_ceiling_active"])
+        )
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertEqual(0.0, decision.export_limit)
+        self.assertEqual("none", decision.trace_values["battery_export_owner"])
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+
+    def test_untrusted_energy_exemption_requires_trusted_exact_full_soc(self) -> None:
+        optimizer = self.optimizer(
+            battery_full_safeguard_enabled=True,
+            export_threshold_low=0.10,
+            export_limit_high=25.0,
+        )
+        cases = (
+            ("just_below_full", 99.9, True),
+            ("untrusted_exact_full", 100.0, False),
+        )
+
+        for label, battery_soc, battery_soc_trusted in cases:
+            with self.subTest(case=label):
+                state = self._full_battery_msc_state(self._fresh_live_context())
+                state.battery_soc = battery_soc
+                state.battery_soc_trusted = battery_soc_trusted
+                state.available_discharge_energy_kwh = 0.0
+                state.available_discharge_energy_trusted = False
+
+                decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+                self.assertTrue(decision.battery_full_safeguard)
+                self.assertEqual(
+                    "closed_battery_full_safeguard",
+                    decision.trace_values["initial_desired_export_source"],
+                )
+                self.assertFalse(
+                    bool(decision.trace_gates["pv_only_msc_high_ceiling_active"])
+                )
+                self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                self.assertEqual(0.0, decision.export_limit)
+                self.assertEqual("none", decision.trace_values["battery_export_owner"])
+
+    def test_exact_full_untrusted_energy_still_rejects_unsafe_export_flow(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            battery_full_safeguard_enabled=True,
+            export_threshold_low=0.10,
+            export_limit_high=25.0,
+        )
+        fresh_context = self._fresh_live_context()
+        unsafe_context = replace(
+            fresh_context,
+            battery_power=self._observed(-1.0),
+        )
+        state = self._full_battery_msc_state(unsafe_context)
+        state.battery_power_sensor_kw = -1.0
+        state.available_discharge_energy_kwh = 0.0
+        state.available_discharge_energy_trusted = False
+
+        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+        self.assertFalse(decision.battery_full_safeguard)
+        self.assertTrue(
+            bool(
+                decision.trace_gates[
+                    "ordinary_msc_simultaneous_battery_discharge_and_grid_export"
+                ]
+            )
+        )
+        self.assertFalse(
+            bool(decision.trace_gates["pv_only_msc_high_ceiling_active"])
+        )
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertEqual(0.0, decision.export_limit)
+        self.assertEqual("none", decision.trace_values["battery_export_owner"])
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+
+    def test_exact_full_untrusted_energy_does_not_take_manual_or_force_ownership(
+        self,
+    ) -> None:
+        optimizer = self.optimizer(
+            battery_full_safeguard_enabled=True,
+            export_threshold_low=0.10,
+            export_limit_high=25.0,
+        )
+
+        for mode in (optimizer.cfg.manual_option, optimizer.cfg.full_export_option):
+            with self.subTest(mode=mode):
+                state = self._full_battery_msc_state(self._fresh_live_context())
+                state.sigenergy_mode = mode
+                state.available_discharge_energy_kwh = 0.0
+                state.available_discharge_energy_trusted = False
+
+                decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+                self.assertFalse(
+                    bool(decision.trace_gates["observed_automated_control_mode"])
+                )
+                self.assertFalse(
+                    bool(decision.trace_gates["pv_only_msc_high_ceiling_active"])
+                )
+                self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                self.assertEqual(0.0, decision.export_limit)
+
+                optimizer._freeze_decision_to_live_mode(state, decision, mode)
+
+                self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                self.assertEqual(state.current_export_limit, decision.export_limit)
+                self.assertIn("optimizer writes paused", decision.outcome_reason)
+
     def test_direct_freshness_alone_reproduces_25_0_25_0_flap(self) -> None:
         optimizer = self.optimizer(
             export_threshold_low=0.08,

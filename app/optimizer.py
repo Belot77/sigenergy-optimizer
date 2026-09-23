@@ -3047,22 +3047,34 @@ class SigEnergyOptimizer:
                 )
             )
         )
-        battery_full_safeguard_block = self._battery_full_safeguard_block(
-            s,
-            now_ts,
-            sunset_ts,
-            bat_fill_need_kwh,
-            is_evening_or_night,
-            detailed_forecast_trusted=bool(
-                load_power_trusted
-                and solcast_detailed_source_trusted
-                and battery_full_detailed_coverage
-            ),
-            detailed_periods=(
-                detailed_forecast_periods
-                if detailed_forecast_validation_required
-                else None
-            ),
+        trusted_exact_full_soc_with_untrusted_available_energy = bool(
+            battery_soc_trusted
+            and battery_soc_value == 100.0
+            and not available_discharge_energy_trusted
+        )
+        # Only the incident combination is exempt: untrusted available-energy
+        # telemetry must not use its synthetic zero to invent a refill need when
+        # SoC is separately trusted at exact 100%.  A trusted contradictory
+        # available-energy reading retains normal safeguard authority.
+        battery_full_safeguard_block = bool(
+            not trusted_exact_full_soc_with_untrusted_available_energy
+            and self._battery_full_safeguard_block(
+                s,
+                now_ts,
+                sunset_ts,
+                bat_fill_need_kwh,
+                is_evening_or_night,
+                detailed_forecast_trusted=bool(
+                    load_power_trusted
+                    and solcast_detailed_source_trusted
+                    and battery_full_detailed_coverage
+                ),
+                detailed_periods=(
+                    detailed_forecast_periods
+                    if detailed_forecast_validation_required
+                    else None
+                ),
+            )
         )
         d.battery_full_safeguard = battery_full_safeguard_block
 
