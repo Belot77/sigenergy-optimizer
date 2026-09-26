@@ -6,6 +6,7 @@ import os
 import tempfile
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from app.config import Settings
 from app.models import (
@@ -29,6 +30,20 @@ from app.optimizer import (
 
 class _DummyHA:
     pass
+
+
+_FIXED_TEST_NOW_UTC = datetime(2026, 1, 15, 2, 0, 0, tzinfo=timezone.utc)
+
+
+class _FixedDateTime(datetime):
+    """Keep relative solar horizons deterministic in every supported timezone."""
+
+    @classmethod
+    def now(cls, tz=None):
+        fixed_timestamp = _FIXED_TEST_NOW_UTC.timestamp()
+        if tz is None:
+            return cls.fromtimestamp(fixed_timestamp)
+        return cls.fromtimestamp(fixed_timestamp, tz)
 
 
 class _RecordingHA:
@@ -118,6 +133,12 @@ class _BulkStateHA:
 
 class ExportValueGateAdvisoryTests(unittest.TestCase):
     def setUp(self) -> None:
+        test_clock = patch(f"{__name__}.datetime", _FixedDateTime)
+        optimizer_clock = patch("app.optimizer.datetime", _FixedDateTime)
+        test_clock.start()
+        optimizer_clock.start()
+        self.addCleanup(optimizer_clock.stop)
+        self.addCleanup(test_clock.stop)
         self._tmp = tempfile.TemporaryDirectory()
         self._optimizers: list[SigEnergyOptimizer] = []
         self._old_state_db_path = os.environ.get("STATE_DB_PATH")

@@ -3076,6 +3076,27 @@ class SigEnergyOptimizer:
                 ),
             )
         )
+        battery_full_safeguard_soc_headroom_block: Optional[bool] = None
+        if solar_energy_evidence_trusted and solar_energy_budget is not None:
+            battery_full_safeguard_soc_headroom_block = bool(
+                self._battery_full_safeguard_block(
+                    s,
+                    now_ts,
+                    sunset_ts,
+                    float(solar_energy_budget["fill_need_kwh"]),
+                    is_evening_or_night,
+                    detailed_forecast_trusted=bool(
+                        load_power_trusted
+                        and solcast_detailed_source_trusted
+                        and battery_full_detailed_coverage
+                    ),
+                    detailed_periods=(
+                        detailed_forecast_periods
+                        if detailed_forecast_validation_required
+                        else None
+                    ),
+                )
+            )
         d.battery_full_safeguard = battery_full_safeguard_block
 
         # ---- Export blocked for forecast ----------------------------
@@ -3107,6 +3128,7 @@ class SigEnergyOptimizer:
             *,
             surplus_bypass_for_policy: bool,
             morning_slow_for_policy: bool,
+            battery_full_safeguard_for_arbitration: bool,
         ) -> tuple[float, str, float]:
             tier_limit = self._export_tier_limit(
                 s,
@@ -3122,7 +3144,7 @@ class SigEnergyOptimizer:
                 export_blocked_effective, export_forecast_guard,
                 export_min_soc, positive_fit_override, surplus_bypass_for_policy,
                 evening_export_boost_active, morning_dump_active, morning_dump_limit,
-                battery_full_safeguard_block,
+                battery_full_safeguard_for_arbitration,
                 tier_limit, hours_to_sunrise, cap,
                 # Forecast potential avoids the old self-curtailed measured-PV loop.
                 control_pv_surplus_kw, is_evening_or_night, morning_slow_for_policy,
@@ -3143,6 +3165,7 @@ class SigEnergyOptimizer:
         ) = choose_export_limit(
             surplus_bypass_for_policy=solar_surplus_bypass,
             morning_slow_for_policy=morning_slow_charge_active,
+            battery_full_safeguard_for_arbitration=battery_full_safeguard_block,
         )
         deliberate_source_requires_soc = bool(
             desired_export_source in {"morning_dump", "high_price_or_spike", "solar_override"}
@@ -3179,6 +3202,7 @@ class SigEnergyOptimizer:
             ) = choose_export_limit(
                 surplus_bypass_for_policy=False,
                 morning_slow_for_policy=morning_slow_charge_active,
+                battery_full_safeguard_for_arbitration=battery_full_safeguard_block,
             )
             pv_only_branch_policy_deferred_reason = (
                 "Solar Surplus Bypass PV-only ceiling deferred to independently "
@@ -3276,6 +3300,51 @@ class SigEnergyOptimizer:
             ordinary_msc_flow_classification = "load_serving_battery_discharge"
         else:
             ordinary_msc_flow_classification = "battery_within_tolerance"
+        battery_full_safeguard_effective_export_block = battery_full_safeguard_block
+        battery_full_safeguard_solar_exception_active = False
+        # Keep the raw safeguard result above.  Re-arbitrate only when its sole
+        # blocker is the synthetic fill need from untrusted available-energy
+        # telemetry and the independently qualified Solar request is already
+        # observed, MSC-owned, PV-only-safe, and free of competing export owners.
+        if (
+            initial_desired_export_source == "closed_battery_full_safeguard"
+            and battery_full_safeguard_block
+            and not available_discharge_energy_trusted
+            and battery_full_safeguard_soc_headroom_block is False
+            and solar_surplus_bypass
+            and observed_automated_control_mode
+            and observed_max_self_consumption
+            and pv_only_discharge_ok
+            and ordinary_msc_flow_ok
+            and not export_spike_active
+            and not morning_dump_active
+            and not morning_slow_charge_active
+            and not evening_export_boost_active
+            and not export_solar_override
+            and not positive_fit_override
+            and not standby_holdoff_active
+            and not s.price_is_negative
+            and not s.feedin_is_negative
+        ):
+            (
+                solar_candidate_export_limit,
+                solar_candidate_export_source,
+                solar_candidate_tier_limit,
+            ) = choose_export_limit(
+                surplus_bypass_for_policy=True,
+                morning_slow_for_policy=False,
+                battery_full_safeguard_for_arbitration=False,
+            )
+            if (
+                solar_candidate_export_source == "solar_surplus_pv_high"
+                and solar_candidate_export_limit > 0.01
+            ):
+                desired_export_limit = solar_candidate_export_limit
+                desired_export_source = solar_candidate_export_source
+                export_tier_limit = solar_candidate_tier_limit
+                initial_desired_export_source = solar_candidate_export_source
+                battery_full_safeguard_effective_export_block = False
+                battery_full_safeguard_solar_exception_active = True
         # Identify the two PV-only high-ceiling branches from the exact winning
         # policy source, never from overlapping activity flags.
         morning_slow_pv_only_high_ceiling_requested = bool(
@@ -3338,6 +3407,7 @@ class SigEnergyOptimizer:
             ) = choose_export_limit(
                 surplus_bypass_for_policy=False,
                 morning_slow_for_policy=False,
+                battery_full_safeguard_for_arbitration=battery_full_safeguard_block,
             )
         desired_export_limit_pre_value_gate = desired_export_limit
         pv_only_branch_high_ceiling_active = bool(
@@ -4248,7 +4318,8 @@ class SigEnergyOptimizer:
             export_blocked_effective, export_forecast_guard, is_evening_or_night,
             export_min_soc, pv_safeguard_active, export_tier_limit,
             morning_slow_charge_active, solar_surplus_bypass, evening_export_boost_active,
-            battery_full_safeguard_block, desired_export_limit, positive_fit_override,
+            battery_full_safeguard_effective_export_block,
+            desired_export_limit, positive_fit_override,
         )
         if actual_import_cost_guard_blocking:
             d.export_reason = "Export vetoed by actual import-cost guard; export limit forced to 0.0 kW"
@@ -4405,6 +4476,15 @@ class SigEnergyOptimizer:
             "solar_measured_surplus_gate": solar_measured_surplus_gate,
             "solar_surplus_policy_active": d.solar_surplus_policy_active,
             "battery_full_safeguard_block": battery_full_safeguard_block,
+            "battery_full_safeguard_soc_headroom_block": (
+                battery_full_safeguard_soc_headroom_block is True
+            ),
+            "battery_full_safeguard_effective_export_block": (
+                battery_full_safeguard_effective_export_block
+            ),
+            "battery_full_safeguard_solar_exception_active": (
+                battery_full_safeguard_solar_exception_active
+            ),
             "export_blocked_for_forecast": export_blocked_for_forecast,
             "export_forecast_guard": export_forecast_guard,
             "export_blocked_effective": export_blocked_effective,
@@ -4439,6 +4519,7 @@ class SigEnergyOptimizer:
             "sigenergy_mode_observed": s.sigenergy_mode_observed,
             "ems_mode_observed": s.ems_mode_observed,
             "observed_automated_control_mode": observed_automated_control_mode,
+            "observed_max_self_consumption": observed_max_self_consumption,
             "pv_surplus_common_conditions": pv_surplus_common_conditions,
             "live_pv_plausible_for_msc_ceiling": live_pv_plausible_for_msc_ceiling,
             "pv_only_msc_transition_ready": pv_only_msc_transition_ready,
