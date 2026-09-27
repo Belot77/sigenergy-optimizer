@@ -8,7 +8,9 @@ Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md
 
 - Current live release: `2.3.49-haos60`, commit `a625ca16e59a3a0ff89fd724510355ef53b79315`.
 - Documented known-good rollback: `2.3.46-haos57`, commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
-- The near-full MSC/PV-only correction is committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe` and prepared as release candidate `2.3.50-haos61`. No `.61` tag, artifact, build, release publication, deployment, restart, or live result exists yet.
+- The near-full MSC/PV-only correction is committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe` and published as `2.3.50-haos61` from source commit `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`. Tag `v2.3.50-haos61` exists at that source commit, GitHub Actions run `36282075721` succeeded, and the release commit is promoted to `main`.
+- Published image: `ghcr.io/belot77/sigenergy-optimizer:2.3.50-haos61`, OCI index digest `sha256:db35c1a062932aede5024dea587ce8b31d121679070453505c29fc14ac3b801e`; amd64 and arm64 images were verified with the expected release version and source revision.
+- `.61` is not installed, restarted, or live-accepted. Publication and `main` promotion do not prove live inverter behavior.
 
 ## Active checkpoint
 
@@ -16,10 +18,10 @@ Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md
 - Branch: `fix/phase1-audit-remediation`
 - Live `.60` source commit: `a625ca16e59a3a0ff89fd724510355ef53b79315`.
 - Repair commit: `47c591be6bf920a82995b9f402c3efb202ffa5fe`.
-- Prepared candidate identity: `2.3.50-haos61`; future tag `v2.3.50-haos61`.
+- Published release identity: `2.3.50-haos61`; immutable tag `v2.3.50-haos61` at `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`.
 - Candidate paths committed by the repair: `app/optimizer.py`, `tests/test_export_value_gate_advisory.py`, and `tests/test_phase1_near_full_pv_only_safeguard_characterization.py`.
 - Reconciled checkpoint documentation: `CURRENT_STATE.md`, `AI_HANDOVER.md`, `ROADMAP.md`, `DECISIONS.md`, `CONTROL_CONTRACT.md`, and `CHANGELOG.md`. Preserve the pre-existing edits in `AI_HANDOVER.md`, `ROADMAP.md`, and `DECISIONS.md`.
-- The code/test candidate and documentation checkpoint are committed. The release-preparation commit synchronizes the five version markers and current release documentation without changing optimizer behavior. Its exact SHA is the candidate-branch HEAD and is intentionally not embedded in the commit itself. The candidate is not tagged, built, published as a release, installed, restarted, or live-tested.
+- The code/test candidate and documentation checkpoint are committed. The release-preparation commit synchronized the five version markers and release documentation without changing optimizer behavior. Source commit `76db9e43588f0e9862d73e4e8402c0b5ce9773a7` is tagged, built, published, and promoted to `main`; installation, restart, and controlled live acceptance remain pending.
 
 ## Near-full causal defect and repair
 
@@ -61,7 +63,7 @@ Diagnostics expose final `solar_surplus_policy_active`, fail reason, aggregate b
 
 ## Approved sequencing and parked work
 
-- The repaired Phase 1 candidate is committed and must be separately released and live-accepted before Phase 2. The two Phase 2 transition-settlement failures remain frozen until then.
+- The repaired Phase 1 release is tagged, published, and promoted to `main`, but must be separately installed and live-accepted before Phase 2. The two Phase 2 transition-settlement failures remain frozen until then.
 - The short control-ownership audit follows Phase 2. The preserved order after that is architecture refactor -> project cleanup -> full GUI/UX redesign and functional corrections -> Climate Manager integration -> integration-specific UI polish. The full GUI/UX redesign is not the earlier Package 9 settings/UI cleanup.
 - Any proposal to move Climate Manager before the architecture and full GUI/UX phases, or to split Climate-specific UI work into an earlier phase, requires an explicit operator sequencing decision; this checkpoint does not change the approved order.
 - Earlier roadmap edits preserved hard-fallback house-supply repair, Morning Dump / Morning Slow refill-feasibility protection, and Morning Slow 15 kW physical-export relief. Their completion status is not established by this checkpoint and must be reconciled before Phase 1 is declared complete.
@@ -71,4 +73,4 @@ Diagnostics expose final `solar_surplus_policy_active`, fail reason, aggregate b
 
 ## Exact next action
 
-Obtain separate approval to create and push `v2.3.50-haos61` at the exact release-preparation branch HEAD. Verify both published architectures before any `main` promotion, Home Assistant update/restart, or controlled live acceptance. Do not begin Phase 2, Evening Boost implementation, or the switching follow-up before the repaired Phase 1 live gate passes.
+Use a separately controlled Home Assistant repository refresh, installation/restart, and live-acceptance session for published release `2.3.50-haos61`. Do not begin Phase 2, Evening Boost implementation, or the unresolved morning Solar-budget switching investigation before the repaired Phase 1 live gate passes.

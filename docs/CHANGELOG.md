@@ -1,13 +1,15 @@
 # Changelog
 
-## 2026-09-27 - 2.3.50-haos61 Phase 1 near-full Solar arbitration candidate
+## 2026-09-27 - 2.3.50-haos61 Phase 1 near-full Solar arbitration release
 
 - Preserve the raw Battery Full Safeguard and diagnostics while preventing the synthetic full-capacity refill requirement created solely by untrusted available-energy telemetry from vetoing an independently qualified, observed-MSC, trusted-flow Solar Surplus PV-only ceiling.
 - Keep the exception final-arbitration-only and require the specific `solar_surplus_pv_high` source. The resulting intent remains `MSC_SURPLUS_CEILING` in Maximum Self Consumption with no battery-export owner or deliberate discharge authority; failed Solar, ownership, or flow evidence remains fail-closed.
 - Add focused characterization for the 94% and 97.2% SoC incidents, the available-energy trust transition, competing owners, Manual/Force, exact-full, Demand Window, and missing, stale, incoherent, or stored-energy-export flow evidence.
 - Make the export-value-gate advisory fixture deterministic by freezing the test and optimizer clocks at a future same-day sunset instant without changing its trust or safety assertions.
 - Synchronize add-on metadata, build stamp, runtime signature, API metadata, and the README version display at `2.3.50-haos61` without changing optimizer behavior.
-- Repository validation collected 663 tests: 661 passed and only the two frozen Phase 2 transition-settlement tests failed; compileall and `git diff --check` passed. The behavior repair is committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe`; `2.3.50-haos61` is prepared but not tagged, built, published, deployed, restarted, or live-accepted. Current live remains `2.3.49-haos60` at `a625ca16e59a3a0ff89fd724510355ef53b79315`.
+- Repository validation collected 663 tests: 661 passed and only the two frozen Phase 2 transition-settlement tests failed; compileall and `git diff --check` passed. The behavior repair is committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe`; release source `76db9e43588f0e9862d73e4e8402c0b5ce9773a7` is tagged as `v2.3.50-haos61`, built and published by successful GitHub Actions run `36282075721`, and promoted to `main`.
+- Published image `ghcr.io/belot77/sigenergy-optimizer:2.3.50-haos61` has verified OCI index digest `sha256:db35c1a062932aede5024dea587ce8b31d121679070453505c29fc14ac3b801e`; amd64 and arm64 images carry the expected version and source revision. Current live remains `2.3.49-haos60` at `a625ca16e59a3a0ff89fd724510355ef53b79315`; installation, restart, and live acceptance are pending, so publication and promotion are not evidence of live inverter behavior.
+- Known-good rollback remains `v2.3.46-haos57` at `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`. Phase 2 remains frozen after the 661-pass repository gate, and the separate morning Solar-budget switching observation remains unresolved.
 
 ## 2026-09-21 - 2.3.47-haos58 candidate
 
