@@ -8,7 +8,7 @@ Last consolidated: 2026-09-27
 
 - Current live release: `2.3.49-haos60`, from commit `a625ca16e59a3a0ff89fd724510355ef53b79315`.
 - Documented known-good rollback: `2.3.46-haos57`, commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
-- Phase 1 near-full candidate: production, characterization, and advisory-fixture corrections committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe`. No new version, tag, artifact, release publication, installation, restart, or live acceptance exists for this candidate.
+- Phase 1 near-full candidate: production, characterization, and advisory-fixture corrections committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe`, with release identity `2.3.50-haos61` prepared on the candidate branch. No `.61` tag, artifact, build, release publication, installation, restart, or live acceptance exists.
 
 The current live `.60` checkpoint does not contain the committed near-full repair described below. Repository validation proves the repository candidate only; controlled live acceptance remains pending after a separately approved release sequence.
 
@@ -18,9 +18,10 @@ The current live `.60` checkpoint does not contain the committed near-full repai
 - Branch: `fix/phase1-audit-remediation`
 - Live `.60` source commit: `a625ca16e59a3a0ff89fd724510355ef53b79315`.
 - Repair commit: `47c591be6bf920a82995b9f402c3efb202ffa5fe`.
+- Prepared candidate identity: `2.3.50-haos61`; future tag `v2.3.50-haos61`.
 - Candidate code/test paths committed by the repair: `app/optimizer.py`, `tests/test_export_value_gate_advisory.py`, and `tests/test_phase1_near_full_pv_only_safeguard_characterization.py`.
 - Documentation checkpoint paths: `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, `docs/ROADMAP.md`, `docs/DECISIONS.md`, `docs/CONTROL_CONTRACT.md`, and `docs/CHANGELOG.md`. The earlier edits in `AI_HANDOVER.md`, `ROADMAP.md`, and `DECISIONS.md` were preserved and reconciled rather than discarded.
-- The code/test candidate is committed. The documentation checkpoint follows it as a separate commit on the same branch. Neither commit creates a version, tag, artifact, release publication, deployment, restart, or live-test result.
+- The code/test candidate and its documentation checkpoint are committed. Release preparation changes only the five synchronized version markers, the README version display, and current release-status documentation. The release-preparation commit is the candidate-branch HEAD and is intentionally identified from Git rather than embedded here. It does not create a tag, artifact, build, publication, deployment, restart, or live-test result.
 
 The defect was a conflict between two independently computed refill values. When available-discharge-energy telemetry became untrusted, legacy normalization substituted zero and produced a synthetic `40.3 kWh` refill requirement. Solar still had trusted SoC-derived headroom of about `2.418 kWh` at 94% SoC or `1.1284 kWh` at 97.2% SoC and independently passed its aggregate, detailed-timing, measured-surplus, ownership, and flow gates. The raw Battery Full Safeguard then won export arbitration and closed the otherwise safe MSC/PV-only ceiling.
 
@@ -39,7 +40,7 @@ Command: `python -B -m pytest -p no:cacheprovider`
 
 Focused validation also passed: near-full characterization `11 passed, 15 subtests passed`; Solar/full-battery protection `74 passed, 85 subtests passed`; advisory `96 passed, 65 subtests passed`; independent safety/ownership `238 passed, 230 subtests passed`, plus only the two frozen failures.
 
-This is a **PASS for the committed Phase 1 near-full repository candidate** at `47c591be6bf920a82995b9f402c3efb202ffa5fe`. It is not live proof and does not change the live `.60` identity.
+This is a **PASS for the Phase 1 near-full behavior committed at `47c591be6bf920a82995b9f402c3efb202ffa5fe` and prepared as `2.3.50-haos61`**. It is not live proof and does not change the live `.60` identity.
 
 ## Phase 1 trust and safety result
 
@@ -95,4 +96,4 @@ They are not Phase 1 failures and must not be described as solved. Phase 2 must 
 
 ## Exact next action
 
-The next operator decision is the exact release identity for repair commit `47c591be6bf920a82995b9f402c3efb202ffa5fe` and its documentation checkpoint. Version changes, tagging, build/publication, installation/restart, and controlled live acceptance require separate approval; no `.61` identity is assumed here. Do not begin Phase 2 until the repaired Phase 1 candidate is live-accepted.
+The next approval boundary is creation and push of `v2.3.50-haos61` at the exact release-preparation branch HEAD, which will trigger image publication. Tagging, build/publication verification, `main` promotion, installation/restart, and controlled live acceptance remain separate actions. Do not begin Phase 2 until the repaired Phase 1 candidate is live-accepted.

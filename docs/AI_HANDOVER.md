@@ -8,7 +8,7 @@ Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md
 
 - Current live release: `2.3.49-haos60`, commit `a625ca16e59a3a0ff89fd724510355ef53b79315`.
 - Documented known-good rollback: `2.3.46-haos57`, commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
-- The near-full MSC/PV-only correction is committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe`. Do not invent a version, tag, artifact, release publication, deployment, restart, or live result for it.
+- The near-full MSC/PV-only correction is committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe` and prepared as release candidate `2.3.50-haos61`. No `.61` tag, artifact, build, release publication, deployment, restart, or live result exists yet.
 
 ## Active checkpoint
 
@@ -16,9 +16,10 @@ Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md
 - Branch: `fix/phase1-audit-remediation`
 - Live `.60` source commit: `a625ca16e59a3a0ff89fd724510355ef53b79315`.
 - Repair commit: `47c591be6bf920a82995b9f402c3efb202ffa5fe`.
+- Prepared candidate identity: `2.3.50-haos61`; future tag `v2.3.50-haos61`.
 - Candidate paths committed by the repair: `app/optimizer.py`, `tests/test_export_value_gate_advisory.py`, and `tests/test_phase1_near_full_pv_only_safeguard_characterization.py`.
 - Reconciled checkpoint documentation: `CURRENT_STATE.md`, `AI_HANDOVER.md`, `ROADMAP.md`, `DECISIONS.md`, `CONTROL_CONTRACT.md`, and `CHANGELOG.md`. Preserve the pre-existing edits in `AI_HANDOVER.md`, `ROADMAP.md`, and `DECISIONS.md`.
-- The code/test candidate is committed and the documentation is its separate follow-on checkpoint. The candidate is not versioned, tagged, built, published as a release, installed, restarted, or live-tested.
+- The code/test candidate and documentation checkpoint are committed. The release-preparation commit synchronizes the five version markers and current release documentation without changing optimizer behavior. Its exact SHA is the candidate-branch HEAD and is intentionally not embedded in the commit itself. The candidate is not tagged, built, published as a release, installed, restarted, or live-tested.
 
 ## Near-full causal defect and repair
 
@@ -70,4 +71,4 @@ Diagnostics expose final `solar_surplus_policy_active`, fail reason, aggregate b
 
 ## Exact next action
 
-Obtain an explicit decision for the release identity based on repair commit `47c591be6bf920a82995b9f402c3efb202ffa5fe`. Version changes, tagging, build/publication, installation/restart, and controlled live acceptance remain separate approvals. Do not begin Phase 2, Evening Boost implementation, or the switching follow-up before the repaired Phase 1 live gate passes.
+Obtain separate approval to create and push `v2.3.50-haos61` at the exact release-preparation branch HEAD. Verify both published architectures before any `main` promotion, Home Assistant update/restart, or controlled live acceptance. Do not begin Phase 2, Evening Boost implementation, or the switching follow-up before the repaired Phase 1 live gate passes.
