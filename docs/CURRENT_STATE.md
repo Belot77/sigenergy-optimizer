@@ -1,40 +1,45 @@
 # Current State
 
-Last consolidated: 2026-09-21
+Last consolidated: 2026-09-27
 
 **CURRENT TRUTH ONLY:** this file records the current operational and development checkpoint. Durable control semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`.
 
 ## Live release and rollback
 
-- Current live release: `2.3.46-haos57`, from commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
-- Phase 1 candidate: `2.3.47-haos58`, commit `a945dfd6703bdfd2741752a405cf9682359ebf5e`. It is committed and pushed, but not tagged, built, published, installed, restarted, or live-tested.
-- No rollback from `.57` has occurred.
-- Known-good deeper rollback: `2.3.42-haos53`, tag `v2.3.42-haos53`, commit `19f3c70d24dc086737d5956a1c66cad230287edd`.
+- Current live release: `2.3.49-haos60`, from commit `a625ca16e59a3a0ff89fd724510355ef53b79315`.
+- Documented known-good rollback: `2.3.46-haos57`, commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
+- Phase 1 near-full candidate: production, characterization, and advisory-fixture corrections committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe`. No new version, tag, artifact, release publication, installation, restart, or live acceptance exists for this candidate.
 
-The exact-full Cheap-FiT repair in `.57` was live-proven earlier. The later Phase 1 remediation and Solar Surplus redesign described below are candidate-branch-only until `.58` is installed and accepted live.
+The current live `.60` checkpoint does not contain the committed near-full repair described below. Repository validation proves the repository candidate only; controlled live acceptance remains pending after a separately approved release sequence.
 
 ## Active Phase 1 checkpoint
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
-- Candidate commit: `a945dfd6703bdfd2741752a405cf9682359ebf5e`.
-- At this checkpoint the worktree was clean and the branch was pushed and synchronized `0/0` with `origin/fix/phase1-audit-remediation`.
-- The repository implementation gate was validated at `1e0c61d129fecf0c073ab87eaf5340d60cd81541`; no production or test behavior changed afterward, only mechanical release identity and documentation.
+- Live `.60` source commit: `a625ca16e59a3a0ff89fd724510355ef53b79315`.
+- Repair commit: `47c591be6bf920a82995b9f402c3efb202ffa5fe`.
+- Candidate code/test paths committed by the repair: `app/optimizer.py`, `tests/test_export_value_gate_advisory.py`, and `tests/test_phase1_near_full_pv_only_safeguard_characterization.py`.
+- Documentation checkpoint paths: `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, `docs/ROADMAP.md`, `docs/DECISIONS.md`, `docs/CONTROL_CONTRACT.md`, and `docs/CHANGELOG.md`. The earlier edits in `AI_HANDOVER.md`, `ROADMAP.md`, and `DECISIONS.md` were preserved and reconciled rather than discarded.
+- The code/test candidate is committed. The documentation checkpoint follows it as a separate commit on the same branch. Neither commit creates a version, tag, artifact, release publication, deployment, restart, or live-test result.
 
-Phase 1 repository implementation is checkpointed and its repository gate has passed. Material completed work includes Packages 1-5 and 6A, `/set_ess` hardening, configuration validation and persistence hardening, settings/UI cleanup, Evening Boost safety repair, D1-D7 telemetry/freshness/trust hardening, the export-notification correction, restrictive-close F1/R9 hardening, and the Solar Surplus redesign with operator-facing diagnostics. Package 6B investigation/design is complete; implementation remains deferred.
+The defect was a conflict between two independently computed refill values. When available-discharge-energy telemetry became untrusted, legacy normalization substituted zero and produced a synthetic `40.3 kWh` refill requirement. Solar still had trusted SoC-derived headroom of about `2.418 kWh` at 94% SoC or `1.1284 kWh` at 97.2% SoC and independently passed its aggregate, detailed-timing, measured-surplus, ownership, and flow gates. The raw Battery Full Safeguard then won export arbitration and closed the otherwise safe MSC/PV-only ceiling.
+
+The candidate retains the raw safeguard and its diagnostics. It re-arbitrates only when the initial closure is specifically the raw safeguard, available-energy telemetry is untrusted, the same safeguard passes with trusted SoC headroom, Solar independently qualifies, Automated and exact Maximum Self Consumption are observed, trusted battery/grid flow is PV-only-safe, and competing deliberate-export or safety owners are absent. The accepted candidate source must be exactly `solar_surplus_pv_high`; final intent remains `MSC_SURPLUS_CEILING`, battery-export ownership remains `none`, and downstream actuator protections are unchanged.
 
 ## Repository validation gate
 
 Command: `python -B -m pytest -p no:cacheprovider`
 
-- 646 collected.
-- 644 passed.
+- 663 collected.
+- 661 passed.
 - 2 failed: only the intentionally frozen Phase 2 transition-settlement tests listed below.
 - 193 existing Pydantic v2 deprecation warnings.
 - `python -m compileall -q app`: passed.
 - `git diff --check`: passed.
 
-This is a **PASS for the Phase 1 repository implementation checkpoint**. It is not live proof. `2.3.47-haos58` live acceptance remains pending.
+Focused validation also passed: near-full characterization `11 passed, 15 subtests passed`; Solar/full-battery protection `74 passed, 85 subtests passed`; advisory `96 passed, 65 subtests passed`; independent safety/ownership `238 passed, 230 subtests passed`, plus only the two frozen failures.
+
+This is a **PASS for the committed Phase 1 near-full repository candidate** at `47c591be6bf920a82995b9f402c3efb202ffa5fe`. It is not live proof and does not change the live `.60` identity.
 
 ## Phase 1 trust and safety result
 
@@ -59,6 +64,10 @@ The Solar-specific setting is `solar_surplus_forecast_safety_factor`, default `1
 Morning Slow owns its charging behavior and excludes Solar while active. Morning Dump and other explicit deliberate-export policies win over Solar. Demand Window retains import ownership. Exact-full remains a separate PV-only branch. Manual and Force remain operator-owned and cannot inherit Solar continuation.
 
 Operator-facing diagnostics now distinguish `solar_surplus_policy_active` final ownership from physical export settlement and expose the fail reason, aggregate budget, timing evidence, measured surplus/active threshold, and safety factor.
+
+The near-full candidate adds an auditable distinction between the raw Battery Full Safeguard and its effective Solar export-arbitration result. Untrusted available-energy telemetry never substitutes for Solar qualification, and failed Solar, ownership, MSC, battery-flow, or grid-flow evidence retains the raw fail-closed result.
+
+Separate observed follow-up: the 27 September morning trace showed Solar's aggregate energy budget moving around its threshold with repeated export-ceiling switching. That behavior is not established as fixed by the near-full repair and requires its own evidence-led Phase 1 investigation. No switching correction is included in this candidate.
 
 ## Protected behavior and references
 
@@ -86,4 +95,4 @@ They are not Phase 1 failures and must not be described as solved. Phase 2 must 
 
 ## Exact next action
 
-Prepare candidate tagging, build, and publication for `2.3.47-haos58`, subject to separate approval. Installation, restart, and controlled Phase 1 live acceptance remain later separate protected boundaries. Do not begin Phase 2 until live acceptance passes.
+The next operator decision is the exact release identity for repair commit `47c591be6bf920a82995b9f402c3efb202ffa5fe` and its documentation checkpoint. Version changes, tagging, build/publication, installation/restart, and controlled live acceptance require separate approval; no `.61` identity is assumed here. Do not begin Phase 2 until the repaired Phase 1 candidate is live-accepted.

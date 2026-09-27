@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-27 - Phase 1 near-full Solar arbitration candidate
+
+- Preserve the raw Battery Full Safeguard and diagnostics while preventing the synthetic full-capacity refill requirement created solely by untrusted available-energy telemetry from vetoing an independently qualified, observed-MSC, trusted-flow Solar Surplus PV-only ceiling.
+- Keep the exception final-arbitration-only and require the specific `solar_surplus_pv_high` source. The resulting intent remains `MSC_SURPLUS_CEILING` in Maximum Self Consumption with no battery-export owner or deliberate discharge authority; failed Solar, ownership, or flow evidence remains fail-closed.
+- Add focused characterization for the 94% and 97.2% SoC incidents, the available-energy trust transition, competing owners, Manual/Force, exact-full, Demand Window, and missing, stale, incoherent, or stored-energy-export flow evidence.
+- Make the export-value-gate advisory fixture deterministic by freezing the test and optimizer clocks at a future same-day sunset instant without changing its trust or safety assertions.
+- Repository validation collected 663 tests: 661 passed and only the two frozen Phase 2 transition-settlement tests failed; compileall and `git diff --check` passed. The repair is committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe` but is not versioned, tagged, built, published as a release, deployed, restarted, or live-accepted. Current live remains `2.3.49-haos60` at `a625ca16e59a3a0ff89fd724510355ef53b79315`.
+
 ## 2026-09-21 - 2.3.47-haos58 candidate
 
 - Carry forward the Phase 1 telemetry, freshness, provenance, coherence, forecast, tariff, battery, Demand Window, and actuator-position trust hardening so unsafe or missing evidence fails closed.

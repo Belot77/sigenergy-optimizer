@@ -177,3 +177,33 @@ Decision: Supersede the pending charging-cap portion of the earlier net-energy d
 Ownership: Morning Slow excludes Solar and retains charging ownership; deliberate-export owners such as Morning Dump win; Demand Window retains import ownership; Exact-full remains a separate PV-only branch; Manual and Force remain operator-owned. Entry requires measured surplus strictly above `0.5 kW`; owned continuation requires strictly above `0.2 kW`, and stopping restores the full entry requirement.
 
 Rationale: Separating permission from actuator ownership preserves the existing inverter charging policy while proving that aggregate energy and physical time/capability can still fill the battery. It prevents Solar from creating stored-battery export or taking unrelated actuator domains.
+
+## 2026-09-22 - Preserve the post-safety roadmap before Climate Manager
+
+Decision: Architecture refactor/consolidation, repository/project cleanup, and a GUI/UX overhaul are explicit sequential roadmap phases after Phase 2 and the short control-ownership audit and before Climate Manager integration. Later phases cannot bypass earlier safety, validation, or live-proof gates. The old `refactor/msc-baseline-overlays` worktree is a reference only; useful ideas may be salvaged individually after fresh review, but the branch must not be merged wholesale.
+
+The architecture phase preserves known-good behaviour unless a separately approved safety change requires otherwise, clarifies the boundaries between safety assessment, policy decisions, and HA/Sigenergy actuator application, and consolidates duplicated or dead paths only where protections and characterization tests prove that safe. It is not a wholesale rewrite for neatness. Repository cleanup is a separate subsequent phase that reconciles documentation, tests, branches/worktrees, artifacts, release history, configuration, and UI remnants without weakening protections or deleting branches/worktrees without explicit approval.
+
+The GUI overhaul is an information-architecture and operator-UX redesign, not a control-logic or frontend-framework rewrite by default. It must preserve backend semantics unless separately approved and clearly distinguish permission from physical flow, policy eligibility from active ownership, requested actuator state from observed settlement, and deliberate battery export from ordinary MSC discharge serving house load.
+
+Morning Slow future work is one bounded policy improvement combining forecast/refill-feasibility relief and 15 kW physical-export-limit relief, while keeping the two relief reasons independently diagnosable. It follows live testing of the existing immutable `.58` checkpoint and does not alter that release.
+
+Rationale: Durable sequencing prevents safety gates and necessary consolidation from being skipped, lets the GUI reflect a stable architecture, and keeps distinct Morning Slow safety/physical constraints explainable without broadening the current release.
+
+## 2026-09-27 - Distinguish synthetic refill from effective Solar arbitration
+
+Decision: Preserve the raw Battery Full Safeguard calculation and diagnostics, but do not let a refill requirement created solely by the untrusted available-energy zero substitute veto an independently qualified MSC/PV-only Solar Surplus ceiling. The exception is final-arbitration-only and requires the initial safeguard closure, untrusted available-energy telemetry, a passing safeguard result using trusted SoC headroom, full Solar qualification, observed Automated and exact Maximum Self Consumption ownership, trusted PV/battery/grid flow that is PV-only-safe, no competing deliberate-export or higher-priority owner, and a winning source of exactly `solar_surplus_pv_high`.
+
+The result remains `MSC_SURPLUS_CEILING` with battery-export owner `none` and Maximum Self Consumption. It cannot grant `BATTERY_EXPORT`, deliberate discharge EMS, ESS charging, grid import, or PV curtailment. Failed qualification or safety evidence retains the raw fail-closed outcome.
+
+Implementation status: committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe`; not versioned, tagged, built, published as a release, installed, restarted, or live-accepted.
+
+Rationale: Untrusted available-energy telemetry must not manufacture a full-capacity refill need that contradicts separately trusted SoC headroom, but uncertainty also must not become a general export bypass. Comparing the raw result with the trusted-SoC safeguard result isolates the established defect while preserving every independent gate.
+
+## 2026-09-27 - Define the future Evening Boost policy without implementing it
+
+Decision: A future Evening Boost redesign remains an explicit deliberate `BATTERY_EXPORT` owner with a configurable minimum FiT (default `1 cent/kWh`), grid-export ceiling (default `5.5 kW`), and morning SoC target (default `50%`). It protects current household load multiplied by remaining overnight hours through the existing sunrise-plus-one-hour endpoint, plus a configurable overnight-consumption safety margin defaulting to `20%`. It starts after productive solar ends, has a configurable cutoff defaulting to midnight, and may resume only after two minutes of stable safe conditions. It has no fixed `1 kWh` restart threshold: actual stored energy above the protected reserve determines exportability. Tomorrow's solar forecast supports replenishment planning but is not energy available tonight.
+
+Status: **not implemented and not live**. Independent ownership, reserve, forecast, actuator, and safety protections remain required. The interaction with the actual import-cost guard, higher-value-FiT protection, and physical discharge/grid-export capabilities requires a separate engineering review. Live operator settings are not software defaults.
+
+Rationale: A reserve-based model reflects energy physically available overnight and avoids treating tomorrow's forecast as present stored energy, while stable-condition resumption prevents an arbitrary fixed-energy threshold from becoming a second hidden policy.

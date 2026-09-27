@@ -106,6 +106,14 @@ Detailed timing is required only when `fill_need_kwh > 0`. Trusted detailed Solc
 
 Aggregate Remaining Today energy and detailed interval energy are independent gates; they are not added together. If fill need is exactly zero, detailed timing is not required. Missing, gapped, truncated, untrusted, or insufficient detailed evidence fails Solar closed.
 
+### Near-full safeguard arbitration
+
+A synthetic refill requirement caused solely by untrusted available-discharge-energy telemetry cannot, by itself, veto an independently qualified and safely verified Solar Surplus MSC/PV-only ceiling. The raw Battery Full Safeguard calculation and diagnostics remain visible; the distinction applies only to final export arbitration.
+
+The distinction requires all normal Solar aggregate, detailed-timing, measured-surplus, forecast, tariff, and trust gates, plus genuinely observed Automated ownership, genuinely observed exact Maximum Self Consumption, and trusted PV/battery/grid-flow evidence proving the request remains PV-only-safe. Re-arbitration must select the specific `solar_surplus_pv_high` source. A failed Solar gate, unknown or unsafe flow, competing deliberate battery-export owner, manual owner, or independent higher-priority safety owner retains the fail-closed result and cannot fall through to a general permissive ceiling.
+
+This distinction creates only `MSC_SURPLUS_CEILING`. It never creates `BATTERY_EXPORT`, never selects a deliberate discharge EMS, and never grants ESS charging, grid-import, or PV-curtailment ownership. All downstream actuator, settlement, and ownership protections remain mandatory.
+
 ### Ownership interactions
 
 - Morning Slow owns its charging behavior. Solar is off while Morning Slow is active and cannot alter its charge rate.
@@ -124,6 +132,25 @@ Aggregate Remaining Today energy and detailed interval energy are independent ga
 Existing policies that genuinely own deliberate battery sale remain distinguishable. These include qualifying Morning Dump, high-price export, export spike, Evening Export Boost, explicitly enabled positive-FiT battery discharge, and established solar/export or external overrides where their current policy owns discharge.
 
 Each owner remains subject to its own eligibility and all independent safety guards. Generic ordinary tier eligibility is never an owner.
+
+## Proposed Evening Boost redesign (not implemented, not live)
+
+The agreed future policy treats Evening Boost as an explicit deliberate `BATTERY_EXPORT` owner. It is a separate production initiative and does not describe current live behavior. Its proposed controls and energy model are:
+
+- configurable minimum FiT, default `1 cent/kWh`;
+- configurable grid-export ceiling, default `5.5 kW`;
+- configurable morning SoC target, default `50%`;
+- protected overnight need equal to current household load multiplied by remaining overnight hours, plus a configurable safety margin defaulting to `20%`;
+- the existing sunrise-plus-one-hour planning endpoint;
+- start only after productive solar ends;
+- configurable cutoff defaulting to midnight;
+- automatic resumption only after two minutes of stable safe conditions;
+- no fixed `1 kWh` restart threshold;
+- exportability determined by actual stored energy above the protected reserve;
+- tomorrow's solar forecast may support replenishment planning but is not available energy tonight;
+- independent ownership, safety, forecast, reserve, and actuator protections remain required.
+
+The exact interaction with the actual import-cost guard, higher-value-FiT protection, and physical discharge/grid-export capabilities requires a separate engineering review before implementation. Observed operator tuning must not be converted into a software default without an explicit decision.
 
 ## Morning Dump
 
