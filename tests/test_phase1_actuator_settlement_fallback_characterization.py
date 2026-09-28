@@ -19,18 +19,6 @@ from haos49_characterization_helpers import (
 )
 
 
-class _BooleanProbe:
-    """Boolean-like service result that records whether the caller inspected it."""
-
-    def __init__(self, value: bool) -> None:
-        self.value = value
-        self.checks = 0
-
-    def __bool__(self) -> bool:
-        self.checks += 1
-        return self.value
-
-
 class _ScriptedActuatorHA(RecordingHA):
     """HA double with per-actuator results independent from observed readback."""
 
@@ -387,14 +375,91 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         self.assertFalse(result.succeeded)
         self.assertIn("grid import safety close returned failure", result.error)
 
-    def test_primary_export_failure_attempts_full_fallback_in_safety_order(self) -> None:
+    def test_successful_fallback_observes_safe_state_before_bounded_recovery(
+        self,
+    ) -> None:
         ha = _ScriptedActuatorHA()
-        optimizer = self.optimizer(ha)
+        optimizer = self.optimizer(
+            ha,
+            cap_total_import=13.25,
+            pv_max_power_normal=9.5,
+            ess_charge_limit_value=12.0,
+            ess_discharge_limit_value=11.0,
+        )
         cfg = optimizer.cfg
         ha.outcomes[("set_number", cfg.grid_export_limit)] = [False, True]
-        state = self._automatic_apply_state()
+        state = self._automatic_apply_state(
+            current_pv_max_power_limit=2.0,
+            current_ess_charge_limit=0.01,
+            current_ess_discharge_limit=0.01,
+            ess_max_charge_kw=10.0,
+            ess_max_discharge_kw=9.0,
+            ess_charge_limit_entity_max_kw=8.75,
+            ess_discharge_limit_entity_max_kw=7.65,
+            demand_window_active=False,
+            demand_window_observed=True,
+        )
+        decision = self._closed_decision()
+        decision.trace_values["battery_export_owner"] = "none"
 
-        asyncio.run(optimizer._apply(state, self._closed_decision()))
+        result = asyncio.run(optimizer._apply(state, decision))
+
+        self.assertEqual(
+            [
+                ("set_number", cfg.grid_export_limit, 0.01),
+                ("set_number", cfg.grid_export_limit, 0.01),
+                ("select_option", cfg.ems_mode_select, MODE_MAX_SELF),
+                ("set_number", cfg.ess_max_discharging_limit, 0.01),
+                ("set_number", cfg.grid_import_limit, 13.25),
+                ("set_number", cfg.ess_max_charging_limit, 8.75),
+                ("set_number", cfg.ess_max_discharging_limit, 7.65),
+                ("set_number", cfg.pv_max_power_limit, 9.5),
+            ],
+            [
+                call
+                for call in ha.calls
+                if call[0] in {"set_number", "select_option"}
+            ],
+        )
+        self.assertTrue(
+            any(
+                cfg.grid_export_limit in entity_ids
+                for entity_ids in ha.bulk_state_calls
+            ),
+            "fallback must prove export closure from a trusted readback",
+        )
+        self.assertEqual(0.01, ha.state_values[cfg.grid_export_limit])
+        self.assertEqual(MODE_MAX_SELF, ha.state_values[cfg.ems_mode_select])
+        self.assertEqual(13.25, ha.state_values[cfg.grid_import_limit])
+        self.assertEqual(8.75, ha.state_values[cfg.ess_max_charging_limit])
+        self.assertEqual(7.65, ha.state_values[cfg.ess_max_discharging_limit])
+        self.assertEqual(9.5, ha.state_values[cfg.pv_max_power_limit])
+        self.assertFalse(result.succeeded)
+        self.assertTrue(result.fallback_succeeded)
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertEqual("none", decision.trace_values["battery_export_owner"])
+
+    def test_demand_window_fallback_keeps_import_blocked_but_restores_house_supply(
+        self,
+    ) -> None:
+        ha = _ScriptedActuatorHA()
+        optimizer = self.optimizer(
+            ha,
+            cap_total_import=14.0,
+            pv_max_power_normal=8.5,
+            ess_charge_limit_value=12.0,
+            ess_discharge_limit_value=11.0,
+        )
+        cfg = optimizer.cfg
+        ha.outcomes[("set_number", cfg.grid_export_limit)] = [False, True]
+        state = self._automatic_apply_state(
+            demand_window_active=True,
+            demand_window_observed=True,
+            ess_charge_limit_entity_max_kw=6.5,
+            ess_discharge_limit_entity_max_kw=7.5,
+        )
+
+        result = asyncio.run(optimizer._apply(state, self._closed_decision()))
 
         self.assertEqual(
             [
@@ -403,42 +468,91 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
                 ("select_option", cfg.ems_mode_select, MODE_MAX_SELF),
                 ("set_number", cfg.grid_import_limit, 0.01),
                 ("set_number", cfg.ess_max_discharging_limit, 0.01),
+                ("set_number", cfg.ess_max_charging_limit, 6.5),
+                ("set_number", cfg.ess_max_discharging_limit, 7.5),
+                ("set_number", cfg.pv_max_power_limit, 8.5),
             ],
-            ha.calls,
+            [
+                call
+                for call in ha.calls
+                if call[0] in {"set_number", "select_option"}
+            ],
         )
+        self.assertEqual(0.01, ha.state_values[cfg.grid_import_limit])
+        self.assertEqual(7.5, ha.state_values[cfg.ess_max_discharging_limit])
+        self.assertEqual(8.5, ha.state_values[cfg.pv_max_power_limit])
+        self.assertFalse(result.succeeded)
+        self.assertTrue(result.fallback_succeeded)
 
-    def test_fallback_requests_are_awaited_but_results_and_readback_are_unchecked(
+    def test_unsettled_fallback_export_close_withholds_permissive_recovery(
         self,
     ) -> None:
-        ha = _ScriptedActuatorHA(settle_numbers=False, settle_selects=False)
+        ha = _ScriptedActuatorHA(settle_numbers=False)
         optimizer = self.optimizer(ha)
         cfg = optimizer.cfg
-        probes = [_BooleanProbe(False) for _ in range(4)]
-        ha.outcomes = {
-            ("set_number", cfg.grid_export_limit): [False, probes[0]],
-            ("select_option", cfg.ems_mode_select): [probes[1]],
-            ("set_number", cfg.grid_import_limit): [probes[2]],
-            ("set_number", cfg.ess_max_discharging_limit): [probes[3]],
-        }
-
-        asyncio.run(
-            optimizer._apply(
-                self._automatic_apply_state(),
-                self._closed_decision(),
-            )
+        ha._record_state_value(cfg.grid_export_limit, 25.0)
+        ha.outcomes[("set_number", cfg.grid_export_limit)] = [False, True]
+        state = self._automatic_apply_state(
+            demand_window_active=False,
+            demand_window_observed=True,
         )
 
-        self.assertEqual([0, 0, 0, 0], [probe.checks for probe in probes])
-        self.assertFalse(any(call[0] == "get_state_value" for call in ha.calls))
+        result = asyncio.run(optimizer._apply(state, self._closed_decision()))
+
         self.assertEqual(
             [
-                cfg.grid_export_limit,
-                cfg.grid_export_limit,
-                cfg.grid_import_limit,
-                cfg.ess_max_discharging_limit,
+                ("set_number", cfg.grid_export_limit, 0.01),
+                ("set_number", cfg.grid_export_limit, 0.01),
+                ("select_option", cfg.ems_mode_select, MODE_MAX_SELF),
+                ("set_number", cfg.ess_max_discharging_limit, 0.01),
             ],
-            [call[1] for call in ha.calls if call[0] == "set_number"],
+            [
+                call
+                for call in ha.calls
+                if call[0] in {"set_number", "select_option"}
+            ],
         )
+        self.assertFalse(result.succeeded)
+        self.assertFalse(result.fallback_succeeded)
+        self.assertIn("grid export safety close settlement was not observed", result.error)
+
+    def test_unsettled_fallback_msc_withholds_permissive_recovery(self) -> None:
+        ha = _ScriptedActuatorHA(settle_selects=False)
+        optimizer = self.optimizer(ha)
+        cfg = optimizer.cfg
+        ha._record_state_value(cfg.grid_export_limit, 25.0)
+        ha._record_state_value(cfg.ems_mode_select, MODE_CMD_CHARGE_GRID)
+        ha.outcomes[("set_number", cfg.grid_export_limit)] = [False, True]
+        state = self._automatic_apply_state(
+            current_ems_mode=MODE_CMD_CHARGE_GRID,
+            demand_window_active=False,
+            demand_window_observed=True,
+        )
+
+        result = asyncio.run(optimizer._apply(state, self._closed_decision()))
+
+        self.assertEqual(
+            [
+                ("select_option", cfg.ems_mode_select, MODE_MAX_SELF),
+                ("set_number", cfg.grid_export_limit, 0.01),
+                ("set_number", cfg.grid_export_limit, 0.01),
+                ("select_option", cfg.ems_mode_select, MODE_MAX_SELF),
+                ("set_number", cfg.ess_max_discharging_limit, 0.01),
+            ],
+            [
+                call
+                for call in ha.calls
+                if call[0] in {"set_number", "select_option"}
+            ],
+        )
+        self.assertEqual(0.01, ha.state_values[cfg.grid_export_limit])
+        self.assertEqual(
+            MODE_CMD_CHARGE_GRID,
+            ha.state_values[cfg.ems_mode_select],
+        )
+        self.assertFalse(result.succeeded)
+        self.assertFalse(result.fallback_succeeded)
+        self.assertIn("Maximum Self Consumption settlement was not observed", result.error)
 
     def test_failed_primary_and_fallback_results_mark_cycle_failed(self) -> None:
         ha = _ScriptedActuatorHA()
@@ -497,16 +611,12 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
             False,
             RuntimeError("fallback export request failed"),
         ]
+        state = self._automatic_apply_state(
+            demand_window_active=True,
+            demand_window_observed=True,
+        )
 
-        try:
-            asyncio.run(
-                optimizer._apply(
-                    self._automatic_apply_state(),
-                    self._closed_decision(),
-                )
-            )
-        except RuntimeError:
-            pass
+        result = asyncio.run(optimizer._apply(state, self._closed_decision()))
 
         self.assertIn(
             ("select_option", cfg.ems_mode_select, MODE_MAX_SELF),
@@ -517,6 +627,9 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         self.assertIn(
             ("set_number", cfg.ess_max_discharging_limit, 0.01), ha.calls
         )
+        self.assertFalse(result.succeeded)
+        self.assertFalse(result.fallback_succeeded)
+        self.assertIn("fallback export request failed", result.error)
 
     def test_ems_success_then_export_failure_leaves_asymmetric_observed_state(
         self,

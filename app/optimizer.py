@@ -4898,27 +4898,60 @@ class SigEnergyOptimizer:
         ha = self.ha
         application_failures: list[str] = []
         safe_export_close_kw = self._bound_grid_export_request_kw(s, 0.01)
-        _, safe_discharge_cap_kw = self.get_power_caps_kw(s)
+        normal_charge_cap_kw, normal_discharge_cap_kw = self.get_power_caps_kw(s)
         safe_ess_discharge_close_kw = self._bound_ess_request_kw(
             0.01,
-            safe_discharge_cap_kw,
+            normal_discharge_cap_kw,
+        )
+        normal_ess_charge_kw = self._bound_ess_request_kw(
+            max(0.0, float(cfg.ess_charge_limit_value)),
+            normal_charge_cap_kw,
+        )
+        normal_ess_discharge_kw = self._bound_ess_request_kw(
+            max(0.0, float(cfg.ess_discharge_limit_value)),
+            normal_discharge_cap_kw,
+        )
+        normal_grid_import_kw = min(
+            max(0.0, float(cfg.cap_total_import)),
+            _POWER_LIMIT_MAX_KW,
+        )
+        normal_pv_max_kw = min(
+            max(0.0, float(cfg.pv_max_power_normal)),
+            _POWER_LIMIT_MAX_KW,
         )
 
         async def _safe_fallback(reason: str) -> _ActuatorApplicationResult:
             logger.error("Entering safe fallback: %s", reason)
             fallback_failures: list[str] = []
 
-            async def _attempt(label: str, request: Any) -> None:
+            async def _attempt(label: str, request: Any) -> bool:
                 try:
                     result = await request()
                     if result is not True:
                         fallback_failures.append(f"{label} returned failure")
+                        return False
+                    return True
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
                     fallback_failures.append(
                         f"{label} raised {type(exc).__name__}: {exc}"
                     )
+                    return False
+
+            async def _observe(label: str, observation: Any) -> bool:
+                try:
+                    observed = bool(await observation())
+                    if not observed:
+                        fallback_failures.append(f"{label} was not observed")
+                    return observed
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    fallback_failures.append(
+                        f"{label} raised {type(exc).__name__}: {exc}"
+                    )
+                    return False
 
             await _attempt(
                 "grid export safety close",
@@ -4928,10 +4961,14 @@ class SigEnergyOptimizer:
                 "Maximum Self Consumption fallback",
                 lambda: ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF),
             )
-            await _attempt(
-                "grid import safety close",
-                lambda: ha.set_number(cfg.grid_import_limit, 0.01),
+            demand_window_import_blocked = bool(
+                s.demand_window_active or not s.demand_window_observed
             )
+            if demand_window_import_blocked:
+                await _attempt(
+                    "Demand Window grid import safety close",
+                    lambda: ha.set_number(cfg.grid_import_limit, 0.01),
+                )
             if cfg.ess_max_discharging_limit:
                 await _attempt(
                     "ESS discharge safety clamp",
@@ -4941,20 +4978,74 @@ class SigEnergyOptimizer:
                     ),
                 )
 
+            export_close_observed = await _observe(
+                "grid export safety close settlement",
+                lambda: self._wait_for_number_at_most(
+                    cfg.grid_export_limit,
+                    safe_export_close_kw,
+                    timeout_s=3.0,
+                    tolerance=0.001,
+                ),
+            )
+            msc_observed = await _observe(
+                "Maximum Self Consumption settlement",
+                lambda: self._wait_for_exact_entity_state(
+                    cfg.ems_mode_select,
+                    MODE_MAX_SELF,
+                    timeout_s=3.0,
+                ),
+            )
+            safe_recovery_observed = bool(export_close_observed and msc_observed)
+
+            if safe_recovery_observed:
+                if not demand_window_import_blocked:
+                    await _attempt(
+                        "normal Automated grid import capability",
+                        lambda: ha.set_number(
+                            cfg.grid_import_limit,
+                            normal_grid_import_kw,
+                        ),
+                    )
+                if cfg.ess_max_charging_limit:
+                    await _attempt(
+                        "normal Automated ESS charge capability",
+                        lambda: ha.set_number(
+                            cfg.ess_max_charging_limit,
+                            normal_ess_charge_kw,
+                        ),
+                    )
+                if cfg.ess_max_discharging_limit:
+                    await _attempt(
+                        "normal Automated ESS discharge capability",
+                        lambda: ha.set_number(
+                            cfg.ess_max_discharging_limit,
+                            normal_ess_discharge_kw,
+                        ),
+                    )
+                await _attempt(
+                    "normal Automated PV MAX capability",
+                    lambda: ha.set_number(
+                        cfg.pv_max_power_limit,
+                        normal_pv_max_kw,
+                    ),
+                )
+
             if fallback_failures:
                 fallback_detail = "; ".join(fallback_failures)
                 logger.error("Safe fallback incomplete: %s", fallback_detail)
                 error = f"{reason}; safe fallback incomplete: {fallback_detail}"
             else:
                 error = (
-                    f"{reason}; safe fallback requests succeeded but inverter "
-                    "settlement was not observed"
+                    f"{reason}; safe fallback recovery was observed and normal "
+                    "Automated house-serving capability was requested"
                 )
             return _ActuatorApplicationResult(
                 succeeded=False,
                 error=error,
                 fallback_attempted=True,
-                fallback_succeeded=not fallback_failures,
+                fallback_succeeded=(
+                    safe_recovery_observed and not fallback_failures
+                ),
             )
 
         effective_mode = self._manual_mode_override or s.sigenergy_mode
