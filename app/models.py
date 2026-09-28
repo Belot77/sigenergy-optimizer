@@ -117,6 +117,11 @@ class SolarState:
     battery_soc: float = 0.0
     battery_capacity_kwh: float = 10.0
     available_discharge_energy_kwh: float = 0.0
+    # Live reads preserve the normalized sensor value separately from the value
+    # bounded for control. None retains the legacy hand-built-state contract.
+    available_discharge_energy_raw_kwh: Optional[float] = None
+    available_discharge_energy_clamped_to_capacity: Optional[bool] = None
+    available_discharge_energy_trust_reason: Optional[str] = None
     # Live reads set battery telemetry trust explicitly. None preserves finite,
     # hand-built decision states used by unit-level callers as legacy observations.
     battery_soc_trusted: Optional[bool] = None

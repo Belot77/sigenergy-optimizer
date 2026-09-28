@@ -493,7 +493,7 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
             when=self.MORNING,
             battery_soc_state="80.0",
             capacity_state=_MISSING,
-            available_energy_state="10.0",
+            available_energy_state="12.0",
             feedin_state="0.05",
             solcast_detailed=self._morning_forecast(self.MORNING, 10.0),
             morning_dump_enabled=True,
@@ -503,6 +503,17 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
         self.assertFalse(bool(decision.trace_gates.get("morning_dump_active")))
         self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
         self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+        self.assertEqual(
+            12.0,
+            decision.trace_values.get("available_discharge_energy_control_kwh"),
+        )
+        self.assertFalse(
+            bool(
+                decision.trace_gates.get(
+                    "available_discharge_energy_clamped_to_capacity"
+                )
+            )
+        )
 
     def test_supported_available_energy_units_normalize_to_kwh(self) -> None:
         cases = (
@@ -537,17 +548,18 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
 
     def test_invalid_available_energy_value_or_unit_fails_closed(self) -> None:
         cases = (
-            ("missing_unit", "18.0", _MISSING),
-            ("unsupported_unit", "18.0", "MJ"),
-            ("ambiguous_unit", "18.0", "kWh/Wh"),
-            ("malformed_unit", "18.0", ["kWh"]),
-            ("negative", "-0.01", "kWh"),
-            ("non_numeric", "eighteen", "kWh"),
-            ("nan", "nan", "kWh"),
-            ("positive_infinity", "inf", "kWh"),
-            ("negative_infinity", "-inf", "kWh"),
+            ("unavailable", "unavailable", "kWh", "unavailable"),
+            ("missing_unit", "18.0", _MISSING, "unsupported_unit"),
+            ("unsupported_unit", "18.0", "MJ", "unsupported_unit"),
+            ("ambiguous_unit", "18.0", "kWh/Wh", "unsupported_unit"),
+            ("malformed_unit", "18.0", ["kWh"], "unsupported_unit"),
+            ("negative", "-0.01", "kWh", "negative"),
+            ("non_numeric", "eighteen", "kWh", "non_numeric"),
+            ("nan", "nan", "kWh", "non_finite"),
+            ("positive_infinity", "inf", "kWh", "non_finite"),
+            ("negative_infinity", "-inf", "kWh", "non_finite"),
         )
-        for label, raw_energy, unit in cases:
+        for label, raw_energy, unit, expected_reason in cases:
             with self.subTest(case=label):
                 _optimizer, state, decision = self._read_and_decide(
                     capacity_state="30.0",
@@ -567,17 +579,42 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
                     30.0,
                     decision.trace_values.get("bat_fill_need_kwh"),
                 )
+                self.assertEqual(
+                    expected_reason,
+                    decision.trace_values.get(
+                        "available_discharge_energy_trust_reason"
+                    ),
+                )
 
-    def test_available_energy_materially_above_capacity_fails_closed(self) -> None:
+    def test_available_energy_materially_above_capacity_is_trusted_and_clamped(self) -> None:
         _optimizer, state, decision = self._read_and_decide(
-            capacity_state="30.0",
-            available_energy_state="30.02",
+            capacity_state="40.3",
+            available_energy_state="42.2",
         )
-        self.assertEqual(0.0, state.available_discharge_energy_kwh)
-        self.assertFalse(bool(state.available_discharge_energy_trusted))
-        self.assertEqual(30.0, decision.trace_values.get("bat_fill_need_kwh"))
+        self.assertEqual(40.3, state.available_discharge_energy_kwh)
+        self.assertTrue(bool(state.available_discharge_energy_trusted))
+        self.assertEqual(
+            42.2,
+            decision.trace_values.get("available_discharge_energy_raw_kwh"),
+        )
+        self.assertEqual(
+            40.3,
+            decision.trace_values.get("available_discharge_energy_control_kwh"),
+        )
+        self.assertTrue(
+            bool(
+                decision.trace_gates.get(
+                    "available_discharge_energy_clamped_to_capacity"
+                )
+            )
+        )
+        self.assertEqual(
+            "trusted",
+            decision.trace_values.get("available_discharge_energy_trust_reason"),
+        )
+        self.assertEqual(0.0, decision.trace_values.get("bat_fill_need_kwh"))
 
-    def test_available_energy_capacity_tolerance_boundary_is_clamped(self) -> None:
+    def test_available_energy_small_above_capacity_is_trusted_and_clamped(self) -> None:
         _optimizer, state, decision = self._read_and_decide(
             capacity_state="30.0",
             available_energy_state="30.01",
@@ -586,14 +623,33 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
         self.assertTrue(bool(state.available_discharge_energy_trusted))
         self.assertEqual(0.0, decision.trace_values.get("bat_fill_need_kwh"))
 
-    def test_available_energy_above_capacity_tolerance_fails_closed(self) -> None:
+    def test_available_energy_above_old_tolerance_is_trusted_and_clamped(self) -> None:
         _optimizer, state, decision = self._read_and_decide(
             capacity_state="30.0",
             available_energy_state="30.0101",
         )
-        self.assertEqual(0.0, state.available_discharge_energy_kwh)
-        self.assertFalse(bool(state.available_discharge_energy_trusted))
-        self.assertEqual(30.0, decision.trace_values.get("bat_fill_need_kwh"))
+        self.assertEqual(30.0, state.available_discharge_energy_kwh)
+        self.assertTrue(bool(state.available_discharge_energy_trusted))
+        self.assertEqual(0.0, decision.trace_values.get("bat_fill_need_kwh"))
+
+    def test_over_capacity_available_energy_preserves_morning_dump_eligibility(self) -> None:
+        _optimizer, state, decision = self._read_and_decide(
+            when=self.MORNING,
+            battery_soc_state="80.0",
+            capacity_state="40.3",
+            available_energy_state="42.2",
+            feedin_state="0.05",
+            solcast_detailed=self._morning_forecast(self.MORNING, 10.0),
+            morning_dump_enabled=True,
+        )
+
+        self.assertTrue(bool(state.available_discharge_energy_trusted))
+        self.assertTrue(bool(decision.trace_gates.get("morning_dump_active")))
+        self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual(
+            "morning_dump",
+            decision.trace_values.get("battery_export_owner"),
+        )
 
     def test_untrusted_available_energy_cannot_authorize_morning_dump(self) -> None:
         _optimizer, _state, decision = self._read_and_decide(
@@ -713,6 +769,14 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
         self.assertFalse(bool(decision.trace_gates.get("morning_dump_active")))
         self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
         self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+        self.assertEqual(
+            0.0,
+            decision.trace_values.get("available_discharge_energy_control_kwh"),
+        )
+        self.assertEqual(
+            "stale",
+            decision.trace_values.get("available_discharge_energy_trust_reason"),
+        )
 
     def test_missing_available_energy_fallback_is_conservative_for_morning_dump(self) -> None:
         _optimizer, state, decision = self._read_and_decide(

@@ -101,9 +101,6 @@ _POWER_LIMIT_MAX_KW = 100.0
 # timestamp jitter; keep derived-flow coherence equally narrow and independent
 # of the much wider per-sensor freshness window.
 _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
-# One 0.01 kWh sensor-resolution step may be rounding noise; larger excess is
-# materially inconsistent with a trusted rated capacity.
-_AVAILABLE_ENERGY_CAPACITY_TOLERANCE_KWH = 0.01
 _RUNTIME_SIGNATURE = "2.3.50-haos61"
 
 
@@ -1846,6 +1843,12 @@ class SigEnergyOptimizer:
             cfg.available_discharge_sensor,
             max_age_seconds=live_max_age,
         )
+        available_energy_entity = bulk.get(cfg.available_discharge_sensor)
+        available_energy_raw_state = (
+            available_energy_entity.get("state", "")
+            if available_energy_entity
+            else None
+        )
         avail_raw = (
             float(available_energy_observation.value)
             if available_energy_observation.available
@@ -1865,17 +1868,25 @@ class SigEnergyOptimizer:
             normalized_available_energy_kwh = avail_raw
         else:
             normalized_available_energy_kwh = 0.0
-        available_energy_capacity_consistent = bool(
-            not s.battery_capacity_trusted
-            or normalized_available_energy_kwh
-            <= s.battery_capacity_kwh + _AVAILABLE_ENERGY_CAPACITY_TOLERANCE_KWH
-        )
         available_energy_usable = bool(
             available_energy_observation.available
+            and not isinstance(available_energy_raw_state, bool)
             and available_energy_unit_supported
             and math.isfinite(normalized_available_energy_kwh)
             and normalized_available_energy_kwh >= 0.0
-            and available_energy_capacity_consistent
+        )
+        s.available_discharge_energy_raw_kwh = (
+            normalized_available_energy_kwh
+            if available_energy_observation.available
+            and not isinstance(available_energy_raw_state, bool)
+            and available_energy_unit_supported
+            else None
+        )
+        s.available_discharge_energy_clamped_to_capacity = bool(
+            available_energy_usable
+            and available_energy_observation.fresh
+            and s.battery_capacity_trusted
+            and normalized_available_energy_kwh > s.battery_capacity_kwh
         )
         if not available_energy_usable:
             s.available_discharge_energy_kwh = 0.0
@@ -1889,6 +1900,31 @@ class SigEnergyOptimizer:
         s.available_discharge_energy_trusted = bool(
             available_energy_usable and available_energy_observation.fresh
         )
+        if available_energy_entity is None:
+            s.available_discharge_energy_trust_reason = "missing"
+        elif str(available_energy_raw_state).strip().lower() in unavailable_states:
+            s.available_discharge_energy_trust_reason = "unavailable"
+        elif isinstance(available_energy_raw_state, bool):
+            s.available_discharge_energy_trust_reason = "non_numeric"
+        elif not available_energy_observation.available:
+            try:
+                parsed_available_energy = float(available_energy_raw_state)
+            except (TypeError, ValueError, OverflowError):
+                s.available_discharge_energy_trust_reason = "non_numeric"
+            else:
+                s.available_discharge_energy_trust_reason = (
+                    "non_finite"
+                    if not math.isfinite(parsed_available_energy)
+                    else "invalid"
+                )
+        elif not available_energy_unit_supported:
+            s.available_discharge_energy_trust_reason = "unsupported_unit"
+        elif normalized_available_energy_kwh < 0.0:
+            s.available_discharge_energy_trust_reason = "negative"
+        elif not available_energy_observation.fresh:
+            s.available_discharge_energy_trust_reason = "stale"
+        else:
+            s.available_discharge_energy_trust_reason = "trusted"
 
         def _kw_from_sensor(raw: Optional[float]) -> float:
             if raw is None or raw <= 0:
@@ -2435,13 +2471,15 @@ class SigEnergyOptimizer:
         available_discharge_energy_trusted = bool(
             available_discharge_energy_valid
             and s.available_discharge_energy_trusted is not False
-            and (
-                not battery_capacity_trusted
-                or available_energy_value
-                <= battery_capacity_value
-                + _AVAILABLE_ENERGY_CAPACITY_TOLERANCE_KWH
-            )
         )
+        if s.available_discharge_energy_raw_kwh is not None:
+            available_energy_raw_kwh: Optional[float] = float(
+                s.available_discharge_energy_raw_kwh
+            )
+        elif s.available_discharge_energy_trust_reason is None:
+            available_energy_raw_kwh = available_energy_value
+        else:
+            available_energy_raw_kwh = None
 
         try:
             pv_power_value = float(s.pv_kw)
@@ -2549,6 +2587,23 @@ class SigEnergyOptimizer:
             )
         else:
             control_available_energy_kwh = available_energy_value
+        available_energy_clamped_to_capacity = bool(
+            s.available_discharge_energy_clamped_to_capacity
+            if s.available_discharge_energy_clamped_to_capacity is not None
+            else (
+                available_discharge_energy_trusted
+                and battery_capacity_trusted
+                and available_energy_value > battery_capacity_value
+            )
+        )
+        available_energy_trust_reason = (
+            s.available_discharge_energy_trust_reason
+            or (
+                "trusted"
+                if available_discharge_energy_trusted
+                else "invalid_or_untrusted"
+            )
+        )
         bat_fill_need_kwh = max(0.0, cap - control_available_energy_kwh)
 
         # ---- Sunrise SoC target (dynamic calculation) ----------------
@@ -4558,6 +4613,7 @@ class SigEnergyOptimizer:
             "battery_soc_trusted": battery_soc_trusted,
             "battery_capacity_trusted": battery_capacity_trusted,
             "available_discharge_energy_trusted": available_discharge_energy_trusted,
+            "available_discharge_energy_clamped_to_capacity": available_energy_clamped_to_capacity,
             "pv_power_trusted": pv_power_trusted,
             "load_power_trusted": load_power_trusted,
             "solar_power_now_trusted": solar_power_now_trusted,
@@ -4651,6 +4707,9 @@ class SigEnergyOptimizer:
             "pv_surplus_actual": pv_surplus_actual,
             "pv_surplus_estimated": pv_surplus,
             "cap_kwh": cap,
+            "available_discharge_energy_raw_kwh": available_energy_raw_kwh,
+            "available_discharge_energy_control_kwh": control_available_energy_kwh,
+            "available_discharge_energy_trust_reason": available_energy_trust_reason,
             "bat_fill_need_kwh": bat_fill_need_kwh,
             "soc_required": soc_required,
             "sunrise_soc_target": sunrise_soc_target,
