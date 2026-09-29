@@ -11,24 +11,24 @@ Last consolidated: 2026-09-30
 - Live `.61` evidence established the near-full Solar exception with genuinely untrusted available-discharge-energy telemetry at about 93.9-96.7% SoC. It prevented the raw Battery Full Safeguard from blocking the 25 kW MSC/PV-only ceiling. A clean Morning Slow -> Solar transition was observed: Morning Slow held about 2 kW ESS charging, Solar later allowed normal higher charging capability, and one desired-export transition occurred without rapid `0 <-> 25 kW` chatter.
 - The 25 kW ceiling was observed as permission, not commanded battery discharge.
 
-The validated Phase 1 checkpoint through docs commit `1d3617714e42f7bc5a19aec489cfbc0622a81520` has been pushed to `origin/fix/phase1-audit-remediation`. Remote `main` remains unchanged at `de5b5af082533a48ffb6d0d300f636cbcb4463ad`. The feature branch has not been promoted to `main`, merged, tagged, released, deployed, installed, restarted, or live-proven.
+## Published Phase 1 release
 
-## Prepared Phase 1 release candidate
-
-- Release identity: `2.3.51-haos62`; expected later tag: `v2.3.51-haos62`.
-- Source remains on `fix/phase1-audit-remediation`. Release-identity preparation is uncommitted atop starting HEAD `1d3617714e42f7bc5a19aec489cfbc0622a81520`.
-- The candidate is not yet tagged, built, published, promoted to `main`, deployed, installed, restarted, or live-accepted.
-- Current known live remains `2.3.50-haos61`; known rollback remains `2.3.46-haos57`.
+- Release `2.3.51-haos62` was built from source commit `70f1766354c163b9259a3e5e128f8e083528fc64`; lightweight tag `v2.3.51-haos62` points to that exact source commit.
+- GitHub Actions workflow `Build and publish add-on`, run `36643883464`, completed successfully, including the build/publish job.
+- Multi-architecture image `ghcr.io/belot77/sigenergy-optimizer:2.3.51-haos62` was published with OCI index digest `sha256:dcc4f941df120dbd6e704f87218b72331363c3d1a58014bb10adbf6fdc38b888` for `linux/amd64` and `linux/arm64`.
+- Published OCI metadata reports version `2.3.51-haos62` and revision `70f1766354c163b9259a3e5e128f8e083528fc64`, matching the release identity and tagged source.
+- Remote `main` is promoted to the later documentation-only publication-record commit containing this state. That publication-record commit is distinct from the tagged release-source commit above.
+- `.62` is published and promoted but has not been deployed, installed, restarted, or live-accepted. Current known live remains `2.3.50-haos61`; known rollback remains `2.3.46-haos57`.
 - Phase 1 validation remains 735 collected, 733 passed, with only the two frozen Phase 2 failures; compileall and `git diff --check` passed.
-- The discussed `15.0 / 0.5 kW` physical-relief values remain unconfigured and semantically unresolved.
+- Phase 2 remains blocked until `.62` live acceptance. The discussed `15.0 / 0.5 kW` physical-relief values remain unconfigured and semantically unresolved and must not be enabled during live acceptance without a separate decision.
 
 ## Active Phase 1 checkpoint
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
 - Phase 1 code-validation HEAD before the docs-only checkpoint: `7649d185b71fe08fab2636801396e2ae7c793a13`
-- Validated remote feature-branch checkpoint through: `1d3617714e42f7bc5a19aec489cfbc0622a81520`
-- Publication state before this release-identity working-tree update: local branch aligned with `origin/fix/phase1-audit-remediation`; feature branch 9 commits ahead of and 0 behind remote `main`.
+- Phase 1 release-source commit: `70f1766354c163b9259a3e5e128f8e083528fc64`
+- Publication record: the later documentation-only commit containing this state is present on both `origin/fix/phase1-audit-remediation` and remote `main`; it is not the tagged release source.
 
 Local checkpoint chain:
 
@@ -53,7 +53,7 @@ Final validation at HEAD `7649d185b71fe08fab2636801396e2ae7c793a13`:
 - The worktree and index were clean after code/test validation.
 - The earlier unexpected safe-fallback failure was a stale protection-test expectation. Correcting that test resolved it; production code did not change in the final checkpoint.
 
-**PHASE 1 CODE VALIDATION GATE PASSED locally.** Feature-branch publication is complete through `1d3617714e42f7bc5a19aec489cfbc0622a81520`, and the `2.3.51-haos62` identity is prepared only in the working tree. Phase 1 is not fully complete: release-candidate commit, `main` promotion, tagging/build/publication, deployment, restart, and live acceptance remain outstanding and separately controlled.
+**PHASE 1 CODE VALIDATION GATE PASSED locally.** Release `2.3.51-haos62` is tagged, built, published, and represented on promoted `main`. Phase 1 is not fully complete: deployment, installation, restart, and live acceptance remain outstanding and separately controlled.
 
 ## Phase 1 behavior awaiting release/live proof
 
@@ -90,4 +90,4 @@ Discussed future physical-relief values are `15.0 kW` with `0.5 kW` headroom. Th
 
 ## Exact next action
 
-Review the prepared `2.3.51-haos62` identity and explicitly authorize the release-candidate commit. Promotion to `main`, tagging, build/publication, deployment, restart, and live acceptance remain separate later decisions. Before enabling future `15.0 / 0.5` physical-relief operator values, resolve whether 15 kW is a relief threshold or an inviolable network export cap. Do not begin Phase 2 until the Phase 1 release is live-accepted.
+Authorize a controlled Home Assistant add-on update and restart to `2.3.51-haos62`, followed by Phase 1 live acceptance. Do not enable `15.0 / 0.5` physical-relief operator values during acceptance unless their semantics are separately decided. Do not begin Phase 2 until `.62` is live-accepted.

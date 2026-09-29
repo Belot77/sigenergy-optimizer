@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-09-30 - 2.3.51-haos62 Phase 1 audit remediation release candidate
+## 2026-09-30 - 2.3.51-haos62 Phase 1 audit remediation publication
 
 - Trust fresh, finite, nonnegative available-discharge-energy telemetry in a supported unit even when it exceeds rated capacity; retain its raw diagnostic and clamp the control value only when rated capacity is trusted. Invalid or stale evidence remains fail-closed.
 - Preserve house supply during safe fallback while keeping recovery settlement-gated: close export, request MSC, clamp unresolved ESS discharge, and require observed export closure plus observed MSC before restoring normal import, ESS capability, and PV MAX. Fallback creates no battery-export owner.
@@ -10,8 +10,10 @@
 - Give Evening Boost its own `evening_boost_min_feedin_price`, default and hard minimum `$0.01/kWh`, allowing the explicit `evening_export_boost` battery-export owner below the ordinary tier when all existing safety gates pass. Sub-one-cent export remains blocked and no 5.5 kW redesign is included.
 - Correct the stale safe-fallback protection-test expectations without changing production behavior, and reconcile the Phase 1 documentation with the validated control contract and branch state.
 - Final Phase 1 validation at `7649d185b71fe08fab2636801396e2ae7c793a13` collected 735 tests: 733 passed and only the two frozen Phase 2 transition-safety tests failed, with 197 warnings. Compileall and `git diff --check` passed.
-- Prepare release identity `2.3.51-haos62` on `fix/phase1-audit-remediation`. It is not yet tagged, built, published, promoted to `main`, deployed, installed, restarted, or live-accepted. Current known live remains `2.3.50-haos61` at `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`; known rollback remains `2.3.46-haos57` at `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
-- The discussed `15.0 / 0.5 kW` physical-relief values remain unconfigured and semantically unresolved; this candidate does not configure them or claim release or live proof.
+- Release source `70f1766354c163b9259a3e5e128f8e083528fc64` is tagged as `v2.3.51-haos62`. GitHub Actions run `36643883464` and its build/publish job completed successfully, and the later documentation-only publication-record commit was promoted to `main`; the tagged release source and publication-record commit are intentionally distinct.
+- Published multi-architecture image `ghcr.io/belot77/sigenergy-optimizer:2.3.51-haos62` has verified OCI index digest `sha256:dcc4f941df120dbd6e704f87218b72331363c3d1a58014bb10adbf6fdc38b888`; `linux/amd64` and `linux/arm64` builds carry version `2.3.51-haos62` and source revision `70f1766354c163b9259a3e5e128f8e083528fc64`.
+- `.62` is published and promoted but not deployed, installed, restarted, or live-accepted. Current known live remains `2.3.50-haos61` at `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`; known rollback remains `2.3.46-haos57` at `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
+- Phase 2 remains blocked until `.62` live acceptance. The discussed `15.0 / 0.5 kW` physical-relief values remain unconfigured and semantically unresolved and must not be enabled during acceptance without a separate decision.
 
 ## 2026-09-27 - 2.3.50-haos61 Phase 1 near-full Solar arbitration release
 

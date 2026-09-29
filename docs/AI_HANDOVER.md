@@ -8,14 +8,15 @@ Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
-- Prepared Phase 1 release-candidate identity: `2.3.51-haos62`; expected later tag: `v2.3.51-haos62`.
-- Release-identity preparation is uncommitted atop starting HEAD `1d3617714e42f7bc5a19aec489cfbc0622a81520`.
+- Published Phase 1 release: `2.3.51-haos62`; tag `v2.3.51-haos62` points to release-source commit `70f1766354c163b9259a3e5e128f8e083528fc64`.
+- GitHub Actions run `36643883464` and its build/publish job succeeded.
+- Published multi-architecture image: `ghcr.io/belot77/sigenergy-optimizer:2.3.51-haos62`, OCI index digest `sha256:dcc4f941df120dbd6e704f87218b72331363c3d1a58014bb10adbf6fdc38b888`, platforms `linux/amd64` and `linux/arm64`.
+- OCI version `2.3.51-haos62` and revision `70f1766354c163b9259a3e5e128f8e083528fc64` match the expected release and source.
 - Phase 1 code-validation HEAD before the docs-only checkpoint: `7649d185b71fe08fab2636801396e2ae7c793a13`
-- Validated Phase 1 checkpoint through `1d3617714e42f7bc5a19aec489cfbc0622a81520` is safely present on `origin/fix/phase1-audit-remediation`.
-- Remote `main` is unchanged at `de5b5af082533a48ffb6d0d300f636cbcb4463ad`; before this release-identity working-tree update, the feature branch was 9 commits ahead and 0 behind `main`.
+- The later documentation-only publication-record commit is present on both `origin/fix/phase1-audit-remediation` and promoted remote `main`; it is distinct from the tagged release-source commit.
 - Current known live release: `2.3.50-haos61`, tag `v2.3.50-haos61`, commit `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`.
 - Known-good rollback: `2.3.46-haos57`, commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
-- The `.62` candidate is not yet committed, tagged, built, published, promoted to `main`, deployed, installed, restarted, or live-accepted.
+- `.62` is published and promoted but has not been deployed, installed, restarted, or live-accepted.
 
 ## Local Phase 1 checkpoints
 
@@ -36,7 +37,7 @@ Phase 1 validation collected 735 tests: 733 passed, 2 failed, with 197 warnings.
 - `tests/test_msc_baseline_overlay_contract.py::MscBaselineOverlayContractTests::test_exact_msc_does_not_reopen_before_export_is_observed_closed`
 - `tests/test_msc_baseline_overlay_contract.py::MscBaselineOverlayContractTests::test_return_from_discharge_waits_for_observed_close_before_requesting_msc`
 
-`python -m compileall -q app` and `git diff --check` passed. The earlier unexpected safe-fallback failure was a stale protection-test expectation, not a production defect. **Phase 1 code validation passed locally and the checkpoint is published to the remote feature branch**, but the `.62` release-candidate identity remains uncommitted and `main` promotion, tagging/build/publication, deployment, restart, and live acceptance remain outstanding.
+`python -m compileall -q app` and `git diff --check` passed. The earlier unexpected safe-fallback failure was a stale protection-test expectation, not a production defect. **Phase 1 code validation passed, `.62` is published, and the publication record is promoted to `main`**, but deployment, installation, restart, and live acceptance remain outstanding.
 
 ## Protected behavior
 
@@ -59,9 +60,9 @@ Live Morning Slow operator tuning is enabled, 2 kW, until 11:00, minimum FiT `$0
 
 - Before configuring `15.0 / 0.5`, determine whether 15 kW is a Morning Slow relief threshold or a hard network cap. Current code implements only the relief-threshold meaning.
 - The 27 September Solar aggregate-budget switching observation remains a separate evidence-led Phase 1 follow-up; the seven local checkpoints do not establish a fix.
-- Keep the two Phase 2 tests frozen until Phase 1 release/live acceptance.
+- Keep the two Phase 2 tests frozen until `.62` live acceptance. Do not enable `15.0 / 0.5` during acceptance without a separate semantic decision.
 - Then proceed in order: Phase 2 transition safety -> short ownership audit -> architecture/refactor and project cleanup -> full GUI/UX redesign/fix -> Climate Manager -> later diagnostics/replay/load modelling/dynamic scheduling.
 
 ## Exact next action
 
-Review the prepared `2.3.51-haos62` identity and explicitly authorize the release-candidate commit. Promotion to `main`, tagging, build/publication, deployment, restart, and live acceptance require later decisions. Do not start Phase 2 or configure `15.0 / 0.5` until its semantic question is resolved.
+Authorize a controlled Home Assistant add-on update and restart to `2.3.51-haos62`, followed by Phase 1 live acceptance. Do not start Phase 2 or configure `15.0 / 0.5` until the applicable acceptance and semantic decisions are complete.
