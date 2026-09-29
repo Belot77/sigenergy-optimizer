@@ -1,76 +1,64 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-09-27
+Last consolidated: 2026-09-30
 
-Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md`, `DECISIONS.md`, and `ROADMAP.md`. Verify the exact worktree, branch, HEAD, and status before editing.
+Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md`, `DECISIONS.md`, and `ROADMAP.md`. Verify worktree, branch, HEAD, tracking, and status before editing.
 
-## Live baseline and rollback
-
-- Current live release: `2.3.49-haos60`, commit `a625ca16e59a3a0ff89fd724510355ef53b79315`.
-- Documented known-good rollback: `2.3.46-haos57`, commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
-- The near-full MSC/PV-only correction is committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe` and published as `2.3.50-haos61` from source commit `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`. Tag `v2.3.50-haos61` exists at that source commit, GitHub Actions run `36282075721` succeeded, and the release commit is promoted to `main`.
-- Published image: `ghcr.io/belot77/sigenergy-optimizer:2.3.50-haos61`, OCI index digest `sha256:db35c1a062932aede5024dea587ce8b31d121679070453505c29fc14ac3b801e`; amd64 and arm64 images were verified with the expected release version and source revision.
-- `.61` is not installed, restarted, or live-accepted. Publication and `main` promotion do not prove live inverter behavior.
-
-## Active checkpoint
+## Current identities
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
-- Live `.60` source commit: `a625ca16e59a3a0ff89fd724510355ef53b79315`.
-- Repair commit: `47c591be6bf920a82995b9f402c3efb202ffa5fe`.
-- Published release identity: `2.3.50-haos61`; immutable tag `v2.3.50-haos61` at `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`.
-- Candidate paths committed by the repair: `app/optimizer.py`, `tests/test_export_value_gate_advisory.py`, and `tests/test_phase1_near_full_pv_only_safeguard_characterization.py`.
-- Reconciled checkpoint documentation: `CURRENT_STATE.md`, `AI_HANDOVER.md`, `ROADMAP.md`, `DECISIONS.md`, `CONTROL_CONTRACT.md`, and `CHANGELOG.md`. Preserve the pre-existing edits in `AI_HANDOVER.md`, `ROADMAP.md`, and `DECISIONS.md`.
-- The code/test candidate and documentation checkpoint are committed. The release-preparation commit synchronized the five version markers and release documentation without changing optimizer behavior. Source commit `76db9e43588f0e9862d73e4e8402c0b5ce9773a7` is tagged, built, published, and promoted to `main`; installation, restart, and controlled live acceptance remain pending.
+- Phase 1 code-validation HEAD before the docs-only checkpoint: `7649d185b71fe08fab2636801396e2ae7c793a13`
+- Expected pre-doc status: clean, `0 behind / 7 ahead` of `origin/fix/phase1-audit-remediation`.
+- Current known live release: `2.3.50-haos61`, tag `v2.3.50-haos61`, commit `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`.
+- Known-good rollback: `2.3.46-haos57`, commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
+- None of the seven local commits is pushed, released, deployed, installed, restarted, or live-proven.
 
-## Near-full causal defect and repair
+## Local Phase 1 checkpoints
 
-When available-discharge-energy telemetry became untrusted, legacy normalization substituted zero and produced a synthetic full-capacity refill requirement (`40.3 kWh`). Solar independently used trusted rated capacity and SoC headroom (`2.418 kWh` at 94% and `1.1284 kWh` at 97.2%), passed its safety gates, but lost final arbitration to the raw Battery Full Safeguard.
+1. `61f79bc` clamps trusted available battery energy to trusted rated capacity while retaining raw diagnostics.
+2. `99ef0f0` preserves house supply during observed-settlement safe fallback.
+3. `aca3497` adds trusted timed Morning refill protection and physical export relief.
+4. `11ae480` introduced zero-delay event response.
+5. `7cfcd77` corrected `11ae480` by restoring the deliberate fixed 3-second pre-decision coalescing safeguard.
+6. `bb6af74` decouples Evening Boost's dedicated minimum FiT from the ordinary export tier.
+7. `7649d18` updates stale safe-fallback settlement test expectations only.
 
-The candidate preserves that raw safeguard and its diagnostics. A second arbitration is permitted only when the raw closure was specifically caused by the untrusted-energy synthetic fill, the same safeguard does not block trusted SoC headroom, Solar independently qualifies, Automated and exact MSC are observed, trusted battery/grid flow is PV-only-safe, and all competing deliberate-export and independent safety owners are absent. The accepted source must be exactly `solar_surplus_pv_high`. The outcome remains `MSC_SURPLUS_CEILING` in Maximum Self Consumption with battery-export owner `none`; it cannot request stored-battery discharge.
+Do not hide or reverse the relationship between `11ae480` and `7cfcd77`.
 
-## Validation
+## Validation gate
 
-`python -B -m pytest -p no:cacheprovider` collected 663 tests: 661 passed and only these two intentionally frozen Phase 2 tests failed:
+At HEAD, `python -B -m pytest -p no:cacheprovider` collected 735 tests: 733 passed, 2 failed, with 197 warnings. The only failures are the frozen Phase 2 tests:
 
-- `test_exact_msc_does_not_reopen_before_export_is_observed_closed`
-- `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`
+- `tests/test_msc_baseline_overlay_contract.py::MscBaselineOverlayContractTests::test_exact_msc_does_not_reopen_before_export_is_observed_closed`
+- `tests/test_msc_baseline_overlay_contract.py::MscBaselineOverlayContractTests::test_return_from_discharge_waits_for_observed_close_before_requesting_msc`
 
-Focused results: near-full `11 passed, 15 subtests passed`; Solar/full-battery `74 passed, 85 subtests passed`; advisory `96 passed, 65 subtests passed`; independent safety/ownership `238 passed, 230 subtests passed`, plus only the two frozen failures. There were 193 existing Pydantic v2 deprecation warnings. `python -m compileall -q app` and `git diff --check` passed. This proves the local repository candidate, not live behavior.
+`python -m compileall -q app` and `git diff --check` passed. The earlier unexpected safe-fallback failure was a stale protection-test expectation, not a production defect. **Phase 1 code validation passed locally**, but release and live acceptance remain outstanding.
 
 ## Protected behavior
 
-- Manual and Force remain operator-owned.
-- Demand Window primarily owns import blocking and uses a 360-second freshness boundary; uncertain state fails closed for import without gaining export or PV-curtailment ownership.
-- Dynamic inverter/grid-limit readbacks retain the 120-second trust boundary and require fresh non-negative provenance.
-- Service-call success is not settlement proof. Independent restrictive closes remain independent.
-- Ordinary positive-FiT, Exact-full, and Solar PV-only ceilings never manufacture deliberate battery-export authority.
-- Morning Slow charging, Morning Dump deliberate export, Evening Boost, Exact-full, and Solar remain distinct policies.
+- Manual and Force remain user-owned. Observed Automated ownership is required for permissive automatic control.
+- Available-energy data fails closed unless fresh, finite, nonnegative, and in a supported unit. Trusted over-cap data is clamped only when rated capacity is trusted, and raw diagnostics remain visible. The live-proven near-full Solar exception for genuinely untrusted telemetry remains.
+- Safe fallback closes export, requests MSC, clamps ESS discharge while unresolved, and waits for observed export closure plus observed MSC before restoring normal import/ESS/PV capability. Demand Window can retain import blocking. Fallback never creates `BATTERY_EXPORT`.
+- Morning Dump remains deliberate `BATTERY_EXPORT`, requires trusted timed refill feasibility, assumes no future relief, and preserves the 15% operator floor.
+- Morning Slow owns only its charging restriction: MSC, normal PV MAX, and normal high export permission remain. Refill opportunity runs to same-day sunset minus cutoff; the Morning Slow end time is not the refill deadline. Forecast or physical relief releases only the artificial slow cap.
+- Physical relief defaults disabled at `0.0 / 0.0`; it responds to coherent measured site export and does not enforce a 15 kW export cap.
+- Relevant events use a fixed non-sliding 3-second pre-decision window, with no immediate first-event or catch-up tick. Startup is immediate and the heartbeat remains 60 seconds.
+- Evening Boost has dedicated `evening_boost_min_feedin_price`, default and hard minimum `$0.01/kWh`, no arbitrary upper bound, and explicit owner `evening_export_boost`. It may qualify below the ordinary tier, but never below one cent. Existing safety, reserve, forecast, actual import-cost, ownership, and settlement guards remain.
 
-Protected reference worktrees must not be modified: `C:\Projects\sigenergy_optimizer` is intentionally dirty; `C:\Projects\sigenergy_optimizer-pv-hotfix` is the rollback reference; `C:\Projects\sigenergy_optimizer-phase2-transition` remains frozen until Phase 1 live acceptance. Exact last-known references are in `CURRENT_STATE.md`.
+## Live evidence and operator tuning
 
-## Solar Surplus final Phase 1 contract
+Live `.61` proved the near-full Solar exception around 93.9-96.7% SoC, a clean Morning Slow -> Solar transition, roughly 2 kW charging while Morning Slow owned the cap, normal higher charging afterward, and one clean desired-export transition. The 25 kW ceiling behaved as permission. None of the seven new local behaviors is live-proven.
 
-Solar Surplus remains Maximum Self Consumption and grants only PV export permission. It retains normal PV MAX, owns neither import nor an ESS charge cap, never owns `BATTERY_EXPORT`, and never deliberately selects discharge EMS. Policy-active status is not proof of physical inverter/grid export.
+Live Morning Slow operator tuning is enabled, 2 kW, until 11:00, minimum FiT `$0.01/kWh`, base-load allowance 2 kW, sunset cutoff 1 hour. Morning Dump's operator floor is 15%. Discussed future physical-relief values `15.0 / 0.5 kW` are neither live nor defaults.
 
-Entry requires FiT at least `1 cent/kWh`, trusted coherent PV/load observations, measured surplus strictly above `0.5 kW`, trusted Remaining Today forecast, trusted SoC and rated capacity, a trusted same-day future sunset, and a Solar-specific safety factor `K >= 1`. Owned continuation requires measured surplus strictly above `0.2 kW`; after stopping, full entry is required again.
+## Unresolved and parked
 
-The aggregate forecast must be strictly greater than `K x (current trusted load x hours to sunset + rated capacity x SoC headroom to 100%)`. If fill need remains, trusted detailed Solcast intervals and trusted effective charge capability must separately prove enough opportunity before sunset. Timing deducts load, bounds charge opportunity by capability, and applies the same safety factor; aggregate and detailed forecasts are not summed. Unsafe or missing evidence fails closed.
-
-`solar_surplus_forecast_safety_factor` defaults to `1.20`. Legacy start/stop forecast multipliers remain configurable for compatibility but are not used for redesigned eligibility. Morning Slow excludes Solar; Morning Dump and other deliberate-export owners win; Demand Window retains import ownership; Exact-full remains separate; Manual/Force cannot inherit Solar continuation.
-
-Diagnostics expose final `solar_surplus_policy_active`, fail reason, aggregate budget, timing evidence, measured surplus/threshold, and safety factor while distinguishing policy ownership from physical export settlement.
-
-## Approved sequencing and parked work
-
-- The repaired Phase 1 release is tagged, published, and promoted to `main`, but must be separately installed and live-accepted before Phase 2. The two Phase 2 transition-settlement failures remain frozen until then.
-- The short control-ownership audit follows Phase 2. The preserved order after that is architecture refactor -> project cleanup -> full GUI/UX redesign and functional corrections -> Climate Manager integration -> integration-specific UI polish. The full GUI/UX redesign is not the earlier Package 9 settings/UI cleanup.
-- Any proposal to move Climate Manager before the architecture and full GUI/UX phases, or to split Climate-specific UI work into an earlier phase, requires an explicit operator sequencing decision; this checkpoint does not change the approved order.
-- Earlier roadmap edits preserved hard-fallback house-supply repair, Morning Dump / Morning Slow refill-feasibility protection, and Morning Slow 15 kW physical-export relief. Their completion status is not established by this checkpoint and must be reconciled before Phase 1 is declared complete.
-- Evening Boost redesign remains a separate, not-implemented production initiative. Its agreed future policy is recorded in `CONTROL_CONTRACT.md` and `DECISIONS.md`; actual import-cost, higher-value-FiT, and physical-capability interactions still require engineering review.
-- The 27 September morning trace showed aggregate Solar budget threshold switching. Treat it as a separate observed Phase 1 follow-up, not as behavior fixed by the near-full correction.
-- Package 6B, additional diagnostics, deterministic replay, load/forecast modelling, and experimental dynamic solar scheduling remain later work.
+- Before configuring `15.0 / 0.5`, determine whether 15 kW is a Morning Slow relief threshold or a hard network cap. Current code implements only the relief-threshold meaning.
+- The 27 September Solar aggregate-budget switching observation remains a separate evidence-led Phase 1 follow-up; the seven local checkpoints do not establish a fix.
+- Keep the two Phase 2 tests frozen until Phase 1 release/live acceptance.
+- Then proceed in order: Phase 2 transition safety -> short ownership audit -> architecture/refactor and project cleanup -> full GUI/UX redesign/fix -> Climate Manager -> later diagnostics/replay/load modelling/dynamic scheduling.
 
 ## Exact next action
 
-Use a separately controlled Home Assistant repository refresh, installation/restart, and live-acceptance session for published release `2.3.50-haos61`. Do not begin Phase 2, Evening Boost implementation, or the unresolved morning Solar-budget switching investigation before the repaired Phase 1 live gate passes.
+Review the complete Phase 1 checkpoint and decide the push/release/deployment/live-acceptance sequence. Do not start Phase 2 or configure `15.0 / 0.5` until its semantic question is resolved.

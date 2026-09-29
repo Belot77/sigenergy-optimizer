@@ -207,3 +207,41 @@ Decision: A future Evening Boost redesign remains an explicit deliberate `BATTER
 Status: **not implemented and not live**. Independent ownership, reserve, forecast, actuator, and safety protections remain required. The interaction with the actual import-cost guard, higher-value-FiT protection, and physical discharge/grid-export capabilities requires a separate engineering review. Live operator settings are not software defaults.
 
 Rationale: A reserve-based model reflects energy physically available overnight and avoids treating tomorrow's forecast as present stored energy, while stable-condition resumption prevents an arbitrary fixed-energy threshold from becoming a second hidden policy.
+
+## 2026-09-30 - Trust and clamp available discharge energy separately
+
+Decision: Fresh, finite, nonnegative, supported-unit available-discharge-energy telemetry remains trusted even when it exceeds separately reported rated capacity. When rated capacity is trusted, clamp only the control value to that capacity and retain the raw normalized diagnostic. When capacity is untrusted, do not invent a clamp. Invalid or stale telemetry remains fail-closed, with the established near-full Solar exception preserved for genuinely untrusted telemetry.
+
+Rationale: Telemetry plausibility and bounded actuator input are separate concerns. An over-cap reading can remain usable evidence while the control calculation stays physically bounded and auditable.
+
+## 2026-09-30 - Safe fallback requires observed settlement before recovery
+
+Decision: Safe fallback closes export first, requests Maximum Self Consumption, clamps ESS discharge while unresolved, and restores permissive import, ESS charge/discharge capability, and PV MAX only after export closure and exact MSC are observed. Demand Window may retain import blocking. Fallback creates no `BATTERY_EXPORT` owner, and successful service calls do not count as settlement.
+
+Rationale: Preserving house supply after a failed primary application must not convert requested actuator state into assumed state or reopen other permissive capabilities before the inverter proves a safe baseline.
+
+## 2026-09-30 - Morning refill uses trusted timed opportunity and bounded relief
+
+Decision: Morning Dump remains deliberate `BATTERY_EXPORT` and requires trusted timed refill feasibility without assuming future Morning Slow relief. Morning Slow remains a charging-only MSC policy; its end time ends ownership rather than defining the refill deadline. Refill opportunity runs through same-day sunset minus cutoff. If normal bounded charging offers strictly greater safe refill opportunity than the slow cap, release only that artificial cap.
+
+Rationale: A policy must prove its energy plan from evidence available now. Selective charge-cap relief protects refill feasibility without taking export, import, PV, or battery-export ownership.
+
+## 2026-09-30 - Physical export relief is not a hard export cap
+
+Decision: `grid_connection_export_limit_kw` and `morning_slow_physical_export_headroom_kw` default to `0.0` and are disabled until configured. Coherent measured site export at the configured threshold may release Morning Slow's artificial charge cap; it does not set Sigenergy export permission or enforce a network cap. Discussed `15.0 / 0.5 kW` values are future operator configuration, not defaults.
+
+Unresolved: Before live configuration, decide whether 15 kW is only the relief threshold or a hard network/export limit that must never be exceeded. A hard-cap meaning requires further design.
+
+Rationale: Charging-cap ownership and network export enforcement are different actuator responsibilities and must not be conflated.
+
+## 2026-09-30 - Restore fixed bounded event coalescing
+
+Decision: Supersede the zero-delay event-response approach introduced at `11ae480`. Relevant HA events use a fixed, non-sliding 3-second pre-decision coalescing window, with no immediate first-event or catch-up tick. Startup remains immediate, the 60-second heartbeat remains, and events arriving during or after a cycle remain eligible for the next bounded cycle.
+
+Rationale: The original 3-second delay was a deliberate anti-thrash and telemetry-coherency safeguard. A bounded fixed deadline preserves prompt event-driven control without making sequential sensor updates separate inconsistent decisions.
+
+## 2026-09-30 - Decouple Evening Boost from the ordinary export tier
+
+Decision: Supersede the unimplemented 2026-09-27 Evening Boost redesign. Evening Boost now uses dedicated `evening_boost_min_feedin_price`, default and hard minimum `$0.01/kWh`, with no arbitrary upper bound. It may own `BATTERY_EXPORT` as `evening_export_boost` below the ordinary export-tier threshold when every existing eligibility and safety gate passes. Sub-one-cent export remains blocked, ordinary positive-FiT export gains no battery-export ownership, and `export_limit_low` remains the ordinary tier output rather than an Evening Boost ceiling. No 5.5 kW redesign is introduced.
+
+Rationale: Evening Boost has distinct deliberate-export intent and should not be accidentally disabled by an unrelated tier boundary, while the absolute one-cent value floor and all reserve, refill, import-cost, forecast, ownership, and settlement protections remain intact.

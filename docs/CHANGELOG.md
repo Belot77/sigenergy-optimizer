@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased - Phase 1 audit remediation
+
+- Trust fresh, finite, nonnegative available-discharge-energy telemetry in a supported unit even when it exceeds rated capacity; retain its raw diagnostic and clamp the control value only when rated capacity is trusted. Invalid or stale evidence remains fail-closed.
+- Preserve house supply during safe fallback while keeping recovery settlement-gated: close export, request MSC, clamp unresolved ESS discharge, and require observed export closure plus observed MSC before restoring normal import, ESS capability, and PV MAX. Fallback creates no battery-export owner.
+- Require trusted timed refill feasibility for Morning Dump without assuming future relief. Morning Slow remains a charging-only MSC policy and may release only its artificial slow cap when normal bounded charging offers strictly greater safe refill opportunity.
+- Add optional physical export relief through `grid_connection_export_limit_kw` and `morning_slow_physical_export_headroom_kw`, both disabled by `0.0` defaults. The feature reacts to coherent measured site export; it neither sets nor enforces a 15 kW Sigenergy export limit.
+- Expand relevant Home Assistant state/attribute trigger coverage while retaining a fixed, non-sliding 3-second pre-decision coalescing window. The earlier zero-delay response in `11ae480` was corrected by `7cfcd77` to preserve telemetry coherence and anti-thrash behavior; startup remains immediate and the heartbeat remains 60 seconds.
+- Give Evening Boost its own `evening_boost_min_feedin_price`, default and hard minimum `$0.01/kWh`, allowing the explicit `evening_export_boost` battery-export owner below the ordinary tier when all existing safety gates pass. Sub-one-cent export remains blocked and no 5.5 kW redesign is included.
+- Final local validation at `7649d185b71fe08fab2636801396e2ae7c793a13` collected 735 tests: 733 passed and only the two frozen Phase 2 transition-safety tests failed, with 197 warnings. Compileall and `git diff --check` passed. The final test-only checkpoint corrected stale safe-fallback expectations without changing production code.
+- These seven local commits are not pushed, released, deployed, installed, restarted, or live-accepted. Current known live remains `2.3.50-haos61` at `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`; known rollback remains `2.3.46-haos57` at `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
+
 ## 2026-09-27 - 2.3.50-haos61 Phase 1 near-full Solar arbitration release
 
 - Preserve the raw Battery Full Safeguard and diagnostics while preventing the synthetic full-capacity refill requirement created solely by untrusted available-energy telemetry from vetoing an independently qualified, observed-MSC, trusted-flow Solar Surplus PV-only ceiling.

@@ -1,34 +1,32 @@
 # Roadmap
 
-This roadmap is ordered by dependency. Later work must not bypass the stated safety, validation, and live-proof gates.
+This roadmap is ordered by dependency. Later work must not bypass the stated safety, validation, release, and live-proof gates.
 
-## 1. Checkpoint the validated near-full Phase 1 candidate
+## 1. Phase 1 code validation
 
-Status: **repository checkpoint committed; release decision pending**.
+Status: **PASSED locally** at `7649d185b71fe08fab2636801396e2ae7c793a13`.
 
-Live Home Assistant is `2.3.49-haos60` from commit `a625ca16e59a3a0ff89fd724510355ef53b79315`; documented known-good rollback is `2.3.46-haos57` at `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
+The seven local remediation checkpoints are `0 behind / 7 ahead` of `origin/fix/phase1-audit-remediation`. The final gate collected 735 tests: 733 passed and only the two frozen Phase 2 transition-safety tests failed; compileall and `git diff --check` passed. The final checkpoint corrected a stale safe-fallback protection-test expectation without changing production code.
 
-The near-full MSC/PV-only safeguard correction, its characterization, and the deterministic advisory clock fixture are committed as `47c591be6bf920a82995b9f402c3efb202ffa5fe`; reconciled documentation follows as a separate checkpoint commit on the same branch. The final repository gate collected 663 tests: 661 passed and only the two frozen Phase 2 tests failed; compileall and `git diff --check` passed.
+These commits have not been pushed, released, deployed, installed, restarted, or live-proven. Current known live remains `2.3.50-haos61` at `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`; documented known-good rollback remains `2.3.46-haos57` at `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
 
-Next boundary: obtain a separate decision for the exact version/release identity. Version changes, tagging, build/publication, installation/restart, and live acceptance remain separately approved work. Do not invent a `.61` version at this checkpoint.
+## 2. Phase 1 checkpoint documentation
 
-## 2. Complete Phase 1 live acceptance and reconcile follow-ups
+Status: **checkpoint documentation reconciled**.
 
-After an approved commit/release sequence, obtain controlled live proof of the repaired candidate. Repository validation and service-call success are not live settlement proof.
+The checkpoint records the local code-validation result, durable semantics, live `.61` baseline, protected Phase 2 failures, and unresolved meaning of the proposed 15 kW physical-relief configuration. Documentation does not constitute release or live acceptance.
 
-The following retained Phase 1 items require explicit state reconciliation before Phase 1 is declared complete; this documentation checkpoint does not prove whether they are already included in live `.60` or remain pending:
+## 3. Phase 1 push, release, deployment, and live acceptance
 
-- hard-fallback house-supply repair;
-- Morning Dump / Morning Slow refill-feasibility protection;
-- Morning Slow 15 kW physical-export relief.
+Requires separate explicit approval. Push the seven local code/test checkpoints together with an approved documentation checkpoint, prepare a release, deploy/restart, and obtain controlled live proof. Repository validation and service-call success are not live settlement proof.
 
-Morning Slow remains one bounded policy improvement with two independently diagnosable relief reasons: forecast/refill feasibility and physical export limit.
+Before configuring the discussed `15.0 kW` physical threshold and `0.5 kW` headroom, decide whether 15 kW is merely the site-export level that releases Morning Slow's 2 kW charge cap or a hard network/export limit. Current physical-relief behavior does not enforce a hard cap.
 
-Separate observed follow-up: the 27 September morning trace showed Solar's aggregate energy budget crossing near its threshold with repeated export-ceiling switching. Investigate it independently; the near-full repair does not prove it fixed. The operator must decide from focused evidence whether it blocks final Phase 1 acceptance. Do not implement a switching correction as part of the near-full checkpoint.
+Separate observed follow-up: the 27 September morning trace showed Solar's aggregate energy budget crossing near its threshold with repeated export-ceiling switching. Investigate it independently; the near-full repair and these seven checkpoints do not establish a fix. The operator must decide from focused evidence whether it blocks final Phase 1 acceptance.
 
-Gate: Phase 1 live acceptance, including disposition of the retained follow-ups, must pass before Phase 2 begins.
+Gate: Phase 1 release and live acceptance, including disposition of retained follow-ups, must pass before Phase 2 begins.
 
-## 3. Phase 2 transition-settlement safety
+## 4. Phase 2 transition-settlement safety
 
 Status: **paused/frozen until the Phase 1 live gate passes**.
 
@@ -43,11 +41,11 @@ Then run targeted transition tests, complete regression testing, a test release,
 
 Gate: Phase 2 must be stable and live-accepted before downstream integration or restructuring.
 
-## 4. Short control-ownership audit
+## 5. Short control-ownership audit
 
 After Phase 2, confirm that every owner changes only its own actuator domains and that Manual, Force, freshness, price, reserve, import-cost, and settlement protections compose correctly. Resolve material findings before restructuring or integration.
 
-## 5. Architecture refactor / consolidation
+## 6. Architecture refactor / consolidation
 
 Treat architecture consolidation as an explicit phase, not incidental cleanup.
 
@@ -61,7 +59,7 @@ Treat architecture consolidation as an explicit phase, not incidental cleanup.
 
 The old `refactor/msc-baseline-overlays` worktree is a reference, not a branch to merge wholesale.
 
-## 6. Repository / project cleanup
+## 7. Repository / project cleanup
 
 Perform this as its own phase after the architecture refactor:
 
@@ -74,7 +72,7 @@ Perform this as its own phase after the architecture refactor:
 - leave `CURRENT_STATE.md`, `AI_HANDOVER.md`, `ROADMAP.md`, `CONTROL_CONTRACT.md`, and `DECISIONS.md` coherent;
 - converge toward one obvious active development path rather than accumulating permanent worktrees.
 
-## 7. Full GUI / UX redesign and functional corrections
+## 8. Full GUI / UX redesign and functional corrections
 
 Perform a substantial operator-facing information-architecture, presentation, and functional UI redesign after the architecture refactor and project cleanup. This is not equivalent to the completed Package 9 settings/UI cleanup. Preserve backend and control semantics unless separately approved. Do not rewrite the frontend framework merely for appearance or design the GUI around structures that are about to change.
 
@@ -96,26 +94,26 @@ The GUI must clearly distinguish:
 - requested actuator state from observed settled state;
 - deliberate battery-export intent from ordinary MSC battery discharge serving house load.
 
-## 8. Climate Manager integration
+## 9. Climate Manager integration
 
 Climate Manager integration comes only after Phase 1 live acceptance -> Phase 2 -> the ownership audit -> architecture refactor -> project cleanup -> GUI/UX overhaul. Do not jump directly from the ownership audit to Climate Manager.
 
 Integrate the stable `sensor.sigenergy_hvac_solar_permission` interface (`start`, `continue`, `blocked`, `unavailable`). SigEnergy Optimizer owns energy opportunity and safety; Climate Manager owns HVAC profiles, zones, targets, comfort/manual behavior, AC0, and AirTouch commands.
 
-## 9. Integration-specific UI polish
+## 10. Integration-specific UI polish
 
 After Climate Manager integration, complete cross-component integration validation and final operator-facing UI polish without weakening the preceding gates or ownership boundaries.
 
 Sequencing decision reserved for operator review: any proposal to move Climate Manager ahead of the architecture/project-cleanup/full-GUI sequence, or to begin Climate-specific UI work before the full GUI/UX phase, changes the approved order and requires an explicit decision. Until then, the order above remains authoritative.
 
-## 10. Later work
+## 11. Later work
 
 Only after the preceding phases and gates:
 
 - additional diagnostics and ownership visibility;
 - deterministic replay tooling;
 - evidence-driven load and forecast modelling;
-- the separate Evening Boost redesign recorded in `CONTROL_CONTRACT.md`: explicit deliberate battery-export ownership, reserve-based overnight energy protection, stable-condition resumption, and its required import-cost/value/capability engineering review; it is not implemented or live, and its exact scheduling relative to Phase 2 and the architecture initiatives remains an operator decision;
+- further Evening Boost redesign beyond the validated dedicated minimum-FiT decoupling, only if separately approved and engineered;
 - Package 6B, only if deliberately resumed;
 - experimental dynamic solar scheduling on a separate branch, proved through replay, shadow comparison, and a bounded live trial before any merge.
 

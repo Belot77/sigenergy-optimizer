@@ -133,28 +133,19 @@ Existing policies that genuinely own deliberate battery sale remain distinguisha
 
 Each owner remains subject to its own eligibility and all independent safety guards. Generic ordinary tier eligibility is never an owner.
 
-## Proposed Evening Boost redesign (not implemented, not live)
+## Evening Boost
 
-The agreed future policy treats Evening Boost as an explicit deliberate `BATTERY_EXPORT` owner. It is a separate production initiative and does not describe current live behavior. Its proposed controls and energy model are:
+Evening Boost is a deliberate `BATTERY_EXPORT` policy with owner `evening_export_boost`. Its dedicated setting is `evening_boost_min_feedin_price`: the software default and hard permitted minimum are both `$0.01/kWh`. Values below one cent and non-finite values are invalid; no arbitrary upper bound applies.
 
-- configurable minimum FiT, default `1 cent/kWh`;
-- configurable grid-export ceiling, default `5.5 kW`;
-- configurable morning SoC target, default `50%`;
-- protected overnight need equal to current household load multiplied by remaining overnight hours, plus a configurable safety margin defaulting to `20%`;
-- the existing sunrise-plus-one-hour planning endpoint;
-- start only after productive solar ends;
-- configurable cutoff defaulting to midnight;
-- automatic resumption only after two minutes of stable safe conditions;
-- no fixed `1 kWh` restart threshold;
-- exportability determined by actual stored energy above the protected reserve;
-- tomorrow's solar forecast may support replenishment planning but is not available energy tonight;
-- independent ownership, safety, forecast, reserve, and actuator protections remain required.
+When every Evening Boost eligibility and safety gate passes, it may operate below the ordinary export-tier threshold. The existing `export_limit_low` remains the ordinary tier output, not an Evening Boost-specific export ceiling. Ordinary positive-FiT export does not acquire Evening Boost ownership, and absolute sub-one-cent export remains blocked.
 
-The exact interaction with the actual import-cost guard, higher-value-FiT protection, and physical discharge/grid-export capabilities requires a separate engineering review before implementation. Observed operator tuning must not be converted into a software default without an explicit decision.
+Available-energy trust, refill feasibility, actual import-cost protection, forecast and reserve protections, battery floor, observed Automated ownership, Demand Window separation, Manual/Force ownership, and fail-closed actuator settlement remain mandatory. This decision does not introduce a 5.5 kW Evening Boost redesign.
 
 ## Morning Dump
 
 Morning Dump is deliberate stored-battery export. While its existing time window, configurable floor, forecast feasibility, and safety rules remain valid, it may own `BATTERY_EXPORT` and use `Command Discharging (PV First)`.
+
+Eligibility requires trusted timed refill feasibility. The model must not assume that a future Morning Slow relief condition will rescue refill feasibility; missing, untrusted, gapped, or insufficient evidence fails closed. The current operator floor remains 15%, recorded as operator configuration rather than a software default.
 
 Do not convert Morning Dump into MSC surplus permission. Do not add a hard PV forecast floor unless later evidence and a separate approved change justify one.
 
@@ -170,6 +161,16 @@ Morning Slow is a charging policy:
 - it never owns `BATTERY_EXPORT` merely because Morning Slow is active.
 
 Morning Slow must not retain legacy measured-PV start/ramp/probe gates for its export ceiling. Do not add a hard PV forecast floor without separate evidence and approval.
+
+Refill feasibility uses trusted timed detailed-forecast opportunity through same-day sunset minus the configured sunset cutoff. The configured Morning Slow end time ends this policy's ownership; it is not the refill deadline. If slow charging is infeasible but normal bounded charging offers strictly greater safe refill opportunity, release only Morning Slow's artificial charge cap. Missing or untrusted evidence cannot authorize relief, and no arbitrary 60-second stabilization applies.
+
+The optional physical-relief settings are `grid_connection_export_limit_kw` and `morning_slow_physical_export_headroom_kw`; both default to `0.0`, which leaves the feature disabled/unconfigured. When enabled, coherent trusted measured site export reaching the configured threshold may release only Morning Slow's artificial charge cap. This does not set the Sigenergy export permission to that threshold and does not enforce a hard network export cap. The discussed `15.0 kW` and `0.5 kW` values are future operator values, not software defaults. Before using them, the operator must decide whether 15 kW is only a relief threshold or a hard limit; the latter requires further design.
+
+## Event responsiveness
+
+Relevant Home Assistant state and watched-attribute changes trigger event-driven optimizer cycles through a fixed 3-second pre-decision coalescing window. The deadline does not slide when more events arrive, allowing related telemetry bursts to produce one coherent decision without restoring the earlier zero-delay behavior.
+
+There is no immediate first-event tick and no immediate catch-up tick. Events arriving during or after a cycle remain eligible for the next bounded cycle. Startup remains immediate, the 60-second heartbeat remains, metadata-only changes do not trigger, and actuator/readback settlement protections remain unchanged. No arbitrary 60-second Solar stabilization is part of this contract.
 
 ## Demand Window
 
@@ -221,13 +222,15 @@ Control decisions requiring future-energy evidence must not use stale or untrust
 
 Derived battery flow from PV, load, and directional grid components requires finite, non-negative values, fresh timestamps, and temporal coherence within the established skew window. Trusted direct battery telemetry takes precedence. Negative directional grid-power readings are untrusted and must not be silently clamped into trusted zero.
 
-Available discharge energy requires an explicit supported unit, a finite non-negative value, and consistency with trusted capability. Missing units must not silently default to kWh.
+Available discharge energy requires an explicit supported unit and a fresh, finite, non-negative value. Missing units must not silently default to kWh. A value slightly or materially above separately reported rated capacity remains trusted; when rated capacity is itself trusted, the bounded control value is clamped to rated capacity while the raw normalized diagnostic remains visible. When rated capacity is untrusted, no capacity clamp is invented. Invalid, unavailable, stale, non-finite, negative, or unsupported-unit telemetry remains fail-closed, subject only to the established near-full Solar exception for genuinely untrusted available-energy telemetry.
 
 Unavailable, missing, unknown, stale, or non-finite actuator-state telemetry is not proof that import or export is safely closed. Deadband or a numeric default must not suppress a required safety-close request when the present actuator state is untrusted. Untrusted current grid-limit telemetry also cannot authorize a permissive opening; opening requires a trusted finite observation. Trusted finite current limits retain ordinary deadband behavior.
 
 Dynamic grid import/export current-position readbacks use the live inverter telemetry boundary of 120 seconds and require provenance-bearing fresh observations. Missing provenance, stale values, and negative values are not current-position proof, cannot prove closure, and cannot authorize permissive opening; raw values may remain diagnostic. Restrictive closes remain allowed. Static `grid_export_limit_entity_max_kw` capability is separate from dynamic current-position liveness.
 
 Safety-critical settlement requires provenance-bearing readback. Deliberate battery export must establish or set the intended export target before entering or changing discharge EMS. If an export-close request succeeds but settlement remains unproven, that uncertainty must not suppress an independent restrictive grid-import close; the overall application remains failed and unrelated permissive writes remain deferred.
+
+Safe fallback closes export first, requests Maximum Self Consumption, and clamps ESS discharge while settlement is unresolved. Permissive recovery requires observed export closure and observed exact Maximum Self Consumption; successful service calls are not proof. If settlement cannot be proven, normal import, ESS charge/discharge capability, and normal PV MAX recovery remain withheld, although Demand Window may continue to own import blocking. Fallback never creates `BATTERY_EXPORT`; Manual and Force behavior is unchanged. Observing settlement of the fallback `0.01 kW` export-close request is an intentional safety requirement.
 
 Export start/stop notifications are classified from trusted measured grid export. A changed export ceiling alone is not proof that physical export started or stopped.
 
