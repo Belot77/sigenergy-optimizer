@@ -91,6 +91,61 @@ class ApiValidationTests(unittest.TestCase):
         err = _validate_config_value(cfg, "export_limit_low", 9999)
         self.assertIsNotNone(err)
 
+    def test_evening_boost_min_feedin_price_api_accepts_floor_and_higher(self) -> None:
+        cfg = Settings(evening_boost_min_feedin_price=0.01)
+
+        floor_response = self._single_update(
+            cfg,
+            "evening_boost_min_feedin_price",
+            0.01,
+        )
+        positive_response = self._single_update(
+            cfg,
+            "evening_boost_min_feedin_price",
+            0.025,
+        )
+
+        self.assertTrue(floor_response["ok"])
+        self.assertTrue(positive_response["ok"])
+        self.assertEqual(0.025, cfg.evening_boost_min_feedin_price)
+
+    def test_evening_boost_min_feedin_price_api_rejects_below_floor_and_nonfinite_without_mutation(
+        self,
+    ) -> None:
+        invalid_values = (
+            (0.009, "must be greater than or equal to 0.01"),
+            (0.0, "must be greater than or equal to 0.01"),
+            (-0.001, "must be greater than or equal to 0.01"),
+            (float("nan"), "must be a finite number"),
+            (float("inf"), "must be a finite number"),
+            (float("-inf"), "must be a finite number"),
+        )
+        for value, expected_error in invalid_values:
+            with self.subTest(value=value):
+                cfg = Settings(evening_boost_min_feedin_price=0.01)
+
+                with self.assertRaises(HTTPException) as raised:
+                    self._single_update(
+                        cfg,
+                        "evening_boost_min_feedin_price",
+                        value,
+                    )
+
+                self.assertEqual(422, raised.exception.status_code)
+                self.assertEqual(
+                    {
+                        "message": "Validation failed",
+                        "field_errors": [
+                            {
+                                "key": "evening_boost_min_feedin_price",
+                                "error": expected_error,
+                            }
+                        ],
+                    },
+                    raised.exception.detail,
+                )
+                self.assertEqual(0.01, cfg.evening_boost_min_feedin_price)
+
     def test_sanitize_preset_payload_rejects_empty(self) -> None:
         with self.assertRaises(ValueError):
             _sanitize_preset_payload({})

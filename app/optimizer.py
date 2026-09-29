@@ -2977,6 +2977,8 @@ class SigEnergyOptimizer:
             and forecast_tomorrow_observation_trusted
             and solcast_detailed_source_trusted
             and evening_boost_detailed_coverage
+            and feedin_price_trusted
+            and s.feedin_price >= cfg.evening_boost_min_feedin_price
             and self._evening_export_boost_active(
                 s, now_ts, productive_solar_end_ts, sunrise_soc_target, bat_fill_need_kwh
             )
@@ -7664,6 +7666,17 @@ class SigEnergyOptimizer:
             return cfg.export_limit_high
         if solar_override:
             return cfg.export_limit_high
+        evening_boost_below_ordinary_tier = bool(
+            boost
+            and not below_boost_floor
+            and fit >= cfg.evening_boost_min_feedin_price
+            and fit < cfg.export_threshold_low
+            and not self._manual_mode_override
+            and s.sigenergy_mode_observed
+            and str(s.sigenergy_mode or "") == str(cfg.automated_option)
+        )
+        if evening_boost_below_ordinary_tier:
+            return cfg.export_limit_low
         # Cheap-FiT full-battery export is owned exclusively by the verified
         # 100% top-off Maximum Self Consumption path in _decide().
         if fit < cfg.export_threshold_low:

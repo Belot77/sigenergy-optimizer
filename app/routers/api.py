@@ -43,6 +43,7 @@ _TIME_KEYS: set[str] = {
 _SOLAR_SURPLUS_START_PV_MARGIN_KEY = "solar_surplus_min_pv_margin"
 _SOLAR_SURPLUS_STOP_PV_MARGIN_KEY = "solar_surplus_stop_pv_margin"
 _SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR_KEY = "solar_surplus_forecast_safety_factor"
+_EVENING_BOOST_MIN_FEEDIN_PRICE_KEY = "evening_boost_min_feedin_price"
 _GRID_CONNECTION_EXPORT_LIMIT_KEY = "grid_connection_export_limit_kw"
 _MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KEY = (
     "morning_slow_physical_export_headroom_kw"
@@ -139,6 +140,12 @@ def _validate_config_value(cfg: Any, key: str, value: Any) -> str | None:
         and float(value) < 1.0
     ):
         return "must be greater than or equal to 1.0"
+    if (
+        key == _EVENING_BOOST_MIN_FEEDIN_PRICE_KEY
+        and isinstance(value, (int, float))
+        and float(value) < 0.01
+    ):
+        return "must be greater than or equal to 0.01"
     if key in _TIME_KEYS and not _is_valid_time(str(value)):
         return "must be HH:MM or HH:MM:SS"
     if key.endswith("_limit") or key.endswith("_limit_low") or key.endswith("_limit_medium") or key.endswith("_limit_high"):
