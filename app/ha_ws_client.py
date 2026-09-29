@@ -161,12 +161,24 @@ class HAWebSocketClient:
             data = event.get("data", {})
             entity_id = data.get("entity_id", "")
             if entity_id in self._watch:
-                new_state = data.get("new_state") or {}
-                old_state = data.get("old_state") or {}
-                new_val = new_state.get("state", "")
-                old_val = old_state.get("state", "")
-                if new_val != old_val:
-                    logger.debug("WS trigger: %s  %s → %s", entity_id, old_val[:20], new_val[:20])
+                new_state = data.get("new_state")
+                old_state = data.get("old_state")
+                state_or_attributes_changed = (
+                    not isinstance(new_state, dict)
+                    or not isinstance(old_state, dict)
+                    or new_state.get("state") != old_state.get("state")
+                    or new_state.get("attributes", {})
+                    != old_state.get("attributes", {})
+                )
+                if state_or_attributes_changed:
+                    new_val = new_state.get("state", "") if isinstance(new_state, dict) else ""
+                    old_val = old_state.get("state", "") if isinstance(old_state, dict) else ""
+                    logger.debug(
+                        "WS trigger: %s  %s → %s",
+                        entity_id,
+                        str(old_val)[:20],
+                        str(new_val)[:20],
+                    )
                     # Non-blocking put; if queue is full just skip (optimizer will catch it on heartbeat)
                     try:
                         self._queue.put_nowait(entity_id)
