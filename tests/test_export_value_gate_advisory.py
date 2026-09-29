@@ -1943,17 +1943,57 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
 
         optimizer._wait_for_number_at_most = reject_unsettled
 
-        asyncio.run(optimizer._apply(state, decision))
+        result = asyncio.run(optimizer._apply(state, decision))
 
         target_call = ("set_number", optimizer.cfg.grid_export_limit, 18.06)
         fallback_close = ("set_number", optimizer.cfg.grid_export_limit, 0.01)
+        fallback_discharge_clamp = (
+            "set_number",
+            optimizer.cfg.ess_max_discharging_limit,
+            0.01,
+        )
         self.assertIn(target_call, ha.calls)
         self.assertIn(fallback_close, ha.calls)
         self.assertLess(ha.calls.index(target_call), ha.calls.index(fallback_close))
-        self.assertEqual(
-            [(optimizer.cfg.grid_export_limit, 18.06, 0.001)],
-            wait_calls,
+        target_wait = (optimizer.cfg.grid_export_limit, 18.06, 0.001)
+        fallback_close_wait = (optimizer.cfg.grid_export_limit, 0.01, 0.001)
+        self.assertIn(target_wait, wait_calls)
+        self.assertIn(fallback_close_wait, wait_calls)
+        self.assertLess(wait_calls.index(target_wait), wait_calls.index(fallback_close_wait))
+
+        self.assertFalse(result.succeeded)
+        self.assertTrue(result.fallback_attempted)
+        self.assertFalse(result.fallback_succeeded)
+        self.assertIn(
+            "grid export safety close settlement was not observed",
+            result.error,
         )
+        fallback_close_index = ha.calls.index(fallback_close)
+        post_fallback_calls = ha.calls[fallback_close_index + 1 :]
+        self.assertIn(
+            ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF),
+            post_fallback_calls,
+        )
+        self.assertIn(fallback_discharge_clamp, post_fallback_calls)
+
+        permissive_recovery_calls = [
+            call
+            for call in post_fallback_calls
+            if call[0] == "set_number"
+            and (
+                (
+                    call[1] == optimizer.cfg.grid_import_limit
+                    and float(call[2]) > 0.01
+                )
+                or call[1] == optimizer.cfg.ess_max_charging_limit
+                or (
+                    call[1] == optimizer.cfg.ess_max_discharging_limit
+                    and float(call[2]) > 0.01
+                )
+                or call[1] == optimizer.cfg.pv_max_power_limit
+            )
+        ]
+        self.assertEqual([], permissive_recovery_calls)
 
     def test_msc_reassert_without_confirmed_readback_never_writes_high_ceiling(self) -> None:
         now_ts = datetime.now().timestamp()
