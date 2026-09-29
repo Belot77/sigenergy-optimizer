@@ -63,6 +63,9 @@ AUTOMATED_MODES = {"Automated"}
 # Maximum time between full cycles even when WebSocket is quiet (safety net)
 _HEARTBEAT_INTERVAL = 60  # seconds
 
+# Fixed window for coalescing rapid event bursts before a decision cycle.
+_DEBOUNCE_SECONDS = 3.0
+
 # Remote EMS switch service-call protection. State is still checked every cycle,
 # but unavailable targets are never called and valid-off retries are bounded.
 _HA_CONTROL_ENABLE_RETRY_SECONDS = 60.0
@@ -73,7 +76,7 @@ _HA_CONTROL_WARNING_INTERVAL_SECONDS = 300.0
 # without weakening the separate 120-second inverter-telemetry boundary.
 _DEMAND_WINDOW_MAX_AGE_SECONDS = 360.0
 
-# Config attribute names whose entity IDs should trigger immediate cycles
+# Config attribute names whose entity IDs should trigger event-driven cycles
 _TRIGGER_ENTITY_ATTRS = [
     "pv_power_sensor",
     "consumed_power_sensor",
@@ -752,10 +755,10 @@ class SigEnergyOptimizer:
         Event-driven main loop.
 
         Waits on trigger_queue for entity_ids pushed by HAWebSocketClient.
-        The first real entity event runs immediately. Events already queued by
-        the end of that tick are collapsed into at most one immediate catch-up
-        tick. A heartbeat fires every _HEARTBEAT_INTERVAL seconds regardless,
-        so we always converge even if WS events are missed.
+        Rapid bursts are coalesced through a fixed pre-decision debounce window
+        so sequential sensor updates produce one coherent decision cycle. A
+        heartbeat fires every _HEARTBEAT_INTERVAL seconds regardless, so we
+        always converge even if WS events are missed.
 
         Falls back gracefully to pure heartbeat polling when the WebSocket
         is disconnected — no separate code path needed.
@@ -764,7 +767,11 @@ class SigEnergyOptimizer:
         last_tick_ts = 0.0
         last_heartbeat_ts = 0.0
 
-        logger.info("Optimizer event loop started (heartbeat=%ds)", _HEARTBEAT_INTERVAL)
+        logger.info(
+            "Optimizer event loop started (debounce=%.0fs, heartbeat=%ds)",
+            _DEBOUNCE_SECONDS,
+            _HEARTBEAT_INTERVAL,
+        )
 
         # One immediate startup tick
         try:
@@ -794,18 +801,11 @@ class SigEnergyOptimizer:
                         last_tick_ts = last_heartbeat_ts = datetime.now().timestamp()
                     continue
 
-                # Real entity state change — run immediately.
+                # Real entity state change — coalesce the bounded burst, then run.
                 logger.debug("Event-driven tick triggered by: %s", entity_id)
+                await self._drain_queue(_DEBOUNCE_SECONDS)
                 await self._safe_tick()
                 last_tick_ts = last_heartbeat_ts = datetime.now().timestamp()
-
-                # Collapse only the snapshot already queued after that tick.
-                # This is deliberately non-blocking and bounded so it neither
-                # delays the leading edge nor loops forever under steady input.
-                if self._drain_queued_event_snapshot():
-                    logger.debug("Event-driven catch-up tick for queued burst")
-                    await self._safe_tick()
-                    last_tick_ts = last_heartbeat_ts = datetime.now().timestamp()
 
             except asyncio.TimeoutError:
                 # No WS events — heartbeat tick
@@ -819,18 +819,18 @@ class SigEnergyOptimizer:
                 logger.exception("Event loop error: %s", exc)
                 await asyncio.sleep(5)
 
-    def _drain_queued_event_snapshot(self) -> bool:
-        """Drain the current queue snapshot and report whether it held a real event."""
-        real_event_queued = False
-        for _ in range(self.trigger_queue.qsize()):
-            try:
-                item = self.trigger_queue.get_nowait()
-            except asyncio.QueueEmpty:
+    async def _drain_queue(self, window: float) -> None:
+        """Consume queued items until a fixed deadline to coalesce one bounded burst."""
+        deadline = asyncio.get_event_loop().time() + window
+        while True:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
                 break
-            self.trigger_queue.task_done()
-            if item != "__time_changed__":
-                real_event_queued = True
-        return real_event_queued
+            try:
+                await asyncio.wait_for(self.trigger_queue.get(), timeout=remaining)
+                self.trigger_queue.task_done()
+            except asyncio.TimeoutError:
+                break
 
     async def _safe_tick(self) -> None:
         self._last_cycle_started = datetime.now(timezone.utc)

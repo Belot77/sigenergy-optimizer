@@ -20,63 +20,109 @@ class OptimizerEventLoopResponsivenessTests(unittest.IsolatedAsyncioTestCase):
         optimizer._safe_tick = AsyncMock()
         return optimizer
 
-    async def test_first_real_event_ticks_without_predecision_delay(self) -> None:
+    async def test_first_real_event_waits_for_predecision_debounce(self) -> None:
         optimizer = self._optimizer()
         optimizer.trigger_queue.put_nowait("sensor.price")
+        debounce_entered = asyncio.Event()
+        release_debounce = asyncio.Event()
+
+        async def hold_debounce(window: float) -> None:
+            self.assertEqual(window, 3.0)
+            debounce_entered.set()
+            await release_debounce.wait()
+
+        async def stop_after_event_tick() -> None:
+            optimizer._running = False
+
+        optimizer._drain_queue = AsyncMock(side_effect=hold_debounce)
+        optimizer._safe_tick.side_effect = stop_after_event_tick
+
+        run_task = asyncio.create_task(optimizer.run_forever())
+        await asyncio.wait_for(debounce_entered.wait(), timeout=0.25)
+
+        optimizer._tick.assert_awaited_once()
+        optimizer._safe_tick.assert_not_awaited()
+
+        release_debounce.set()
+        await asyncio.wait_for(run_task, timeout=0.25)
+
+        optimizer._drain_queue.assert_awaited_once_with(3.0)
+        optimizer._safe_tick.assert_awaited_once()
+
+    async def test_multiple_events_inside_debounce_produce_one_cycle(self) -> None:
+        optimizer = self._optimizer()
+        optimizer.trigger_queue.put_nowait("sensor.price")
+
+        async def add_burst() -> None:
+            await asyncio.sleep(0.005)
+            optimizer.trigger_queue.put_nowait("sensor.pv")
+            await asyncio.sleep(0.005)
+            optimizer.trigger_queue.put_nowait("sensor.load")
+            optimizer.trigger_queue.put_nowait("__time_changed__")
 
         async def stop_after_event_tick() -> None:
             optimizer._running = False
 
         optimizer._safe_tick.side_effect = stop_after_event_tick
 
-        await asyncio.wait_for(optimizer.run_forever(), timeout=0.25)
+        with patch("app.optimizer._DEBOUNCE_SECONDS", 0.1):
+            await asyncio.wait_for(
+                asyncio.gather(optimizer.run_forever(), add_burst()),
+                timeout=0.5,
+            )
 
-        optimizer._tick.assert_awaited_once()
         optimizer._safe_tick.assert_awaited_once()
-
-    async def test_queued_burst_receives_one_immediate_catch_up_tick(self) -> None:
-        optimizer = self._optimizer()
-        optimizer.trigger_queue.put_nowait("sensor.price")
-        tick_count = 0
-
-        async def event_tick() -> None:
-            nonlocal tick_count
-            tick_count += 1
-            if tick_count == 1:
-                optimizer.trigger_queue.put_nowait("sensor.pv")
-                optimizer.trigger_queue.put_nowait("sensor.load")
-                optimizer.trigger_queue.put_nowait("__time_changed__")
-            else:
-                optimizer._running = False
-
-        optimizer._safe_tick.side_effect = event_tick
-
-        await asyncio.wait_for(optimizer.run_forever(), timeout=0.25)
-
-        self.assertEqual(tick_count, 2)
         self.assertTrue(optimizer.trigger_queue.empty())
 
-    async def test_catch_up_is_bounded_when_more_events_arrive_during_it(self) -> None:
+    async def test_continuous_burst_cannot_extend_fixed_debounce_window(self) -> None:
         optimizer = self._optimizer()
         optimizer.trigger_queue.put_nowait("sensor.price")
-        tick_count = 0
+        producer_still_running_at_tick = False
+
+        async def continuous_burst() -> None:
+            for index in range(20):
+                await asyncio.sleep(0.005)
+                optimizer.trigger_queue.put_nowait(f"sensor.burst_{index}")
+
+        producer_task = asyncio.create_task(continuous_burst())
+
+        async def stop_after_event_tick() -> None:
+            nonlocal producer_still_running_at_tick
+            producer_still_running_at_tick = not producer_task.done()
+            optimizer._running = False
+
+        optimizer._safe_tick.side_effect = stop_after_event_tick
+
+        try:
+            with patch("app.optimizer._DEBOUNCE_SECONDS", 0.03):
+                await asyncio.wait_for(optimizer.run_forever(), timeout=0.25)
+        finally:
+            producer_task.cancel()
+            await asyncio.gather(producer_task, return_exceptions=True)
+
+        optimizer._safe_tick.assert_awaited_once()
+        self.assertTrue(producer_still_running_at_tick)
+
+    async def test_event_after_completed_cycle_gets_next_bounded_window(self) -> None:
+        optimizer = self._optimizer()
+        optimizer.trigger_queue.put_nowait("sensor.price")
+        tick_times: list[float] = []
+        debounce_seconds = 0.03
 
         async def event_tick() -> None:
-            nonlocal tick_count
-            tick_count += 1
-            if tick_count == 1:
-                for index in range(32):
-                    optimizer.trigger_queue.put_nowait(f"sensor.burst_{index}")
+            tick_times.append(asyncio.get_running_loop().time())
+            if len(tick_times) == 1:
+                optimizer.trigger_queue.put_nowait("sensor.after_cycle")
             else:
-                optimizer.trigger_queue.put_nowait("sensor.after_snapshot")
                 optimizer._running = False
 
         optimizer._safe_tick.side_effect = event_tick
 
-        await asyncio.wait_for(optimizer.run_forever(), timeout=0.25)
+        with patch("app.optimizer._DEBOUNCE_SECONDS", debounce_seconds):
+            await asyncio.wait_for(optimizer.run_forever(), timeout=0.25)
 
-        self.assertEqual(tick_count, 2)
-        self.assertEqual(optimizer.trigger_queue.get_nowait(), "sensor.after_snapshot")
+        self.assertEqual(len(tick_times), 2)
+        self.assertGreaterEqual(tick_times[1] - tick_times[0], debounce_seconds * 0.75)
 
     async def test_time_changed_heartbeat_still_ticks_when_due(self) -> None:
         optimizer = self._optimizer()
