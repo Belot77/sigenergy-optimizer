@@ -269,6 +269,120 @@ def _solar_surplus_timing_budget(
     }
 
 
+def _piecewise_refill_timing_budget(
+    detailed_periods: list[tuple[float, float]],
+    *,
+    forecast_period_hours: float,
+    window_start_ts: float,
+    refill_deadline_ts: float,
+    slow_charge_end_ts: float,
+    base_load_kw: float,
+    slow_charge_capability_kw: float,
+    normal_charge_capability_kw: float,
+    fill_need_kwh: float,
+    safety_factor: float,
+) -> dict[str, float | bool]:
+    """Calculate safe refill opportunity across slow and normal charge phases."""
+    period_hours = _solar_surplus_finite_number(
+        "forecast_period_hours",
+        forecast_period_hours,
+    )
+    start_ts = _solar_surplus_finite_number("window_start_ts", window_start_ts)
+    deadline_ts = _solar_surplus_finite_number(
+        "refill_deadline_ts",
+        refill_deadline_ts,
+    )
+    slow_end_ts = _solar_surplus_finite_number(
+        "slow_charge_end_ts",
+        slow_charge_end_ts,
+    )
+    load_kw = _solar_surplus_finite_number("base_load_kw", base_load_kw)
+    slow_cap_kw = _solar_surplus_finite_number(
+        "slow_charge_capability_kw",
+        slow_charge_capability_kw,
+    )
+    normal_cap_kw = _solar_surplus_finite_number(
+        "normal_charge_capability_kw",
+        normal_charge_capability_kw,
+    )
+    fill_kwh = _solar_surplus_finite_number("fill_need_kwh", fill_need_kwh)
+    factor = _solar_surplus_finite_number("safety_factor", safety_factor)
+
+    if period_hours <= 0.0:
+        raise ValueError("forecast_period_hours must be greater than zero")
+    if deadline_ts <= start_ts:
+        raise ValueError("refill_deadline_ts must be greater than window_start_ts")
+    if load_kw < 0.0:
+        raise ValueError("base_load_kw must be non-negative")
+    if slow_cap_kw < 0.0:
+        raise ValueError("slow_charge_capability_kw must be non-negative")
+    if normal_cap_kw <= 0.0:
+        raise ValueError("normal_charge_capability_kw must be greater than zero")
+    if fill_kwh < 0.0:
+        raise ValueError("fill_need_kwh must be non-negative")
+    if factor < 1.0:
+        raise ValueError("safety_factor must be greater than or equal to 1.0")
+
+    period_seconds = period_hours * 3600.0
+    slow_phase_end_ts = min(max(slow_end_ts, start_ts), deadline_ts)
+    slow_opportunity_kwh = 0.0
+    normal_opportunity_kwh = 0.0
+
+    for period in detailed_periods:
+        if not isinstance(period, (tuple, list)) or len(period) != 2:
+            raise ValueError("detailed periods must contain (start_ts, pv_kw) pairs")
+        period_start_ts = _solar_surplus_finite_number("period_start_ts", period[0])
+        pv_kw = _solar_surplus_finite_number("pv_kw", period[1])
+        if pv_kw < 0.0:
+            raise ValueError("pv_kw must be non-negative")
+
+        period_end_ts = period_start_ts + period_seconds
+        available_for_battery_kw = max(pv_kw - load_kw, 0.0)
+
+        slow_overlap_seconds = max(
+            0.0,
+            min(period_end_ts, slow_phase_end_ts) - max(period_start_ts, start_ts),
+        )
+        if slow_overlap_seconds > 0.0:
+            slow_opportunity_kwh += (
+                min(available_for_battery_kw, slow_cap_kw)
+                * slow_overlap_seconds
+                / 3600.0
+            )
+
+        normal_overlap_seconds = max(
+            0.0,
+            min(period_end_ts, deadline_ts)
+            - max(period_start_ts, slow_phase_end_ts),
+        )
+        if normal_overlap_seconds > 0.0:
+            normal_opportunity_kwh += (
+                min(available_for_battery_kw, normal_cap_kw)
+                * normal_overlap_seconds
+                / 3600.0
+            )
+
+    timed_opportunity_kwh = slow_opportunity_kwh + normal_opportunity_kwh
+    safe_opportunity_kwh = timed_opportunity_kwh / factor
+    calculated = (
+        slow_opportunity_kwh,
+        normal_opportunity_kwh,
+        timed_opportunity_kwh,
+        safe_opportunity_kwh,
+    )
+    if not all(math.isfinite(value) for value in calculated):
+        raise ValueError("piecewise refill opportunity must remain finite")
+
+    return {
+        "fill_need_kwh": fill_kwh,
+        "slow_charge_opportunity_kwh": slow_opportunity_kwh,
+        "normal_charge_opportunity_kwh": normal_opportunity_kwh,
+        "timed_charge_opportunity_kwh": timed_opportunity_kwh,
+        "safe_timed_charge_opportunity_kwh": safe_opportunity_kwh,
+        "timing_passed": safe_opportunity_kwh >= fill_kwh,
+    }
+
+
 class _DesiredExportLimit(float):
     """Numeric export limit carrying the exact policy branch that produced it."""
 
@@ -2605,6 +2719,26 @@ class SigEnergyOptimizer:
             )
         )
         bat_fill_need_kwh = max(0.0, cap - control_available_energy_kwh)
+        morning_slow_owner_end_ts = self._today_at(
+            cfg.morning_slow_charge_until
+        ).timestamp()
+        morning_refill_deadline_ts: Optional[float] = None
+        try:
+            refill_cutoff_hours = float(cfg.morning_slow_charge_sunset_cutoff)
+            candidate_refill_deadline_ts = (
+                float(sunset_ts) - refill_cutoff_hours * 3600.0
+            )
+            if (
+                sunset_observation_trusted
+                and math.isfinite(refill_cutoff_hours)
+                and refill_cutoff_hours >= 0.0
+                and math.isfinite(candidate_refill_deadline_ts)
+                and candidate_refill_deadline_ts > now_ts
+            ):
+                morning_refill_deadline_ts = candidate_refill_deadline_ts
+        except (TypeError, ValueError, OverflowError):
+            morning_refill_deadline_ts = None
+        trusted_charge_capability_kw = self._trusted_charge_capability_kw(s)
 
         # ---- Sunrise SoC target (dynamic calculation) ----------------
         soc_required = self._battery_soc_required_to_sunrise(s)
@@ -2643,6 +2777,20 @@ class SigEnergyOptimizer:
             )
         else:
             morning_dump_start_ts, morning_dump_end_ts = None, None
+        morning_dump_refill_timing = self._refill_timing_assessment(
+            detailed_forecast_periods,
+            detailed_source_trusted=solcast_detailed_source_trusted,
+            window_start_ts=(
+                max(now_ts, morning_dump_end_ts)
+                if morning_dump_end_ts is not None
+                else None
+            ),
+            refill_deadline_ts=morning_refill_deadline_ts,
+            slow_charge_end_ts=morning_slow_owner_end_ts,
+            fill_need_kwh=bat_fill_need_kwh,
+            slow_phase_enabled=bool(cfg.morning_slow_charge_enabled),
+            trusted_charge_capability_kw=trusted_charge_capability_kw,
+        )
         morning_dump_detailed_coverage = bool(
             solcast_detailed_source_trusted
             and (
@@ -2662,19 +2810,27 @@ class SigEnergyOptimizer:
             battery_soc_trusted
             and battery_capacity_trusted
             and available_discharge_energy_trusted
-            and solcast_detailed_source_trusted
             and morning_dump_detailed_coverage
+            and (
+                not detailed_forecast_validation_required
+                or (
+                    morning_dump_refill_timing["evidence_trusted"]
+                    and morning_dump_refill_timing["timing_passed"]
+                )
+            )
             and sun_state_observation_trusted
             and sunrise_observation_trusted
-            and (
-                sunset_observation_trusted
-                or not detailed_forecast_validation_required
-            )
+            and sunset_observation_trusted
             and self._morning_dump_active(
                 s, morning_dump_start_ts, morning_dump_end_ts,
                 productive_solar_end_ts, bat_fill_need_kwh, now_ts,
                 detailed_periods=(
                     detailed_forecast_periods
+                    if detailed_forecast_validation_required
+                    else None
+                ),
+                refill_timing_feasible=(
+                    bool(morning_dump_refill_timing["timing_passed"])
                     if detailed_forecast_validation_required
                     else None
                 ),
@@ -2707,6 +2863,39 @@ class SigEnergyOptimizer:
             )
         )
         d.morning_slow_charge_active = morning_slow_charge_active
+        morning_slow_refill_timing = self._refill_timing_assessment(
+            detailed_forecast_periods,
+            detailed_source_trusted=solcast_detailed_source_trusted,
+            window_start_ts=now_ts,
+            refill_deadline_ts=morning_refill_deadline_ts,
+            slow_charge_end_ts=morning_slow_owner_end_ts,
+            fill_need_kwh=bat_fill_need_kwh,
+            slow_phase_enabled=True,
+            trusted_charge_capability_kw=trusted_charge_capability_kw,
+        )
+        morning_slow_normal_capability_improves_refill = bool(
+            morning_slow_refill_timing["evidence_trusted"]
+            and morning_slow_refill_timing["normal_charge_capability_kw"] is not None
+            and morning_slow_refill_timing["slow_charge_capability_kw"] is not None
+            and morning_slow_refill_timing["normal_charge_capability_kw"]
+            > morning_slow_refill_timing["slow_charge_capability_kw"]
+            and morning_slow_refill_timing[
+                "normal_only_safe_timed_charge_opportunity_kwh"
+            ]
+            is not None
+            and morning_slow_refill_timing["safe_timed_charge_opportunity_kwh"]
+            is not None
+            and morning_slow_refill_timing[
+                "normal_only_safe_timed_charge_opportunity_kwh"
+            ]
+            > morning_slow_refill_timing["safe_timed_charge_opportunity_kwh"]
+        )
+        morning_slow_forecast_refill_relief_candidate = bool(
+            morning_slow_charge_active
+            and morning_slow_refill_timing["evidence_trusted"]
+            and not morning_slow_refill_timing["timing_passed"]
+            and morning_slow_normal_capability_improves_refill
+        )
 
         # ---- Standby holdoff ----------------------------------------
         battery_can_reach_from_pv = (
@@ -3326,6 +3515,92 @@ class SigEnergyOptimizer:
             ordinary_grid_export_kw,
             ordinary_grid_export_flow_source,
         ) = self._grid_export_kw_for_ordinary_msc_check(s)
+        (
+            morning_slow_actual_grid_export_kw,
+            morning_slow_actual_battery_charge_kw,
+            morning_slow_physical_relief_flow_source,
+        ) = self._coherent_physical_relief_flows(s)
+        try:
+            physical_export_limit_kw = float(
+                cfg.grid_connection_export_limit_kw
+            )
+            physical_export_headroom_kw = float(
+                cfg.morning_slow_physical_export_headroom_kw
+            )
+        except (TypeError, ValueError, OverflowError):
+            physical_export_limit_kw = 0.0
+            physical_export_headroom_kw = 0.0
+        morning_slow_physical_export_configured = bool(
+            math.isfinite(physical_export_limit_kw)
+            and math.isfinite(physical_export_headroom_kw)
+            and physical_export_limit_kw > 0.0
+            and physical_export_headroom_kw > 0.0
+            and physical_export_headroom_kw < physical_export_limit_kw
+        )
+        morning_slow_physical_relief_threshold_kw = (
+            physical_export_limit_kw - physical_export_headroom_kw
+            if morning_slow_physical_export_configured
+            else None
+        )
+        morning_slow_physical_export_flow_trusted = bool(
+            morning_slow_actual_grid_export_kw is not None
+            and morning_slow_actual_battery_charge_kw is not None
+        )
+        morning_slow_estimated_export_if_slow_cap_restored_kw: Optional[float] = None
+        if morning_slow_physical_export_flow_trusted:
+            morning_slow_estimated_export_if_slow_cap_restored_kw = (
+                float(morning_slow_actual_grid_export_kw)
+                + max(
+                    float(morning_slow_actual_battery_charge_kw)
+                    - max(float(cfg.morning_slow_charge_rate_kw), 0.0),
+                    0.0,
+                )
+            )
+        previous_morning_slow_physical_export_relief = bool(
+            self._last_decision
+            and self._last_decision.trace_gates.get(
+                "morning_slow_physical_export_relief",
+                False,
+            )
+        )
+        morning_slow_physical_export_relief_candidate = False
+        if not morning_slow_charge_active:
+            morning_slow_physical_export_reason = "morning_slow_inactive"
+        elif morning_dump_active:
+            morning_slow_physical_export_reason = "morning_dump_has_priority"
+        elif not morning_slow_physical_export_configured:
+            morning_slow_physical_export_reason = "physical_export_relief_unconfigured"
+        elif not morning_slow_physical_export_flow_trusted:
+            morning_slow_physical_export_reason = "physical_export_flow_untrusted"
+        elif (
+            morning_slow_actual_grid_export_kw is not None
+            and morning_slow_physical_relief_threshold_kw is not None
+            and morning_slow_actual_grid_export_kw
+            >= morning_slow_physical_relief_threshold_kw
+        ):
+            morning_slow_physical_export_relief_candidate = True
+            morning_slow_physical_export_reason = "actual_export_at_or_above_threshold"
+        elif (
+            morning_slow_estimated_export_if_slow_cap_restored_kw is not None
+            and morning_slow_physical_relief_threshold_kw is not None
+            and morning_slow_actual_battery_charge_kw is not None
+            and morning_slow_actual_battery_charge_kw
+            > max(float(cfg.morning_slow_charge_rate_kw), 0.0)
+            and morning_slow_estimated_export_if_slow_cap_restored_kw
+            >= morning_slow_physical_relief_threshold_kw
+        ):
+            morning_slow_physical_export_relief_candidate = True
+            morning_slow_physical_export_reason = (
+                "counterfactual_export_unsafe_after_restart"
+                if not previous_morning_slow_physical_export_relief
+                else "counterfactual_export_still_unsafe"
+            )
+        else:
+            morning_slow_physical_export_reason = (
+                "counterfactual_export_safely_below_threshold"
+                if previous_morning_slow_physical_export_relief
+                else "actual_export_below_threshold"
+            )
         meaningful_grid_export_threshold_kw = float(cfg.min_grid_transfer_kw)
         ordinary_msc_flow_trusted = bool(
             battery_discharge_kw_for_pv_only is not None
@@ -4147,6 +4422,42 @@ class SigEnergyOptimizer:
             battery_capacity_trusted=battery_capacity_trusted,
         )
         d.import_limit = desired_import_limit
+        morning_slow_genuinely_owns_charging = bool(
+            morning_slow_charge_active
+            and not morning_dump_active
+            and desired_import_limit <= 0.0
+            and observed_automated_control_mode
+        )
+        morning_slow_forecast_refill_relief = bool(
+            morning_slow_genuinely_owns_charging
+            and morning_slow_forecast_refill_relief_candidate
+        )
+        morning_slow_physical_export_relief = bool(
+            morning_slow_genuinely_owns_charging
+            and morning_slow_physical_export_relief_candidate
+        )
+        if (
+            morning_slow_physical_export_relief_candidate
+            and not morning_slow_genuinely_owns_charging
+        ):
+            morning_slow_physical_export_reason = (
+                "morning_slow_does_not_own_charging"
+            )
+        morning_slow_charge_relief_active = bool(
+            morning_slow_forecast_refill_relief
+            or morning_slow_physical_export_relief
+        )
+        if (
+            morning_slow_forecast_refill_relief
+            and morning_slow_physical_export_relief
+        ):
+            morning_slow_relief_reason = "forecast_refill_and_physical_export"
+        elif morning_slow_forecast_refill_relief:
+            morning_slow_relief_reason = "forecast_refill"
+        elif morning_slow_physical_export_relief:
+            morning_slow_relief_reason = "physical_export"
+        else:
+            morning_slow_relief_reason = "none"
 
         # ---- Desired EMS mode ---------------------------------------
         desired_ems_mode = self._desired_ems_mode(
@@ -4322,7 +4633,8 @@ class SigEnergyOptimizer:
         # ---- ESS charge / discharge limits --------------------------
         d.ess_charge_limit = self._desired_ess_charge_limit(
             s, desired_import_limit, morning_slow_charge_active,
-            desired_export_limit, pv_surplus_actual
+            desired_export_limit, pv_surplus_actual,
+            morning_slow_charge_relief_active=morning_slow_charge_relief_active,
         )
         positive_fit_owns_live_battery_export = bool(
             d.export_intent == BATTERY_EXPORT
@@ -4504,6 +4816,42 @@ class SigEnergyOptimizer:
             "within_morning_grace": within_morning_grace,
             "morning_dump_active": morning_dump_active,
             "morning_slow_charge_active": morning_slow_charge_active,
+            "morning_slow_genuinely_owns_charging": (
+                morning_slow_genuinely_owns_charging
+            ),
+            "morning_slow_refill_timing_evidence_trusted": bool(
+                morning_slow_refill_timing["evidence_trusted"]
+            ),
+            "morning_slow_refill_timing_coverage": bool(
+                morning_slow_refill_timing["coverage"]
+            ),
+            "morning_slow_refill_timing_feasible": bool(
+                morning_slow_refill_timing["timing_passed"]
+            ),
+            "morning_slow_refill_normal_only_feasible": bool(
+                morning_slow_refill_timing["normal_only_timing_passed"]
+            ),
+            "morning_slow_forecast_refill_relief": (
+                morning_slow_forecast_refill_relief
+            ),
+            "morning_slow_physical_export_configured": (
+                morning_slow_physical_export_configured
+            ),
+            "morning_slow_physical_export_flow_trusted": (
+                morning_slow_physical_export_flow_trusted
+            ),
+            "morning_slow_physical_export_relief": (
+                morning_slow_physical_export_relief
+            ),
+            "morning_slow_charge_relief_active": (
+                morning_slow_charge_relief_active
+            ),
+            "morning_dump_refill_timing_evidence_trusted": bool(
+                morning_dump_refill_timing["evidence_trusted"]
+            ),
+            "morning_dump_refill_timing_feasible": bool(
+                morning_dump_refill_timing["timing_passed"]
+            ),
             "standby_holdoff_active": standby_holdoff_active,
             "negative_price_before_cutoff": negative_price_before_cutoff,
             "price_forecast_source_trusted": price_forecast_source_trusted,
@@ -4700,6 +5048,70 @@ class SigEnergyOptimizer:
             "solar_trusted_charge_capability_kw": solar_charge_capability_kw,
             "solar_hours_to_same_day_sunset": solar_hours_to_sunset,
             "solar_surplus_fail_reason": solar_surplus_fail_reason,
+            "morning_slow_refill_deadline_ts": morning_refill_deadline_ts,
+            "morning_slow_owner_end_ts": morning_slow_owner_end_ts,
+            "morning_slow_refill_need_kwh": bat_fill_need_kwh,
+            "morning_slow_refill_timing_reason": morning_slow_refill_timing[
+                "reason"
+            ],
+            "morning_slow_slow_charge_capability_kw": morning_slow_refill_timing[
+                "slow_charge_capability_kw"
+            ],
+            "morning_slow_normal_charge_capability_kw": morning_slow_refill_timing[
+                "normal_charge_capability_kw"
+            ],
+            "morning_slow_slow_charge_opportunity_kwh": morning_slow_refill_timing[
+                "slow_charge_opportunity_kwh"
+            ],
+            "morning_slow_normal_charge_opportunity_kwh": morning_slow_refill_timing[
+                "normal_charge_opportunity_kwh"
+            ],
+            "morning_slow_timed_charge_opportunity_kwh": morning_slow_refill_timing[
+                "timed_charge_opportunity_kwh"
+            ],
+            "morning_slow_safe_timed_charge_opportunity_kwh": (
+                morning_slow_refill_timing[
+                    "safe_timed_charge_opportunity_kwh"
+                ]
+            ),
+            "morning_slow_normal_only_safe_timed_charge_opportunity_kwh": (
+                morning_slow_refill_timing[
+                    "normal_only_safe_timed_charge_opportunity_kwh"
+                ]
+            ),
+            "morning_slow_physical_relief_threshold_kw": (
+                morning_slow_physical_relief_threshold_kw
+            ),
+            "morning_slow_actual_grid_export_kw": (
+                morning_slow_actual_grid_export_kw
+            ),
+            "morning_slow_actual_grid_export_source": (
+                morning_slow_physical_relief_flow_source
+            ),
+            "morning_slow_actual_battery_charge_kw": (
+                morning_slow_actual_battery_charge_kw
+            ),
+            "morning_slow_actual_battery_charge_source": (
+                morning_slow_physical_relief_flow_source
+            ),
+            "morning_slow_estimated_export_if_slow_cap_restored_kw": (
+                morning_slow_estimated_export_if_slow_cap_restored_kw
+            ),
+            "morning_slow_physical_export_reason": (
+                morning_slow_physical_export_reason
+            ),
+            "morning_slow_relief_reason": morning_slow_relief_reason,
+            "morning_dump_refill_timing_reason": morning_dump_refill_timing[
+                "reason"
+            ],
+            "morning_dump_timed_charge_opportunity_kwh": (
+                morning_dump_refill_timing["timed_charge_opportunity_kwh"]
+            ),
+            "morning_dump_safe_timed_charge_opportunity_kwh": (
+                morning_dump_refill_timing[
+                    "safe_timed_charge_opportunity_kwh"
+                ]
+            ),
             "pv_load_observation_span_seconds": s.pv_load_observation_span_seconds,
             "load_kw": s.load_kw,
             "grid_import_power_kw": s.grid_import_power_kw,
@@ -4805,6 +5217,12 @@ class SigEnergyOptimizer:
             "import_branch": import_branch,
             "cfg_morning_slow_charge_enabled": cfg.morning_slow_charge_enabled,
             "cfg_morning_slow_charge_rate_kw": cfg.morning_slow_charge_rate_kw,
+            "cfg_grid_connection_export_limit_kw": (
+                cfg.grid_connection_export_limit_kw
+            ),
+            "cfg_morning_slow_physical_export_headroom_kw": (
+                cfg.morning_slow_physical_export_headroom_kw
+            ),
             "cfg_morning_slow_export_start_margin_kw": cfg.morning_slow_export_start_margin_kw,
             "cfg_morning_slow_export_stop_margin_kw": cfg.morning_slow_export_stop_margin_kw,
             "cfg_morning_slow_export_ramp_up_step_kw": cfg.morning_slow_export_ramp_up_step_kw,
@@ -6201,6 +6619,100 @@ class SigEnergyOptimizer:
             return max(0.0, -battery_power_kw), "measured_grid_flow"
         return None, "unknown"
 
+    def _coherent_physical_relief_flows(
+        self,
+        s: SolarState,
+    ) -> tuple[Optional[float], Optional[float], str]:
+        """Return coherent export and charge flows for Morning Slow relief."""
+        inputs = s.hvac_solar_inputs
+        if inputs.live_snapshot:
+            derived_observations = (
+                inputs.grid_import_power,
+                inputs.grid_export_power,
+                inputs.pv_power,
+                inputs.load_power,
+            )
+            if not all(
+                observation.available and observation.fresh
+                for observation in derived_observations
+            ):
+                return None, None, "unknown"
+            if s.derived_power_flow_coherent is not True:
+                return None, None, "unknown"
+            try:
+                measured_import, measured_export, pv_kw, load_kw = (
+                    float(observation.value) for observation in derived_observations
+                )
+            except (TypeError, ValueError, OverflowError):
+                return None, None, "unknown"
+            if not all(
+                math.isfinite(value)
+                for value in (measured_import, measured_export, pv_kw, load_kw)
+            ):
+                return None, None, "unknown"
+            if any(
+                value < 0.0
+                for value in (measured_import, measured_export, pv_kw, load_kw)
+            ):
+                return None, None, "unknown"
+            battery_power_kw = (
+                pv_kw
+                + measured_import
+                - measured_export
+                - load_kw
+            )
+            return (
+                measured_export,
+                max(0.0, battery_power_kw),
+                "coherent_measured_grid_flow",
+            )
+
+        # Hand-built unit SolarState objects predate live freshness/coherence
+        # evidence. Preserve their finite raw-field behavior for compatibility.
+        if s.grid_export_power_kw is None:
+            return None, None, "unknown"
+        try:
+            measured_export = float(s.grid_export_power_kw)
+        except (TypeError, ValueError, OverflowError):
+            return None, None, "unknown"
+        if not math.isfinite(measured_export) or measured_export < 0.0:
+            return None, None, "unknown"
+
+        if s.battery_power_sensor_kw is not None:
+            try:
+                direct_battery_power_kw = float(s.battery_power_sensor_kw)
+            except (TypeError, ValueError, OverflowError):
+                return None, None, "unknown"
+            if math.isfinite(direct_battery_power_kw):
+                return (
+                    measured_export,
+                    max(0.0, direct_battery_power_kw),
+                    "legacy_direct_flow_fields",
+                )
+            return None, None, "unknown"
+        if s.grid_import_power_kw is not None and s.grid_export_power_kw is not None:
+            try:
+                derived_inputs = (
+                    float(s.grid_import_power_kw),
+                    float(s.grid_export_power_kw),
+                    float(s.pv_kw),
+                    float(s.load_kw),
+                )
+            except (TypeError, ValueError, OverflowError):
+                return None, None, "unknown"
+            if not all(math.isfinite(value) for value in derived_inputs):
+                return None, None, "unknown"
+            if any(value < 0.0 for value in derived_inputs):
+                return None, None, "unknown"
+            measured_import, measured_export, pv_kw, load_kw = derived_inputs
+            battery_power_kw = pv_kw + measured_import - measured_export - load_kw
+            return (
+                measured_export,
+                max(0.0, battery_power_kw),
+                "legacy_derived_flow_fields",
+            )
+        return None, None, "unknown"
+
     def _grid_export_kw_for_ordinary_msc_check(
         self,
         s: SolarState,
@@ -6639,6 +7151,124 @@ class SigEnergyOptimizer:
             and coverage_end >= end_ts - tolerance_seconds
         )
 
+    def _refill_timing_assessment(
+        self,
+        detailed_periods: Optional[list[tuple[float, float]]],
+        *,
+        detailed_source_trusted: bool,
+        window_start_ts: Optional[float],
+        refill_deadline_ts: Optional[float],
+        slow_charge_end_ts: float,
+        fill_need_kwh: float,
+        slow_phase_enabled: bool,
+        trusted_charge_capability_kw: Optional[float],
+    ) -> dict[str, Any]:
+        """Assess refill timing without treating aggregate energy as rate proof."""
+        result: dict[str, Any] = {
+            "evidence_trusted": False,
+            "coverage": False,
+            "timing_passed": False,
+            "normal_only_timing_passed": False,
+            "reason": "unavailable",
+            "fill_need_kwh": float(fill_need_kwh),
+            "slow_charge_opportunity_kwh": None,
+            "normal_charge_opportunity_kwh": None,
+            "timed_charge_opportunity_kwh": None,
+            "safe_timed_charge_opportunity_kwh": None,
+            "normal_only_safe_timed_charge_opportunity_kwh": None,
+            "slow_charge_capability_kw": None,
+            "normal_charge_capability_kw": None,
+        }
+        if not detailed_source_trusted or detailed_periods is None:
+            result["reason"] = "detailed_forecast_untrusted"
+            return result
+        if window_start_ts is None or refill_deadline_ts is None:
+            result["reason"] = "refill_deadline_untrusted"
+            return result
+        if refill_deadline_ts <= window_start_ts:
+            result["reason"] = "refill_window_closed"
+            return result
+        if not self._detailed_forecast_covers(
+            detailed_periods,
+            window_start_ts,
+            refill_deadline_ts,
+        ):
+            result["reason"] = "detailed_forecast_does_not_cover_refill_window"
+            return result
+        result["coverage"] = True
+        if not self._valid_hw_cap_kw(trusted_charge_capability_kw):
+            result["reason"] = "charge_capability_untrusted"
+            return result
+
+        try:
+            hardware_cap_kw = float(trusted_charge_capability_kw)
+            normal_request_kw = max(0.0, float(self.cfg.ess_charge_limit_value))
+            normal_cap_kw = self._bound_ess_request_kw(
+                normal_request_kw,
+                hardware_cap_kw,
+            )
+            slow_request_kw = (
+                max(0.0, float(self.cfg.morning_slow_charge_rate_kw))
+                if slow_phase_enabled
+                else normal_cap_kw
+            )
+            slow_cap_kw = self._bound_ess_request_kw(
+                slow_request_kw,
+                hardware_cap_kw,
+            )
+            effective_slow_end_ts = (
+                slow_charge_end_ts if slow_phase_enabled else window_start_ts
+            )
+            budget = _piecewise_refill_timing_budget(
+                detailed_periods,
+                forecast_period_hours=float(self.cfg.solcast_forecast_period_hours),
+                window_start_ts=window_start_ts,
+                refill_deadline_ts=refill_deadline_ts,
+                slow_charge_end_ts=effective_slow_end_ts,
+                base_load_kw=float(self.cfg.morning_slow_charge_base_load_kw),
+                slow_charge_capability_kw=slow_cap_kw,
+                normal_charge_capability_kw=normal_cap_kw,
+                fill_need_kwh=fill_need_kwh,
+                safety_factor=float(self.cfg.forecast_safety_charging),
+            )
+            normal_only_budget = _piecewise_refill_timing_budget(
+                detailed_periods,
+                forecast_period_hours=float(self.cfg.solcast_forecast_period_hours),
+                window_start_ts=window_start_ts,
+                refill_deadline_ts=refill_deadline_ts,
+                slow_charge_end_ts=window_start_ts,
+                base_load_kw=float(self.cfg.morning_slow_charge_base_load_kw),
+                slow_charge_capability_kw=normal_cap_kw,
+                normal_charge_capability_kw=normal_cap_kw,
+                fill_need_kwh=fill_need_kwh,
+                safety_factor=float(self.cfg.forecast_safety_charging),
+            )
+        except (TypeError, ValueError, OverflowError):
+            result["reason"] = "invalid_refill_timing_input"
+            return result
+
+        result.update(budget)
+        result.update(
+            {
+                "evidence_trusted": True,
+                "normal_only_timing_passed": bool(
+                    normal_only_budget["timing_passed"]
+                ),
+                "normal_only_safe_timed_charge_opportunity_kwh": (
+                    normal_only_budget["safe_timed_charge_opportunity_kwh"]
+                ),
+                "slow_charge_capability_kw": slow_cap_kw,
+                "normal_charge_capability_kw": normal_cap_kw,
+            }
+        )
+        if bool(budget["timing_passed"]):
+            result["reason"] = "refill_feasible_with_slow_cap"
+        elif bool(normal_only_budget["timing_passed"]):
+            result["reason"] = "slow_cap_makes_refill_infeasible"
+        else:
+            result["reason"] = "refill_infeasible_even_at_normal_capability"
+        return result
+
     def _detailed_forecast_energy_for_window(
         self,
         forecasts: object,
@@ -6739,6 +7369,7 @@ class SigEnergyOptimizer:
         now_ts,
         *,
         detailed_periods: Optional[list[tuple[float, float]]] = None,
+        refill_timing_feasible: Optional[bool] = None,
     ) -> bool:
         cfg = self.cfg
         if not cfg.morning_dump_enabled:
@@ -6753,6 +7384,8 @@ class SigEnergyOptimizer:
             productive_solar_end_ts is not None
             and productive_solar_end_ts <= dump_end
         ):
+            return False
+        if refill_timing_feasible is False:
             return False
 
         # Check forecast can refill
@@ -7422,13 +8055,14 @@ class SigEnergyOptimizer:
 
     def _desired_ess_charge_limit(self, s: SolarState, desired_import: float,
                                    morning_slow_charge: bool, desired_export: float,
-                                   pv_surplus: float) -> float:
+                                   pv_surplus: float, *,
+                                   morning_slow_charge_relief_active: bool = False) -> float:
         cfg = self.cfg
         hw_charge, _ = self.get_power_caps_kw(s)
         normal_request = max(0.0, float(cfg.ess_charge_limit_value))
         if desired_import > 0:
             return self._bound_ess_request_kw(desired_import, hw_charge)
-        if morning_slow_charge:
+        if morning_slow_charge and not morning_slow_charge_relief_active:
             slow = cfg.morning_slow_charge_rate_kw
             # Keep true slow-charge behavior; avoid charge spikes that collapse export.
             return self._bound_ess_request_kw(slow, hw_charge)

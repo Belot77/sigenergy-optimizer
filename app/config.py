@@ -240,6 +240,18 @@ class Settings(BaseSettings):
     morning_slow_charge_min_feedin_price: float = Field(0.0, env="MORNING_SLOW_CHARGE_MIN_FEEDIN_PRICE")
     morning_slow_charge_base_load_kw: float = Field(0.5, env="MORNING_SLOW_CHARGE_BASE_LOAD_KW")
     morning_slow_charge_sunset_cutoff: float = Field(1.0, env="MORNING_SLOW_CHARGE_SUNSET_CUTOFF")
+    grid_connection_export_limit_kw: float = Field(
+        0.0,
+        ge=0.0,
+        allow_inf_nan=False,
+        env="GRID_CONNECTION_EXPORT_LIMIT_KW",
+    )
+    morning_slow_physical_export_headroom_kw: float = Field(
+        0.0,
+        ge=0.0,
+        allow_inf_nan=False,
+        env="MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KW",
+    )
     morning_slow_export_start_margin_kw: float = Field(0.7, env="MORNING_SLOW_EXPORT_START_MARGIN_KW")
     morning_slow_export_stop_margin_kw: float = Field(0.2, env="MORNING_SLOW_EXPORT_STOP_MARGIN_KW")
     morning_slow_export_ramp_up_step_kw: float = Field(0.8, env="MORNING_SLOW_EXPORT_RAMP_UP_STEP_KW")
@@ -329,6 +341,35 @@ class Settings(BaseSettings):
         if isinstance(value, bool):
             raise ValueError("must be numeric")
         return value
+
+    @field_validator(
+        "grid_connection_export_limit_kw",
+        "morning_slow_physical_export_headroom_kw",
+        mode="before",
+    )
+    @classmethod
+    def _validate_morning_slow_physical_export_setting_type(
+        cls,
+        value: object,
+    ) -> object:
+        if isinstance(value, bool):
+            raise ValueError("must be numeric")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_morning_slow_physical_export_settings(self) -> "Settings":
+        physical_limit_kw = float(self.grid_connection_export_limit_kw)
+        headroom_kw = float(self.morning_slow_physical_export_headroom_kw)
+        if (
+            physical_limit_kw > 0.0
+            and headroom_kw > 0.0
+            and headroom_kw >= physical_limit_kw
+        ):
+            raise ValueError(
+                "morning_slow_physical_export_headroom_kw must be strictly less "
+                "than grid_connection_export_limit_kw when both are positive"
+            )
+        return self
 
     @model_validator(mode="after")
     def _normalize_hvac_solar_permission_settings(self) -> "Settings":

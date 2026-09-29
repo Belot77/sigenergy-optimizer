@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -15,6 +16,7 @@ from app.routers.api import (
     _config_key_to_env_var,
     _sanitize_preset_payload,
     _validate_config_value,
+    get_config,
     update_config,
     update_config_batch,
 )
@@ -273,6 +275,258 @@ class ApiValidationTests(unittest.TestCase):
         self.assertEqual(1.25, cfg.solar_surplus_forecast_safety_factor)
         self.assertTrue(response["persisted"])
         self.assertEqual([env_key], response["persisted_keys"])
+
+    def test_morning_slow_physical_export_settings_default_disabled(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            cfg = Settings(_env_file=None)
+
+        self.assertEqual(0.0, cfg.grid_connection_export_limit_kw)
+        self.assertEqual(0.0, cfg.morning_slow_physical_export_headroom_kw)
+
+    def test_morning_slow_physical_export_settings_load_expected_env_keys(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "GRID_CONNECTION_EXPORT_LIMIT_KW": "15.0",
+                "MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KW": "0.5",
+            },
+            clear=True,
+        ):
+            cfg = Settings(_env_file=None)
+
+        self.assertEqual(15.0, cfg.grid_connection_export_limit_kw)
+        self.assertEqual(0.5, cfg.morning_slow_physical_export_headroom_kw)
+
+    def test_morning_slow_physical_export_model_accepts_disabled_partial_and_site_pair(self) -> None:
+        for physical_limit_kw, headroom_kw in (
+            (0.0, 0.0),
+            (15.0, 0.0),
+            (0.0, 0.5),
+            (15.0, 0.5),
+        ):
+            with self.subTest(
+                physical_limit_kw=physical_limit_kw,
+                headroom_kw=headroom_kw,
+            ):
+                cfg = Settings(
+                    grid_connection_export_limit_kw=physical_limit_kw,
+                    morning_slow_physical_export_headroom_kw=headroom_kw,
+                )
+                self.assertEqual(
+                    physical_limit_kw,
+                    cfg.grid_connection_export_limit_kw,
+                )
+                self.assertEqual(
+                    headroom_kw,
+                    cfg.morning_slow_physical_export_headroom_kw,
+                )
+
+    def test_morning_slow_physical_export_model_rejects_invalid_values(self) -> None:
+        invalid_pairs = (
+            (-0.1, 0.0),
+            (0.0, -0.1),
+            (15.0, 15.0),
+            (15.0, 15.1),
+            (float("nan"), 0.0),
+            (float("inf"), 0.0),
+            (True, 0.0),
+            (15.0, True),
+        )
+        for physical_limit_kw, headroom_kw in invalid_pairs:
+            with self.subTest(
+                physical_limit_kw=physical_limit_kw,
+                headroom_kw=headroom_kw,
+            ):
+                with self.assertRaises(ValidationError):
+                    Settings(
+                        grid_connection_export_limit_kw=physical_limit_kw,
+                        morning_slow_physical_export_headroom_kw=headroom_kw,
+                    )
+
+    def test_single_morning_slow_physical_export_updates_preserve_partial_disablement(self) -> None:
+        cfg = Settings()
+
+        first = self._single_update(
+            cfg,
+            "morning_slow_physical_export_headroom_kw",
+            "0.5",
+        )
+        second = self._single_update(
+            cfg,
+            "grid_connection_export_limit_kw",
+            "15.0",
+        )
+
+        self.assertTrue(first["ok"])
+        self.assertTrue(second["ok"])
+        self.assertEqual(15.0, cfg.grid_connection_export_limit_kw)
+        self.assertEqual(0.5, cfg.morning_slow_physical_export_headroom_kw)
+
+    def test_single_morning_slow_physical_export_rejects_invalid_without_mutation(self) -> None:
+        for key, value in (
+            ("grid_connection_export_limit_kw", -0.1),
+            ("morning_slow_physical_export_headroom_kw", -0.1),
+            ("morning_slow_physical_export_headroom_kw", 15.0),
+            ("morning_slow_physical_export_headroom_kw", 15.1),
+        ):
+            with self.subTest(key=key, value=value):
+                cfg = Settings(
+                    grid_connection_export_limit_kw=15.0,
+                    morning_slow_physical_export_headroom_kw=0.5,
+                )
+
+                with self.assertRaises(HTTPException) as raised:
+                    self._single_update(cfg, key, value)
+
+                self.assertEqual(422, raised.exception.status_code)
+                self.assertEqual(15.0, cfg.grid_connection_export_limit_kw)
+                self.assertEqual(
+                    0.5,
+                    cfg.morning_slow_physical_export_headroom_kw,
+                )
+
+    def test_batch_morning_slow_physical_export_accepts_and_persists_site_pair(self) -> None:
+        cfg = Settings()
+        request = self._request(cfg)
+        expected_env_keys = [
+            "GRID_CONNECTION_EXPORT_LIMIT_KW",
+            "MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KW",
+        ]
+
+        with patch(
+            "app.routers.api._persist_config_keys_to_env",
+            return_value=expected_env_keys,
+        ) as persist:
+            response = asyncio.run(
+                update_config_batch(
+                    request,
+                    ConfigBatchUpdateRequest(
+                        updates=[
+                            ConfigUpdateRequest(
+                                key="grid_connection_export_limit_kw",
+                                value=15.0,
+                            ),
+                            ConfigUpdateRequest(
+                                key="morning_slow_physical_export_headroom_kw",
+                                value=0.5,
+                            ),
+                        ],
+                        persist=True,
+                    ),
+                )
+            )
+
+        persist.assert_called_once_with(
+            cfg,
+            [
+                "grid_connection_export_limit_kw",
+                "morning_slow_physical_export_headroom_kw",
+            ],
+            {
+                "grid_connection_export_limit_kw": 15.0,
+                "morning_slow_physical_export_headroom_kw": 0.5,
+            },
+        )
+        self.assertEqual(15.0, cfg.grid_connection_export_limit_kw)
+        self.assertEqual(0.5, cfg.morning_slow_physical_export_headroom_kw)
+        self.assertEqual(expected_env_keys, response["persisted_keys"])
+        round_trip = asyncio.run(get_config(request))
+        self.assertEqual(15.0, round_trip["grid_connection_export_limit_kw"])
+        self.assertEqual(
+            0.5,
+            round_trip["morning_slow_physical_export_headroom_kw"],
+        )
+
+    def test_single_morning_slow_physical_export_updates_persist_expected_env_keys(self) -> None:
+        cfg = Settings()
+        request = self._request(cfg)
+
+        with patch(
+            "app.routers.api._persist_config_keys_to_env",
+            side_effect=[
+                ["GRID_CONNECTION_EXPORT_LIMIT_KW"],
+                ["MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KW"],
+            ],
+        ) as persist:
+            limit_response = asyncio.run(
+                update_config(
+                    request,
+                    ConfigUpdateRequest(
+                        key="grid_connection_export_limit_kw",
+                        value=15.0,
+                        persist=True,
+                    ),
+                )
+            )
+            headroom_response = asyncio.run(
+                update_config(
+                    request,
+                    ConfigUpdateRequest(
+                        key="morning_slow_physical_export_headroom_kw",
+                        value=0.5,
+                        persist=True,
+                    ),
+                )
+            )
+
+        self.assertEqual(2, persist.call_count)
+        persist.assert_any_call(
+            cfg,
+            ["grid_connection_export_limit_kw"],
+            {"grid_connection_export_limit_kw": 15.0},
+        )
+        persist.assert_any_call(
+            cfg,
+            ["morning_slow_physical_export_headroom_kw"],
+            {"morning_slow_physical_export_headroom_kw": 0.5},
+        )
+        self.assertEqual(
+            ["GRID_CONNECTION_EXPORT_LIMIT_KW"],
+            limit_response["persisted_keys"],
+        )
+        self.assertEqual(
+            ["MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KW"],
+            headroom_response["persisted_keys"],
+        )
+        self.assertEqual(15.0, cfg.grid_connection_export_limit_kw)
+        self.assertEqual(0.5, cfg.morning_slow_physical_export_headroom_kw)
+
+    def test_batch_morning_slow_physical_export_rejects_invalid_pair_atomically(self) -> None:
+        cfg = Settings(
+            export_limit_low=5.0,
+            grid_connection_export_limit_kw=15.0,
+            morning_slow_physical_export_headroom_kw=0.5,
+        )
+
+        with self.assertRaises(HTTPException) as raised:
+            self._batch_update(
+                cfg,
+                [
+                    ("export_limit_low", 3.0),
+                    ("grid_connection_export_limit_kw", 10.0),
+                    ("morning_slow_physical_export_headroom_kw", 10.0),
+                ],
+            )
+
+        self.assertEqual(422, raised.exception.status_code)
+        self.assertEqual(5.0, cfg.export_limit_low)
+        self.assertEqual(15.0, cfg.grid_connection_export_limit_kw)
+        self.assertEqual(0.5, cfg.morning_slow_physical_export_headroom_kw)
+
+    def test_morning_slow_physical_export_ui_and_env_wording_distinguish_ceiling(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+        template = (project_root / "templates" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        env_example = (project_root / ".env.example").read_text(encoding="utf-8")
+
+        self.assertIn("Physical Grid Connection Export Limit kW", template)
+        self.assertIn("not the Sigenergy export-control ceiling", template)
+        self.assertIn("GRID_CONNECTION_EXPORT_LIMIT_KW=0.0", env_example)
+        self.assertIn(
+            "MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KW=0.0",
+            env_example,
+        )
 
     def test_single_runtime_only_update_preserves_existing_behavior(self) -> None:
         cfg = Settings(export_limit_low=5.0)

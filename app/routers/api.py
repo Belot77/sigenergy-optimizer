@@ -43,6 +43,14 @@ _TIME_KEYS: set[str] = {
 _SOLAR_SURPLUS_START_PV_MARGIN_KEY = "solar_surplus_min_pv_margin"
 _SOLAR_SURPLUS_STOP_PV_MARGIN_KEY = "solar_surplus_stop_pv_margin"
 _SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR_KEY = "solar_surplus_forecast_safety_factor"
+_GRID_CONNECTION_EXPORT_LIMIT_KEY = "grid_connection_export_limit_kw"
+_MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KEY = (
+    "morning_slow_physical_export_headroom_kw"
+)
+_MORNING_SLOW_PHYSICAL_EXPORT_CONFIG_KEYS = {
+    _GRID_CONNECTION_EXPORT_LIMIT_KEY,
+    _MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KEY,
+}
 
 
 def _opt(request: Request):
@@ -142,6 +150,9 @@ def _validate_config_value(cfg: Any, key: str, value: Any) -> str | None:
     if key == "morning_dump_min_soc":
         if isinstance(value, (int, float)) and not (0.0 <= float(value) <= 100.0):
             return "must be between 0 and 100"
+    if key in _MORNING_SLOW_PHYSICAL_EXPORT_CONFIG_KEYS:
+        if isinstance(value, (int, float)) and float(value) < 0.0:
+            return "must be non-negative"
     return None
 
 
@@ -218,6 +229,48 @@ def _validate_solar_surplus_margin_pair(
             "error": (
                 "must not be lower than solar_surplus_stop_pv_margin "
                 f"({stop_margin:g})"
+            ),
+        }
+    ]
+
+
+def _validate_morning_slow_physical_export_pair(
+    cfg: Any,
+    proposed_updates: dict[str, Any],
+) -> list[dict[str, str]]:
+    if not _MORNING_SLOW_PHYSICAL_EXPORT_CONFIG_KEYS.intersection(
+        proposed_updates
+    ):
+        return []
+
+    physical_limit_kw = float(
+        proposed_updates.get(
+            _GRID_CONNECTION_EXPORT_LIMIT_KEY,
+            getattr(cfg, _GRID_CONNECTION_EXPORT_LIMIT_KEY),
+        )
+    )
+    headroom_kw = float(
+        proposed_updates.get(
+            _MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KEY,
+            getattr(cfg, _MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KEY),
+        )
+    )
+    if physical_limit_kw <= 0.0 or headroom_kw <= 0.0:
+        return []
+    if headroom_kw < physical_limit_kw:
+        return []
+
+    error_key = (
+        _MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KEY
+        if _MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KEY in proposed_updates
+        else _GRID_CONNECTION_EXPORT_LIMIT_KEY
+    )
+    return [
+        {
+            "key": error_key,
+            "error": (
+                "morning_slow_physical_export_headroom_kw must be strictly less "
+                "than grid_connection_export_limit_kw when both are positive"
             ),
         }
     ]
@@ -489,6 +542,8 @@ def _coerce_config_value(cfg: Any, key: str, raw: Any) -> Any:
     current_type = type(current)
 
     if key == _SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR_KEY and isinstance(raw, bool):
+        raise ValueError("must be numeric")
+    if key in _MORNING_SLOW_PHYSICAL_EXPORT_CONFIG_KEYS and isinstance(raw, bool):
         raise ValueError("must be numeric")
 
     if current_type is bool:
@@ -1350,14 +1405,20 @@ async def update_config(request: Request, body: ConfigUpdateRequest) -> dict[str
     try:
         coerced = _coerce_config_value(cfg, body.key, body.value)
         err = _validate_config_value(cfg, body.key, coerced)
-        field_errors = (
-            [{"key": body.key, "error": err}]
-            if err
-            else _validate_solar_surplus_margin_pair(
-                cfg,
-                {body.key: coerced},
+        field_errors = [{"key": body.key, "error": err}] if err else []
+        if not field_errors:
+            field_errors.extend(
+                _validate_solar_surplus_margin_pair(
+                    cfg,
+                    {body.key: coerced},
+                )
             )
-        )
+            field_errors.extend(
+                _validate_morning_slow_physical_export_pair(
+                    cfg,
+                    {body.key: coerced},
+                )
+            )
         if field_errors:
             _record_audit(
                 request,
@@ -1509,6 +1570,9 @@ async def update_config_batch(request: Request, body: ConfigBatchUpdateRequest) 
     if not field_errors:
         field_errors.extend(
             _validate_solar_surplus_margin_pair(cfg, coerced_updates)
+        )
+        field_errors.extend(
+            _validate_morning_slow_physical_export_pair(cfg, coerced_updates)
         )
 
     if field_errors:
