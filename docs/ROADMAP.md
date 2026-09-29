@@ -4,21 +4,23 @@ This roadmap is ordered by dependency. Later work must not bypass the stated saf
 
 ## 1. Phase 1 code validation
 
-Status: **PASSED locally** at `7649d185b71fe08fab2636801396e2ae7c793a13`.
+Status: **COMPLETE locally** at code-validation HEAD `7649d185b71fe08fab2636801396e2ae7c793a13`.
 
-The seven local remediation checkpoints are `0 behind / 7 ahead` of `origin/fix/phase1-audit-remediation`. The final gate collected 735 tests: 733 passed and only the two frozen Phase 2 transition-safety tests failed; compileall and `git diff --check` passed. The final checkpoint corrected a stale safe-fallback protection-test expectation without changing production code.
+The final gate collected 735 tests: 733 passed and only the two frozen Phase 2 transition-safety tests failed; compileall and `git diff --check` passed. The final code/test checkpoint corrected a stale safe-fallback protection-test expectation without changing production code.
 
-These commits have not been pushed, released, deployed, installed, restarted, or live-proven. Current known live remains `2.3.50-haos61` at `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`; documented known-good rollback remains `2.3.46-haos57` at `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
+The validated Phase 1 checkpoint through docs commit `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce` is present on `origin/fix/phase1-audit-remediation`. Remote `main` remains `de5b5af082533a48ffb6d0d300f636cbcb4463ad`. Current known live remains `2.3.50-haos61` at `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`; documented known-good rollback remains `2.3.46-haos57` at `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
 
 ## 2. Phase 1 checkpoint documentation
 
-Status: **checkpoint documentation reconciled**.
+Status: **COMPLETE and included in the published feature-branch checkpoint through `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce`**.
 
 The checkpoint records the local code-validation result, durable semantics, live `.61` baseline, protected Phase 2 failures, and unresolved meaning of the proposed 15 kW physical-relief configuration. Documentation does not constitute release or live acceptance.
 
-## 3. Phase 1 push, release, deployment, and live acceptance
+## 3. Phase 1 feature publication, main promotion, release, deployment, and live acceptance
 
-Requires separate explicit approval. Push the seven local code/test checkpoints together with an approved documentation checkpoint, prepare a release, deploy/restart, and obtain controlled live proof. Repository validation and service-call success are not live settlement proof.
+Feature-branch push: **COMPLETE** through `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce` on `origin/fix/phase1-audit-remediation`.
+
+`main` promotion, version/release work, deployment/restart, and controlled live acceptance: **PENDING separate explicit approval**. Repository validation and service-call success are not live settlement proof.
 
 Before configuring the discussed `15.0 kW` physical threshold and `0.5 kW` headroom, decide whether 15 kW is merely the site-export level that releases Morning Slow's 2 kW charge cap or a hard network/export limit. Current physical-relief behavior does not enforce a hard cap.
 

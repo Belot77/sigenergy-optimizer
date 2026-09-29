@@ -11,14 +11,15 @@ Last consolidated: 2026-09-30
 - Live `.61` evidence established the near-full Solar exception with genuinely untrusted available-discharge-energy telemetry at about 93.9-96.7% SoC. It prevented the raw Battery Full Safeguard from blocking the 25 kW MSC/PV-only ceiling. A clean Morning Slow -> Solar transition was observed: Morning Slow held about 2 kW ESS charging, Solar later allowed normal higher charging capability, and one desired-export transition occurred without rapid `0 <-> 25 kW` chatter.
 - The 25 kW ceiling was observed as permission, not commanded battery discharge.
 
-None of the seven local Phase 1 commits below has been pushed, released, deployed, installed, or restarted. Their new behavior is not live-proven.
+The validated Phase 1 checkpoint through docs commit `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce` has been pushed to `origin/fix/phase1-audit-remediation`. Remote `main` remains unchanged at `de5b5af082533a48ffb6d0d300f636cbcb4463ad`. The feature branch has not been promoted to `main`, merged, tagged, released, deployed, installed, restarted, or live-proven.
 
 ## Active Phase 1 checkpoint
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
 - Phase 1 code-validation HEAD before the docs-only checkpoint: `7649d185b71fe08fab2636801396e2ae7c793a13`
-- Status at checkpoint start: clean; tracking `0 behind / 7 ahead` of `origin/fix/phase1-audit-remediation`.
+- Validated remote feature-branch checkpoint through: `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce`
+- Publication state before this docs-sync commit: local branch aligned with `origin/fix/phase1-audit-remediation`; feature branch 8 commits ahead of and 0 behind remote `main`.
 
 Local checkpoint chain:
 
@@ -43,9 +44,9 @@ Final validation at HEAD `7649d185b71fe08fab2636801396e2ae7c793a13`:
 - The worktree and index were clean after code/test validation.
 - The earlier unexpected safe-fallback failure was a stale protection-test expectation. Correcting that test resolved it; production code did not change in the final checkpoint.
 
-**PHASE 1 CODE VALIDATION GATE PASSED locally.** Phase 1 is not fully complete: push, release, deployment, restart, and live acceptance of these seven commits remain outstanding.
+**PHASE 1 CODE VALIDATION GATE PASSED locally.** Feature-branch publication is complete through `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce`. Phase 1 is not fully complete: `main` promotion, version/release work, deployment, restart, and live acceptance remain outstanding and separately controlled.
 
-## Local Phase 1 behavior awaiting release/live proof
+## Phase 1 behavior awaiting release/live proof
 
 - Available-discharge energy: fresh, finite, nonnegative, supported-unit telemetry remains trusted when above rated capacity. When rated capacity is trusted, the control value is clamped to capacity while the raw diagnostic remains visible. No clamp is invented from untrusted capacity; invalid telemetry still fails closed, with the established near-full Solar exception retained for genuinely untrusted telemetry.
 - Safe fallback: closes export first, requests MSC, clamps ESS discharge while unresolved, and requires observed export closure plus observed MSC before permissive recovery. Service-call success is not settlement. Failed proof withholds normal import, ESS charge/discharge capability, and PV MAX recovery; Demand Window may retain import blocking; fallback creates no `BATTERY_EXPORT` owner.
@@ -80,4 +81,4 @@ Discussed future physical-relief values are `15.0 kW` with `0.5 kW` headroom. Th
 
 ## Exact next action
 
-Review the complete Phase 1 checkpoint and decide the push/release/deployment/live-acceptance sequence. Before enabling future `15.0 / 0.5` physical-relief operator values, resolve whether 15 kW is a relief threshold or an inviolable network export cap. Do not begin Phase 2 until the Phase 1 release is live-accepted.
+Review the complete Phase 1 checkpoint and explicitly authorize the `main`-promotion/version/release sequence before any deployment or live acceptance. Before enabling future `15.0 / 0.5` physical-relief operator values, resolve whether 15 kW is a relief threshold or an inviolable network export cap. Do not begin Phase 2 until the Phase 1 release is live-accepted.
