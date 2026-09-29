@@ -244,9 +244,11 @@ Uninstall:
 
 ## Version
 
-2.3.50-haos61
+2.3.51-haos62
 
-2.3.50-haos61 is the prepared Phase 1 near-full Solar safeguard-arbitration candidate. It is not tagged, built, published, installed, restarted, or live-accepted; the live release remains 2.3.49-haos60.
+2.3.51-haos62 is the prepared Phase 1 audit-remediation release candidate on `fix/phase1-audit-remediation`. It is not yet tagged, built, published, promoted to `main`, deployed, installed, restarted, or live-accepted. The current known live release remains `2.3.50-haos61`; the known rollback remains `2.3.46-haos57`.
+
+Phase 1 validation remains 735 collected, 733 passed, with only the two frozen Phase 2 failures; compileall and `git diff --check` passed. The discussed `15.0 / 0.5 kW` physical-relief values remain unconfigured, and their semantics remain unresolved.
 
 ## Maintainer Release Flow
 

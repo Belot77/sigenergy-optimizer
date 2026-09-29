@@ -8,12 +8,14 @@ Read root and project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
+- Prepared Phase 1 release-candidate identity: `2.3.51-haos62`; expected later tag: `v2.3.51-haos62`.
+- Release-identity preparation is uncommitted atop starting HEAD `1d3617714e42f7bc5a19aec489cfbc0622a81520`.
 - Phase 1 code-validation HEAD before the docs-only checkpoint: `7649d185b71fe08fab2636801396e2ae7c793a13`
-- Validated Phase 1 checkpoint through `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce` is safely present on `origin/fix/phase1-audit-remediation`.
-- Remote `main` is unchanged at `de5b5af082533a48ffb6d0d300f636cbcb4463ad`; before this docs-sync commit, the feature branch was 8 commits ahead and 0 behind `main`.
+- Validated Phase 1 checkpoint through `1d3617714e42f7bc5a19aec489cfbc0622a81520` is safely present on `origin/fix/phase1-audit-remediation`.
+- Remote `main` is unchanged at `de5b5af082533a48ffb6d0d300f636cbcb4463ad`; before this release-identity working-tree update, the feature branch was 9 commits ahead and 0 behind `main`.
 - Current known live release: `2.3.50-haos61`, tag `v2.3.50-haos61`, commit `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`.
 - Known-good rollback: `2.3.46-haos57`, commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
-- The feature branch has not been promoted to `main`, merged, tagged, released, deployed, installed, restarted, or live-proven.
+- The `.62` candidate is not yet committed, tagged, built, published, promoted to `main`, deployed, installed, restarted, or live-accepted.
 
 ## Local Phase 1 checkpoints
 
@@ -29,12 +31,12 @@ Do not hide or reverse the relationship between `11ae480` and `7cfcd77`.
 
 ## Validation gate
 
-At HEAD, `python -B -m pytest -p no:cacheprovider` collected 735 tests: 733 passed, 2 failed, with 197 warnings. The only failures are the frozen Phase 2 tests:
+Phase 1 validation collected 735 tests: 733 passed, 2 failed, with 197 warnings. The only failures are the frozen Phase 2 tests:
 
 - `tests/test_msc_baseline_overlay_contract.py::MscBaselineOverlayContractTests::test_exact_msc_does_not_reopen_before_export_is_observed_closed`
 - `tests/test_msc_baseline_overlay_contract.py::MscBaselineOverlayContractTests::test_return_from_discharge_waits_for_observed_close_before_requesting_msc`
 
-`python -m compileall -q app` and `git diff --check` passed. The earlier unexpected safe-fallback failure was a stale protection-test expectation, not a production defect. **Phase 1 code validation passed locally and the checkpoint is published to the remote feature branch**, but `main` promotion, release, deployment, and live acceptance remain outstanding.
+`python -m compileall -q app` and `git diff --check` passed. The earlier unexpected safe-fallback failure was a stale protection-test expectation, not a production defect. **Phase 1 code validation passed locally and the checkpoint is published to the remote feature branch**, but the `.62` release-candidate identity remains uncommitted and `main` promotion, tagging/build/publication, deployment, restart, and live acceptance remain outstanding.
 
 ## Protected behavior
 
@@ -62,4 +64,4 @@ Live Morning Slow operator tuning is enabled, 2 kW, until 11:00, minimum FiT `$0
 
 ## Exact next action
 
-Review the complete Phase 1 checkpoint and explicitly authorize the `main`-promotion/version/release sequence. No deployment or live testing has occurred. Do not start Phase 2 or configure `15.0 / 0.5` until its semantic question is resolved.
+Review the prepared `2.3.51-haos62` identity and explicitly authorize the release-candidate commit. Promotion to `main`, tagging, build/publication, deployment, restart, and live acceptance require later decisions. Do not start Phase 2 or configure `15.0 / 0.5` until its semantic question is resolved.

@@ -11,15 +11,24 @@ Last consolidated: 2026-09-30
 - Live `.61` evidence established the near-full Solar exception with genuinely untrusted available-discharge-energy telemetry at about 93.9-96.7% SoC. It prevented the raw Battery Full Safeguard from blocking the 25 kW MSC/PV-only ceiling. A clean Morning Slow -> Solar transition was observed: Morning Slow held about 2 kW ESS charging, Solar later allowed normal higher charging capability, and one desired-export transition occurred without rapid `0 <-> 25 kW` chatter.
 - The 25 kW ceiling was observed as permission, not commanded battery discharge.
 
-The validated Phase 1 checkpoint through docs commit `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce` has been pushed to `origin/fix/phase1-audit-remediation`. Remote `main` remains unchanged at `de5b5af082533a48ffb6d0d300f636cbcb4463ad`. The feature branch has not been promoted to `main`, merged, tagged, released, deployed, installed, restarted, or live-proven.
+The validated Phase 1 checkpoint through docs commit `1d3617714e42f7bc5a19aec489cfbc0622a81520` has been pushed to `origin/fix/phase1-audit-remediation`. Remote `main` remains unchanged at `de5b5af082533a48ffb6d0d300f636cbcb4463ad`. The feature branch has not been promoted to `main`, merged, tagged, released, deployed, installed, restarted, or live-proven.
+
+## Prepared Phase 1 release candidate
+
+- Release identity: `2.3.51-haos62`; expected later tag: `v2.3.51-haos62`.
+- Source remains on `fix/phase1-audit-remediation`. Release-identity preparation is uncommitted atop starting HEAD `1d3617714e42f7bc5a19aec489cfbc0622a81520`.
+- The candidate is not yet tagged, built, published, promoted to `main`, deployed, installed, restarted, or live-accepted.
+- Current known live remains `2.3.50-haos61`; known rollback remains `2.3.46-haos57`.
+- Phase 1 validation remains 735 collected, 733 passed, with only the two frozen Phase 2 failures; compileall and `git diff --check` passed.
+- The discussed `15.0 / 0.5 kW` physical-relief values remain unconfigured and semantically unresolved.
 
 ## Active Phase 1 checkpoint
 
 - Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`
 - Branch: `fix/phase1-audit-remediation`
 - Phase 1 code-validation HEAD before the docs-only checkpoint: `7649d185b71fe08fab2636801396e2ae7c793a13`
-- Validated remote feature-branch checkpoint through: `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce`
-- Publication state before this docs-sync commit: local branch aligned with `origin/fix/phase1-audit-remediation`; feature branch 8 commits ahead of and 0 behind remote `main`.
+- Validated remote feature-branch checkpoint through: `1d3617714e42f7bc5a19aec489cfbc0622a81520`
+- Publication state before this release-identity working-tree update: local branch aligned with `origin/fix/phase1-audit-remediation`; feature branch 9 commits ahead of and 0 behind remote `main`.
 
 Local checkpoint chain:
 
@@ -44,7 +53,7 @@ Final validation at HEAD `7649d185b71fe08fab2636801396e2ae7c793a13`:
 - The worktree and index were clean after code/test validation.
 - The earlier unexpected safe-fallback failure was a stale protection-test expectation. Correcting that test resolved it; production code did not change in the final checkpoint.
 
-**PHASE 1 CODE VALIDATION GATE PASSED locally.** Feature-branch publication is complete through `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce`. Phase 1 is not fully complete: `main` promotion, version/release work, deployment, restart, and live acceptance remain outstanding and separately controlled.
+**PHASE 1 CODE VALIDATION GATE PASSED locally.** Feature-branch publication is complete through `1d3617714e42f7bc5a19aec489cfbc0622a81520`, and the `2.3.51-haos62` identity is prepared only in the working tree. Phase 1 is not fully complete: release-candidate commit, `main` promotion, tagging/build/publication, deployment, restart, and live acceptance remain outstanding and separately controlled.
 
 ## Phase 1 behavior awaiting release/live proof
 
@@ -81,4 +90,4 @@ Discussed future physical-relief values are `15.0 kW` with `0.5 kW` headroom. Th
 
 ## Exact next action
 
-Review the complete Phase 1 checkpoint and explicitly authorize the `main`-promotion/version/release sequence before any deployment or live acceptance. Before enabling future `15.0 / 0.5` physical-relief operator values, resolve whether 15 kW is a relief threshold or an inviolable network export cap. Do not begin Phase 2 until the Phase 1 release is live-accepted.
+Review the prepared `2.3.51-haos62` identity and explicitly authorize the release-candidate commit. Promotion to `main`, tagging, build/publication, deployment, restart, and live acceptance remain separate later decisions. Before enabling future `15.0 / 0.5` physical-relief operator values, resolve whether 15 kW is a relief threshold or an inviolable network export cap. Do not begin Phase 2 until the Phase 1 release is live-accepted.
