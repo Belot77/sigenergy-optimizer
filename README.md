@@ -244,13 +244,13 @@ Uninstall:
 
 ## Version
 
-2.3.52-haos63
+2.3.53-haos64
 
-2.3.52-haos63 is the local Phase 1 dynamic Solar charge-ceiling candidate on `fix/phase1-audit-remediation`. It is uncommitted and unreleased: not tagged, built, published, promoted to `main`, deployed, installed, restarted, or live-accepted. The operator confirms `2.3.51-haos62` is installed/restarted and live; the known rollback remains `2.3.46-haos57`.
+2.3.53-haos64 is the local diagnostics-only release candidate on `fix/phase1-audit-remediation`. The candidate changes are uncommitted and unreleased. The live release remains `2.3.52-haos63`.
 
-The candidate lets the final Solar Surplus owner reduce the normal ESS charge request when stricter trusted detailed forecasts preserve a safe fill trajectory to 100% by sunset. It stays MSC/PV-only with normal PV MAX, never authorizes stored-battery export, and releases the restriction immediately when charge evidence becomes untrusted. Morning Slow, Demand Window import ownership, and Manual/Force ownership remain protected; existing Solar eligibility is unchanged. This feature is not part of live `.62`.
+Adds a rolling persistent 24-hour Decision Trace JSONL archive alongside the unchanged existing in-memory Decision Trace. Pending records flush approximately every 15 minutes, and the downloadable "24 Hour Trace" provides the retained archive. Diagnostics I/O is isolated from optimizer/control startup; diagnostics failure cannot block startup. Conservative clock/gap handling reports possible gaps and pauses persistent writes and pruning when the clock is uncertain.
 
-The final local Phase 1 gate collected 755 tests: 753 passed, only the two frozen Phase 2 failures, 197 warnings, and 717 subtests passed; compileall and `git diff --check` passed. The dynamic Solar characterization passed 14 tests and 14 subtests, including grid-import charging precedence. Phase 2 stays frozen through `.63` build, manual installation, and controlled Solar live acceptance, followed by separate narrow characterization, remediation, and live acceptance of the confirmed Evening Boost transition-stability defect. Solar acceptance alone does not close Phase 1. The `15.0 / 0.5 kW` physical-relief values remain unconfigured and outside this release. The 27 September Solar aggregate-budget threshold switching observation remains an evidence-led follow-up during Solar validation, not a claimed fix.
+Downloads are bounded to 4 active requests, a 2-minute lifetime, and at most 25 segments / 256 MiB per download. An abrupt crash can lose the unflushed interval; there is no final shutdown flush. This release adds diagnostics only, with no control-behaviour change.
 
 ## Maintainer Release Flow
 

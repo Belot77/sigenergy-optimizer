@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-04 - 2.3.53-haos64 diagnostics-only release candidate
+
+- Add a rolling persistent 24-hour Decision Trace JSONL archive; the existing in-memory Decision Trace remains unchanged. Flush pending records approximately every 15 minutes and provide a downloadable "24 Hour Trace".
+- Isolate diagnostics I/O from optimizer/control startup so diagnostics failure cannot block startup. Use conservative clock/gap handling: report possible gaps and pause persistent writes and pruning when the clock is uncertain.
+- Bound downloads to 4 active requests, a 2-minute lifetime, and at most 25 segments / 256 MiB per download. An abrupt crash can lose the unflushed interval; there is no final shutdown flush.
+- Synchronize release metadata from `2.3.52-haos63` to `2.3.53-haos64`. This is a local, uncommitted, unreleased diagnostics-only candidate with no control-behaviour change; the live release remains `2.3.52-haos63`.
+
 ## 2026-10-03 - 2.3.52-haos63 Phase 1 dynamic Solar charge ceiling candidate
 
 - Allow only the final `solar_surplus_policy_active` owner to reduce the existing normal safe/trusted ESS charge request; never increase it. Solar remains Maximum Self Consumption / PV-only with normal PV MAX, no grid-import ownership, no `BATTERY_EXPORT`, and no deliberate discharge EMS.
