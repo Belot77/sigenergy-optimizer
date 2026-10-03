@@ -1,12 +1,13 @@
 """
 SigEnergy Optimizer — FastAPI application entry point.
 
-Starts two background tasks:
+Starts three background tasks:
   1. HAWebSocketClient  — subscribes to HA state_changed events, pushes entity
                           IDs into optimizer.trigger_queue
   2. SigEnergyOptimizer — event-driven loop that reads from trigger_queue and
                           runs _tick(); falls back to a 60 s heartbeat if the
                           WebSocket is disconnected
+  3. DecisionTraceStore  — passive 15-minute persistence of existing trace rows
 """
 import asyncio
 import logging
@@ -21,6 +22,7 @@ from .config import settings
 from .ha_client import HAClient
 from .ha_ws_client import HAWebSocketClient
 from .optimizer import SigEnergyOptimizer
+from .decision_trace_store import DecisionTraceStore
 from .routers.ui import ui
 from .routers.api import router as api_router
 
@@ -79,11 +81,47 @@ async def lifespan(app: FastAPI):
     app.state.optimizer_task = optimizer_task
     app.state.ws_task = ws_task
 
+    trace_store = None
+    trace_task = None
+    trace_coroutine = None
+    app.state.decision_trace_store = None
+    app.state.decision_trace_task = None
+    try:
+        trace_store = DecisionTraceStore()
+        trace_coroutine = trace_store.run_forever(optimizer)
+        trace_task = asyncio.create_task(trace_coroutine, name="decision_trace")
+        app.state.decision_trace_store = trace_store
+        app.state.decision_trace_task = trace_task
+    except Exception:
+        logger.exception("Decision trace setup failed; diagnostics disabled")
+        try:
+            if trace_coroutine is not None and trace_task is None:
+                trace_coroutine.close()
+            if trace_store is not None:
+                trace_store.stop()
+        except Exception:
+            logger.exception("Decision trace setup cleanup failed")
+
     logger.info(
-        "Background tasks started — optimizer (event-driven + 60s heartbeat) + WebSocket listener"
+        "Background tasks started — optimizer (event-driven + 60s heartbeat) + WebSocket listener; passive decision trace=%s",
+        trace_task is not None,
     )
 
-    yield
+    try:
+        yield
+    finally:
+        # Passive diagnostics have no final flush and never delay control-task
+        # cancellation waiting for a filesystem worker to finish.
+        if trace_store is not None:
+            trace_store.stop()
+        if trace_task is not None:
+            trace_task.cancel()
+            try:
+                await trace_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("Decision trace task failed during shutdown")
 
     # Shutdown: cancel both tasks
     logger.info("Shutting down background tasks")

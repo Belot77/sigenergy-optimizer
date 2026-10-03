@@ -20,6 +20,20 @@ def _config_section_source() -> str:
 
 
 class SettingsUiCleanupTests(unittest.TestCase):
+    def test_24_hour_trace_download_uses_auth_ticket_and_native_download(self) -> None:
+        template = TEMPLATE_PATH.read_text(encoding="utf-8")
+        self.assertIn('onclick="loadDecisionTrace()">Decision Trace</button>', template)
+        self.assertIn('onclick="copyDecisionTrace()">Copy Trace JSON</button>', template)
+        self.assertIn('onclick="download24HourTrace(this)"', template)
+        self.assertIn('>24 Hour Trace</button>', template)
+        action = template.split('async function download24HourTrace(btn)', 1)[1].split('function downloadLogs()', 1)[0]
+        self.assertIn("addonApiUrl('api/decision_trace/24h/download-ticket')", action)
+        self.assertIn("method: 'POST', headers: buildAuthHeaders()", action)
+        self.assertIn('link.href = addonApiUrl(data.url)', action)
+        self.assertIn('link.click()', action)
+        self.assertNotIn('.blob(', action)
+        self.assertNotIn('getUiApiKey()', action)
+
     def test_rendered_settings_are_real_unique_non_secret_config_keys(self) -> None:
         section_source = _config_section_source()
         keys = re.findall(r"\['([a-z0-9_]+)'\s*,", section_source)

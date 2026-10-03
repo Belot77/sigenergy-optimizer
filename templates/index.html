@@ -792,6 +792,7 @@ html.theme-dark .cfg-help{color:#9fb3cf}
     <button class="hbtn" type="button" onclick="downloadLogs()">Download Logs</button>
     <button class="hbtn" type="button" onclick="loadDecisionTrace()">Decision Trace</button>
     <button class="hbtn" type="button" onclick="copyDecisionTrace()">Copy Trace JSON</button>
+    <button class="hbtn" type="button" onclick="download24HourTrace(this)" title="Download persisted decisions; updated every 15 minutes">24 Hour Trace</button>
     <select id="logLineLimit" onchange="loadLogs()" title="Number of recent lines to fetch">
       <option value="200">200 lines</option>
       <option value="500" selected>500 lines</option>
@@ -4530,6 +4531,29 @@ async function copyDecisionTrace() {
   document.execCommand('copy');
   document.body.removeChild(ta);
   if (metaEl) metaEl.textContent = `Decision trace copied to clipboard at ${ts()}`;
+}
+
+async function download24HourTrace(btn) {
+  btn.disabled = true;
+  const metaEl = document.getElementById('logMeta');
+  try {
+    const response = await fetch(addonApiUrl('api/decision_trace/24h/download-ticket'), {
+      method: 'POST', headers: buildAuthHeaders(), cache: 'no-store'
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Trace download unavailable');
+    const link = document.createElement('a');
+    link.href = addonApiUrl(data.url);
+    link.referrerPolicy = 'no-referrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    if (metaEl) metaEl.textContent = 'Downloading persisted 24-hour trace (updated every 15 minutes)';
+  } catch (e) {
+    if (metaEl) metaEl.textContent = `24-hour trace unavailable: ${e.message || String(e)}`;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function downloadLogs() {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import time
 import logging
 import math
 import re
@@ -13,6 +14,7 @@ from pydantic import BaseModel
 
 from ..config import settings
 from ..forecast_utils import forecast_entry_time, forecast_entry_value
+from ..decision_trace_store import TICKET_SECONDS, TraceDownload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -1690,6 +1692,101 @@ async def get_decision_trace(request: Request, limit: int = 200) -> dict[str, An
     _require_config_read_auth(request)
     rows = _opt(request).decision_trace(limit=max(1, min(int(limit), 2000)))
     return {"rows": rows}
+
+
+class _TraceDownloadResponse(StreamingResponse):
+    def __init__(self, download: TraceDownload, **kwargs: Any) -> None:
+        self.download = download
+        super().__init__(download.async_chunks(), **kwargs)
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            # Total lifetime includes worker opening and slow/stalled sends.
+            async with asyncio.timeout(max(0, self.download.deadline - time.monotonic())):
+                await super().__call__(scope, receive, send)
+        finally:
+            # Also closes handles if disconnected before iteration starts, or
+            # if StreamingResponse exits through a send/read error.
+            await self.download.async_close()
+
+
+def _trace_store(request: Request):
+    store = getattr(request.app.state, "decision_trace_store", None)
+    if store is None or not store.ready:
+        raise HTTPException(status_code=503, detail="24-hour trace storage unavailable", headers={"Cache-Control": "no-store"})
+    return store
+
+
+@router.post("/decision_trace/24h/download-ticket")
+async def decision_trace_download_ticket(request: Request) -> JSONResponse:
+    _require_config_read_auth(request)
+    store = _trace_store(request)
+    try:
+        ticket = store.issue_ticket()
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail=str(exc), headers={"Cache-Control": "no-store"}) from exc
+    return JSONResponse(
+        {"url": f"api/decision_trace/24h/download?ticket={ticket}", "expires_in": TICKET_SECONDS},
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
+
+
+@router.get("/decision_trace/24h/download")
+async def download_decision_trace_24h(request: Request, ticket: str | None = None) -> StreamingResponse:
+    if ticket is None:
+        _require_config_read_auth(request)
+    else:
+        # Invalid tickets never fall back to otherwise permissive read auth.
+        store = _trace_store(request)
+        if not store.consume_ticket(ticket):
+            raise HTTPException(status_code=401, detail="Invalid or expired trace download ticket", headers={"Cache-Control": "no-store"})
+    store = _trace_store(request)
+    now = datetime.now(timezone.utc)
+    try:
+        deadline = store.reserve_download()
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail=str(exc), headers={"Cache-Control": "no-store"}) from exc
+
+    def open_reserved():
+        try:
+            return store.open_download(now, True, deadline)
+        except Exception:
+            store.release_download()
+            raise
+
+    try:
+        opening = asyncio.wrap_future(store.submit_work(open_reserved))
+    except Exception as exc:
+        store.release_download()
+        raise HTTPException(status_code=503, detail="24-hour trace workers unavailable", headers={"Cache-Control": "no-store"}) from exc
+    try:
+        download = await asyncio.wait_for(asyncio.shield(opening), max(0, deadline - time.monotonic()))
+    except (asyncio.CancelledError, TimeoutError) as exc:
+        # Disconnect during worker-side opening must not abandon pinned handles.
+        def discard(completed):
+            try:
+                abandoned = completed.result()
+            except Exception:
+                logger.exception("Cancelled decision trace download could not open storage")
+            else:
+                store.submit_work(abandoned.close)
+        opening.add_done_callback(discard)
+        if isinstance(exc, TimeoutError):
+            raise HTTPException(status_code=504, detail="24-hour trace download timed out", headers={"Cache-Control": "no-store"}) from exc
+        raise
+    except Exception as exc:
+        logger.exception("Unable to open decision trace download")
+        raise HTTPException(status_code=503, detail="24-hour trace storage unavailable", headers={"Cache-Control": "no-store"}) from exc
+    return _TraceDownloadResponse(
+        download,
+        media_type="application/x-ndjson",
+        headers={
+            "Content-Disposition": f'attachment; filename="sigenergy_decision_trace_24h_{now:%Y%m%dT%H%M%SZ}.jsonl"',
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+            "X-Trace-Possible-Gaps": str(download.possible_gaps).lower(),
+        },
+    )
 
 
 @router.get("/history")
