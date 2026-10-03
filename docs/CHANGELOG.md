@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-04 - 2.3.54-haos65 diagnostics-only hotfix release candidate
+
+- Increase the maximum streamed "24 Hour Trace" download from 256 MiB to 512 MiB because the first live archive produced approximately 3.5 MB after approximately 15 minutes and the old ceiling is insufficient for an expected full 24-hour archive.
+- Keep all other diagnostics resource bounds unchanged, including the 2-minute timeout, 4 active downloads, 25-segment limit and chunk size. Archive retention, persistence cadence, clock handling, authentication, streaming and pin cleanup remain unchanged. No control-behaviour change.
+- Synchronize the established release metadata from `2.3.53-haos64` to `2.3.54-haos65`. This is a local, uncommitted, unreleased candidate; the live release is `.64` / `2.3.53-haos64`, source `99d8ed640d16a699674e061355dbcd9e773e1356`. Known rollback: `2.3.52-haos63`, source `41df404570db6d4a026cdb6162dcab233876b6b6`.
+
 ## 2026-10-04 - 2.3.53-haos64 diagnostics-only release candidate
 
 - Add a rolling persistent 24-hour Decision Trace JSONL archive; the existing in-memory Decision Trace remains unchanged. Flush pending records approximately every 15 minutes and provide a downloadable "24 Hour Trace".

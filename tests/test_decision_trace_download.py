@@ -141,6 +141,7 @@ class DecisionTraceDownloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store._pins, {})
 
     async def test_active_download_admission_precedes_submission_and_does_not_starve_dns(self):
+        self.assertEqual(MAX_DOWNLOADS, 4)
         self.persist([self.now])
         requests = []
         self.store._lock.acquire()
@@ -387,15 +388,51 @@ class DecisionTraceDownloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store._pins, {})
         self.assertEqual(self.store._active_downloads, 0)
 
-    async def test_resource_pressure_rejects_download_before_pinning_handles(self):
-        self.persist([self.now])
-        path = self.store._path(self.now)
-        self.store._lengths[path] = MAX_DOWNLOAD_BYTES + 1
+    async def test_download_views_up_to_512_mib_are_permitted_and_streamed(self):
+        self.assertEqual(MAX_DOWNLOAD_BYTES, 512 * 1024 * 1024)
+        self.persist([self.now - timedelta(hours=1), self.now])
+        paths = sorted(self.store._lengths)
+        for total in (256 * 1024 * 1024 + 1, 512 * 1024 * 1024):
+            with self.subTest(total=total):
+                self.store._lengths[paths[0]] = total // 2
+                self.store._lengths[paths[1]] = total - total // 2
+                view = self.store.open_download(self.now)
+                try:
+                    self.assertEqual(sum(length for _, _, length in view.files), total)
+                    self.assertEqual(self.store._active_downloads, 1)
+                    self.assertEqual(self.store._pins, {path: 1 for path in paths})
+                    chunks = list(view.chunks())
+                    self.assertTrue(all(len(chunk) <= CHUNK_BYTES for chunk in chunks))
+                    self.assertEqual(len(b"".join(chunks).splitlines()), 2)
+                finally:
+                    view.close()
+                self.assertTrue(all(handle.closed for _, handle, _ in view.files))
+                self.assertEqual(self.store._pins, {})
+                self.assertEqual(self.store._active_downloads, 0)
+
+    async def test_view_over_512_mib_rejects_download_before_pinning_handles(self):
+        self.persist([self.now - timedelta(hours=1), self.now])
+        paths = sorted(self.store._lengths)
+        self.store._lengths[paths[0]] = 256 * 1024 * 1024
+        self.store._lengths[paths[1]] = 256 * 1024 * 1024 + 1
         with patch.object(Path, "open", side_effect=AssertionError("archive handle opened")):
             # Keep status saving outside the probe's file-open prohibition.
             with patch.object(self.store, "_save_status"):
                 with self.assertRaisesRegex(OSError, "resource limits"):
                     self.store.open_download(self.now)
+        self.assertEqual(self.store._pins, {})
+        self.assertEqual(self.store._active_downloads, 0)
+
+    async def test_view_over_25_segments_rejects_download_before_pinning_handles(self):
+        self.assertEqual(MAX_DOWNLOAD_SEGMENTS, 25)
+        path = self.store._path(self.now)
+        # Simulate an oversized index without creating archive files.
+        lengths = {self.store.directory / str(index) / path.name: 1 for index in range(26)}
+        with patch.dict(self.store._lengths, lengths, clear=True), patch.object(
+            Path, "open", side_effect=AssertionError("archive handle opened")
+        ), patch.object(self.store, "_save_status"):
+            with self.assertRaisesRegex(OSError, "resource limits"):
+                self.store.open_download(self.now)
         self.assertEqual(self.store._pins, {})
         self.assertEqual(self.store._active_downloads, 0)
 

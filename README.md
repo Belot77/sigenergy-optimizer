@@ -244,13 +244,13 @@ Uninstall:
 
 ## Version
 
-2.3.53-haos64
+2.3.54-haos65
 
-2.3.53-haos64 is the local diagnostics-only release candidate on `fix/phase1-audit-remediation`. The candidate changes are uncommitted and unreleased. The live release remains `2.3.52-haos63`.
+2.3.54-haos65 is the local diagnostics-only hotfix release candidate on `fix/phase1-audit-remediation`. The candidate changes are uncommitted and unreleased. The live release is `2.3.53-haos64`; the known rollback is `2.3.52-haos63`.
 
-Adds a rolling persistent 24-hour Decision Trace JSONL archive alongside the unchanged existing in-memory Decision Trace. Pending records flush approximately every 15 minutes, and the downloadable "24 Hour Trace" provides the retained archive. Diagnostics I/O is isolated from optimizer/control startup; diagnostics failure cannot block startup. Conservative clock/gap handling reports possible gaps and pauses persistent writes and pruning when the clock is uncertain.
+Increases the maximum streamed "24 Hour Trace" download from 256 MiB to 512 MiB. All other diagnostics resource bounds remain unchanged, with no control-behaviour change.
 
-Downloads are bounded to 4 active requests, a 2-minute lifetime, and at most 25 segments / 256 MiB per download. An abrupt crash can lose the unflushed interval; there is no final shutdown flush. This release adds diagnostics only, with no control-behaviour change.
+Downloads remain bounded to 4 active requests, a 2-minute lifetime, and at most 25 segments, now with a 512 MiB ceiling per download. Archive retention, persistence cadence, clock/gap handling, authentication, streaming and pin cleanup remain unchanged.
 
 ## Maintainer Release Flow
 

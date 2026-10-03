@@ -6,20 +6,19 @@ Last consolidated: 2026-10-04
 
 ## Release and live state
 
-- Current live release: `2.3.52-haos63`, installed and running. Lightweight tag `v2.3.52-haos63` points to approved source commit `41df404570db6d4a026cdb6162dcab233876b6b6`.
-- `origin/main` was fast-forwarded to that commit after publication because Home Assistant discovers the add-on manifest from main. `origin/fix/phase1-audit-remediation` points to the same commit; main's manifest exposes `version: "2.3.52-haos63"`. No new build or release was needed for main promotion.
-- The published multi-architecture image is `ghcr.io/belot77/sigenergy-optimizer:2.3.52-haos63` (`linux/amd64`, `linux/arm64`), OCI index digest `sha256:7a7d5ed07d71b899ad0d11bfc292be6840144ae0276d047be7aa8dae905f99a0`. Its version and source-revision metadata match the release. GitHub Actions build/publish run `37086123886` succeeded before main promotion.
-- Documented known-good rollback: `2.3.46-haos57`, commit `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
+- Current live release: `.64` / `2.3.53-haos64`, installed and running, source commit `99d8ed640d16a699674e061355dbcd9e773e1356` (operator-confirmed).
+- Local hotfix release candidate: `.65` / `2.3.54-haos65`, uncommitted and unreleased on `fix/phase1-audit-remediation`. No commit, push, main promotion, tag, build, installation or restart was performed during candidate preparation.
+- Known rollback: `.63` / `2.3.52-haos63`, source commit `41df404570db6d4a026cdb6162dcab233876b6b6`.
 - **Solar dynamic ESS charge-ceiling live acceptance is still pending.** Available evidence does not yet prove dynamic Solar ownership and safe relinquishment.
-- Phase 1 remains open. Phase 2 remains frozen until controlled `.63` Solar acceptance and separate Evening Boost remediation and live acceptance are complete.
+- Phase 1 remains open. Phase 2 remains frozen until controlled Solar acceptance and separate Evening Boost remediation and live acceptance are complete.
 
 ## Diagnostics checkpoint
 
-- Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`; branch: `fix/phase1-audit-remediation`; local HEAD: `ff5c96d77d1082b8327faee5a3000f2685240d69`, committed as `diagnostics: add persistent 24-hour decision trace`.
-- This is diagnostics-only. It has **not** been pushed, versioned, tagged, built, published, released, installed or deployed. The live system remains `.63` / `2.3.52-haos63`.
+- Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`; branch: `fix/phase1-audit-remediation`; local HEAD remains `99d8ed640d16a699674e061355dbcd9e773e1356`, `release: 2.3.53-haos64`. The `.65` candidate is an uncommitted delta from this live source.
+- **24 Hour Trace is confirmed live and producing data on `.64`.** The first flush produced approximately 3.5 MB after approximately 15 minutes. The 256 MiB download ceiling is insufficient for an expected full 24-hour archive; `.65` changes only that ceiling from 256 MiB to 512 MiB, with no control-behaviour change.
 - The existing approximately 1000-cycle in-memory trace remains unchanged. A rolling 24-hour JSONL archive flushes every 15 minutes, with diagnostics I/O isolated from control and the default executor. Persistent possible-gap reporting is conservative; clock uncertainty safely pauses persistent writes and pruning.
-- Downloads allow at most 4 active requests, with a 2-minute lifetime and at most 25 segments / 256 MiB per download. An abrupt crash can still lose the unflushed interval; there is no final shutdown flush. Diagnostics failure cannot block optimizer/control startup.
-- Validation: diagnostics/UI suites **55 passed**; existing API/lifecycle **82 passed**; selected control protections **237 passed**; full suite **804 passed**, **723 subtests passed**. Compileall and `git diff --check` passed. Final independent Astra review: **SAFE TO COMMIT AS DIAGNOSTICS-ONLY**.
+- Live `.64` downloads allow at most 4 active requests, with a 2-minute lifetime and at most 25 segments / 256 MiB per download. The `.65` candidate allows 512 MiB; the two-minute timeout, four-download limit, 25-segment limit and all other diagnostics resource bounds remain unchanged. Chunk size, archive retention, persistence cadence, clock handling, authentication, streaming and pin cleanup are unchanged. An abrupt crash can still lose the unflushed interval; there is no final shutdown flush. Diagnostics failure cannot block optimizer/control startup.
+- `.65` validation before the mechanical version bump: focused download/UI **27 passed**, **18 subtests passed**; diagnostics/store/lifecycle/API/UI **100 passed**, **61 subtests passed**; selected control protections **543 passed**, **540 subtests passed**, with the two frozen tests deselected. Full suite run once: **806 passed**, **725 subtests passed**, only the **2 frozen Phase 2 failures** below. No unexpected failures.
 - The only expected failures remain the frozen Phase 2 tests `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc` in `tests/test_msc_baseline_overlay_contract.py`.
 
 ## Live Dynamic Solar behavior
@@ -53,8 +52,8 @@ Observe the 27 September Solar aggregate-budget threshold-switching follow-up wi
 
 ## Sequence and next action
 
-After this documentation checkpoint, decide separately whether to commit the two docs files, push the diagnostics commit/branch, or prepare a new diagnostics release (`.64` candidate). Preserve `.63` as the current live release until explicit release/install approval.
+Exact next action: release/install `.65` / `2.3.54-haos65`, then continue Solar live evidence. This candidate preparation performs neither release nor installation; `.64` remains live until that next action is separately authorized.
 
-Obtain the required `.63` Solar evidence above. Evening Boost reserve-estimator instability and import-cost trust poisoning remain parked; no Evening Boost remediation has begun. The two Phase 2 transition-settlement failures remain frozen and expected. Solar acceptance does not automatically start Phase 2; subsequent work requires a separate decision under the roadmap.
+Obtain the required Solar evidence above after `.65` installation. Evening Boost reserve-estimator instability and import-cost trust poisoning remain parked; no Evening Boost remediation has begun. Morning Dump remains accepted for the observed case. The two Phase 2 transition-settlement failures remain frozen and expected. Solar acceptance does not automatically start Phase 2; subsequent work requires a separate decision under the roadmap.
 
-Keep the parked settings unconfigured and all protected ownership/fail-closed behavior intact. This checkpoint authorizes no commit, push, release, install, deployment or control change.
+Keep the parked settings unconfigured and all protected ownership/fail-closed behavior intact. Leave the complete `.65` candidate uncommitted. This checkpoint authorizes no commit, push, main promotion, tag, build, release, install, restart, deployment or control change.

@@ -27,7 +27,7 @@ MAX_DOWNLOADS = 4
 # Two minutes includes opening, reading and client backpressure. Local diagnostic
 # downloads must not hold retention pins indefinitely; oversized views fail closed.
 DOWNLOAD_SECONDS = 120
-MAX_DOWNLOAD_BYTES = 256 * 1024 * 1024
+MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
 MAX_DOWNLOAD_SEGMENTS = 25  # 24 hours can straddle 25 hourly segments.
 DIAGNOSTIC_WORKERS = 3
 MAX_PENDING_WORK = 16
