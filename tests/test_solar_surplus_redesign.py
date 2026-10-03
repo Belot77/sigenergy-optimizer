@@ -548,7 +548,8 @@ class SolarSurplusControlWiringTests(Haos49CharacterizationCase):
         self.assertEqual("none", decision.trace_values["battery_export_owner"])
         self.assertEqual(25.0, decision.export_limit)
         self.assertEqual(25.0, decision.pv_max_power_limit)
-        self.assertEqual(5.0, decision.ess_charge_limit)
+        self.assertEqual(0.0, decision.ess_charge_limit)
+        self.assertTrue(decision.trace_gates["solar_charge_ceiling_owned"])
 
     def test_below_one_cent_blocks_solar(self) -> None:
         decision = self._decide(
@@ -630,7 +631,7 @@ class SolarSurplusControlWiringTests(Haos49CharacterizationCase):
         self.assertTrue(low_continue.solar_surplus_policy_active)
         self.assertTrue(high_continue.solar_surplus_policy_active)
 
-    def test_configured_safety_factor_changes_only_solar_eligibility(self) -> None:
+    def test_failed_solar_energy_budget_releases_only_solar_charge_ownership(self) -> None:
         baseline = self._decide(
             self._optimizer(solar_surplus_forecast_safety_factor=1.20),
             forecast_remaining_kwh=7.5,
@@ -644,8 +645,88 @@ class SolarSurplusControlWiringTests(Haos49CharacterizationCase):
         self.assertFalse(conservative.solar_surplus_policy_active)
         self.assertEqual(baseline.import_limit, conservative.import_limit)
         self.assertEqual(baseline.pv_max_power_limit, conservative.pv_max_power_limit)
-        self.assertEqual(baseline.ess_charge_limit, conservative.ess_charge_limit)
+        self.assertEqual(0.0, baseline.ess_charge_limit)
+        self.assertEqual(5.0, conservative.ess_charge_limit)
+        self.assertFalse(conservative.trace_gates["solar_charge_ceiling_owned"])
         self.assertEqual(baseline.ess_discharge_limit, conservative.ess_discharge_limit)
+
+    def test_charge_ceiling_uses_remaining_current_period_and_partial_sunset(self) -> None:
+        at = self.WHEN + timedelta(minutes=15)
+        decision = self._decide(
+            self._optimizer(), when=at,
+            solcast_detailed=self._detailed_forecast(pv_kw=6.0),
+            next_sunset_ts=(self.WHEN + timedelta(minutes=45)).timestamp(),
+        )
+
+        # Protected fill = 2.4 kWh; only 0.25 h * 5 kW is after
+        # the current interval, leaving 1.15 kWh / 0.25 h = 4.6 kW now.
+        self.assertTrue(decision.solar_surplus_policy_active)
+        self.assertEqual(4.6, decision.ess_charge_limit)
+        self.assertEqual(0.25, decision.trace_values["solar_charge_ceiling_current_window_hours"])
+        self.assertEqual(1.25, decision.trace_values["solar_charge_ceiling_future_opportunity_kwh"])
+
+    def test_charge_ceiling_rounds_up_without_exceeding_normal_capability(self) -> None:
+        for capability, expected in ((5.0, 4.78), (4.777, 4.77)):
+            with self.subTest(capability=capability):
+                decision = self._decide(
+                    self._optimizer(), battery_soc=80.1,
+                    solcast_detailed=self._detailed_forecast(pv_kw=6.0)[:1],
+                    next_sunset_ts=(self.WHEN + timedelta(minutes=30)).timestamp(),
+                    ess_max_charge_kw=capability,
+                )
+
+                self.assertTrue(decision.solar_surplus_policy_active)
+                # Required raw rate is 4.776 kW: round up unless the existing
+                # normal request (floored to safe command precision) is lower.
+                self.assertEqual(expected, decision.ess_charge_limit)
+                normal = decision.trace_values["solar_charge_ceiling_normal_request_kw"]
+                self.assertGreaterEqual(decision.ess_charge_limit, min(4.776, normal))
+                self.assertLessEqual(decision.ess_charge_limit, capability)
+
+    def test_missing_provenance_releases_charge_without_changing_eligibility(self) -> None:
+        for field in (
+            "forecast_today_observation_trusted", "solcast_detailed_source_trusted",
+            "load_power_trusted", "battery_soc_trusted", "battery_capacity_trusted",
+            "sunset_observation_trusted", "sun_state_observation_trusted",
+        ):
+            with self.subTest(field=field):
+                decision = self._decide(self._optimizer(), **{field: None})
+
+                self.assertTrue(decision.solar_surplus_policy_active)
+                self.assertEqual(5.0, decision.ess_charge_limit)
+                self.assertFalse(decision.trace_gates["solar_charge_ceiling_owned"])
+
+    def test_full_battery_still_requires_detail_for_charge_ownership(self) -> None:
+        decision = self._decide(
+            self._optimizer(), battery_soc=100.0, solcast_detailed=[],
+        )
+
+        self.assertTrue(decision.solar_surplus_policy_active)
+        self.assertEqual(5.0, decision.ess_charge_limit)
+        self.assertFalse(decision.trace_gates["solar_charge_ceiling_owned"])
+
+    def test_subsecond_forecast_gap_relinquishes_only_charge_ownership(self) -> None:
+        detailed = self._detailed_forecast()
+        for period in detailed[1:]:
+            start = datetime.fromisoformat(period["period_start"])
+            period["period_start"] = (start + timedelta(milliseconds=500)).isoformat()
+        decision = self._decide(self._optimizer(), solcast_detailed=detailed)
+
+        self.assertTrue(decision.solar_surplus_policy_active)
+        self.assertEqual(5.0, decision.ess_charge_limit)
+        self.assertFalse(decision.trace_gates["solar_charge_ceiling_owned"])
+
+    def test_manual_freeze_without_live_charge_readback_releases_solar_ceiling(self) -> None:
+        optimizer = self._optimizer()
+        state = self._state(current_ess_charge_limit=None)
+        decision = self.decide(optimizer, state, self.WHEN)
+        self.assertEqual(0.0, decision.ess_charge_limit)
+
+        optimizer._freeze_decision_to_live_mode(state, decision, optimizer.cfg.manual_option)
+
+        self.assertEqual(5.0, decision.ess_charge_limit)
+        self.assertFalse(decision.trace_gates["solar_charge_ceiling_owned"])
+        self.assertEqual("user", decision.trace_values["ess_charge_limit_owner"])
 
     def test_aggregate_forecast_must_be_trusted_nonnegative_and_positive_enough(self) -> None:
         cases = (

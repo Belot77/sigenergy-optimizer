@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_FLOOR
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 import logging
 import math
 import os
@@ -115,7 +115,7 @@ _POWER_LIMIT_MAX_KW = 100.0
 # timestamp jitter; keep derived-flow coherence equally narrow and independent
 # of the much wider per-sensor freshness window.
 _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
-_RUNTIME_SIGNATURE = "2.3.51-haos62"
+_RUNTIME_SIGNATURE = "2.3.52-haos63"
 
 
 def _solar_surplus_finite_number(name: str, value: object) -> float:
@@ -4654,6 +4654,109 @@ class SigEnergyOptimizer:
             desired_export_limit, pv_surplus_actual,
             morning_slow_charge_relief_active=morning_slow_charge_relief_active,
         )
+        # Charge restriction is a separate, stricter authority than Solar's
+        # export permission. Never derive it from pre-arbitration eligibility.
+        # Use the import-policy decision that already selects the first branch
+        # in _desired_ess_charge_limit, not the resulting numeric ESS request.
+        grid_import_owns_charging = desired_import_limit > 0.0
+        solar_charge_ceiling_owned = False
+        solar_charge_ceiling_evidence_trusted = False
+        solar_charge_ceiling_values: dict[str, Any] = {
+            "ess_charge_limit_owner": (
+                "grid_import" if grid_import_owns_charging
+                else "morning_slow" if morning_slow_charge_active else "normal"
+            ),
+            "solar_charge_ceiling_requested_kw": None,
+            "solar_charge_ceiling_normal_request_kw": d.ess_charge_limit,
+            "solar_charge_ceiling_protected_fill_need_kwh": None,
+            "solar_charge_ceiling_future_opportunity_kwh": None,
+            "solar_charge_ceiling_required_now_kwh": None,
+            "solar_charge_ceiling_current_window_hours": None,
+        }
+        solar_charge_ceiling_reason = f"solar_not_owner: {solar_surplus_fail_reason}"
+        if grid_import_owns_charging:
+            solar_charge_ceiling_reason = "higher_priority_grid_import_charging"
+        elif d.solar_surplus_policy_active and not morning_slow_charge_active:
+            if (
+                s.solcast_detailed_source_trusted is not True
+                or s.forecast_today_observation_trusted is not True
+                or not forecast_today_observation_trusted
+            ):
+                solar_charge_ceiling_reason = "detailed_forecast_freshness_untrusted"
+            elif not all(value is True for value in (
+                s.load_power_trusted, s.battery_soc_trusted,
+                s.battery_capacity_trusted, s.sunset_observation_trusted,
+                s.sun_state_observation_trusted,
+            )):
+                solar_charge_ceiling_reason = "charge_evidence_provenance_untrusted"
+            elif trusted_charge_capability_kw is None:
+                solar_charge_ceiling_reason = "trusted_charge_capability_unavailable"
+            elif not self._detailed_forecast_covers(
+                detailed_forecast_periods, now_ts, sunset_ts,
+            ):
+                solar_charge_ceiling_reason = "detailed_forecast_does_not_cover_horizon"
+            else:
+                # Decimal arithmetic avoids a binary floating-point residue
+                # turning an exact 1.20 kW request into 1.21 when rounding up.
+                period_seconds = Decimal(str(cfg.solcast_forecast_period_hours)) * 3600
+                window_start = Decimal(str(now_ts))
+                sunset = Decimal(str(sunset_ts))
+                # Preserve the normal request's existing safe command precision.
+                normal_cap = min(
+                    Decimal(str(trusted_charge_capability_kw)),
+                    Decimal(str(d.ess_charge_limit)),
+                )
+                load = Decimal(str(control_load_kw))
+                protected_fill = (
+                    Decimal(str(solar_safety_factor))
+                    * Decimal(str(battery_capacity_value))
+                    * (100 - Decimal(str(battery_soc_value))) / 100
+                )
+                covered_until = window_start
+                current_hours = Decimal(0)
+                future_opportunity = Decimal(0)
+                for start_ts, pv_kw in detailed_forecast_periods:
+                    start = Decimal(str(start_ts))
+                    end = min(start + period_seconds, sunset)
+                    if end <= window_start or start >= sunset:
+                        continue
+                    overlap_start = max(start, window_start)
+                    # Existing eligibility tolerates timestamp jitter; reduced
+                    # charging must not assume opportunity across gaps/overlaps.
+                    if overlap_start != covered_until:
+                        break
+                    hours = (end - overlap_start) / 3600
+                    if start <= window_start < end:
+                        current_hours = hours
+                    else:
+                        future_opportunity += min(
+                            max(Decimal(str(pv_kw)) - load, Decimal(0)), normal_cap,
+                        ) * hours
+                    covered_until = end
+                if covered_until != sunset or current_hours <= 0:
+                    solar_charge_ceiling_reason = "detailed_forecast_current_window_or_coverage_invalid"
+                else:
+                    required_now = max(Decimal(0), protected_fill - future_opportunity)
+                    requested = min(normal_cap, required_now / current_hours)
+                    requested = min(
+                        normal_cap,
+                        requested.quantize(Decimal("0.01"), rounding=ROUND_CEILING),
+                    )
+                    d.ess_charge_limit = float(requested)
+                    solar_charge_ceiling_owned = True
+                    solar_charge_ceiling_evidence_trusted = True
+                    solar_charge_ceiling_reason = (
+                        "present_charging_required_for_fill_trajectory"
+                        if required_now > 0 else "future_opportunity_covers_protected_fill"
+                    )
+                    solar_charge_ceiling_values.update({
+                        "ess_charge_limit_owner": "solar_surplus",
+                        "solar_charge_ceiling_requested_kw": float(requested),
+                        "solar_charge_ceiling_protected_fill_need_kwh": float(protected_fill),
+                        "solar_charge_ceiling_future_opportunity_kwh": float(future_opportunity),
+                        "solar_charge_ceiling_required_now_kwh": float(required_now),
+                        "solar_charge_ceiling_current_window_hours": float(current_hours),
+                    })
         positive_fit_owns_live_battery_export = bool(
             d.export_intent == BATTERY_EXPORT
             and battery_export_owner == "positive_fit_override"
@@ -4896,6 +4999,8 @@ class SigEnergyOptimizer:
             "solar_timing_passed": solar_timing_passed,
             "solar_measured_surplus_gate": solar_measured_surplus_gate,
             "solar_surplus_policy_active": d.solar_surplus_policy_active,
+            "solar_charge_ceiling_evidence_trusted": solar_charge_ceiling_evidence_trusted,
+            "solar_charge_ceiling_owned": solar_charge_ceiling_owned,
             "battery_full_safeguard_block": battery_full_safeguard_block,
             "battery_full_safeguard_soc_headroom_block": (
                 battery_full_safeguard_soc_headroom_block is True
@@ -5014,6 +5119,8 @@ class SigEnergyOptimizer:
             "pv_surplus_trusted_for_export": pv_surplus_trusted_for_export,
         }
         d.trace_values = {
+            **solar_charge_ceiling_values,
+            "solar_charge_ceiling_reason": solar_charge_ceiling_reason,
             "battery_soc": s.battery_soc,
             "ha_control_switch_state": s.ha_control_switch_state,
             "current_price": s.current_price,
@@ -6059,6 +6166,12 @@ class SigEnergyOptimizer:
             decision.trace_gates["observed_automated_control_mode"] = False
             decision.trace_gates["pv_only_branch_high_ceiling_active"] = False
             decision.trace_gates["solar_surplus_policy_active"] = False
+            decision.trace_gates["solar_charge_ceiling_owned"] = False
+            decision.trace_values["ess_charge_limit_owner"] = "user"
+            decision.trace_values["solar_charge_ceiling_requested_kw"] = None
+            decision.trace_values["solar_charge_ceiling_reason"] = (
+                f"operator_mode_user_owned: {mode_label}"
+            )
             decision.trace_values["solar_surplus_fail_reason"] = (
                 f"operator_mode_user_owned: {mode_label}"
             )
@@ -6081,7 +6194,9 @@ class SigEnergyOptimizer:
         decision.ess_charge_limit = (
             state.current_ess_charge_limit
             if state.current_ess_charge_limit is not None
-            else decision.ess_charge_limit
+            else decision.trace_values.get(
+                "solar_charge_ceiling_normal_request_kw", decision.ess_charge_limit,
+            )
         )
         decision.ess_discharge_limit = (
             state.current_ess_discharge_limit

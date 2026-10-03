@@ -61,12 +61,12 @@ For ordinary MSC flow interpretation:
 
 ## Solar Surplus
 
-Solar Surplus is a Phase 1 energy-gate-only MSC/PV-only export-permission policy. It:
+Solar Surplus is a Phase 1 MSC/PV-only export-permission policy with bounded dynamic ESS charge-ceiling ownership. It:
 
 - remains in Maximum Self Consumption;
 - retains normal PV MAX;
 - never owns `BATTERY_EXPORT` or deliberately selects a discharge EMS;
-- never owns an ESS charge cap in Phase 1;
+- may reduce the existing normal safe/trusted ESS charge request only after final arbitration selects `solar_surplus_policy_active`, with the stricter charge-ownership evidence below; it must never increase that normal request;
 - does not own grid import;
 - treats a high export ceiling as permission for genuine PV surplus, never as an instruction to discharge or proof that physical export settled.
 
@@ -106,13 +106,30 @@ Detailed timing is required only when `fill_need_kwh > 0`. Trusted detailed Solc
 
 Aggregate Remaining Today energy and detailed interval energy are independent gates; they are not added together. If fill need is exactly zero, detailed timing is not required. Missing, gapped, truncated, untrusted, or insufficient detailed evidence fails Solar closed.
 
+### Dynamic ESS charge ceiling
+
+Charge ownership is evaluated only after final arbitration selects Solar Surplus. It requires fresh, trusted provenance for detailed Solcast data, continuous interval coverage from now through trusted same-day sunset, trusted current load, battery SoC and rated capacity, the valid Solar safety factor, and trusted effective normal ESS charge capability. Detailed evidence is required for this authority even when the battery is full.
+
+For each detailed interval, subtract trusted current load from forecast PV, floor the available power at zero, and bound charge opportunity by the existing normal safe/trusted charge capability/request. Multiply by actual interval overlap hours before sunset. Identify the interval containing now; future opportunity includes only intervals strictly after that current interval.
+
+```text
+protected_fill_need_kwh = K x energy_needed_to_reach_100_percent
+future_opportunity_kwh = sum of bounded charge opportunity after the current interval
+required_now_kwh = max(0, protected_fill_need_kwh - future_opportunity_kwh)
+requested_charge_kw = required_now_kwh / remaining current-interval overlap hours
+```
+
+Clamp the request between zero and the existing normal safe/trusted capability/request. Round a positive request UP to 0.01 kW without exceeding that normal bound, retaining its existing safe command precision. Abundant future opportunity may request `0.00 kW`. Recalculate each decision without a timer; this changes only ESS charging authority and cannot authorize stored-battery export.
+
+Missing, stale, gapped, invalid, or untrusted charge evidence immediately relinquishes only the Solar charge restriction and restores the normal charge request. This stricter authority does not redefine Solar eligibility: complete current-day detailed intervals may still support the existing Solar policy despite old parent Forecast Today metadata. That case relinquishes charge ownership with reason `detailed_forecast_freshness_untrusted`; Solar's independent eligibility and safety gates still apply.
+
 ### Near-full safeguard arbitration
 
 A synthetic refill requirement caused solely by untrusted available-discharge-energy telemetry cannot, by itself, veto an independently qualified and safely verified Solar Surplus MSC/PV-only ceiling. The raw Battery Full Safeguard calculation and diagnostics remain visible; the distinction applies only to final export arbitration.
 
 The distinction requires all normal Solar aggregate, detailed-timing, measured-surplus, forecast, tariff, and trust gates, plus genuinely observed Automated ownership, genuinely observed exact Maximum Self Consumption, and trusted PV/battery/grid-flow evidence proving the request remains PV-only-safe. Re-arbitration must select the specific `solar_surplus_pv_high` source. A failed Solar gate, unknown or unsafe flow, competing deliberate battery-export owner, manual owner, or independent higher-priority safety owner retains the fail-closed result and cannot fall through to a general permissive ceiling.
 
-This distinction creates only `MSC_SURPLUS_CEILING`. It never creates `BATTERY_EXPORT`, never selects a deliberate discharge EMS, and never grants ESS charging, grid-import, or PV-curtailment ownership. All downstream actuator, settlement, and ownership protections remain mandatory.
+This distinction creates only `MSC_SURPLUS_CEILING`. It never creates `BATTERY_EXPORT`, never selects a deliberate discharge EMS, and does not itself grant ESS charging, grid-import, or PV-curtailment ownership. A final Solar owner may separately qualify for the bounded charge ceiling above. All downstream actuator, settlement, and ownership protections remain mandatory.
 
 ### Ownership interactions
 
@@ -126,6 +143,8 @@ This distinction creates only `MSC_SURPLUS_CEILING`. It never creates `BATTERY_E
 ### Diagnostics
 
 `solar_surplus_policy_active` identifies final Solar policy ownership after arbitration. Operator diagnostics also expose the fail reason, aggregate budget evidence, detailed timing evidence, measured surplus and active threshold, and Solar safety factor. Policy-active status and an open ceiling do not prove physical inverter or grid export settlement.
+
+Charge diagnostics expose gates `solar_charge_ceiling_evidence_trusted` and `solar_charge_ceiling_owned`, plus values `ess_charge_limit_owner`, `solar_charge_ceiling_requested_kw`, `solar_charge_ceiling_protected_fill_need_kwh`, `solar_charge_ceiling_future_opportunity_kwh`, `solar_charge_ceiling_required_now_kwh`, `solar_charge_ceiling_current_window_hours`, and `solar_charge_ceiling_reason`. When owned, the charge owner is `solar_surplus`; current charging needed for the fill trajectory reports `present_charging_required_for_fill_trajectory`. Charge ownership is distinct from policy eligibility and observed actuator settlement.
 
 ## Explicit deliberate battery-export policies
 
