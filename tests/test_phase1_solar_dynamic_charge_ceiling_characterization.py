@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from dataclasses import replace
 
 from app.models import MSC_SURPLUS_CEILING
 from app.optimizer import DISCHARGE_MODES, MODE_MAX_SELF
@@ -101,6 +102,18 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(
             "hours_to_sunset": hours_to_sunset,
             "solcast_detailed": self._detailed_forecast(detailed_pv, when=at),
             "solcast_detailed_source_trusted": True,
+            "solcast_provider_polled": datetime.fromtimestamp(
+                at.timestamp() - 1, timezone.utc,
+            ).isoformat(),
+            "solcast_provider_next_update": datetime.fromtimestamp(
+                at.timestamp() + 3600, timezone.utc,
+            ).isoformat(),
+            "solcast_provider_source": (
+                "sensor.solcast_pv_forecast_forecast_today",
+                "sensor.solcast_pv_forecast_api_last_polled",
+            ),
+            "solcast_provider_epoch": 0,
+            "solcast_provider_continuity": True,
             "ess_max_charge_kw": self.NORMAL_CHARGE_KW,
             "ess_charge_limit_entity_max_kw": self.NORMAL_CHARGE_KW,
             "ess_max_discharge_kw": 25.0,
@@ -133,6 +146,14 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(
             forecast_pv_kw=forecast_pv_kw,
             **state_overrides,
         )
+        # These calculation/ownership protections run with a proven provider
+        # generation. Bootstrap and lifecycle failures have their own suite.
+        if not optimizer._solar_provider_baselined:
+            baseline = replace(state, solcast_provider_polled=datetime.fromtimestamp(
+                at.timestamp() - 60, timezone.utc,
+            ).isoformat())
+            with self.optimizer_time(at):
+                optimizer._update_solar_provider(baseline, at.timestamp())
         return self.decide(optimizer, state, at)
 
     def test_active_solar_owns_zero_ceiling_when_future_opportunity_is_abundant(
@@ -385,7 +406,7 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(
                     decision.trace_gates.get("solar_charge_ceiling_owned", False)
                 )
 
-    def test_stale_detailed_parent_relinquishes_only_the_charge_restriction(
+    def test_stale_detailed_parent_does_not_revoke_verified_provider_charge_authority(
         self,
     ) -> None:
         decision = self._decide(
@@ -393,16 +414,12 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(
             forecast_today_observation_trusted=False,
         )
 
-        # Existing policy intentionally accepts complete current-day detailed
-        # intervals despite old parent metadata.  The stricter freshness rule is
-        # scoped only to ownership of a reduced Solar charge ceiling.
+        # Parent observation trust remains false, while verified provider
+        # freshness controls only the separate dynamic charge authority.
         self.assertTrue(decision.solar_surplus_policy_active)
-        self.assertEqual(self.NORMAL_CHARGE_KW, decision.ess_charge_limit)
-        self.assertFalse(decision.trace_gates["solar_charge_ceiling_owned"])
-        self.assertEqual(
-            "detailed_forecast_freshness_untrusted",
-            decision.trace_values["solar_charge_ceiling_reason"],
-        )
+        self.assertEqual(0.0, decision.ess_charge_limit)
+        self.assertTrue(decision.trace_gates["solar_charge_ceiling_owned"])
+        self.assertFalse(decision.trace_gates["forecast_today_observation_trusted"])
 
     def test_demand_window_keeps_import_ownership_during_solar_charge_control(
         self,

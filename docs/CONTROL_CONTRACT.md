@@ -108,7 +108,24 @@ Aggregate Remaining Today energy and detailed interval energy are independent ga
 
 ### Dynamic ESS charge ceiling
 
-Charge ownership is evaluated only after final arbitration selects Solar Surplus. It requires fresh, trusted provenance for detailed Solcast data, continuous interval coverage from now through trusted same-day sunset, trusted current load, battery SoC and rated capacity, the valid Solar safety factor, and trusted effective normal ESS charge capability. Detailed evidence is required for this authority even when the battery is full.
+Charge ownership is evaluated only after final arbitration selects Solar Surplus. It requires provider-aware freshness for detailed Solcast data, continuous interval coverage from now through trusted same-day sunset, trusted current load, battery SoC and rated capacity, the valid Solar safety factor, and trusted effective normal ESS charge capability. Detailed evidence is required for this authority even when the battery is full.
+
+Provider freshness uses explicitly configured Forecast Today and API Last Polled entities from the same Solcast instance (`forecast_today_sensor` and `solcast_api_last_polled_sensor`). Under the accepted BJReplay/ha-solcast-solar v4.6.1 contract, an advancing API Last Polled state represents a successful ordinary provider refresh. Sig Opt independently validates finite/nonnegative detailed estimates, aware timestamps, ordering, exact continuous coverage, the current interval and same-local-day sunset horizon. `dataCorrect` is not mandatory; its row-count semantics can reject a legitimate 23-hour DST day. Forecast Today HA `last_reported`, `last_attempt`, and schedule advancement alone do not establish provider success.
+
+The process-local states are UNVERIFIED, VALID and EXPIRED. Startup begins UNVERIFIED: the first coherent observation establishes only a provider timestamp baseline and expected deadline. A later credible successful timestamp advance is required for VALID. Credible advances are retained as a high-water mark even when their payload is rejected; unchanged rejected generations cannot become trusted after repair or elapsed time. Malformed, naive, materially future-dated or regressing provider timestamps fail closed. Provider freshness is never persisted and no Solcast update is forced.
+
+The retained scheduled obligation D cannot slide:
+
+- With unchanged P, later advertised N leaves D unchanged; earlier valid N shortens D and expires authority immediately if already due.
+- A qualifying new P before D remains bounded by `min(D, N)`, including manual/forced success immediately before a scheduled refresh.
+- Only a qualifying success at/after the retained deadline, validated at/after D with a usable future N and complete payload, may discharge that obligation and establish a new deadline.
+- At `now >= D` without qualifying replacement, authority is EXPIRED with no grace. Solar releases only its charge restriction and restores the otherwise applicable normal safe/trusted ESS request.
+
+HA disconnect/reconnect, source reassignment, unavailability/reload, timestamp regression or uncertain continuity invalidate the source epoch. Relevant WebSocket observations signal invalidation synchronously before lossy queue handling; the epoch and urgent flag survive coalescing and overflow. REST reads retain the source/epoch captured before their first await and cannot establish authority after an epoch change. Recovery requires a new baseline followed by another provider advance.
+
+The existing optimizer event loop bounds its wait and debounce by D and local midnight, so reevaluation does not depend on an HA event or the 60-second heartbeat. Authority is rechecked immediately before a reduced charge write; a pending reduced write that crosses expiry/invalidation is followed by restoration in the same serialized application. This introduces no independent control loop or change to actuator settlement semantics. A final daytime poll may use tomorrow's next update for today's remaining horizon, but its Forecast Today generation cannot carry into another local day.
+
+This authority is isolated from global `forecast_today_observation_trusted`. `hvac_solar_forecast_max_age_seconds` retains its backend/environment key and 600-second default for existing consumers: Remaining Today, Power Now, Forecast Today/Standby Holdoff, age-based Forecast Tomorrow and selected import-price forecast freshness. It cannot extend dynamic Solar provider authority. All existing final-owner, load, SoC, capacity, sun, capability and higher-priority-owner safeguards remain required.
 
 For each detailed interval, subtract trusted current load from forecast PV, floor the available power at zero, and bound charge opportunity by the existing normal safe/trusted charge capability/request. Multiply by actual interval overlap hours before sunset. Identify the interval containing now; future opportunity includes only intervals strictly after that current interval.
 
@@ -121,7 +138,7 @@ requested_charge_kw = required_now_kwh / remaining current-interval overlap hour
 
 Clamp the request between zero and the existing normal safe/trusted capability/request. Round a positive request UP to 0.01 kW without exceeding that normal bound, retaining its existing safe command precision. Abundant future opportunity may request `0.00 kW`. Recalculate each decision without a timer; this changes only ESS charging authority and cannot authorize stored-battery export.
 
-Missing, stale, gapped, invalid, or untrusted charge evidence immediately relinquishes only the Solar charge restriction and restores the normal charge request. This stricter authority does not redefine Solar eligibility: complete current-day detailed intervals may still support the existing Solar policy despite old parent Forecast Today metadata. That case relinquishes charge ownership with reason `detailed_forecast_freshness_untrusted`; Solar's independent eligibility and safety gates still apply.
+Missing, expired, gapped, invalid, or untrusted charge evidence immediately relinquishes only the Solar charge restriction and restores the normal charge request. This stricter authority does not redefine Solar eligibility: complete current-day detailed intervals may still support the existing Solar policy despite old parent Forecast Today metadata. Provider-verified evidence may also authorize the dynamic charge restriction in that case; absent provider authority reports `solcast_provider_authority_untrusted`. Solar's independent eligibility and safety gates still apply.
 
 ### Near-full safeguard arbitration
 
@@ -145,6 +162,8 @@ This distinction creates only `MSC_SURPLUS_CEILING`. It never creates `BATTERY_E
 `solar_surplus_policy_active` identifies final Solar policy ownership after arbitration. Operator diagnostics also expose the fail reason, aggregate budget evidence, detailed timing evidence, measured surplus and active threshold, and Solar safety factor. Policy-active status and an open ceiling do not prove physical inverter or grid export settlement.
 
 Charge diagnostics expose gates `solar_charge_ceiling_evidence_trusted` and `solar_charge_ceiling_owned`, plus values `ess_charge_limit_owner`, `solar_charge_ceiling_requested_kw`, `solar_charge_ceiling_protected_fill_need_kwh`, `solar_charge_ceiling_future_opportunity_kwh`, `solar_charge_ceiling_required_now_kwh`, `solar_charge_ceiling_current_window_hours`, and `solar_charge_ceiling_reason`. When owned, the charge owner is `solar_surplus`; current charging needed for the fill trajectory reports `present_charging_required_for_fill_trajectory`. Charge ownership is distinct from policy eligibility and observed actuator settlement.
+
+Provider trace evidence includes `solar_provider_state`, observed/high-water/verified poll timestamps, retained deadline, advertised next update, configured source, epoch, source-continuity trust, provider-authority trust and rejection/expiry reason. These fields prove decision provenance, not live actuator settlement.
 
 ## Explicit deliberate battery-export policies
 

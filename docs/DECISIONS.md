@@ -259,3 +259,13 @@ Status: implemented and validated locally for candidate `2.3.52-haos63`; uncommi
 ## 2026-10-03 - Keep Phase 1 open for Evening Boost transition stability
 
 Decision: After controlled `.63` Solar live acceptance, Phase 1 remains open for the separately confirmed Evening Boost transition-stability defect. Characterize and remediate it narrowly, then obtain live acceptance before starting Phase 2. Keep the two frozen Phase 2 transition tests unresolved until both Phase 1 items are accepted. This sequencing does not specify an Evening Boost fix or claim that `.63` is committed, published, installed, or live-accepted.
+
+## 2026-10-05 - Trust successful Solcast provider refreshes for Solar charge freshness
+
+Decision: Accept the externally reviewed BJReplay/ha-solcast-solar v4.6.1 success contract at tag commit `34e1d007e9d4a9b7a783520d723fcd05adb2ff9a`: advancing API Last Polled represents a successful ordinary provider refresh. Replace only dynamic Solar ESS charge-ceiling dependence on Forecast Today's 600-second HA observation age with process-local provider authority. Bootstrap and discontinuity recovery require a baseline followed by a credible successful timestamp advance, independent strict detailed-payload validation, and retained scheduled-deadline enforcement. Early manual/forced refreshes cannot forgive outstanding scheduled obligations. All existing control safeguards and global forecast consumers remain unchanged.
+
+Rationale: Forecast Today legitimately remains unchanged between provider refreshes while Remaining Today and Power Now recalculate every five minutes. A shared observation-age timeout therefore revokes charge authority prematurely. Conversely, schedule advancement or `last_attempt` cannot prove success or renew authority. Retained deadlines and sticky source epochs prevent missed scheduled refreshes and lost discontinuities from preserving a reduced ceiling. `dataCorrect` is row-count evidence only and is not mandatory because legitimate DST days can have fewer rows.
+
+The provider owns conformance of a successful response to its documented contract. Sig Opt validates exposed structure and control safety; independently detecting hypothetical HTTP-200 responses that violate that external successful-response contract is outside this accepted trust boundary. No arbitrary provider-age timeout, grace setting, persistence, forced poll or unrelated forecast redesign is introduced.
+
+Status: locally validated unreleased candidate based on live `.65` / `9965e79`; no deployment or live acceptance is claimed. Phase 1 remains open and the two Phase 2 settlement failures remain frozen.

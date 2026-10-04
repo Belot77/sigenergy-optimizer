@@ -210,6 +210,33 @@ cannot start or continue at or below `MORNING_DUMP_MIN_SOC`, which defaults to
 
 After changing add-on config, restart the add-on.
 
+## Solcast provider-aware Solar charge freshness (unreleased candidate)
+
+Dynamic Solar charge-ceiling ownership uses provider refresh evidence separately
+from Forecast Today's HA observation age. Map `forecast_today_sensor` and
+`solcast_api_last_polled_sensor` to entities from the same Solcast instance. Their
+default entity IDs are `sensor.solcast_pv_forecast_forecast_today` and
+`sensor.solcast_pv_forecast_api_last_polled`; compatible environment keys are
+`FORECAST_TODAY_SENSOR` and `SOLCAST_API_LAST_POLLED_SENSOR`.
+
+Startup/reconnect/reload requires a baseline followed by a successful API Last
+Polled advance. Normal charging remains available while unverified. Later
+schedules and successful manual polls before a retained deadline cannot extend
+that deadline. Expiry releases only the dynamic Solar charge restriction;
+Solar remains subject to all existing MSC/PV-only and ownership protections.
+
+Settings -> Forecast Safety exposes **Forecast observation maximum age (seconds)**,
+using the existing `hvac_solar_forecast_max_age_seconds` /
+`HVAC_SOLAR_FORECAST_MAX_AGE_SECONDS` key and 600-second default. It applies to
+Remaining Today, Power Now, Forecast Today trust for Standby Holdoff, age-based
+Forecast Tomorrow trust and selected import-price forecast freshness. Dynamic
+Solar provider freshness is schedule/provider-aware and is not extended by it.
+
+Before live acceptance, inspect provider state, poll/high-water/verified times,
+retained/advertised deadlines, source/epoch and rejection reasons in Decision
+Trace. Local tests do not prove inverter behavior. Live `.65` remains unchanged;
+this candidate has not been released or deployed.
+
 ## Common Issues
 
 Connection refused:

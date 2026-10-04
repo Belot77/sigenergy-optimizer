@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import math
 import unittest
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from app.models import BATTERY_EXPORT, MSC_SURPLUS_CEILING, Decision
@@ -434,6 +435,31 @@ class SolarSurplusTimingBudgetTests(unittest.TestCase):
 
 class SolarSurplusControlWiringTests(Haos49CharacterizationCase):
     WHEN = datetime(2026, 1, 15, 14, 0, 0)
+
+    def decide(self, optimizer, state, when):
+        # Normally provenanced fixtures include the provider observation now
+        # required for charge authority. Missing-provenance scenarios retain
+        # their missing provider evidence; no control assertion is changed.
+        if state.forecast_today_observation_trusted is True:
+            state.solcast_provider_source = (
+                optimizer.cfg.forecast_today_sensor,
+                optimizer.cfg.solcast_api_last_polled_sensor,
+            )
+            state.solcast_provider_epoch = optimizer._solar_provider_epoch
+            state.solcast_provider_continuity = True
+            state.solcast_provider_polled = datetime.fromtimestamp(
+                when.timestamp() - 1, timezone.utc,
+            ).isoformat()
+            state.solcast_provider_next_update = datetime.fromtimestamp(
+                when.timestamp() + 3600, timezone.utc,
+            ).isoformat()
+            if not optimizer._solar_provider_baselined:
+                baseline = replace(state, solcast_provider_polled=datetime.fromtimestamp(
+                    when.timestamp() - 60, timezone.utc,
+                ).isoformat())
+                with self.optimizer_time(when):
+                    optimizer._update_solar_provider(baseline, when.timestamp())
+        return super().decide(optimizer, state, when)
 
     def _optimizer(self, **overrides: object):
         values: dict[str, object] = {

@@ -114,6 +114,9 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     forecast_remaining_sensor: str = Field("sensor.solcast_pv_forecast_forecast_remaining_today", env="FORECAST_REMAINING_SENSOR")
     forecast_today_sensor: str = Field("sensor.solcast_pv_forecast_forecast_today", env="FORECAST_TODAY_SENSOR")
+    solcast_api_last_polled_sensor: str = Field(
+        "sensor.solcast_pv_forecast_api_last_polled", env="SOLCAST_API_LAST_POLLED_SENSOR",
+    )
     forecast_tomorrow_sensor: str = Field("sensor.solcast_pv_forecast_forecast_tomorrow", env="FORECAST_TOMORROW_SENSOR")
     solar_power_now_sensor: str = Field("sensor.solcast_pv_forecast_power_now", env="SOLAR_POWER_NOW_SENSOR")
     productive_solar_threshold_kw: float = Field(1.0, env="PRODUCTIVE_SOLAR_THRESHOLD_KW")

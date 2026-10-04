@@ -50,6 +50,7 @@ class HAWebSocketClient:
         watch_entities: set[str],
         on_connect: Optional[Callable] = None,
         on_disconnect: Optional[Callable] = None,
+        on_state_observation: Optional[Callable] = None,
     ) -> None:
         # Convert http(s):// → ws(s)://
         self._ws_url = ha_url.rstrip("/").replace("https://", "wss://").replace("http://", "ws://") + "/api/websocket"
@@ -58,6 +59,7 @@ class HAWebSocketClient:
         self._watch = watch_entities
         self._on_connect = on_connect
         self._on_disconnect = on_disconnect
+        self._on_state_observation = on_state_observation
         self._msg_id = 0
         self._connected = False
         self._running = False
@@ -101,9 +103,6 @@ class HAWebSocketClient:
         ) as ws:
             # ---- Authenticate ----------------------------------------
             await self._authenticate(ws)
-            self._connected = True
-            if self._on_connect:
-                self._on_connect()
             logger.info("WebSocket authenticated — subscribing to state_changed events")
 
             # ---- Subscribe to state_changed events -------------------
@@ -126,6 +125,10 @@ class HAWebSocketClient:
                 "event_type": "time_changed",
             }))
             await ws.recv()  # consume result
+
+            self._connected = True
+            if self._on_connect:
+                self._on_connect()
 
             # ---- Event loop ------------------------------------------
             async for raw in ws:
@@ -160,6 +163,12 @@ class HAWebSocketClient:
         if event_type == "state_changed":
             data = event.get("data", {})
             entity_id = data.get("entity_id", "")
+            # Synchronous sticky invalidation precedes all lossy queue handling,
+            # including observations of a source reassigned during a REST read.
+            if self._on_state_observation:
+                self._on_state_observation(
+                    entity_id, data.get("old_state"), data.get("new_state"),
+                )
             if entity_id in self._watch:
                 new_state = data.get("new_state")
                 old_state = data.get("old_state")

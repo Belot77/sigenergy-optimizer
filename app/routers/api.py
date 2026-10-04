@@ -136,6 +136,8 @@ def _validate_config_value(cfg: Any, key: str, value: Any) -> str | None:
         return "masked placeholder is not a valid value"
     if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
         return "must be a finite number"
+    if key == "hvac_solar_forecast_max_age_seconds" and float(value) <= 0.0:
+        return "must be greater than zero"
     if (
         key == _SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR_KEY
         and isinstance(value, (int, float))

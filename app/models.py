@@ -189,6 +189,13 @@ class SolarState:
     # Solcast detailed forecasts (list of {period_start, pv_estimate})
     solcast_detailed: list = field(default_factory=list)
     solcast_detailed_source_trusted: Optional[bool] = None
+    # Process-local provenance captured before the asynchronous HA read begins.
+    # Used exclusively for dynamic Solar ESS charge-ceiling authority.
+    solcast_provider_polled: Optional[str] = None
+    solcast_provider_next_update: Optional[str] = None
+    solcast_provider_source: Optional[tuple[str, str]] = None
+    solcast_provider_epoch: Optional[int] = None
+    solcast_provider_continuity: bool = False
     price_forecast_entries: list = field(default_factory=list)  # [{start_time, per_kwh}, ...]
     price_forecast_source_trusted: Optional[bool] = None
     feedin_forecast_entries: list = field(default_factory=list)

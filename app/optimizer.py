@@ -90,6 +90,7 @@ _TRIGGER_ENTITY_ATTRS = [
     "ess_rated_charge_power_sensor",
     "forecast_remaining_sensor",
     "forecast_today_sensor",
+    "solcast_api_last_polled_sensor",
     "forecast_tomorrow_sensor",
     "price_forecast_sensor",
     "feedin_forecast_sensor",
@@ -485,6 +486,18 @@ class SigEnergyOptimizer:
         # Shared queue — HAWebSocketClient puts entity_ids here; we consume them
         self.trigger_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
         self._watch_entities: set[str] = set()
+        self._solar_provider_epoch = 0
+        self._solar_provider_source = self._configured_solar_provider_source()
+        self._solar_provider_state = "UNVERIFIED"
+        self._solar_provider_reason = "startup_requires_provider_advance"
+        self._solar_provider_high_water: Optional[float] = None
+        self._solar_provider_ws_high_water: Optional[float] = None
+        self._solar_provider_verified: Optional[float] = None
+        self._solar_provider_deadline: Optional[float] = None
+        self._solar_provider_advertised: Optional[float] = None
+        self._solar_provider_day = None
+        self._solar_provider_baselined = False
+        self._solar_provider_urgent = False
 
     # ------------------------------------------------------------------
     # Public accessors for the web UI
@@ -524,6 +537,268 @@ class SigEnergyOptimizer:
 
     def refresh_config_time_warnings(self) -> None:
         self._config_time_warnings = self._validate_time_config()
+        self._refresh_solar_provider_source()
+
+    def _configured_solar_provider_source(self) -> tuple[str, str]:
+        return (self.cfg.forecast_today_sensor, self.cfg.solcast_api_last_polled_sensor)
+
+    def _refresh_solar_provider_source(self) -> None:
+        source = self._configured_solar_provider_source()
+        if source != self._solar_provider_source:
+            self._solar_provider_source = source
+            self._invalidate_solar_provider("provider_source_reassigned")
+            # Keep the set object shared with the WebSocket client.
+            self._watch_entities.clear()
+            self.get_watch_entities()
+
+    def _invalidate_solar_provider(self, reason: str, *, wake: bool = True) -> None:
+        self._solar_provider_epoch += 1
+        self._solar_provider_state = "UNVERIFIED"
+        self._solar_provider_reason = reason
+        self._solar_provider_high_water = None
+        self._solar_provider_ws_high_water = None
+        self._solar_provider_verified = None
+        self._solar_provider_deadline = None
+        self._solar_provider_advertised = None
+        self._solar_provider_day = None
+        self._solar_provider_baselined = False
+        if wake:
+            self._solar_provider_urgent = True
+            try:
+                self.trigger_queue.put_nowait("__solar_provider__")
+            except asyncio.QueueFull:
+                pass  # The epoch/urgent flag remains sticky even when the queue is full.
+
+    @staticmethod
+    def _solar_provider_instant(raw: object) -> Optional[float]:
+        if not isinstance(raw, str) or not raw.strip():
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is None or parsed.utcoffset() is None:
+                return None
+            instant = parsed.timestamp()
+            return instant if math.isfinite(instant) else None
+        except (TypeError, ValueError, OverflowError, OSError):
+            return None
+
+    def on_provider_state_observation(self, entity_id: str, old: object, new: object) -> None:
+        """Capture discontinuity synchronously, before WS queue coalescing/drop."""
+        self._refresh_solar_provider_source()
+        if entity_id not in self._solar_provider_source:
+            return
+        unavailable = {"", "none", "unknown", "unavailable"}
+        if any(
+            not isinstance(obj, dict)
+            or str(obj.get("state", "")).strip().lower() in unavailable
+            for obj in (old, new)
+        ):
+            self._invalidate_solar_provider("provider_source_unavailable_or_reloaded")
+            return
+        if entity_id == self.cfg.forecast_today_sensor:
+            attrs = new.get("attributes", {})
+            detail = attrs.get("detailedForecast") if isinstance(attrs, dict) else None
+            if not self._solar_provider_periods_strict(self._normalize_detailed_forecast(detail)):
+                self._invalidate_solar_provider("provider_payload_discontinuity")
+            return
+        polled = self._solar_provider_instant(new.get("state"))
+        previous = self._solar_provider_instant(old.get("state"))
+        now_ts = datetime.now(timezone.utc).timestamp()
+        watermarks = [p for p in (
+            previous, self._solar_provider_high_water, self._solar_provider_ws_high_water,
+        ) if p is not None]
+        if polled is None or previous is None or polled > now_ts + 5.0:
+            self._invalidate_solar_provider("provider_timestamp_invalid")
+        elif watermarks and polled < max(watermarks):
+            self._invalidate_solar_provider("provider_timestamp_regressed")
+        else:
+            # Pending WS advances still need coherent REST payload validation.
+            # Retain them so a dropped/coalesced regression cannot look new.
+            self._solar_provider_ws_high_water = polled
+            attrs = new.get("attributes", {})
+            advertised = self._solar_provider_instant(
+                attrs.get("next_auto_update") if isinstance(attrs, dict) else None,
+            )
+            self._solar_provider_advertised = advertised
+            if advertised is None:
+                self._invalidate_solar_provider("provider_next_update_unusable")
+            elif self._solar_provider_deadline is not None and advertised < self._solar_provider_deadline:
+                self._solar_provider_deadline = advertised
+                # A shortened deadline must wake a loop already waiting on the
+                # older deadline, even if this entity's queue item is dropped.
+                self._solar_provider_urgent = True
+                try:
+                    self.trigger_queue.put_nowait("__solar_provider__")
+                except asyncio.QueueFull:
+                    pass
+
+    def _solar_provider_periods_strict(self, periods: object) -> bool:
+        if not periods:
+            return False
+        seconds = Decimal(str(self.cfg.solcast_forecast_period_hours)) * 3600
+        return all(
+            Decimal(str(periods[i][0])) - Decimal(str(periods[i - 1][0])) == seconds
+            for i in range(1, len(periods))
+        )
+
+    def _solar_provider_payload_valid(self, s: SolarState, now_ts: float) -> bool:
+        periods = self._normalize_detailed_forecast(s.solcast_detailed)
+        if not (
+            s.solcast_detailed_source_trusted is True
+            and s.sunset_observation_trusted is True
+            and s.sun_state_observation_trusted is True
+            and s.sun_above_horizon
+            and self._solar_provider_periods_strict(periods)
+            and self._detailed_forecast_covers(periods, now_ts, s.next_sunset_ts)
+        ):
+            return False
+        sunset = s.next_sunset_ts
+        period_seconds = float(self.cfg.solcast_forecast_period_hours) * 3600.0
+        # Charge authority retains exact coverage (no gap/overlap tolerance).
+        return bool(
+            datetime.fromtimestamp(sunset, self._tz).date()
+            == datetime.fromtimestamp(now_ts, self._tz).date()
+            and any(start <= now_ts < start + period_seconds for start, _ in periods)
+            and periods[-1][0] + period_seconds >= sunset
+        )
+
+    def _update_solar_provider(self, s: SolarState, now_ts: float) -> bool:
+        self._refresh_solar_provider_source()
+        day = datetime.fromtimestamp(now_ts, self._tz).date()
+        if self._solar_provider_day is not None and day != self._solar_provider_day:
+            self._invalidate_solar_provider("forecast_today_local_day_changed", wake=False)
+        if (
+            s.solcast_provider_epoch != self._solar_provider_epoch
+            or s.solcast_provider_source != self._solar_provider_source
+            or not s.solcast_provider_continuity
+        ):
+            if s.solcast_provider_epoch == self._solar_provider_epoch:
+                self._invalidate_solar_provider("provider_observation_continuity_untrusted", wake=False)
+            self._solar_provider_state = "UNVERIFIED"
+            self._solar_provider_reason = "provider_observation_continuity_untrusted"
+            return False
+        polled = self._solar_provider_instant(s.solcast_provider_polled)
+        advertised = self._solar_provider_instant(s.solcast_provider_next_update)
+        self._solar_provider_advertised = advertised
+        if polled is None or polled > now_ts + 5.0:
+            self._invalidate_solar_provider("provider_timestamp_invalid", wake=False)
+            return False
+        if s.solcast_detailed_source_trusted is not True:
+            self._invalidate_solar_provider("forecast_today_source_unavailable", wake=False)
+            return False
+        observed = [p for p in (
+            self._solar_provider_high_water, self._solar_provider_ws_high_water,
+        ) if p is not None]
+        if observed and polled < max(observed):
+            self._invalidate_solar_provider("provider_timestamp_regressed", wake=False)
+            return False
+        previous = self._solar_provider_high_water
+        advanced = previous is not None and polled > previous
+        self._solar_provider_high_water = polled  # Consume even rejected generations.
+        retained = self._solar_provider_deadline
+        if advertised is not None and retained is not None:
+            retained = min(retained, advertised)
+            self._solar_provider_deadline = retained
+        expired = retained is not None and now_ts >= retained
+        payload_valid = self._solar_provider_payload_valid(s, now_ts)
+        rejection = (
+            "provider_next_update_unusable" if advertised is None
+            else "provider_deadline_due" if advertised <= now_ts
+            else "provider_detailed_payload_invalid" if not payload_valid
+            else None
+        )
+        if rejection:
+            self._solar_provider_state = "EXPIRED" if expired else "UNVERIFIED"
+            self._solar_provider_reason = rejection
+            return False
+        if not self._solar_provider_baselined:
+            self._solar_provider_baselined = True
+            self._solar_provider_day = day
+            self._solar_provider_deadline = advertised if retained is None else retained
+            self._solar_provider_state = "UNVERIFIED"
+            self._solar_provider_reason = "baseline_requires_provider_advance"
+            return False
+        if advanced:
+            if datetime.fromtimestamp(polled, self._tz).date() != day:
+                self._solar_provider_state = "UNVERIFIED"
+                self._solar_provider_reason = "provider_generation_wrong_local_day"
+                return False
+            # An early success must NOT discharge a still-outstanding obligation.
+            if retained is None or (now_ts >= retained and polled >= retained):
+                self._solar_provider_deadline = advertised
+            self._solar_provider_verified = polled
+            self._solar_provider_state = "VALID"
+            self._solar_provider_reason = "provider_success_verified"
+        return self._solar_provider_authority_current(s, now_ts)
+
+    def _solar_provider_authority_current(self, s: SolarState, now_ts: float) -> bool:
+        self._refresh_solar_provider_source()
+        if self._solar_provider_day is not None and (
+            datetime.fromtimestamp(now_ts, self._tz).date() != self._solar_provider_day
+        ):
+            self._invalidate_solar_provider("forecast_today_local_day_changed")
+        if self._solar_provider_deadline is not None and now_ts >= self._solar_provider_deadline:
+            self._solar_provider_state = "EXPIRED"
+            self._solar_provider_reason = "retained_provider_deadline_reached"
+        return bool(
+            self._solar_provider_state == "VALID"
+            and s.solcast_provider_epoch == self._solar_provider_epoch
+            and s.solcast_provider_source == self._solar_provider_source
+            and s.solcast_provider_continuity
+        )
+
+    def _solar_provider_trace(self, s: SolarState, now_ts: float) -> tuple[dict, dict]:
+        authority = self._solar_provider_authority_current(s, now_ts)
+        def iso(instant):
+            return datetime.fromtimestamp(instant, timezone.utc).isoformat() if instant is not None else None
+        observed = [p for p in (self._solar_provider_high_water, self._solar_provider_ws_high_water) if p is not None]
+        return ({
+            "solar_provider_source_continuity_trusted": bool(
+                s.solcast_provider_continuity
+                and s.solcast_provider_epoch == self._solar_provider_epoch
+                and s.solcast_provider_source == self._solar_provider_source
+            ),
+            "solar_provider_authority_trusted": authority,
+        }, {
+            "solar_provider_state": self._solar_provider_state,
+            "solar_provider_observed_polled": s.solcast_provider_polled,
+            "solar_provider_high_water": iso(max(observed) if observed else None),
+            "solar_provider_verified_polled": iso(self._solar_provider_verified),
+            "solar_provider_deadline": iso(self._solar_provider_deadline),
+            "solar_provider_advertised_next_update": iso(self._solar_provider_advertised),
+            "solar_provider_source": list(self._solar_provider_source),
+            "solar_provider_epoch": self._solar_provider_epoch,
+            "solar_provider_reason": self._solar_provider_reason,
+        })
+
+    def _recheck_solar_charge_authority(self, s: SolarState, d: Decision, now_ts: float) -> None:
+        if not d.trace_gates.get("solar_charge_ceiling_owned"):
+            return
+        trusted = self._solar_provider_authority_current(s, now_ts)
+        gates, values = self._solar_provider_trace(s, now_ts)
+        d.trace_gates.update(gates)
+        d.trace_values.update(values)
+        if not trusted:
+            d.ess_charge_limit = d.trace_values["solar_charge_ceiling_normal_request_kw"]
+            d.trace_values["ess_charge_limit"] = d.ess_charge_limit
+            d.trace_gates["solar_charge_ceiling_owned"] = False
+            d.trace_gates["solar_charge_ceiling_evidence_trusted"] = False
+            d.trace_values["ess_charge_limit_owner"] = "normal"
+            d.trace_values["solar_charge_ceiling_requested_kw"] = None
+            d.trace_values["solar_charge_ceiling_reason"] = "provider_authority_lost_before_apply"
+
+    def _solar_provider_wait_seconds(self, now_ts: float) -> Optional[float]:
+        if getattr(self, "_solar_provider_state", None) != "VALID":
+            return None
+        day = datetime.fromtimestamp(now_ts, self._tz).date()
+        midnight = datetime.combine(day + timedelta(days=1), time.min, self._tz).timestamp()
+        remaining = max(0.0, min(self._solar_provider_deadline, midnight) - now_ts)
+        if remaining == 0.0:
+            # Consume the deadline wake once, including when the following HA
+            # read fails. An unavailable source must not create a busy retry loop.
+            self._solar_provider_state = "EXPIRED"
+            self._solar_provider_reason = "retained_provider_deadline_reached"
+        return remaining
 
     @staticmethod
     def _valid_hw_cap_kw(v: Any) -> bool:
@@ -731,19 +1006,21 @@ class SigEnergyOptimizer:
     def get_watch_entities(self) -> set[str]:
         """Return the set of entity IDs the WS client should subscribe to."""
         if not self._watch_entities:
-            self._watch_entities = {
+            self._watch_entities.update({
                 getattr(self.cfg, attr)
                 for attr in _TRIGGER_ENTITY_ATTRS
                 if getattr(self.cfg, attr, "")
-            }
+            })
         return self._watch_entities
 
     def on_ws_connect(self) -> None:
         self._ws_connected = True
+        self._invalidate_solar_provider("ha_websocket_connected_new_epoch")
         logger.info("WebSocket connected — event-driven mode active")
 
     def on_ws_disconnect(self) -> None:
         self._ws_connected = False
+        self._invalidate_solar_provider("ha_websocket_disconnected")
         logger.warning("WebSocket disconnected — heartbeat fallback active")
 
     # ------------------------------------------------------------------
@@ -785,6 +1062,14 @@ class SigEnergyOptimizer:
             now = datetime.now().timestamp()
             time_since_heartbeat = now - last_heartbeat_ts
             wait_max = max(0.01, _HEARTBEAT_INTERVAL - time_since_heartbeat)
+            provider_wait = self._solar_provider_wait_seconds(now)
+            if provider_wait is not None:
+                wait_max = min(wait_max, provider_wait)
+            if getattr(self, "_solar_provider_urgent", False) or wait_max <= 0:
+                self._solar_provider_urgent = False
+                await self._safe_tick()
+                last_tick_ts = last_heartbeat_ts = datetime.now().timestamp()
+                continue
 
             try:
                 entity_id = await asyncio.wait_for(
@@ -792,6 +1077,11 @@ class SigEnergyOptimizer:
                     timeout=wait_max,
                 )
                 self.trigger_queue.task_done()
+                if entity_id == "__solar_provider__":
+                    self._solar_provider_urgent = False
+                    await self._safe_tick()
+                    last_tick_ts = last_heartbeat_ts = datetime.now().timestamp()
+                    continue
 
                 # Minute tick from WS time_changed event
                 if entity_id == "__time_changed__":
@@ -824,11 +1114,20 @@ class SigEnergyOptimizer:
         deadline = asyncio.get_event_loop().time() + window
         while True:
             remaining = deadline - asyncio.get_event_loop().time()
+            if getattr(self, "_solar_provider_urgent", False):
+                self._solar_provider_urgent = False
+                break
+            provider_wait = self._solar_provider_wait_seconds(datetime.now().timestamp())
+            if provider_wait is not None:
+                remaining = min(remaining, provider_wait)
             if remaining <= 0:
                 break
             try:
-                await asyncio.wait_for(self.trigger_queue.get(), timeout=remaining)
+                entity_id = await asyncio.wait_for(self.trigger_queue.get(), timeout=remaining)
                 self.trigger_queue.task_done()
+                if entity_id == "__solar_provider__":
+                    self._solar_provider_urgent = False
+                    break
             except asyncio.TimeoutError:
                 break
 
@@ -1587,6 +1886,10 @@ class SigEnergyOptimizer:
     async def _read_state(self) -> SolarState:
         cfg = self.cfg
         s = SolarState()
+        self._refresh_solar_provider_source()
+        s.solcast_provider_epoch = self._solar_provider_epoch
+        s.solcast_provider_source = self._solar_provider_source
+        s.solcast_provider_continuity = self._ws_connected
 
         # ---- bulk fetch -----------------------------------------------
         entity_ids = [
@@ -1598,6 +1901,7 @@ class SigEnergyOptimizer:
             cfg.price_forecast_sensor, cfg.feedin_forecast_sensor,
             cfg.forecast_remaining_sensor, cfg.forecast_today_sensor,
             cfg.forecast_tomorrow_sensor, cfg.solar_power_now_sensor,
+            cfg.solcast_api_last_polled_sensor,
             cfg.daily_export_energy, cfg.daily_import_energy, cfg.daily_load_energy,
             cfg.daily_pv_energy, cfg.daily_battery_charge_energy, cfg.daily_battery_discharge_energy,
             cfg.grid_export_limit, cfg.grid_import_limit, cfg.pv_max_power_limit,
@@ -2359,6 +2663,12 @@ class SigEnergyOptimizer:
         s.solcast_detailed_source_trusted = bool(
             forecast_today_observation.available
         )
+        provider_obj = bulk.get(s.solcast_provider_source[1])
+        if isinstance(provider_obj, dict):
+            s.solcast_provider_polled = provider_obj.get("state")
+            provider_attrs = provider_obj.get("attributes", {})
+            if isinstance(provider_attrs, dict):
+                s.solcast_provider_next_update = provider_attrs.get("next_auto_update")
         price_forecast_diagnostics: dict[str, Any] = {}
         s.price_forecast_entries = extract_forecast_entries(
             bulk,
@@ -4649,6 +4959,8 @@ class SigEnergyOptimizer:
             )
 
         # ---- ESS charge / discharge limits --------------------------
+        provider_authority = self._update_solar_provider(s, now_ts)
+        provider_gates, provider_values = self._solar_provider_trace(s, now_ts)
         d.ess_charge_limit = self._desired_ess_charge_limit(
             s, desired_import_limit, morning_slow_charge_active,
             desired_export_limit, pv_surplus_actual,
@@ -4679,10 +4991,9 @@ class SigEnergyOptimizer:
         elif d.solar_surplus_policy_active and not morning_slow_charge_active:
             if (
                 s.solcast_detailed_source_trusted is not True
-                or s.forecast_today_observation_trusted is not True
-                or not forecast_today_observation_trusted
+                or not provider_authority
             ):
-                solar_charge_ceiling_reason = "detailed_forecast_freshness_untrusted"
+                solar_charge_ceiling_reason = "solcast_provider_authority_untrusted"
             elif not all(value is True for value in (
                 s.load_power_trusted, s.battery_soc_trusted,
                 s.battery_capacity_trusted, s.sunset_observation_trusted,
@@ -5001,6 +5312,7 @@ class SigEnergyOptimizer:
             "solar_surplus_policy_active": d.solar_surplus_policy_active,
             "solar_charge_ceiling_evidence_trusted": solar_charge_ceiling_evidence_trusted,
             "solar_charge_ceiling_owned": solar_charge_ceiling_owned,
+            **provider_gates,
             "battery_full_safeguard_block": battery_full_safeguard_block,
             "battery_full_safeguard_soc_headroom_block": (
                 battery_full_safeguard_soc_headroom_block is True
@@ -5120,6 +5432,7 @@ class SigEnergyOptimizer:
         }
         d.trace_values = {
             **solar_charge_ceiling_values,
+            **provider_values,
             "solar_charge_ceiling_reason": solar_charge_ceiling_reason,
             "battery_soc": s.battery_soc,
             "ha_control_switch_state": s.ha_control_switch_state,
@@ -5985,6 +6298,9 @@ class SigEnergyOptimizer:
                 return await _safe_fallback(f"failed setting import limit to {import_val:.2f}kW")
 
         # ESS charge / discharge limits
+        # All preceding awaits may cross the deadline or a source epoch change.
+        # Check again directly before constructing and writing a reduced request.
+        self._recheck_solar_charge_authority(s, d, datetime.now(timezone.utc).timestamp())
         charge_cap_kw, discharge_cap_kw = self.get_power_caps_kw(s)
         charge_limit = self._bound_ess_request_kw(
             d.ess_charge_limit,
@@ -5995,12 +6311,24 @@ class SigEnergyOptimizer:
             discharge_cap_kw,
         )
         if cfg.ess_max_charging_limit:
+            solar_owned_before_write = d.trace_gates.get("solar_charge_ceiling_owned", False)
             ok_chg = await ha.set_number(cfg.ess_max_charging_limit, charge_limit)
             if not ok_chg:
                 logger.error("Failed setting ESS charge limit to %.2fkW", charge_limit)
                 application_failures.append(
                     f"failed setting ESS charge limit to {charge_limit:.2f}kW"
                 )
+            if solar_owned_before_write:
+                # A pending service request can itself cross D or an epoch
+                # boundary. Restore the selected normal request in this same
+                # serialized application when that happens.
+                self._recheck_solar_charge_authority(s, d, datetime.now(timezone.utc).timestamp())
+                if not d.trace_gates.get("solar_charge_ceiling_owned"):
+                    restored_charge = self._bound_ess_request_kw(d.ess_charge_limit, charge_cap_kw)
+                    if not await ha.set_number(cfg.ess_max_charging_limit, restored_charge):
+                        application_failures.append(
+                            f"failed restoring ESS charge limit to {restored_charge:.2f}kW"
+                        )
         if cfg.ess_max_discharging_limit:
             ok_dis = await ha.set_number(cfg.ess_max_discharging_limit, discharge_limit)
             if not ok_dis:

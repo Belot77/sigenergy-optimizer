@@ -40,6 +40,37 @@ class _DummyOptimizer:
 
 
 class ApiValidationTests(unittest.TestCase):
+    def test_forecast_observation_age_default_and_persistence_key_are_unchanged(self):
+        self.assertEqual(600.0, Settings().hvac_solar_forecast_max_age_seconds)
+        self.assertEqual("HVAC_SOLAR_FORECAST_MAX_AGE_SECONDS", _config_key_to_env_var("hvac_solar_forecast_max_age_seconds"))
+        self.assertEqual("SOLCAST_API_LAST_POLLED_SENSOR", _config_key_to_env_var("solcast_api_last_polled_sensor"))
+
+    def test_forecast_observation_age_single_and_batch_reject_invalid_atomically(self):
+        key = "hvac_solar_forecast_max_age_seconds"
+        for value in (0, -1, float("nan"), float("inf"), -float("inf"), "bad"):
+            for batch in (False, True):
+                with self.subTest(value=value, batch=batch):
+                    cfg = Settings()
+                    old = cfg.forecast_safety_charging
+                    with self.assertRaises(HTTPException):
+                        if batch:
+                            self._batch_update(cfg, [("forecast_safety_charging", 1.5), (key, value)])
+                        else:
+                            self._single_update(cfg, key, value)
+                    self.assertEqual(600.0, getattr(cfg, key))
+                    self.assertEqual(old, cfg.forecast_safety_charging)
+
+    def test_forecast_observation_age_runtime_updates_and_persistence(self):
+        cfg = Settings()
+        key = "hvac_solar_forecast_max_age_seconds"
+        self._single_update(cfg, key, 601.5)
+        self.assertEqual(601.5, getattr(cfg, key))
+        self._batch_update(cfg, [(key, 720)])
+        with patch("app.routers.api._persist_config_keys_to_env", return_value=[key]) as persist:
+            asyncio.run(update_config(self._request(cfg), ConfigUpdateRequest(key=key, value=800, persist=True)))
+        persist.assert_called_once_with(cfg, [key], {key: 800.0})
+        self.assertEqual(800.0, getattr(cfg, key))
+
     @staticmethod
     def _request(cfg: Settings) -> SimpleNamespace:
         optimizer = _DummyOptimizer(cfg)

@@ -173,6 +173,7 @@ class DecisionTraceLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 self.optimizer.get_watch_entities = lambda: set()
                 self.optimizer.on_ws_connect = Mock()
                 self.optimizer.on_ws_disconnect = Mock()
+                self.optimizer.on_provider_state_observation = Mock()
                 ha = SimpleNamespace(close=AsyncMock())
                 ws = SimpleNamespace(run_forever=websocket_loop)
 
@@ -214,6 +215,7 @@ class DecisionTraceLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.optimizer.get_watch_entities = lambda: set()
         self.optimizer.on_ws_connect = Mock()
         self.optimizer.on_ws_disconnect = Mock()
+        self.optimizer.on_provider_state_observation = Mock()
         ha = SimpleNamespace(close=AsyncMock())
         ws = SimpleNamespace(run_forever=websocket_loop)
         with patch.object(main, "HAClient", return_value=ha), patch.object(

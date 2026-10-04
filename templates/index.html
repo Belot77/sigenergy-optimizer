@@ -3740,6 +3740,7 @@ const _CONFIG_SECTIONS = [
     ['price_forecast_sensor', 'Price Forecast Sensor', 'text'],
     ['forecast_remaining_sensor', 'Forecast Remaining Sensor', 'text'],
     ['forecast_today_sensor', 'Forecast Today Sensor', 'text'],
+    ['solcast_api_last_polled_sensor', 'Solcast API Last Polled Sensor', 'text'],
     ['forecast_tomorrow_sensor', 'Forecast Tomorrow Sensor', 'text'],
     ['solar_power_now_sensor', 'Solar Power Now Sensor', 'text'],
     ['price_forecast_attribute', 'Price Forecast Attribute', 'text'],
@@ -3838,6 +3839,7 @@ const _CONFIG_SECTIONS = [
     ['price_hysteresis', 'Price Hysteresis', 'number', '0.001'],
   ]},
   { key:'forecast_safety', title:'Forecast Safety', fields:[
+    ['hvac_solar_forecast_max_age_seconds', 'Forecast observation maximum age (seconds)', 'number', '1'],
     ['forecast_safety_charging', 'Forecast Safety Charging', 'number', '0.1'],
     ['forecast_safety_export', 'Forecast Safety Export', 'number', '0.1'],
   ]},
@@ -3905,6 +3907,8 @@ function configFieldHelp(key, label, type) {
   const baseLabel = normalizeFieldLabel(label, key);
 
   const specific = {
+    hvac_solar_forecast_max_age_seconds: 'Maximum age for bounded forecast observations: Solcast Remaining Today, Solcast Power Now, Forecast Today trust used by Standby Holdoff, age-based Forecast Tomorrow trust, and selected import-price forecast freshness. Default: 600 seconds. Solar dynamic charge-ceiling provider freshness is schedule/provider-aware and is not extended by this setting.',
+    solcast_api_last_polled_sensor: 'Map API Last Polled from the same Solcast instance as Forecast Today. Dynamic Solar charge ownership requires a successful provider timestamp advance after startup or discontinuity and retains the scheduled refresh deadline.',
     min_export_target_soc: 'Affects: evening and night export guard floor when Evening Boost is off. Lower -> allows deeper evening discharge and more export. Higher -> holds more battery for overnight use and can reduce export.',
     min_soc_floor: 'Affects: daytime minimum SoC floor used by export decisions. Lower -> allows deeper daytime discharge. Higher -> preserves SoC during the day and limits export/discharge.',
     night_reserve_soc: 'Affects: fallback overnight reserve target when sunrise forecast timing is unavailable. Lower -> less overnight reserve. Higher -> stronger overnight protection and less discharge freedom.',

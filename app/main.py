@@ -68,6 +68,7 @@ async def lifespan(app: FastAPI):
         watch_entities=optimizer.get_watch_entities(),
         on_connect=optimizer.on_ws_connect,
         on_disconnect=optimizer.on_ws_disconnect,
+        on_state_observation=optimizer.on_provider_state_observation,
     )
 
     app.state.ha = ha

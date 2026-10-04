@@ -20,6 +20,16 @@ def _config_section_source() -> str:
 
 
 class SettingsUiCleanupTests(unittest.TestCase):
+    def test_forecast_safety_observation_age_and_provider_mapping_are_visible(self):
+        sections = _config_section_source()
+        safety = sections.split("key:'forecast_safety'", 1)[1].split("  ]}", 1)[0]
+        self.assertIn("['hvac_solar_forecast_max_age_seconds', 'Forecast observation maximum age (seconds)'", safety)
+        self.assertIn("['solcast_api_last_polled_sensor'", sections)
+        template = TEMPLATE_PATH.read_text(encoding="utf-8")
+        for text in ("Solcast Remaining Today", "Solcast Power Now", "Forecast Today trust used by Standby Holdoff", "age-based Forecast Tomorrow trust", "selected import-price forecast freshness", "schedule/provider-aware", "is not extended by this setting"):
+            with self.subTest(text=text):
+                self.assertIn(text, template)
+
     def test_24_hour_trace_download_uses_auth_ticket_and_native_download(self) -> None:
         template = TEMPLATE_PATH.read_text(encoding="utf-8")
         self.assertIn('onclick="loadDecisionTrace()">Decision Trace</button>', template)
