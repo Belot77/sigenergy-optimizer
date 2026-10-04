@@ -273,7 +273,7 @@ Uninstall:
 
 2.3.54-haos65
 
-2.3.54-haos65 is the local diagnostics-only hotfix release candidate on `fix/phase1-audit-remediation`. The candidate changes are uncommitted and unreleased. The live release is `2.3.53-haos64`; the known rollback is `2.3.52-haos63`.
+Live release and rollback remain `2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. The provider-aware Solar candidate is committed at `aec127d7efd9fe7787c8253b882207b50a44eeed` on `fix/phase1-audit-remediation`, but remains unreleased and undeployed. Live `.65` remains the rollback for future live testing unless a later live release is explicitly approved and proven.
 
 Increases the maximum streamed "24 Hour Trace" download from 256 MiB to 512 MiB. All other diagnostics resource bounds remain unchanged, with no control-behaviour change.
 

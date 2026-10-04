@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import copy
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from app.ha_ws_client import HAWebSocketClient
 from haos49_characterization_helpers import Haos49CharacterizationCase, RecordingHA
@@ -204,6 +204,53 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
         self.assertEqual("UNVERIFIED", d.trace_values["solar_provider_state"])
         _, d = self.observe(opt, now=self.WHEN + timedelta(seconds=1), polled=self.WHEN + timedelta(seconds=1))
         self.assertTrue(d.trace_gates["solar_provider_authority_trusted"])
+
+    def test_day_rollover_revokes_authority_before_future_deadline_and_rebaselines(self):
+        opt = self._optimizer()
+        opt._tz = self.WHEN.astimezone().tzinfo
+        tomorrow = self.WHEN + timedelta(days=1)
+        due = tomorrow + timedelta(hours=1)
+        _, prior = self.valid(opt, due)
+        self.assertTrue(prior.trace_gates["solar_charge_ceiling_owned"])
+        prior_epoch = opt._solar_provider_epoch
+        self.assertGreater(opt._solar_provider_deadline, tomorrow.timestamp())
+
+        state = self._state(when=tomorrow)
+        state.solcast_provider_source = opt._solar_provider_source
+        state.solcast_provider_epoch = prior_epoch
+        state.solcast_provider_polled = self.iso(tomorrow)
+        state.solcast_provider_next_update = self.iso(due)
+        # Neither an expired D nor yesterday's payload can explain rejection.
+        self.assertTrue(opt._solar_provider_payload_valid(state, tomorrow.timestamp()))
+        self.assertNotEqual(
+            opt._solar_provider_day,
+            datetime.fromtimestamp(tomorrow.timestamp(), opt._tz).date(),
+        )
+        revoked = self.decide(opt, state, tomorrow)
+        self.assertGreater(opt._solar_provider_epoch, prior_epoch)
+        self.assertFalse(opt._solar_provider_baselined)
+        self.assertEqual("UNVERIFIED", revoked.trace_values["solar_provider_state"])
+        self.assertFalse(revoked.trace_gates["solar_provider_authority_trusted"])
+        self.assertFalse(revoked.trace_gates["solar_charge_ceiling_owned"])
+        self.assertEqual(self.NORMAL_CHARGE_KW, revoked.ess_charge_limit)
+
+        # A fresh read in the new epoch establishes only a new-day baseline.
+        state.solcast_provider_epoch = opt._solar_provider_epoch
+        baseline = self.decide(opt, state, tomorrow)
+        self.assertTrue(opt._solar_provider_baselined)
+        self.assertEqual("UNVERIFIED", baseline.trace_values["solar_provider_state"])
+        self.assertFalse(baseline.trace_gates["solar_provider_authority_trusted"])
+        self.assertEqual(self.NORMAL_CHARGE_KW, baseline.ess_charge_limit)
+        self.assertEqual(due.timestamp(), opt._solar_provider_deadline)
+
+        later = tomorrow + timedelta(seconds=1)
+        state.solcast_provider_polled = self.iso(later)
+        recovered = self.decide(opt, state, later)
+        self.assertEqual("VALID", recovered.trace_values["solar_provider_state"])
+        self.assertTrue(recovered.trace_gates["solar_provider_authority_trusted"])
+        self.assertTrue(recovered.trace_gates["solar_charge_ceiling_owned"])
+        self.assertLess(recovered.ess_charge_limit, self.NORMAL_CHARGE_KW)
+        self.assertEqual(due.timestamp(), opt._solar_provider_deadline)
 
     def test_source_reassignment_invalidates_and_updates_shared_watch_set(self):
         opt = self._optimizer()
@@ -483,4 +530,85 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
             writes = [value for action, entity, value in ha.calls if action == "set_number" and entity == "number.test_charge"]
             self.assertEqual([0.0, self.NORMAL_CHARGE_KW], writes)
             self.assertFalse(d.trace_gates["solar_charge_ceiling_owned"])
+        asyncio.run(check())
+
+    def test_post_charge_invalidation_restores_normal_on_immediate_next_loop_cycle(self):
+        async def check():
+            opt = self._optimizer(
+                ess_max_charging_limit="number.test_charge",
+                ess_max_discharging_limit="number.test_discharge",
+            )
+            state, decision = self.valid(opt)
+            state.current_export_limit = decision.export_limit
+            state.current_import_limit = decision.import_limit
+            opt._ws_connected = True
+            ha = RecordingHA(state_values={opt.cfg.ems_mode_select: "Maximum Self Consumption"})
+            opt.ha = ha
+            original = ha.set_number
+            writes = []
+            reads = []
+            invalidated_at = None
+            prior_epoch = opt._solar_provider_epoch
+
+            async def read_state():
+                reads.append(asyncio.get_running_loop().time())
+                fresh = copy.deepcopy(state)
+                fresh.solcast_provider_epoch = opt._solar_provider_epoch
+                fresh.solcast_provider_continuity = opt._ws_connected
+                return fresh
+
+            async def set_number(entity, value):
+                nonlocal invalidated_at
+                if entity == "number.test_charge":
+                    if not writes:
+                        self.assertTrue(opt._solar_provider_authority_current(state, self.WHEN.timestamp()))
+                        self.assertLess(value, self.NORMAL_CHARGE_KW)
+                    else:
+                        self.assertIsNotNone(invalidated_at)
+                        self.assertNotEqual("VALID", opt._solar_provider_state)
+                        self.assertEqual(self.NORMAL_CHARGE_KW, value)
+                    writes.append(value)
+                result = await original(entity, value)
+                if entity == "number.test_discharge" and invalidated_at is None:
+                    self.assertEqual([decision.ess_charge_limit], writes)
+                    # Yield inside an actuator await AFTER the charge write and
+                    # its immediate post-write authority check have completed.
+                    await asyncio.sleep(0)
+                    opt.on_ws_disconnect()
+                    invalidated_at = asyncio.get_running_loop().time()
+                    self.assertGreater(opt._solar_provider_epoch, prior_epoch)
+                    self.assertTrue(opt._solar_provider_urgent)
+                    self.assertFalse(opt._solar_provider_authority_current(state, self.WHEN.timestamp()))
+                return result
+
+            async def finish_cycle(*args):
+                if len(reads) == 2:
+                    opt._running = False
+
+            ha.set_number = set_number
+            # Keep run_forever/_safe_tick/_tick/_decide/_apply real. Bound HA
+            # reads and unrelated publication/history side effects only.
+            with (
+                patch.object(opt, "_read_state", side_effect=read_state),
+                patch.object(opt, "_publish_hvac_solar_permission", new=AsyncMock()),
+                patch.object(opt, "_record_automation_audit", new=Mock()),
+                patch.object(opt, "_record_decision_trace", new=Mock()),
+                patch.object(opt, "_handle_notifications", new=AsyncMock()),
+                patch.object(opt, "_handle_daily_summaries", side_effect=finish_cycle),
+                patch.object(opt, "_accumulate_history", new=Mock()),
+                patch.object(opt, "_record_price_tracking", new=Mock()),
+                patch("app.optimizer._HEARTBEAT_INTERVAL", 60),
+                self.optimizer_time(self.WHEN),
+            ):
+                self.assertTrue(opt.trigger_queue.empty())
+                self.assertFalse(opt._solar_provider_urgent)
+                await asyncio.wait_for(opt.run_forever(), timeout=2.0)
+
+            self.assertEqual(2, len(reads))
+            self.assertEqual([decision.ess_charge_limit, self.NORMAL_CHARGE_KW], writes)
+            self.assertLess(reads[1] - invalidated_at, 2.0)
+            self.assertEqual("", opt._last_cycle_error)
+            self.assertFalse(opt._last_decision.trace_gates["solar_provider_authority_trusted"])
+            self.assertFalse(opt._last_decision.trace_gates["solar_charge_ceiling_owned"])
+            self.assertEqual(self.NORMAL_CHARGE_KW, opt._last_decision.ess_charge_limit)
         asyncio.run(check())

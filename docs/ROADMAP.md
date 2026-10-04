@@ -8,7 +8,7 @@ Status: **COMPLETE locally** at code-validation HEAD `7649d185b71fe08fab26368013
 
 The final gate collected 735 tests: 733 passed and only the two frozen Phase 2 transition-safety tests failed; compileall and `git diff --check` passed. The final code/test checkpoint corrected a stale safe-fallback protection-test expectation without changing production code.
 
-The validated Phase 1 checkpoint through docs commit `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce` is present on `origin/fix/phase1-audit-remediation`. Remote `main` remains `de5b5af082533a48ffb6d0d300f636cbcb4463ad`. Current known live remains `2.3.50-haos61` at `76db9e43588f0e9862d73e4e8402c0b5ce9773a7`; documented known-good rollback remains `2.3.46-haos57` at `7144fd3d52069e3e8ef1e4df9bc8943bdd65dbe7`.
+The earlier validated Phase 1 checkpoint through docs commit `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce` is present on `origin/fix/phase1-audit-remediation`; that checkpoint recorded remote `main` as `de5b5af082533a48ffb6d0d300f636cbcb4463ad`. Current live and rollback are `2.3.54-haos65` at `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. The provider-aware Solar source checkpoint is `aec127d7efd9fe7787c8253b882207b50a44eeed` on `fix/phase1-audit-remediation`, committed but undeployed. Current validation and the tests/docs follow-up are recorded in `CURRENT_STATE.md`; Phase 1 live acceptance remains pending.
 
 ## 2. Phase 1 checkpoint documentation
 
