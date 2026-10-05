@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased candidate - 2026-10-05
+## 2.3.55-haos66 - locally prepared, unreleased candidate - 2026-10-06
 
-- Dynamic Solar ESS charge-ceiling freshness uses successful Solcast API Last Polled advances and retained scheduled deadlines instead of Forecast Today's shared 600-second HA observation age. Startup and discontinuities require a baseline followed by a successful advance; schedule changes and early manual refreshes cannot extend an outstanding deadline.
+- Dynamic Solar ESS charge-ceiling freshness for Solcast v4.6.1 uses successful API Last Polled advances and retained scheduled deadlines instead of expiring solely on Forecast Today's shared 600-second HA observation age. Startup, reconnect and source discontinuities fail closed and require a baseline followed by a successful advance; later advertised schedules and early manual refreshes cannot extend an outstanding deadline. Provider expiry restores the otherwise applicable normal charging request.
 - Added sticky source epochs, deadline/midnight reevaluation through the existing event loop, charge-write authority rechecks and compact provider Decision Trace evidence. Existing ownership, strict forecast/control safeguards and actuator settlement semantics remain unchanged.
 - Added configurable `solcast_api_last_polled_sensor` and exposed **Forecast observation maximum age (seconds)** under Forecast Safety. The existing key and 600-second default remain compatible; invalid runtime ages are rejected. This setting cannot extend dynamic Solar provider authority.
+- The shared age setting remains in use for Remaining Today, Power Now, Forecast Today/Standby Holdoff, age-based Forecast Tomorrow and selected import-price freshness. Ordinary Solar export ownership, MSC, PV MAX, import/export permission, battery-export ownership, Manual/Force, Morning Slow/Dump, Evening Boost and Phase 2 settlement behavior remain unchanged.
+- Regression hardening covers day rollover independently of deadline expiry and immediate next-cycle restoration after post-charge continuity loss. Release preparation itself changes only version identities and documentation, preserving behavior from source checkpoint `f203387a445fcf9e4ea569861ca3d35703b1b7b9`.
 
-This candidate is uncommitted, unreleased and undeployed. Live release and rollback remain `2.3.54-haos65` / `9965e79`. Phase 1 live acceptance is pending; Evening Boost remediation and Phase 2 are outside this change.
+Release metadata is locally prepared but uncommitted, unpushed and unbuilt. Future tag: `v2.3.55-haos66`; future versioned image: `ghcr.io/belot77/sigenergy-optimizer:2.3.55-haos66`. Neither has been created/published by this preparation. The candidate is unreleased, uninstalled and undeployed. Live release and rollback remain `2.3.54-haos65` / `9965e79`. Phase 1 requires separate release/deployment approval and live acceptance; Evening Boost remediation and Phase 2 are outside this change.

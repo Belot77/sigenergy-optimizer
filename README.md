@@ -271,13 +271,13 @@ Uninstall:
 
 ## Version
 
-2.3.54-haos65
+2.3.55-haos66 (locally prepared, unreleased candidate)
 
-Live release and rollback remain `2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. The provider-aware Solar candidate is committed at `aec127d7efd9fe7787c8253b882207b50a44eeed` on `fix/phase1-audit-remediation`, but remains unreleased and undeployed. Live `.65` remains the rollback for future live testing unless a later live release is explicitly approved and proven.
+Live release and rollback remain `2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. The pre-release source checkpoint is `f203387a445fcf9e4ea569861ca3d35703b1b7b9` on `fix/phase1-audit-remediation`. Version `2.3.55-haos66` metadata is prepared locally but uncommitted, unpushed and unbuilt; it is not released, installed or live-accepted. Live `.65` remains the rollback for future live testing unless a later live release is explicitly approved and proven.
 
-Increases the maximum streamed "24 Hour Trace" download from 256 MiB to 512 MiB. All other diagnostics resource bounds remain unchanged, with no control-behaviour change.
+The candidate makes Solar dynamic ESS charge-ceiling freshness provider/schedule-aware for Solcast v4.6.1. Old Forecast Today HA metadata alone no longer expires this authority at the shared 600-second observation-age limit. Startup, reconnect and source discontinuities fail closed; later advertised schedules cannot extend retained provider deadlines, and expiry restores the otherwise applicable normal charging request.
 
-Downloads remain bounded to 4 active requests, a 2-minute lifetime, and at most 25 segments, now with a 512 MiB ceiling per download. Archive retention, persistence cadence, clock/gap handling, authentication, streaming and pin cleanup remain unchanged.
+Settings exposes **Forecast observation maximum age (seconds)** with its existing key and 600-second default for other forecast consumers. Ordinary Solar export ownership, MSC, PV MAX, import/export permission, battery-export ownership, Manual/Force, Morning Slow/Dump, Evening Boost and Phase 2 settlement behavior remain unchanged. Existing `.65` diagnostics/download bounds also remain unchanged. See both changelogs for candidate notes; Phase 1 still requires separately approved release/deployment and live acceptance.
 
 ## Maintainer Release Flow
 

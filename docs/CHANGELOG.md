@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-06 - 2.3.55-haos66 Phase 1 provider-aware Solar freshness candidate (unreleased)
+
+- Use successful Solcast v4.6.1 provider refreshes and retained scheduled deadlines for dynamic Solar ESS charge-ceiling authority; old Forecast Today HA metadata alone no longer revokes it at the shared 600-second observation-age boundary.
+- Startup, reconnect and source discontinuities fail closed and require a fresh baseline followed by a qualifying provider advance. Later advertised schedules and early manual refreshes cannot extend retained D; provider expiry restores the otherwise applicable normal charging request.
+- Expose **Forecast observation maximum age (seconds)** in Settings, preserving its existing key/default of 600 for Remaining Today, Power Now, Forecast Today/Standby Holdoff, age-based Forecast Tomorrow and selected import-price freshness. It cannot extend provider authority.
+- Preserve ordinary Solar export ownership, MSC, PV MAX, import/export permission, battery-export ownership, Manual/Force, Morning Slow/Dump, Evening Boost and Phase 2 settlement behavior. Added regressions isolate day rollover and immediate next-cycle restoration after post-charge continuity loss.
+- Prepare the five established version identities and README for `2.3.55-haos66`, future tag `v2.3.55-haos66` and versioned image `ghcr.io/belot77/sigenergy-optimizer:2.3.55-haos66`. Buildstamp remains the plain add-on version. This preparation preserves all production behavior from pre-release checkpoint `f203387a445fcf9e4ea569861ca3d35703b1b7b9`.
+- Metadata is local, uncommitted, unpushed and unbuilt; no tag/release/publication, installation, restart or deployment occurred. Live and rollback remain `2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Phase 1 still requires separate release/deployment approval and live acceptance.
+
 ## 2026-10-04 - 2.3.54-haos65 diagnostics-only hotfix release candidate
 
 - Increase the maximum streamed "24 Hour Trace" download from 256 MiB to 512 MiB because the first live archive produced approximately 3.5 MB after approximately 15 minutes and the old ceiling is insufficient for an expected full 24-hour archive.
