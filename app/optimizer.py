@@ -119,6 +119,22 @@ _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
 _RUNTIME_SIGNATURE = "2.3.55-haos66"
 
 
+@dataclass
+class _SolarPhysicalReliefState:
+    """Process-local charge feedback; never shared with Morning Slow."""
+
+    relief_kw: float = 0.0
+    confirmations: int = 0
+    retry: bool = False
+    limit_kw: Optional[float] = None
+    command_kw: Optional[float] = None
+    command_ts: Optional[float] = None
+    feedback_ts: Optional[tuple[float, ...]] = None
+    target_kw: Optional[float] = None
+    baseline_kw: Optional[float] = None
+    normal_kw: Optional[float] = None
+
+
 def _solar_surplus_finite_number(name: str, value: object) -> float:
     """Return one finite numeric helper input without permissive coercion."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -498,6 +514,7 @@ class SigEnergyOptimizer:
         self._solar_provider_day = None
         self._solar_provider_baselined = False
         self._solar_provider_urgent = False
+        self._solar_relief = _SolarPhysicalReliefState()
 
     # ------------------------------------------------------------------
     # Public accessors for the web UI
@@ -778,14 +795,213 @@ class SigEnergyOptimizer:
         gates, values = self._solar_provider_trace(s, now_ts)
         d.trace_gates.update(gates)
         d.trace_values.update(values)
-        if not trusted:
+        fill_deadline = d.trace_values.get("solar_charge_ceiling_fill_deadline_ts")
+        fill_deadline_reached = bool(
+            fill_deadline is not None and now_ts >= fill_deadline
+            and s.battery_soc < 100.0
+        )
+        if not trusted or fill_deadline_reached:
             d.ess_charge_limit = d.trace_values["solar_charge_ceiling_normal_request_kw"]
             d.trace_values["ess_charge_limit"] = d.ess_charge_limit
             d.trace_gates["solar_charge_ceiling_owned"] = False
             d.trace_gates["solar_charge_ceiling_evidence_trusted"] = False
             d.trace_values["ess_charge_limit_owner"] = "normal"
             d.trace_values["solar_charge_ceiling_requested_kw"] = None
-            d.trace_values["solar_charge_ceiling_reason"] = "provider_authority_lost_before_apply"
+            d.trace_values["solar_charge_ceiling_reason"] = (
+                "fill_deadline_reached_before_apply" if fill_deadline_reached
+                else "provider_authority_lost_before_apply"
+            )
+            self._clear_solar_physical_relief(d, "solar_charge_authority_lost")
+        elif d.trace_gates.get("solar_physical_relief_active"):
+            _, _, feedback = self._solar_physical_feedback(s, now_ts)
+            if feedback is None or self.cfg.grid_connection_export_limit_kw != self._solar_relief.limit_kw:
+                d.ess_charge_limit = d.trace_values["solar_charge_ceiling_baseline_kw"]
+                d.trace_values["ess_charge_limit"] = d.ess_charge_limit
+                d.trace_values["solar_charge_ceiling_requested_kw"] = d.ess_charge_limit
+                d.trace_gates["solar_physical_relief_flow_trusted"] = feedback is not None
+                self._clear_solar_physical_relief(d, "physical_evidence_lost_before_apply")
+
+    def _clear_solar_physical_relief(self, decision: Optional[Decision] = None,
+                                     reason: str = "solar_not_owner") -> None:
+        self._solar_relief = _SolarPhysicalReliefState()
+        if decision is not None:
+            decision.trace_gates["solar_physical_relief_active"] = False
+            decision.trace_values["solar_physical_relief_kw"] = 0.0
+            decision.trace_values["solar_physical_relief_confirmations"] = 0
+            decision.trace_values["solar_physical_relief_reason"] = reason
+
+    def _record_solar_physical_relief_command(self, *, applied_kw: float,
+                                             command_ts: float) -> None:
+        """Arm feedback after a successful charge write, never from a decision."""
+        state = self._solar_relief
+        if state.target_kw is None or not math.isclose(
+            applied_kw, state.target_kw, rel_tol=0.0, abs_tol=1e-9,
+        ):
+            self._clear_solar_physical_relief()
+            return
+        # Reasserting the same ceiling each cycle must not erase the first of
+        # two fresh observations. A changed target starts a new feedback epoch.
+        if state.command_kw != state.target_kw or state.command_ts is None:
+            state.command_kw = state.target_kw
+            state.command_ts = command_ts
+            state.confirmations = 0
+
+    def _solar_physical_feedback(self, s: SolarState, now_ts: float):
+        """Validate report provenance without consuming a feedback observation."""
+        export_kw, charge_kw, source = self._coherent_physical_relief_flows(s)
+        inputs = s.hvac_solar_inputs
+        observations = (inputs.pv_power, inputs.load_power,
+                        inputs.grid_import_power, inputs.grid_export_power)
+        timestamps = tuple(observation.observed_at_ts for observation in observations)
+        trusted = bool(
+            inputs.live_snapshot and source == "coherent_measured_grid_flow"
+            and all(
+                isinstance(stamp, (int, float)) and not isinstance(stamp, bool)
+                and math.isfinite(stamp)
+                and 0.0 <= now_ts - stamp <= self.cfg.hvac_solar_data_max_age_seconds
+                for stamp in timestamps
+            )
+        )
+        if trusted:
+            trusted = bool(
+                max(timestamps) - min(timestamps) <= _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS
+                and inputs.grid_import_power.value == 0.0
+                and float(inputs.pv_power.value) - float(inputs.load_power.value)
+                - float(inputs.grid_export_power.value) >= 0.0
+            )
+        return export_kw, charge_kw, timestamps if trusted else None
+
+    def _solar_physical_export_relief(
+        self, s: SolarState, *, now_ts: float, baseline_kw: float,
+        normal_kw: float, owned: bool, ems_mode: str, battery_export_owner: str,
+    ) -> tuple[float, dict[str, bool], dict[str, Any]]:
+        """Probe only Solar's charge restriction using observed export feedback.
+
+        The approved fixed policy uses a 0.2/0.5 kW entry/exit band, 0.4 kW
+        increases after two observations, and 1.2 kW reductions. Following a
+        reduction, three observations are required. Forecast/estimated PV and
+        Morning Slow's binary relief/tuning have no authority here.
+        """
+        export_kw, charge_kw, timestamps = self._solar_physical_feedback(s, now_ts)
+        limit_kw = None
+        flow_trusted = timestamps is not None
+
+        def result(reason: str):
+            state = self._solar_relief
+            final_kw = float(min(Decimal(str(normal_kw)),
+                                Decimal(str(baseline_kw)) + Decimal(str(state.relief_kw)))) if owned else baseline_kw
+            state.target_kw = final_kw if state.limit_kw is not None else None
+            return final_kw, {
+                "solar_physical_relief_active": state.relief_kw > 0.0,
+                "solar_physical_relief_flow_trusted": flow_trusted,
+            }, {
+                "solar_charge_ceiling_baseline_kw": baseline_kw if owned else None,
+                "solar_physical_relief_kw": state.relief_kw,
+                "solar_physical_relief_reason": reason,
+                "solar_physical_relief_export_kw": export_kw,
+                "solar_physical_relief_limit_kw": limit_kw,
+                "solar_physical_relief_confirmations": state.confirmations,
+            }
+
+        try:
+            limit_kw = _solar_surplus_finite_number(
+                "grid_connection_export_limit_kw", self.cfg.grid_connection_export_limit_kw,
+            )
+        except ValueError:
+            pass
+        if limit_kw is None or limit_kw <= 0.0:
+            self._clear_solar_physical_relief()
+            return result("physical_limit_disabled_or_invalid")
+        if not (
+            owned and s.sigenergy_mode_observed is True
+            and s.sigenergy_mode == self.cfg.automated_option
+            and not self._manual_mode_override
+            and s.ems_mode_observed is True and s.current_ems_mode == MODE_MAX_SELF
+            and ems_mode == MODE_MAX_SELF and battery_export_owner == "none"
+            and s.battery_soc < 100.0
+        ):
+            self._clear_solar_physical_relief()
+            return result("solar_not_owner_or_msc_untrusted")
+
+        if not flow_trusted:
+            self._clear_solar_physical_relief()
+            return result("physical_flow_untrusted")
+
+        state = self._solar_relief
+        if (state.limit_kw != limit_kw or state.baseline_kw != baseline_kw
+                or state.normal_kw != normal_kw):
+            retry = state.retry and state.limit_kw == limit_kw
+            self._clear_solar_physical_relief()
+            state = self._solar_relief
+            state.limit_kw = limit_kw
+            state.baseline_kw = baseline_kw
+            state.normal_kw = normal_kw
+            state.retry = retry
+        # Changes in the trajectory/capability cannot carry surplus relief
+        # above the normal request or create extra command headroom.
+        state.relief_kw = min(state.relief_kw, max(0.0, normal_kw - baseline_kw))
+        if export_kw < limit_kw - 1.0:
+            retry = state.retry or state.relief_kw > 0.0
+            self._clear_solar_physical_relief()
+            state = self._solar_relief
+            state.limit_kw = limit_kw
+            state.baseline_kw = baseline_kw
+            state.normal_kw = normal_kw
+            state.retry = retry
+            state.feedback_ts = timestamps
+            return result("export_below_hard_reset_threshold")
+
+        # Invalid ordering revokes earned relief even when the regressed
+        # observation predates the command and would otherwise just wait.
+        if state.feedback_ts is not None and any(
+            stamp < old for stamp, old in zip(timestamps, state.feedback_ts)
+        ):
+            self._clear_solar_physical_relief()
+            return result("physical_feedback_regressed")
+        if (export_kw >= limit_kw - 0.5 and state.command_ts is not None
+                and min(timestamps) <= state.command_ts):
+            return result("awaiting_post_command_feedback")
+        if state.feedback_ts is not None:
+            fresh_feedback = (
+                timestamps[-1] > state.feedback_ts[-1] if export_kw < limit_kw - 0.5
+                else all(stamp > old for stamp, old in zip(timestamps, state.feedback_ts))
+            )
+            if not fresh_feedback:
+                return result("awaiting_fresh_coherent_feedback")
+        state.feedback_ts = timestamps
+        if export_kw < limit_kw - 0.5:
+            if state.relief_kw > 0.0:
+                state.relief_kw = max(0.0, round(state.relief_kw - 1.2, 10))
+                state.retry = True
+            state.confirmations = 0
+            return result("export_fell_relief_reduced")
+        if export_kw < limit_kw - 0.2:
+            state.confirmations = 0
+            return result("export_in_hysteresis_band")
+
+        target_kw = float(min(Decimal(str(normal_kw)),
+                              Decimal(str(baseline_kw)) + Decimal(str(state.relief_kw))))
+        if (
+            state.command_ts is None or state.command_kw != target_kw
+            or min(timestamps) <= state.command_ts
+        ):
+            state.confirmations = 0
+            return result("awaiting_post_command_feedback")
+        if state.relief_kw > 0.0 and charge_kw <= baseline_kw:
+            state.confirmations = 0
+            return result("awaiting_charge_response")
+        if target_kw >= normal_kw:
+            state.confirmations = 0
+            return result("normal_charge_bound_reached")
+        state.confirmations += 1
+        required = 3 if state.retry else 2
+        if state.confirmations < required:
+            return result("confirming_saturation_retry" if state.retry else "confirming_saturation")
+        state.relief_kw = min(max(0.0, normal_kw - baseline_kw),
+                              round(state.relief_kw + 0.4, 10))
+        state.confirmations = 0
+        state.retry = False
+        return result("confirmed_saturation_increase")
 
     def _solar_provider_wait_seconds(self, now_ts: float) -> Optional[float]:
         if getattr(self, "_solar_provider_state", None) != "VALID":
@@ -1185,9 +1401,11 @@ class SigEnergyOptimizer:
                 self._accumulate_history(state, decision)
                 self._record_price_tracking(state, decision)
             except asyncio.CancelledError:
+                self._clear_solar_physical_relief()
                 raise
             except Exception:
                 if not application_committed:
+                    self._clear_solar_physical_relief()
                     self._last_state = prev_state
                     self._last_decision = prev_decision
                 await self._publish_hvac_solar_permission(
@@ -2015,6 +2233,10 @@ class SigEnergyOptimizer:
                     value=value,
                     available=True,
                     fresh=_metadata_is_fresh(obj, max_age_seconds),
+                    observed_at_ts=(
+                        timestamp.timestamp()
+                        if (timestamp := _metadata_timestamp(obj)) is not None else None
+                    ),
                 )
             except (TypeError, ValueError, OverflowError):
                 return HVACObservedValue()
@@ -4973,6 +5195,21 @@ class SigEnergyOptimizer:
         grid_import_owns_charging = desired_import_limit > 0.0
         solar_charge_ceiling_owned = False
         solar_charge_ceiling_evidence_trusted = False
+        # Keep the aggregate and export-eligibility horizon at sunset. Only
+        # the separately owned charge trajectory uses this earlier deadline.
+        solar_fill_margin = None
+        solar_fill_deadline = None
+        try:
+            solar_fill_margin = _solar_surplus_finite_number(
+                "solar_surplus_fill_deadline_margin_minutes",
+                cfg.solar_surplus_fill_deadline_margin_minutes,
+            )
+            if solar_fill_margin >= 0.0 and solar_sunset_horizon_trusted:
+                deadline = sunset_ts - solar_fill_margin * 60.0
+                if math.isfinite(deadline):
+                    solar_fill_deadline = deadline
+        except ValueError:
+            pass
         solar_charge_ceiling_values: dict[str, Any] = {
             "ess_charge_limit_owner": (
                 "grid_import" if grid_import_owns_charging
@@ -4984,12 +5221,18 @@ class SigEnergyOptimizer:
             "solar_charge_ceiling_future_opportunity_kwh": None,
             "solar_charge_ceiling_required_now_kwh": None,
             "solar_charge_ceiling_current_window_hours": None,
+            "solar_charge_ceiling_fill_deadline_ts": solar_fill_deadline,
+            "solar_charge_ceiling_fill_deadline_margin_minutes": solar_fill_margin,
         }
         solar_charge_ceiling_reason = f"solar_not_owner: {solar_surplus_fail_reason}"
         if grid_import_owns_charging:
             solar_charge_ceiling_reason = "higher_priority_grid_import_charging"
         elif d.solar_surplus_policy_active and not morning_slow_charge_active:
-            if (
+            if solar_fill_deadline is None:
+                solar_charge_ceiling_reason = "fill_deadline_untrusted_or_invalid"
+            elif solar_fill_deadline <= now_ts:
+                solar_charge_ceiling_reason = "fill_deadline_reached"
+            elif (
                 s.solcast_detailed_source_trusted is not True
                 or not provider_authority
             ):
@@ -5003,7 +5246,7 @@ class SigEnergyOptimizer:
             elif trusted_charge_capability_kw is None:
                 solar_charge_ceiling_reason = "trusted_charge_capability_unavailable"
             elif not self._detailed_forecast_covers(
-                detailed_forecast_periods, now_ts, sunset_ts,
+                detailed_forecast_periods, now_ts, solar_fill_deadline,
             ):
                 solar_charge_ceiling_reason = "detailed_forecast_does_not_cover_horizon"
             else:
@@ -5011,7 +5254,7 @@ class SigEnergyOptimizer:
                 # turning an exact 1.20 kW request into 1.21 when rounding up.
                 period_seconds = Decimal(str(cfg.solcast_forecast_period_hours)) * 3600
                 window_start = Decimal(str(now_ts))
-                sunset = Decimal(str(sunset_ts))
+                fill_deadline = Decimal(str(solar_fill_deadline))
                 # Preserve the normal request's existing safe command precision.
                 normal_cap = min(
                     Decimal(str(trusted_charge_capability_kw)),
@@ -5028,8 +5271,8 @@ class SigEnergyOptimizer:
                 future_opportunity = Decimal(0)
                 for start_ts, pv_kw in detailed_forecast_periods:
                     start = Decimal(str(start_ts))
-                    end = min(start + period_seconds, sunset)
-                    if end <= window_start or start >= sunset:
+                    end = min(start + period_seconds, fill_deadline)
+                    if end <= window_start or start >= fill_deadline:
                         continue
                     overlap_start = max(start, window_start)
                     # Existing eligibility tolerates timestamp jitter; reduced
@@ -5044,7 +5287,7 @@ class SigEnergyOptimizer:
                             max(Decimal(str(pv_kw)) - load, Decimal(0)), normal_cap,
                         ) * hours
                     covered_until = end
-                if covered_until != sunset or current_hours <= 0:
+                if covered_until != fill_deadline or current_hours <= 0:
                     solar_charge_ceiling_reason = "detailed_forecast_current_window_or_coverage_invalid"
                 else:
                     required_now = max(Decimal(0), protected_fill - future_opportunity)
@@ -5068,6 +5311,14 @@ class SigEnergyOptimizer:
                         "solar_charge_ceiling_required_now_kwh": float(required_now),
                         "solar_charge_ceiling_current_window_hours": float(current_hours),
                     })
+        d.ess_charge_limit, solar_relief_gates, solar_relief_values = self._solar_physical_export_relief(
+            s, now_ts=now_ts, baseline_kw=d.ess_charge_limit,
+            normal_kw=solar_charge_ceiling_values["solar_charge_ceiling_normal_request_kw"],
+            owned=solar_charge_ceiling_owned, ems_mode=d.ems_mode,
+            battery_export_owner=battery_export_owner,
+        )
+        if solar_charge_ceiling_owned:
+            solar_charge_ceiling_values["solar_charge_ceiling_requested_kw"] = d.ess_charge_limit
         positive_fit_owns_live_battery_export = bool(
             d.export_intent == BATTERY_EXPORT
             and battery_export_owner == "positive_fit_override"
@@ -5312,6 +5563,7 @@ class SigEnergyOptimizer:
             "solar_surplus_policy_active": d.solar_surplus_policy_active,
             "solar_charge_ceiling_evidence_trusted": solar_charge_ceiling_evidence_trusted,
             "solar_charge_ceiling_owned": solar_charge_ceiling_owned,
+            **solar_relief_gates,
             **provider_gates,
             "battery_full_safeguard_block": battery_full_safeguard_block,
             "battery_full_safeguard_soc_headroom_block": (
@@ -5432,6 +5684,7 @@ class SigEnergyOptimizer:
         }
         d.trace_values = {
             **solar_charge_ceiling_values,
+            **solar_relief_values,
             **provider_values,
             "solar_charge_ceiling_reason": solar_charge_ceiling_reason,
             "battery_soc": s.battery_soc,
@@ -5777,6 +6030,7 @@ class SigEnergyOptimizer:
         )
 
         async def _safe_fallback(reason: str) -> _ActuatorApplicationResult:
+            self._clear_solar_physical_relief(d, "actuator_fallback")
             logger.error("Entering safe fallback: %s", reason)
             fallback_failures: list[str] = []
 
@@ -5927,6 +6181,7 @@ class SigEnergyOptimizer:
         # If in a manual mode, keep manual targets pinned when external writers drift
         # them (e.g. morning slow-charge branch in other automations).
         if effective_mode not in {cfg.automated_option, ""}:
+            self._clear_solar_physical_relief(d, "operator_owned")
             manual_targets = self._manual_mode_targets(
                 effective_mode,
                 s,
@@ -6008,6 +6263,7 @@ class SigEnergyOptimizer:
             return _ActuatorApplicationResult(succeeded=True)
 
         if cfg.auto_enable_ha_control and not s.ha_control_switch_available:
+            self._clear_solar_physical_relief(d, "ha_control_unavailable")
             now_ts = datetime.now().timestamp()
             warning_key = (str(cfg.ha_control_switch), s.ha_control_switch_state)
             warning_due = (
@@ -6032,6 +6288,7 @@ class SigEnergyOptimizer:
 
         # Auto-enable an explicitly available HA control switch if needed.
         if d.needs_ha_control_switch and not s.ha_control_enabled:
+            self._clear_solar_physical_relief(d, "ha_control_not_observed")
             now_ts = datetime.now().timestamp()
             last_attempt = self._last_ha_control_enable_attempt_at
             if (
@@ -6310,25 +6567,30 @@ class SigEnergyOptimizer:
             d.ess_discharge_limit,
             discharge_cap_kw,
         )
+        solar_charge_command_ts = None
         if cfg.ess_max_charging_limit:
             solar_owned_before_write = d.trace_gates.get("solar_charge_ceiling_owned", False)
             ok_chg = await ha.set_number(cfg.ess_max_charging_limit, charge_limit)
             if not ok_chg:
+                self._clear_solar_physical_relief(d, "charge_command_failed")
                 logger.error("Failed setting ESS charge limit to %.2fkW", charge_limit)
                 application_failures.append(
                     f"failed setting ESS charge limit to {charge_limit:.2f}kW"
                 )
+            else:
+                solar_charge_command_ts = datetime.now(timezone.utc).timestamp()
             if solar_owned_before_write:
                 # A pending service request can itself cross D or an epoch
                 # boundary. Restore the selected normal request in this same
                 # serialized application when that happens.
                 self._recheck_solar_charge_authority(s, d, datetime.now(timezone.utc).timestamp())
-                if not d.trace_gates.get("solar_charge_ceiling_owned"):
+                if not d.trace_gates.get("solar_charge_ceiling_owned") or d.ess_charge_limit != charge_limit:
                     restored_charge = self._bound_ess_request_kw(d.ess_charge_limit, charge_cap_kw)
                     if not await ha.set_number(cfg.ess_max_charging_limit, restored_charge):
                         application_failures.append(
                             f"failed restoring ESS charge limit to {restored_charge:.2f}kW"
                         )
+                    charge_limit = restored_charge
         if cfg.ess_max_discharging_limit:
             ok_dis = await ha.set_number(cfg.ess_max_discharging_limit, discharge_limit)
             if not ok_dis:
@@ -6356,11 +6618,16 @@ class SigEnergyOptimizer:
         await ha.set_input_number(cfg.min_soc_to_sunrise_helper, min(d.min_soc_to_sunrise, 100.0))
 
         if application_failures:
+            self._clear_solar_physical_relief(d, "actuator_application_failed")
             return _ActuatorApplicationResult(
                 succeeded=False,
                 error="; ".join(application_failures),
             )
 
+        if solar_charge_command_ts is not None and d.trace_gates.get("solar_charge_ceiling_owned"):
+            self._record_solar_physical_relief_command(
+                applied_kw=charge_limit, command_ts=solar_charge_command_ts,
+            )
         logger.debug(
             "Applied: mode=%s exp=%.1f imp=%.1f pv=%.1f | %s",
             d.ems_mode, d.export_limit, d.import_limit, d.pv_max_power_limit,
@@ -6488,6 +6755,7 @@ class SigEnergyOptimizer:
 
     def _freeze_decision_to_live_mode(self, state: SolarState, decision: Decision, mode_label: str) -> None:
         if mode_label != self.cfg.automated_option:
+            self._clear_solar_physical_relief(decision, "operator_owned")
             decision.export_intent = EXPORT_BLOCKED
             decision.requires_verified_msc_before_export = False
             decision.solar_surplus_policy_active = False

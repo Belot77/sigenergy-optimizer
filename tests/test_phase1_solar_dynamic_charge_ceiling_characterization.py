@@ -8,10 +8,8 @@ from app.optimizer import DISCHARGE_MODES, MODE_MAX_SELF
 from haos49_characterization_helpers import Haos49CharacterizationCase
 
 
-class Phase1SolarDynamicChargeCeilingCharacterizationTests(
-    Haos49CharacterizationCase
-):
-    """Desired Solar charge ownership before the production implementation."""
+class SolarDynamicChargeFixture(Haos49CharacterizationCase):
+    """Deterministic Solar/provider evidence shared by charge characterizations."""
 
     WHEN = datetime(2026, 1, 15, 14, 0, 0)
     PERIOD_HOURS = 0.5
@@ -22,6 +20,7 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(
         values: dict[str, object] = {
             "solar_surplus_bypass_enabled": True,
             "solar_surplus_forecast_safety_factor": self.SAFETY_FACTOR,
+            "solar_surplus_fill_deadline_margin_minutes": 0.0,
             "battery_full_safeguard_enabled": False,
             "morning_dump_enabled": False,
             "morning_slow_charge_enabled": False,
@@ -155,6 +154,9 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(
             with self.optimizer_time(at):
                 optimizer._update_solar_provider(baseline, at.timestamp())
         return self.decide(optimizer, state, at)
+
+class Phase1SolarDynamicChargeCeilingCharacterizationTests(SolarDynamicChargeFixture):
+    """Desired Solar charge ownership before the production implementation."""
 
     def test_active_solar_owns_zero_ceiling_when_future_opportunity_is_abundant(
         self,

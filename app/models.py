@@ -16,6 +16,8 @@ class HVACObservedValue:
     value: float | str | bool | None = None
     available: bool = False
     fresh: bool = False
+    # HA report provenance used by Solar's post-command physical feedback.
+    observed_at_ts: Optional[float] = None
 
 
 @dataclass(frozen=True)

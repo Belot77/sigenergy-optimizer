@@ -465,6 +465,7 @@ class SolarSurplusControlWiringTests(Haos49CharacterizationCase):
         values: dict[str, object] = {
             "solar_surplus_bypass_enabled": True,
             "solar_surplus_forecast_safety_factor": 1.20,
+            "solar_surplus_fill_deadline_margin_minutes": 0.0,
             "battery_full_safeguard_enabled": False,
             "morning_dump_enabled": False,
             "morning_slow_charge_enabled": False,

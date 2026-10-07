@@ -108,7 +108,11 @@ Aggregate Remaining Today energy and detailed interval energy are independent ga
 
 ### Dynamic ESS charge ceiling
 
-Charge ownership is evaluated only after final arbitration selects Solar Surplus. It requires provider-aware freshness for detailed Solcast data, continuous interval coverage from now through trusted same-day sunset, trusted current load, battery SoC and rated capacity, the valid Solar safety factor, and trusted effective normal ESS charge capability. Detailed evidence is required for this authority even when the battery is full.
+Charge ownership is evaluated only after final arbitration selects Solar Surplus. It requires provider-aware freshness for detailed Solcast data, continuous interval coverage from now through the effective Solar fill deadline, trusted current load, battery SoC and rated capacity, the valid Solar safety factor, and trusted effective normal ESS charge capability. Detailed evidence is required for this authority even when the battery is full.
+
+The dedicated setting `solar_surplus_fill_deadline_margin_minutes` defaults to **60** and accepts finite nonnegative minutes, including zero; booleans are invalid. The effective trajectory deadline is trusted same-day sunset minus this margin. Zero retains the sunset trajectory. This timing margin is independent of Morning Slow's cutoff and the unchanged Solar safety factor `1.20`. It changes only the dynamic charge trajectory: aggregate remaining-load and independent eligibility timing above still use sunset.
+
+At or after the effective fill deadline, Solar relinquishes restrictive charge ownership so normal safe MSC charging can use available PV. Earlier/full-battery surplus export remains subject to the existing independent PV-only eligibility and safety rules; the earlier deadline is not an export cutoff. A sufficiently large margin can place the deadline before now, safely releasing the restriction. Missing/untrusted sunset, invalid margin or unusable deadline cannot authorize a restrictive ceiling. Provider/same-local-day semantics remain unchanged.
 
 Provider freshness uses explicitly configured Forecast Today and API Last Polled entities from the same Solcast instance (`forecast_today_sensor` and `solcast_api_last_polled_sensor`). Under the accepted BJReplay/ha-solcast-solar v4.6.1 contract, an advancing API Last Polled state represents a successful ordinary provider refresh. Sig Opt independently validates finite/nonnegative detailed estimates, aware timestamps, ordering, exact continuous coverage, the current interval and same-local-day sunset horizon. `dataCorrect` is not mandatory; its row-count semantics can reject a legitimate 23-hour DST day. Forecast Today HA `last_reported`, `last_attempt`, and schedule advancement alone do not establish provider success.
 
@@ -127,7 +131,7 @@ The existing optimizer event loop bounds its wait and debounce by D and local mi
 
 This authority is isolated from global `forecast_today_observation_trusted`. `hvac_solar_forecast_max_age_seconds` retains its backend/environment key and 600-second default for existing consumers: Remaining Today, Power Now, Forecast Today/Standby Holdoff, age-based Forecast Tomorrow and selected import-price forecast freshness. It cannot extend dynamic Solar provider authority. All existing final-owner, load, SoC, capacity, sun, capability and higher-priority-owner safeguards remain required.
 
-For each detailed interval, subtract trusted current load from forecast PV, floor the available power at zero, and bound charge opportunity by the existing normal safe/trusted charge capability/request. Multiply by actual interval overlap hours before sunset. Identify the interval containing now; future opportunity includes only intervals strictly after that current interval.
+For each detailed interval, subtract trusted current load from forecast PV, floor the available power at zero, and bound charge opportunity by the existing normal safe/trusted charge capability/request. Multiply by actual interval overlap hours before the effective fill deadline, clipping a partial final interval. Identify the interval containing now; future opportunity includes only intervals strictly after that current interval.
 
 ```text
 protected_fill_need_kwh = K x energy_needed_to_reach_100_percent
@@ -139,6 +143,30 @@ requested_charge_kw = required_now_kwh / remaining current-interval overlap hour
 Clamp the request between zero and the existing normal safe/trusted capability/request. Round a positive request UP to 0.01 kW without exceeding that normal bound, retaining its existing safe command precision. Abundant future opportunity may request `0.00 kW`. Recalculate each decision without a timer; this changes only ESS charging authority and cannot authorize stored-battery export.
 
 Missing, expired, gapped, invalid, or untrusted charge evidence immediately relinquishes only the Solar charge restriction and restores the normal charge request. This stricter authority does not redefine Solar eligibility: complete current-day detailed intervals may still support the existing Solar policy despite old parent Forecast Today metadata. Provider-verified evidence may also authorize the dynamic charge restriction in that case; absent provider authority reports `solcast_provider_authority_untrusted`. Solar's independent eligibility and safety gates still apply.
+
+### Physical-export saturation relief
+
+Solar may relax only its own restrictive ESS charge ceiling using a separate process-local feedback controller:
+
+```text
+final Solar charge ceiling = min(normal safe/trusted ESS charge request,
+                                baseline trajectory ceiling + physical relief)
+```
+
+Relief starts at zero. `grid_connection_export_limit_kw` is generic physical-site saturation evidence, with software default **0.0 = disabled**. The confirmed 15 kW site limit is operator configuration, not a universal default or an inverter export command. Solar keeps MSC, normal PV MAX, normal high export permission (currently 25 kW at the site), and `battery_export_owner=none`. Relief must not deliberately divert export into charging or authorize `BATTERY_EXPORT`.
+
+Required authority is final Solar charge ownership, observed Automated ownership and exact MSC, no Manual/Force/Morning Slow or deliberate battery-export owner, partial SoC, and trusted coherent measured physical flows. PV, load, grid-import and grid-export observations must be finite, fresh and temporally coherent within five seconds; measured flow must support nonnegative battery charging with no grid import. Existing direct-battery discharge safety checks remain required; relief derives charging evidence from the coherent measured components. A static saturated sample cannot prove hidden PV. Solcast potential, estimated PV and `hidden_pv_surplus_kw` cannot authorize relief.
+
+The approved fixed Solar policy has no additional operator tuning settings:
+
+- Entry/upward confirmation requires actual export **>= physical limit - 0.2 kW**. Each increase is at most **0.4 kW**, after **two** fresh coherent post-command observations. Every relevant timestamp must advance; telemetry reuse cannot stack increases. A successfully applied changed charge target starts its feedback epoch, while reasserting the same target does not erase a valid first observation. Further increases require measured battery charging above the baseline ceiling.
+- One new coherent export observation **< physical limit - 0.5 kW** reduces active relief immediately by **1.2 kW**, floored at zero. The other flow observations must remain trusted/coherent but need not all advance to permit this restrictive response. The interval between exit and entry holds relief and resets upward confirmations; exact exit does not reduce.
+- Actual trusted export **< physical limit - 1.0 kW** hard-resets relief to baseline. Any export-driven downward adjustment imposes **three** fresh coherent observations at/above entry before another increase; afterward the ordinary two-observation rule resumes.
+- Relevant flow trust/freshness/coherence loss, regressing feedback, loss of Solar/Automated/MSC ownership, Manual/Force/Morning Slow, exact-full, disabled/invalid limit or actuator application failure resets relief. Baseline or normal-cap changes clear relief and start a fresh command/feedback epoch, retaining an existing retry requirement for the same physical limit.
+
+At a 15 kW configured site the entry, exit and hard-reset boundaries are 14.8, 14.5 and 14.0 kW respectively. This asymmetry permits cautious discovery and faster export restoration. Application rechecks restore the baseline if physical evidence expires, and restore the normal safe request if provider/fill-deadline authority expires, including during an in-flight charge write. Service-call success arms later feedback only; it is not observed export preservation or actuator settlement.
+
+Morning Slow's existing binary cap release/retention and its tuning remain unchanged and do not control Solar. Demand Window continues to own import blocking. This relief does not redesign export ownership or Phase 2 settlement.
 
 ### Near-full safeguard arbitration
 
@@ -162,6 +190,8 @@ This distinction creates only `MSC_SURPLUS_CEILING`. It never creates `BATTERY_E
 `solar_surplus_policy_active` identifies final Solar policy ownership after arbitration. Operator diagnostics also expose the fail reason, aggregate budget evidence, detailed timing evidence, measured surplus and active threshold, and Solar safety factor. Policy-active status and an open ceiling do not prove physical inverter or grid export settlement.
 
 Charge diagnostics expose gates `solar_charge_ceiling_evidence_trusted` and `solar_charge_ceiling_owned`, plus values `ess_charge_limit_owner`, `solar_charge_ceiling_requested_kw`, `solar_charge_ceiling_protected_fill_need_kwh`, `solar_charge_ceiling_future_opportunity_kwh`, `solar_charge_ceiling_required_now_kwh`, `solar_charge_ceiling_current_window_hours`, and `solar_charge_ceiling_reason`. When owned, the charge owner is `solar_surplus`; current charging needed for the fill trajectory reports `present_charging_required_for_fill_trajectory`. Charge ownership is distinct from policy eligibility and observed actuator settlement.
+
+Fill/relief diagnostics add `solar_charge_ceiling_fill_deadline_ts` (Unix timestamp), `solar_charge_ceiling_fill_deadline_margin_minutes`, `solar_charge_ceiling_baseline_kw`, gates `solar_physical_relief_active` / `solar_physical_relief_flow_trusted`, and values `solar_physical_relief_kw`, `solar_physical_relief_reason`, `solar_physical_relief_export_kw`, `solar_physical_relief_limit_kw` and `solar_physical_relief_confirmations`. `solar_charge_ceiling_requested_kw` remains the final requested ceiling after relief. The API copies these trace values without recalculating control and suppresses stale relief-active status when final Solar ownership is absent.
 
 Provider trace evidence includes `solar_provider_state`, observed/high-water/verified poll timestamps, retained deadline, advertised next update, configured source, epoch, source-continuity trust, provider-authority trust and rejection/expiry reason. These fields prove decision provenance, not live actuator settlement.
 
@@ -202,7 +232,7 @@ Morning Slow must not retain legacy measured-PV start/ramp/probe gates for its e
 
 Refill feasibility uses trusted timed detailed-forecast opportunity through same-day sunset minus the configured sunset cutoff. The configured Morning Slow end time ends this policy's ownership; it is not the refill deadline. If slow charging is infeasible but normal bounded charging offers strictly greater safe refill opportunity, release only Morning Slow's artificial charge cap. Missing or untrusted evidence cannot authorize relief, and no arbitrary 60-second stabilization applies.
 
-The optional physical-relief settings are `grid_connection_export_limit_kw` and `morning_slow_physical_export_headroom_kw`; both default to `0.0`, which leaves the feature disabled/unconfigured. When enabled, coherent trusted measured site export reaching the configured threshold may release only Morning Slow's artificial charge cap. This does not set the Sigenergy export permission to that threshold and does not enforce a hard network export cap. The discussed `15.0 kW` and `0.5 kW` values are future operator values, not software defaults. Before using them, the operator must decide whether 15 kW is only a relief threshold or a hard limit; the latter requires further design.
+Morning Slow's optional physical-relief settings remain `grid_connection_export_limit_kw` and `morning_slow_physical_export_headroom_kw`; both default to `0.0`, and Morning Slow requires both to be positive with headroom below the physical limit. Coherent trusted measured site export reaching its configured threshold may release only Morning Slow's artificial charge cap. Its existing binary release and counterfactual retention behavior are unchanged; Solar does not reuse them. The generic physical limit may independently enable Solar's controller above even with Morning Slow headroom zero. Neither policy sets Sigenergy export permission to that threshold or enforces a hard network export cap. The confirmed `15.0 kW` site capability and discussed `0.5 kW` Morning Slow headroom remain operator values, not software defaults; Solar's approved meaning is physical saturation evidence only.
 
 ## Event responsiveness
 

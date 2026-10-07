@@ -45,6 +45,7 @@ _TIME_KEYS: set[str] = {
 _SOLAR_SURPLUS_START_PV_MARGIN_KEY = "solar_surplus_min_pv_margin"
 _SOLAR_SURPLUS_STOP_PV_MARGIN_KEY = "solar_surplus_stop_pv_margin"
 _SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR_KEY = "solar_surplus_forecast_safety_factor"
+_SOLAR_SURPLUS_FILL_DEADLINE_MARGIN_KEY = "solar_surplus_fill_deadline_margin_minutes"
 _EVENING_BOOST_MIN_FEEDIN_PRICE_KEY = "evening_boost_min_feedin_price"
 _GRID_CONNECTION_EXPORT_LIMIT_KEY = "grid_connection_export_limit_kw"
 _MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KEY = (
@@ -144,6 +145,8 @@ def _validate_config_value(cfg: Any, key: str, value: Any) -> str | None:
         and float(value) < 1.0
     ):
         return "must be greater than or equal to 1.0"
+    if key == _SOLAR_SURPLUS_FILL_DEADLINE_MARGIN_KEY and float(value) < 0.0:
+        return "must be non-negative"
     if (
         key == _EVENING_BOOST_MIN_FEEDIN_PRICE_KEY
         and isinstance(value, (int, float))
@@ -544,6 +547,28 @@ def _solar_surplus_status(d: Any, *, manual_active: bool) -> dict[str, Any]:
             "pv_load_observation_span_seconds": trace_values.get(
                 "pv_load_observation_span_seconds"
             ),
+            **{
+                key: trace_values.get(key)
+                for key in (
+                    "solar_charge_ceiling_baseline_kw",
+                    "solar_charge_ceiling_fill_deadline_ts",
+                    "solar_charge_ceiling_fill_deadline_margin_minutes",
+                    "solar_charge_ceiling_requested_kw",
+                    "solar_physical_relief_kw",
+                    "solar_physical_relief_reason",
+                    "solar_physical_relief_export_kw",
+                    "solar_physical_relief_limit_kw",
+                    "solar_physical_relief_confirmations",
+                )
+            },
+            "solar_physical_relief_active": (
+                gate("solar_physical_relief_active") if policy_active else (
+                    False if "solar_physical_relief_active" in trace_gates else None
+                )
+            ),
+            "solar_physical_relief_flow_trusted": gate(
+                "solar_physical_relief_flow_trusted"
+            ),
         },
     }
 
@@ -552,7 +577,10 @@ def _coerce_config_value(cfg: Any, key: str, raw: Any) -> Any:
     current = getattr(cfg, key)
     current_type = type(current)
 
-    if key == _SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR_KEY and isinstance(raw, bool):
+    if key in {
+        _SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR_KEY,
+        _SOLAR_SURPLUS_FILL_DEADLINE_MARGIN_KEY,
+    } and isinstance(raw, bool):
         raise ValueError("must be numeric")
     if key in _MORNING_SLOW_PHYSICAL_EXPORT_CONFIG_KEYS and isinstance(raw, bool):
         raise ValueError("must be numeric")

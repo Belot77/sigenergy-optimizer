@@ -323,6 +323,12 @@ class Settings(BaseSettings):
         allow_inf_nan=False,
         env="SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR",
     )
+    solar_surplus_fill_deadline_margin_minutes: float = Field(
+        60.0,
+        ge=0.0,
+        allow_inf_nan=False,
+        env="SOLAR_SURPLUS_FILL_DEADLINE_MARGIN_MINUTES",
+    )
     solar_surplus_start_multiplier: float = Field(2.0, env="SOLAR_SURPLUS_START_MULTIPLIER")
     solar_surplus_stop_multiplier: float = Field(1.25, env="SOLAR_SURPLUS_STOP_MULTIPLIER")
     solar_surplus_min_pv_margin: float = Field(0.5, env="SOLAR_SURPLUS_MIN_PV_MARGIN")
@@ -344,9 +350,13 @@ class Settings(BaseSettings):
     import_limit_value: float = Field(30.0, env="IMPORT_LIMIT_VALUE")
     pv_max_power_value: float = Field(30.0, env="PV_MAX_POWER_VALUE")
 
-    @field_validator("solar_surplus_forecast_safety_factor", mode="before")
+    @field_validator(
+        "solar_surplus_forecast_safety_factor",
+        "solar_surplus_fill_deadline_margin_minutes",
+        mode="before",
+    )
     @classmethod
-    def _validate_solar_surplus_forecast_safety_factor_type(cls, value: object) -> object:
+    def _validate_solar_surplus_numeric_setting_type(cls, value: object) -> object:
         if isinstance(value, bool):
             raise ValueError("must be numeric")
         return value
