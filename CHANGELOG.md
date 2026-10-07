@@ -1,6 +1,16 @@
 # Changelog
 
-## 2.3.55-haos66 - locally prepared, unreleased candidate - 2026-10-06
+## 2.3.56-haos67 - locally prepared, unreleased candidate - 2026-10-07
+
+- Target Solar battery fill at trusted same-day sunset minus 60 minutes by default; zero preserves sunset timing. Keep forecast safety at 1.20, release restrictive charging at the deadline, and preserve later full-battery surplus export.
+- Add Solar-only physical-export saturation relief bounded by the normal safe charge request. The explicitly approved probe increment is 0.4 kW after two fresh coherent post-command observations; export-driven backoff is faster and requires three observations before retry. Keep MSC, normal PV MAX/export permission and no battery-export intent.
+- Correct timestamp-regression handling before the pre-command waiting return: active relief fails closed to the current Solar baseline and dependent feedback state resets. Recovery requires baseline reapplication and fresh confirmations; legitimate monotonic pre-command waiting remains distinct.
+- Keep `grid_connection_export_limit_kw=0.0` as the disabled software default. There is no universal 15 kW default, and the confirmed live site setting remains unwritten. Provider freshness, Manual/Force, Morning Slow and Demand Window ownership remain unchanged.
+- Source checkpoint: `e2eba5431ee1fcfd36f9632c21f10e53f81c592d`; independent review: `ACCEPT FOR CHECKPOINT COMMIT`. Recorded validation: physical relief 35 passed / 20 subtests; affected Solar/controller 140 / 221; independent protections 250 / 266; full suite 907 passed / 872 subtests with exactly two frozen Phase 2 failures. Compileall passed. This metadata-only preparation does not rerun the full suite or change controller behavior.
+
+Release metadata is locally prepared but uncommitted, unpushed and unbuilt. Future tag: `v2.3.56-haos67`; future image: `ghcr.io/belot77/sigenergy-optimizer:2.3.56-haos67`. No .67 tag, build, publication, deployment or live acceptance has occurred. Current live remains `.66 / 2.3.55-haos66` at `d01db472019ad19d721e400e61ae8d5238fe6856`; known-good rollback remains `.65 / 2.3.54-haos65` at `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Release/deployment and .67 live acceptance require separate authorization. Phase 2 remains frozen, with the separate Evening Boost dependency retained.
+
+## 2.3.55-haos66 - 2026-10-06
 
 - Dynamic Solar ESS charge-ceiling freshness for Solcast v4.6.1 uses successful API Last Polled advances and retained scheduled deadlines instead of expiring solely on Forecast Today's shared 600-second HA observation age. Startup, reconnect and source discontinuities fail closed and require a baseline followed by a successful advance; later advertised schedules and early manual refreshes cannot extend an outstanding deadline. Provider expiry restores the otherwise applicable normal charging request.
 - Added sticky source epochs, deadline/midnight reevaluation through the existing event loop, charge-write authority rechecks and compact provider Decision Trace evidence. Existing ownership, strict forecast/control safeguards and actuator settlement semantics remain unchanged.
@@ -8,4 +18,4 @@
 - The shared age setting remains in use for Remaining Today, Power Now, Forecast Today/Standby Holdoff, age-based Forecast Tomorrow and selected import-price freshness. Ordinary Solar export ownership, MSC, PV MAX, import/export permission, battery-export ownership, Manual/Force, Morning Slow/Dump, Evening Boost and Phase 2 settlement behavior remain unchanged.
 - Regression hardening covers day rollover independently of deadline expiry and immediate next-cycle restoration after post-charge continuity loss. Release preparation itself changes only version identities and documentation, preserving behavior from source checkpoint `f203387a445fcf9e4ea569861ca3d35703b1b7b9`.
 
-Release metadata is locally prepared but uncommitted, unpushed and unbuilt. Future tag: `v2.3.55-haos66`; future versioned image: `ghcr.io/belot77/sigenergy-optimizer:2.3.55-haos66`. Neither has been created/published by this preparation. The candidate is unreleased, uninstalled and undeployed. Live release and rollback remain `2.3.54-haos65` / `9965e79`. Phase 1 requires separate release/deployment approval and live acceptance; Evening Boost remediation and Phase 2 are outside this change.
+The operator confirms .66 is now live at `d01db472019ad19d721e400e61ae8d5238fe6856`. Known-good rollback remains `.65 / 2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. The .66 preparation and validation above are historical; .67 live acceptance remains pending.

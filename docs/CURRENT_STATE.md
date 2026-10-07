@@ -8,8 +8,8 @@ Last consolidated: 2026-10-07
 
 - Current live release: **.66 / 2.3.55-haos66**, source/main/tag commit `d01db472019ad19d721e400e61ae8d5238fe6856`, tag `v2.3.55-haos66`, image digest `sha256:42709e868e778111d03629378064857fbeae450a8bcc09c93d91b2aa1a4685ab`. These are the operator-supplied authoritative identities.
 - Rollback remains **.65 / 2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`.
-- Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`; branch: `fix/phase1-audit-remediation`; HEAD remains `d01db472019ad19d721e400e61ae8d5238fe6856`. The combined **.67 candidate** is a local, uncommitted change based on live .66. Release metadata remains .66; no .67 tag, image, publication, deployment or live acceptance is claimed.
-- This task performs no commit, push, merge, tag, release, deployment, restart, HA/inverter write or live operator-configuration write.
+- Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`; branch: `fix/phase1-audit-remediation`; HEAD/source checkpoint: `e2eba5431ee1fcfd36f9632c21f10e53f81c592d`. The complete .67 Phase 1 candidate was independently accepted (`ACCEPT FOR CHECKPOINT COMMIT`), committed and pushed. Release identity `2.3.56-haos67` is now locally prepared; only release metadata/documentation is uncommitted and unpushed. Future tag: `v2.3.56-haos67`; future image: `ghcr.io/belot77/sigenergy-optimizer:2.3.56-haos67`. No .67 tag, build, publication, deployment or live acceptance has occurred.
+- This release-preparation task performs no staging, commit, push, merge, tag, build, release, deployment, restart, HA/inverter write or live operator-configuration write. Production behavior, tests and configuration semantics remain unchanged from the accepted source checkpoint.
 - Phase 1 remains open. Phase 2 remains blocked until .67 controlled live acceptance and the separately required Evening Boost remediation/live acceptance. Its two frozen settlement failures remain unchanged.
 
 ## Operator-proven .66 live results and remaining problem
@@ -45,7 +45,7 @@ Decision Trace and API diagnostics distinguish effective fill deadline/margin, b
 - **Continuation validation:** complete physical-relief suite **35 passed / 20 subtests passed**, 198 warnings; affected Solar/controller suites **140 passed / 221 subtests passed**, 200 warnings; independent protection suites **250 passed / 266 subtests passed**, exactly two frozen Phase 2 tests deselected, 198 warnings. Protection coverage includes Morning Slow, Manual/Force, Demand Window, battery-export safety, provider freshness, actuator fallback/capabilities, MSC/PV MAX/export permission and fill-deadline behavior.
 - Full suite ran **once** for this continuation: `python -B -m pytest -q -p no:cacheprovider --disable-warnings --tb=short tests` returned **907 passed / 872 subtests passed**, exactly the **two frozen Phase 2 failures**, 201 warnings, in 67.42 seconds. Their character remains export 25 versus closed 0 and MSC requested before observed export closure. **No unexpected failures occurred.**
 - Compileall for `app` and all five candidate Python test files and `git diff --check` passed. SHA-256 comparison with the starting candidate confirms no production file changed during this continuation; only the physical-relief characterization and these current-state/handover records changed. The two frozen tests remain untouched.
-- The corrected candidate is **READY for a NEW independent review**, local and uncommitted. This is not checkpoint acceptance or release/live approval. Live remains .66, operational rollback .65, and no .67 live acceptance is claimed.
+- Final independent review returned **ACCEPT FOR CHECKPOINT COMMIT**. The candidate and two documentation corrections were committed and pushed at `e2eba5431ee1fcfd36f9632c21f10e53f81c592d`. Current work is release metadata/documentation preparation only, not release/live approval. Live remains .66, known-good rollback .65, and .67 is not live-proven.
 
 ## Initial candidate validation (before independent review)
 
@@ -56,7 +56,7 @@ Decision Trace and API diagnostics distinguish effective fill deadline/margin, b
 - Existing Solar test bodies and Morning Slow control methods retain their prior assertions/behavior; legacy sunset-focused fixtures explicitly select margin zero.
 - The affected and independent groups were repeated after a narrow startup-retry correction: entering from below saturation with zero relief retains the ordinary two-observation entry, while an actual downward hard reset requires three. Final results above passed without unexpected failures.
 - Full suite ran **once**: `python -B -m pytest -q -p no:cacheprovider --disable-warnings --tb=short tests` recorded **904 passed / 872 subtests passed**, exactly **2 frozen Phase 2 failures**, 201 warnings, in 67.75 seconds. The failure character remains export 25 versus closed 0, and MSC requested before observed export closure. No additional failures occurred.
-- Initial compileall for `app` and all five changed/new Python test files and `git diff --check` passed. These pre-review results are superseded by the completed continuation gate above. Branch/HEAD are unchanged; the worktree contains 13 modified and 3 new files, with no .67 live acceptance.
+- Initial compileall for `app` and all five changed/new Python test files and `git diff --check` passed. These pre-review results are superseded by the completed continuation gate above. That historical candidate comprised 13 modified and 3 new files; it is now committed in the accepted source checkpoint, with no .67 live acceptance.
 
 The only frozen failures are `test_exact_msc_does_not_reopen_before_export_is_observed_closed` and `test_return_from_discharge_waits_for_observed_close_before_requesting_msc` in `tests/test_msc_baseline_overlay_contract.py`. Do not weaken, skip or repair them inside this candidate.
 
@@ -79,9 +79,9 @@ The only frozen failures are `test_exact_msc_does_not_reopen_before_export_is_ob
 
 ## Next action and controlled acceptance
 
-Next decision: authorize a NEW independent read-only review of the complete uncommitted .67 candidate and its current validation. The characterization conflict and validation ladder are resolved; checkpoint acceptance still requires independent review. Any later checkpoint/publication/deployment and live 15 kW operator setting require separate authorization. No .67 live acceptance has occurred.
+Next decision: review the local `2.3.56-haos67` release-preparation diff and authorize its checkpoint commit separately. The Phase 1 source checkpoint is already accepted, committed and pushed. This task leaves release metadata unstaged and uncommitted. Tagging, image build/publication, release/deployment, restart, the live 15 kW operator setting and .67 live acceptance require separate authorization; none has occurred.
 
-The timing margin intentionally raises necessary ESS requests earlier within the existing safe bound. Closed-loop relief still needs live evidence that additional charging preserves actual export; local tests do not prove that plant response. Review the bounded uncommitted patch before any later release, and retain the established .65 operational rollback.
+The timing margin intentionally raises necessary ESS requests earlier within the existing safe bound. Closed-loop relief still needs live evidence that additional charging preserves actual export; local tests do not prove that plant response. Review the bounded release-preparation diff before any later release, and retain the established .65 operational rollback.
 
 For monitor-only/dry-run review, compare margin 0 and 60 requests, confirm deadline/normal-cap bounds and unchanged ownership permissions, and verify no live writes. Stateful relief cannot acquire post-command authority from a simulated decision alone.
 

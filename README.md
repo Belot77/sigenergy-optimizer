@@ -271,13 +271,15 @@ Uninstall:
 
 ## Version
 
-2.3.55-haos66 (locally prepared, unreleased candidate)
+2.3.56-haos67 (locally prepared, unreleased candidate)
 
-Live release and rollback remain `2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. The pre-release source checkpoint is `f203387a445fcf9e4ea569861ca3d35703b1b7b9` on `fix/phase1-audit-remediation`. Version `2.3.55-haos66` metadata is prepared locally but uncommitted, unpushed and unbuilt; it is not released, installed or live-accepted. Live `.65` remains the rollback for future live testing unless a later live release is explicitly approved and proven.
+The independently accepted Phase 1 source checkpoint is `e2eba5431ee1fcfd36f9632c21f10e53f81c592d` on `fix/phase1-audit-remediation`. Release metadata is prepared locally but uncommitted, unpushed and unbuilt. Future tag: `v2.3.56-haos67`; future image: `ghcr.io/belot77/sigenergy-optimizer:2.3.56-haos67`. Neither has been created/published; .67 is not deployed or live-proven.
 
-The candidate makes Solar dynamic ESS charge-ceiling freshness provider/schedule-aware for Solcast v4.6.1. Old Forecast Today HA metadata alone no longer expires this authority at the shared 600-second observation-age limit. Startup, reconnect and source discontinuities fail closed; later advertised schedules cannot extend retained provider deadlines, and expiry restores the otherwise applicable normal charging request.
+Current live release remains `.66 / 2.3.55-haos66`, source `d01db472019ad19d721e400e61ae8d5238fe6856`. Known-good rollback remains `.65 / 2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`.
 
-Settings exposes **Forecast observation maximum age (seconds)** with its existing key and 600-second default for other forecast consumers. Ordinary Solar export ownership, MSC, PV MAX, import/export permission, battery-export ownership, Manual/Force, Morning Slow/Dump, Evening Boost and Phase 2 settlement behavior remain unchanged. Existing `.65` diagnostics/download bounds also remain unchanged. See both changelogs for candidate notes; Phase 1 still requires separately approved release/deployment and live acceptance.
+The .67 candidate targets Solar battery fill at sunset minus 60 minutes by default; zero retains sunset timing. It also adds Solar-only physical-export saturation relief, bounded by the normal safe charge request, using the explicitly approved 0.4 kW probe policy and trusted post-command feedback. Timestamp regression is checked before pre-command waiting and resets active relief to the current Solar baseline and clears dependent feedback state. Legitimate monotonic pre-command observations still wait without confirming a probe.
+
+The physical export-limit software default remains `0.0` (disabled), with no universal 15 kW default; the confirmed 15 kW live site setting remains unwritten. MSC, normal PV MAX/export permission, battery-export safety, provider freshness, Manual/Force, Morning Slow and Demand Window ownership remain protected. This preparation changes only release identities and documentation. See both changelogs for validation evidence; release/deployment and .67 live acceptance require separate authorization. Phase 2 remains frozen, including its two known settlement failures and separate Evening Boost dependency.
 
 ## Maintainer Release Flow
 
