@@ -1,84 +1,68 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-10-07
+Last consolidated: 2026-10-08
 
-Read root/project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md`, `DECISIONS.md` and `ROADMAP.md`. Verify worktree, branch, HEAD and status before editing; the accepted .67 source checkpoint is committed; only the local release preparation is intentionally uncommitted.
+Read root/project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md`, `DECISIONS.md`, and `ROADMAP.md`. Verify worktree, branch, HEAD, and status before editing.
 
-## Authoritative release and task state
+## Continuation checkpoint
 
-- Worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`; branch: `fix/phase1-audit-remediation`; HEAD/source checkpoint: `e2eba5431ee1fcfd36f9632c21f10e53f81c592d`.
-- Live: **.66 / 2.3.55-haos66**, source/main/tag `d01db472019ad19d721e400e61ae8d5238fe6856`, tag `v2.3.55-haos66`, digest `sha256:42709e868e778111d03629378064857fbeae450a8bcc09c93d91b2aa1a4685ab`.
-- Rollback: **.65 / 2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`.
-- The complete .67 Phase 1 candidate is independently accepted (`ACCEPT FOR CHECKPOINT COMMIT`), committed and pushed at the source checkpoint above. Release identity `2.3.56-haos67` is locally prepared, with future tag `v2.3.56-haos67` and future image `ghcr.io/belot77/sigenergy-optimizer:2.3.56-haos67`. Only release metadata/documentation remains uncommitted and unpushed. This preparation performs no staging, commit, push, merge, tag, build, publication, deployment, restart or live HA/inverter/operator configuration write. .67 is not tagged, built, deployed or live-proven.
-- Operator-confirmed site physical limit: **15 kW**. Software/default `grid_connection_export_limit_kw=0.0` remains disabled; the live 15 kW setting has **not** been written by this task.
-- Phase 2 remains blocked until .67 live acceptance and the separately required Evening Boost remediation/live acceptance. The two frozen settlement failures remain outside scope.
+- Live release: **2.3.56-haos67**.
+- Release/source commit: `1973ac643c29044e8bfb894873adfdd53c7eb4c8`.
+- Tag: `v2.3.56-haos67`.
+- Image: `ghcr.io/belot77/sigenergy-optimizer:2.3.56-haos67`.
+- Release build: GitHub Actions completed successfully.
+- Live startup: runtime signature `2.3.56-haos67`, container source `1973ac6`, `morning_slow_charge_runtime_disabled=False`.
+- Known-good rollback: **2.3.54-haos65** at `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Do not promote `.66`.
+- Writable worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`.
+- Branch: `fix/phase1-audit-remediation`.
+- HEAD: `1973ac643c29044e8bfb894873adfdd53c7eb4c8`.
+- Start-of-checkpoint status: clean; `origin/main` and `origin/fix/phase1-audit-remediation` matched HEAD.
+- Do not edit the separate root worktree `C:\Projects\sigenergy_optimizer`.
 
-## .66 live evidence already accepted
+## Phase status and validation
 
-Provider-aware freshness at partial SoC, deadline expiry/recovery, Solar ownership at partial SoC, the dynamic `0 -> small positive -> increasing` charge trajectory and `present_charging_required_for_fill_trajectory` are live-proven. Solar safely relinquished to normal MSC when its energy plan became insufficient. No battery-export leakage was observed; MSC/PV MAX/high export permission remained correct.
+**Phase 1 is COMPLETE and LIVE-PROVEN.** Phase 2 transition safety is next and remains unimplemented.
 
-On 7 October the battery reached only about **97.8%**, missing full as late load and weak PV consumed margin. A separate Force Full Export diagnostic held actual export near 15 kW while PV and battery charging increased. These observations motivate the approved .67 changes; do not repeat the already accepted .66 investigation.
+Final `.67` validation passed: physical relief **35 / 20 subtests**, affected Solar/controller **140 / 221**, independent protections **250 / 266**, and full suite **907 / 872**. The full suite had exactly the two expected frozen Phase 2 failures and no unexpected failures. Compileall and `git diff --check` passed.
 
-## Combined .67 behavior
+Frozen Phase 2 tests:
 
-**Fill deadline:** new `solar_surplus_fill_deadline_margin_minutes`, default **60**, finite/nonnegative with zero allowed and booleans rejected. Dynamic Solar charge opportunity is clipped at trusted same-day sunset minus this margin. Solar forecast safety remains **1.20**, independent of Morning Slow. Aggregate/export-eligibility sunset timing is unchanged. At the effective deadline restrictive Solar charging is relinquished to normal safe MSC; early full does not remove later surplus-export eligibility. All trusted-input, provider and priority gates remain.
+- `test_exact_msc_does_not_reopen_before_export_is_observed_closed`;
+- `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`.
 
-**Physical relief:** Solar-only process-local feedback adds bounded relief to the baseline charge trajectory, never beyond the normal safe/trusted ESS request. A positive generic physical limit enables evidence assessment; it does not set inverter export permission. At a 15 kW site, entry is >=14.8, exit reduction is <14.5, hard reset is <14.0. Each increase is 0.4 kW after two fresh coherent post-command observations; export-driven reductions subtract 1.2 kW immediately and impose three-observation retry. Fixed policy values introduce no tuning settings.
+## Protection invariants
 
-All relevant PV/load/import/export timestamps must be fresh and coherent within five seconds; measured flow must support battery charging without grid import. A successfully applied changed charge target starts the feedback epoch, repeated telemetry cannot stack increases, and active relief requires actual charge response before increasing again. Fresh falling-export observations reduce promptly without requiring every still-trusted companion sensor to report again. Ownership/trust loss, exact-full, configuration disablement and actuator failure clear relief. Baseline/normal-cap changes restart feedback while retaining existing retry for the same site limit. Await-boundary checks restore baseline/normal charging if physical/Solar authority expires.
+- Automated permissive control requires observed Automated ownership; service-call success is not observation.
+- Returning from deliberate battery export must close export, later observe it closed, request MSC, later observe exact MSC, and only then reopen the normal high export ceiling.
+- Deliberate battery export must settle its export target before selecting discharge EMS.
+- Solar remains MSC/PV-only, never owns `BATTERY_EXPORT`, and changes only its bounded ESS charge ceiling.
+- Preserve Manual/Force ownership, Demand Window import blocking, battery floor, reserve/forecast and import-cost safeguards, fail-closed telemetry, actuator settlement, normal PV MAX, normal high export permission, and explicit owner separation.
+- Do not weaken or bypass the two frozen transition tests.
 
-Keep MSC, normal PV MAX/high export permission, no `BATTERY_EXPORT`, Manual/Force, Morning Slow and Demand Window priorities. Morning Slow's binary release/retention and tuning are unchanged. Solcast potential, estimated PV and `hidden_pv_surplus_kw` are not authorization. See `CONTROL_CONTRACT.md` for exact boundaries and trace fields.
+## Live operator tuning
 
-## Independent-review correction: accepted source checkpoint
+- `grid_connection_export_limit_kw = 15.0` is this site's physical/grid boundary. The software default remains `0.0`.
+- `solar_surplus_fill_deadline_margin_minutes = 120` is this site's currently preferred tuning. The released software default remains 60 minutes.
+- Normal export permission remains 25 kW; PV MAX remains 25 kW; Morning Slow physical export headroom remains 0.0.
 
-The independent review reproduced active relief surviving timestamps regressing to before the command epoch. The prior authorized production correction now checks regression before waiting, clears relief and dependent state, and returns to the current Solar baseline. The integration characterization verifies that earned 0.4 kW relief above a 0.81 kW baseline is removed, ownership/MSC/PV MAX/export permission are preserved, and recovery requires baseline reapplication plus fresh confirmations.
+Do not convert site tuning into production defaults.
 
-The initial correction validation stopped at **1 failed, 33 passed / 20 subtests passed**: the old pre-command test expected probing after timestamp 0 -> -1 without reapplying the baseline. The user explicitly approved classifying that as regression and correcting the test. This continuation separates monotonic pre-command waiting (accepted observation 0, command epoch 2, observations 1 and 2; no reset or confirmation) from genuine regression (0 -> -1; reset to baseline and reapplication required). Existing active-relief regression and waiting protections remain intact. **No production code changed during this continuation.**
+## `.67` live proof
 
-The user-approved **0.4 kW** increment remains unchanged; its explicit 2026-10-07 approval superseding the earlier 0.5 kW discussion remains recorded in `DECISIONS.md`.
+Morning Slow handed ownership to Solar at about 11:59:02 AEDT on 8 October 2026, near 37.7% SoC. MSC remained active, PV MAX/export permission remained 25 kW, Solar owned a 0 kW ESS charge ceiling, provider authority was VALID, and `battery_export_owner=none`.
 
-Current validation: physical-relief suite **35 passed / 20 subtests**, affected Solar/controller suites **140 passed / 221 subtests**, independent protections **250 passed / 266 subtests**, with exactly the two frozen Phase 2 tests deselected from the protection gate. Those gates reported 198, 200 and 198 warnings respectively. The full suite ran **once**: **907 passed / 872 subtests**, exactly **2 frozen Phase 2 failures**, 201 warnings, 67.42 seconds. Failure character is unchanged: export 25 versus closed 0, and MSC requested before observed export closure. **No unexpected failures.** Compileall for `app` and all five candidate Python test files passed.
+**Saturation relief: LIVE PASS.** With export near the physical 15 kW boundary and a 0 kW Solar baseline, relief increased the Solar ESS charge ceiling in bounded 0.4 kW steps to 1.6 kW while PV rose and export stayed near the boundary. MSC, PV MAX, normal export permission, and no-battery-export ownership were preserved. When export fell, relief rapidly backed off to zero, hard-reset below the lower boundary, and later re-qualified. `hidden_pv_surplus` remained diagnostic-only.
 
-Correction validation included successful `git diff --check` and SHA-256 comparison confirming unchanged production files during the characterization continuation. Final independent review returned **ACCEPT FOR CHECKPOINT COMMIT**. The candidate and two documentation corrections are committed and pushed at `e2eba5431ee1fcfd36f9632c21f10e53f81c592d`. This release preparation changes only the five version identities and release-facing documentation; production behavior, tests and configuration semantics remain unchanged. The full suite is not rerun for metadata preparation. The two frozen Phase 2 tests remain unchanged; .66 remains live and .65 remains known-good rollback.
+**120-minute fill margin: LIVE PASS.** The earlier deadline caused `present_charging_required_for_fill_trajectory` once future opportunity became insufficient: about 9.17 kW requested near 15:40 and about 6.82 kW near 16:37. Just before the 17:14:59 target the battery was about 99.8%; at 17:15 Solar relinquished its ceiling with `fill_deadline_reached`, returning normal 21 kW charge permission while preserving zero commanded import, MSC, 25 kW PV MAX/export permission, and no battery-export owner. The inverter's near-full taper completed physical 100% at about 17:18:47. Tiny 0.01-0.05 kW measured imports during final taper were not commanded optimizer import.
 
-## Initial candidate tests (before independent review)
+## Parked Phase 2 live evidence
 
-- Tests-first characterization captured only the approved missing features; no separate out-of-scope production defect was established.
-- Final new/changed characterization gate: **144 passed / 186 subtests passed**.
-- Existing affected suites: **345 passed / 332 subtests passed**, with exactly the two frozen Phase 2 tests deselected.
-- Independent protections: **383 passed / 411 subtests passed**.
-- Existing Solar test bodies and Morning Slow control methods retain their prior assertions/behavior; legacy sunset-focused fixtures explicitly select margin zero.
-- The affected and independent groups were repeated after the startup-retry correction: zero-relief entry uses two observations; an actual downward hard reset requires three. Both final groups passed without unexpected failures.
-- Full suite ran **once** with `python -B -m pytest -q -p no:cacheprovider --disable-warnings --tb=short tests`: **904 passed / 872 subtests passed**, exactly **2 frozen Phase 2 failures**, 201 warnings, 67.75 seconds. Both failures retain their prior character: export 25 versus closed 0, and MSC before observed closure.
-- Initial compileall for `app` and all five changed/new Python test files and `git diff --check` passed. Current continuation results supersede this historical gate. The 13 modified and 3 new candidate files are now committed in the accepted source checkpoint; .67 live acceptance remains pending.
+Around 07:20-07:25 AEDT on 8 October, Morning Dump hovered near its approximately 15% floor and toggled off/on. On two exits the owner disappeared while physical battery discharge persisted around 12.6-14.0 kW and grid export around 12.8-14.6 kW. The optimizer detected the continuing discharge/export, commanded the export limit closed to zero, and recovered to Morning Slow within seconds.
 
-The only frozen expected failures in `tests/test_msc_baseline_overlay_contract.py` remain:
-
-- `test_exact_msc_does_not_reopen_before_export_is_observed_closed`
-- `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`
-
-The new setting is exposed in config/API/UI/.env.example, with atomic invalid-update rejection and nullable trace-copy status diagnostics. `app/models.py` now includes observation timestamp data used by the Solar physical-relief feedback controller. The five release-version identities are now locally prepared as `2.3.56-haos67`; control semantics remain unchanged.
-
-## Preserved diagnostics and historical evidence
-
-.66 retains the .65 diagnostics hotfix: 512 MiB maximum download, at most 4 active downloads, 2-minute lifetime, 25 segments; approximately 1000-cycle memory trace and 15-minute flushes to the rolling 24-hour archive. Diagnostics remain isolated from control with conservative gap/clock handling and no final shutdown flush.
-
-Historical provider/regression and metadata-preparation gates each recorded 842 passed / 778 subtests with only the two frozen failures. The metadata API/version subset passed 48 / 53 subtests. Those results do not substitute for the .67 gate above.
-
-Morning Dump remains operator-accepted for its observed export/floor/relinquishment case. Recorded Morning Slow tuning remains 2 kW until 11:00, minimum FiT $0.01/kWh, base-load allowance 2 kW and sunset cutoff 1 hour. Live tuning does not change software defaults.
-
-## Parked work
-
-Evening Boost reserve-estimator instability remains unresolved: instantaneous load projected across the overnight horizon can yield reserve above 100% and unstable Boost/MSC transitions. Its import-cost trust interaction is also parked: a >=0.01 kWh import/top-up chunk with untrusted price can poison that day's floor despite later valid observations. Prior .63 evidence included about 18.412 kWh imported and $0.2037716/kWh highest actual import price with an unknown floor. Separate bounded review/remediation and live acceptance are still required.
-
-Export Value Gate remains advisory-only and Actual Import Cost Guard enforcing. Do not begin Phase 2, Climate Manager, Morning Dump redesign or broad refactoring, and do not weaken settlement protections.
-
-The 27 September Solar aggregate-budget threshold-switching observation remains parked for evidence-led monitoring; .67 does not claim to fix that independent gate.
+This is not a Phase 1 defect. Preserve it as evidence for the planned Phase 2 observed-transition implementation.
 
 ## Exact next action
 
-Review the local `2.3.56-haos67` release-preparation diff and obtain separate authorization for its checkpoint commit. Leave preparation unstaged, uncommitted and unpushed. Tagging, build/publication, release/deployment, restart, the live 15 kW setting and .67 live acceptance require separate authorization. No .67 tag, build, deployment or live acceptance has occurred; Phase 2 remains frozen.
+Start a **NEW** Codex session for **Phase 2 transition safety**. Use **Ultra** reasoning because transition safety is safety-critical. Speed: **Standard**.
 
-Earlier necessary charging is an intentional effect of the margin. Physical export preservation depends on real plant feedback and is not live-proven for .67. The source checkpoint is committed; the release-preparation patch remains local and uncommitted. Known-good rollback remains .65.
-
-Monitor-only/dry-run review must confirm requests, priority/normal-cap bounds and absence of writes; simulated decisions alone cannot establish post-command relief authority. After separately approved deployment/configuration, verify earlier fill, deadline relinquishment/full-battery export, actual export-preserving probe response, reduction/reset/retry and trust/ownership transitions. Acceptance must retain MSC, normal PV MAX/high permission, no battery export and Demand Window import blocking. Full steps are in `CURRENT_STATE.md`; .65 remains rollback.
+Work only on the settlement sequence in `CONTROL_CONTRACT.md`, with a separately approved staged fix branch. Do not alter Phase 1 semantics, operator defaults, roadmap order, or unrelated parked work.
