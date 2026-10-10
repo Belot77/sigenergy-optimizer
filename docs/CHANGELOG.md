@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-10 - 2.3.57-haos68 Phase 2 release metadata (local, uncommitted)
+
+- Prepare version `2.3.57-haos68`, proposed tag `v2.3.57-haos68` and proposed image `ghcr.io/belot77/sigenergy-optimizer:2.3.57-haos68`. Synchronize only add-on config version, build version label, plain build stamp, API version and `_RUNTIME_SIGNATURE`.
+- Phase 2 source checkpoint is committed locally as `22602e1ad225e39b7679a1af9d9bf3e04348e887` on `fix/phase2-observed-msc-transition`. This entry supersedes the earlier uncommitted implementation status below. Release metadata remains unstaged/uncommitted; no tag, build, publication, release, deployment or restart is performed.
+- Retain prior validation: 920 passed, 913 subtests, zero failures, 201 Pydantic deprecation warnings; compileall and diff check passed. Independent production and final test-delta reviews passed; both formerly frozen transition tests passed unchanged. Phase 2 is code-validated, not live-accepted.
+- Last recorded live identity remains `.67 / 2.3.56-haos67`, source `1973ac643c29044e8bfb894873adfdd53c7eb4c8`; known-good rollback remains `.65 / 2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. No new live query or inference from repository defaults.
+- Preserve the unresolved Phase 1 Evening Boost stability and Solar switching acceptance decisions. Scoped .67 Solar proof does not close them; controlled deployment requires explicit disposition and separate authorization. Keep High/Spike, Medium and tier-specific SoC work in the later package.
+- Next approval: local release-metadata commit, followed by separately authorized publication and controlled deployment/live acceptance. Controller behaviour, tests and configuration defaults are unchanged.
+
 ## 2026-10-10 - Phase 2 observed transition settlement (local, uncommitted)
 
 - Close the discharge-to-MSC safety gap: export close -> trusted observed closure -> MSC request -> trusted exact MSC strictly after the request -> permitted reopening. Preserve restrictive state across cycles, restart and telemetry uncertainty.
