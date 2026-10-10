@@ -54,7 +54,7 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
         )
         self.assertEqual("blocked", decision.trace_values["import_branch"])
 
-    def test_stage_one_apply_requests_msc_before_closing_open_ceiling(self) -> None:
+    def test_stage_one_apply_closes_export_and_defers_msc_to_later_observation(self) -> None:
         ha = RecordingHA()
         optimizer = self.optimizer(ha)
         ha.state_values = {
@@ -79,9 +79,10 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
             optimizer.cfg.grid_export_limit,
             0.01,
         )
-        self.assertLess(ha.calls.index(mode_call), ha.calls.index(close_call))
-        intervening = ha.calls[ha.calls.index(mode_call) + 1 : ha.calls.index(close_call)]
-        self.assertFalse(any(call[0] == "get_state_value" for call in intervening))
+        self.assertIn(close_call, ha.calls)
+        self.assertNotIn(mode_call, ha.calls)
+        self.assertEqual(0.01, ha.state_values[optimizer.cfg.grid_export_limit])
+        self.assertEqual("", ha.state_values[optimizer.cfg.ems_mode_select])
 
     def test_stage_two_does_not_require_observed_closed_export(self) -> None:
         optimizer = self.optimizer()
@@ -108,7 +109,7 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
             decision.trace_values["export_branch"],
         )
 
-    def test_high_ceiling_apply_preflights_drift_then_reasserts_exact_msc(self) -> None:
+    def test_high_ceiling_drift_requires_later_closed_and_exact_msc_observations(self) -> None:
         ha = RecordingHA()
         optimizer = self.optimizer(ha)
         ha.state_values = {
@@ -127,14 +128,38 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
         read_call = ("get_state_value", optimizer.cfg.ems_mode_select, "")
         close_call = ("set_number", optimizer.cfg.grid_export_limit, 0.01)
         export_call = ("set_number", optimizer.cfg.grid_export_limit, 25.0)
-        read_indices = [
-            index for index, call in enumerate(ha.calls) if call == read_call
-        ]
-        self.assertGreaterEqual(len(read_indices), 2)
-        self.assertLess(read_indices[0], ha.calls.index(close_call))
-        self.assertLess(ha.calls.index(close_call), ha.calls.index(mode_call))
-        self.assertLess(ha.calls.index(mode_call), read_indices[-1])
-        self.assertLess(read_indices[-1], ha.calls.index(export_call))
+        self.assertLess(ha.calls.index(read_call), ha.calls.index(close_call))
+        self.assertNotIn(mode_call, ha.calls)
+        self.assertNotIn(export_call, ha.calls)
+
+        closed_state = self._full_battery_opportunity(
+            current_ems_mode=MODE_CMD_DISCHARGE_PV,
+            current_export_limit=0.01,
+        )
+        closed_decision = self.decide(optimizer, closed_state, self.FIXED_AFTERNOON)
+        second_cycle_start = len(ha.calls)
+        asyncio.run(optimizer._apply(closed_state, closed_decision))
+        second_cycle_calls = ha.calls[second_cycle_start:]
+
+        self.assertIn(mode_call, second_cycle_calls)
+        self.assertNotIn(export_call, second_cycle_calls)
+        self.assertEqual(0.01, ha.state_values[optimizer.cfg.grid_export_limit])
+
+        ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+        ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
+        settled_state = self._full_battery_opportunity(
+            current_ems_mode=MODE_MAX_SELF,
+            current_export_limit=0.01,
+        )
+        settled_decision = self.decide(optimizer, settled_state, self.FIXED_AFTERNOON)
+        third_cycle_start = len(ha.calls)
+        asyncio.run(optimizer._apply(settled_state, settled_decision))
+        third_cycle_calls = ha.calls[third_cycle_start:]
+
+        self.assertIn(export_call, third_cycle_calls)
+        self.assertLess(
+            third_cycle_calls.index(read_call), third_cycle_calls.index(export_call)
+        )
 
     def test_transition_into_discharge_settles_target_before_mode(self) -> None:
         ha = RecordingHA()
@@ -178,7 +203,7 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
         self.assertLess(ha.events.index(export_call), ha.events.index(read_call))
         self.assertLess(ha.events.index(read_call), ha.events.index(mode_call))
 
-    def test_transition_out_of_discharge_requests_msc_before_export_close(self) -> None:
+    def test_transition_out_of_discharge_waits_for_later_observed_export_close(self) -> None:
         ha = RecordingHA()
         optimizer = self.optimizer(ha)
         ha.state_values = {
@@ -208,7 +233,26 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
 
         mode_call = ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
         close_call = ("set_number", optimizer.cfg.grid_export_limit, 0.01)
-        self.assertLess(ha.calls.index(mode_call), ha.calls.index(close_call))
+        self.assertIn(close_call, ha.calls)
+        self.assertNotIn(mode_call, ha.calls)
+        self.assertEqual(
+            MODE_CMD_DISCHARGE_PV, ha.state_values[optimizer.cfg.ems_mode_select]
+        )
+
+        closed_state = self.state(
+            self.FIXED_AFTERNOON,
+            battery_soc=95.0,
+            available_discharge_energy_kwh=28.5,
+            feedin_price=0.0,
+            feedin_price_cents=0.0,
+            current_ems_mode=MODE_CMD_DISCHARGE_PV,
+            current_export_limit=0.01,
+        )
+        closed_decision = self.decide(optimizer, closed_state, self.FIXED_AFTERNOON)
+        asyncio.run(optimizer._apply(closed_state, closed_decision))
+
+        self.assertLess(ha.calls.index(close_call), ha.calls.index(mode_call))
+        self.assertEqual(0.01, ha.state_values[optimizer.cfg.grid_export_limit])
 
     def test_next_observed_cycle_recovers_to_closed_msc(self) -> None:
         optimizer = self.optimizer()

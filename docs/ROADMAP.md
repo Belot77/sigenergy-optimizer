@@ -8,7 +8,7 @@ Status: **COMPLETE locally** at code-validation HEAD `7649d185b71fe08fab26368013
 
 The final gate collected 735 tests: 733 passed and only the two frozen Phase 2 transition-safety tests failed; compileall and `git diff --check` passed. The final code/test checkpoint corrected a stale safe-fallback protection-test expectation without changing production code.
 
-The earlier validated Phase 1 checkpoint through docs commit `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce` is present on `origin/fix/phase1-audit-remediation`; that checkpoint recorded remote `main` as `de5b5af082533a48ffb6d0d300f636cbcb4463ad`. Current live and rollback are `2.3.54-haos65` at `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. The provider-aware Solar source checkpoint is `aec127d7efd9fe7787c8253b882207b50a44eeed` on `fix/phase1-audit-remediation`, committed but undeployed. Current validation and the tests/docs follow-up are recorded in `CURRENT_STATE.md`; Phase 1 live acceptance remains pending.
+The earlier validated Phase 1 checkpoint through docs commit `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce` is present on `origin/fix/phase1-audit-remediation`; that checkpoint recorded remote `main` as `de5b5af082533a48ffb6d0d300f636cbcb4463ad`. At that historical checkpoint, live and rollback were `2.3.54-haos65` at `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. The provider-aware Solar source checkpoint is `aec127d7efd9fe7787c8253b882207b50a44eeed` on `fix/phase1-audit-remediation`, committed but undeployed at that checkpoint. Current validation and the tests/docs follow-up are recorded in `CURRENT_STATE.md`; Phase 1 live acceptance remains pending.
 
 ## 2. Phase 1 checkpoint documentation
 
@@ -20,26 +20,30 @@ The checkpoint records the local code-validation result, durable semantics, live
 
 Feature-branch push: **COMPLETE** through `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce` on `origin/fix/phase1-audit-remediation`.
 
-`main` promotion, version/release work, deployment/restart, and controlled live acceptance: **PENDING separate explicit approval**. Repository validation and service-call success are not live settlement proof.
+The publication status above is historical. The 8 October checkpoint records `.67` release/startup and scoped Solar live evidence; see `CURRENT_STATE.md` for the last recorded identity and `.65` rollback. No current live query was made at this Phase 2 checkpoint.
 
-Before configuring the discussed `15.0 kW` physical threshold and `0.5 kW` headroom, decide whether 15 kW is merely the site-export level that releases Morning Slow's 2 kW charge cap or a hard network/export limit. Current physical-relief behavior does not enforce a hard cap.
+Formal Phase 1 acceptance and explicit disposition of retained follow-ups remain **PENDING**. Scoped Solar evidence does not establish completion of the separate Evening Boost transition-stability dependency. Repository validation and service-call success are not live settlement proof.
+
+The 7 October decision resolves Solar's 15 kW value as physical saturation evidence, not hard-cap enforcement. The 8 October record reports site configuration of 15 kW with Morning Slow headroom 0.0; the older 0.5 kW discussion is not authority to change it.
 
 Separate observed follow-up: the 27 September morning trace showed Solar's aggregate energy budget crossing near its threshold with repeated export-ceiling switching. Investigate it independently; the near-full repair and these seven checkpoints do not establish a fix. The operator must decide from focused evidence whether it blocks final Phase 1 acceptance.
 
-Gate: Phase 1 release and live acceptance, including disposition of retained follow-ups, must pass before Phase 2 begins.
+Gate retained: Phase 1 release and live acceptance, including disposition of retained follow-ups, were prerequisites to beginning Phase 2. Explicit approval allowed Phase 2 local development ahead of this gate; this sequencing exception does not mark Phase 1 accepted or waive its outstanding live dependency.
 
 ## 4. Phase 2 transition-settlement safety
 
-Status: **paused/frozen until the Phase 1 live gate passes**.
+Status (10 October): **locally complete, code-validated and independently reviewed; uncommitted, unreleased and not live-accepted**. Development proceeded ahead of the Phase 1 live gate as recorded above.
 
-Implement the observed close -> later observe closed -> request MSC -> later observe exact MSC -> reopen sequence in `CONTROL_CONTRACT.md`. Entering deliberate battery export must settle its export target before discharge EMS. Service-call success never counts as observation.
+The local implementation enforces the observed close -> later observe closed -> request MSC -> later observe exact MSC -> reopen sequence in `CONTROL_CONTRACT.md`. Entering deliberate battery export must settle its export target before discharge EMS. Service-call success never counts as observation.
 
-Protect the two existing expected Phase 2 failures:
+Both formerly frozen tests now pass unchanged:
 
 - `test_exact_msc_does_not_reopen_before_export_is_observed_closed`
 - `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`
 
-Then run targeted transition tests, complete regression testing, a test release, and controlled live proof.
+Targeted protection validation and independent production/final test-delta reviews passed. Final suite: 920 passed / 913 subtests, zero failures, 201 Pydantic deprecation warnings; compileall and diff check passed.
+
+Next: separately authorized checkpoint commit/release preparation, explicit resolution of the retained Phase 1 gate, then separately authorized controlled deployment and observed live acceptance using `CURRENT_STATE.md`. High/Spike priority and unrelated Phase 1 issues remain parked; they must not be stacked onto this checkpoint.
 
 Gate: Phase 2 must be stable and live-accepted before downstream integration or restructuring.
 

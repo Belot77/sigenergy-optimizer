@@ -271,6 +271,16 @@ class Haos49FailureCharacterizationTests(Haos49CharacterizationCase):
 
         asyncio.run(optimizer._apply(state, decision))
 
+        self.assertNotIn(
+            ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF), ha.calls
+        )
+        closed_state = self._full_battery_state(
+            current_ems_mode=MODE_CMD_DISCHARGE_PV,
+            current_export_limit=0.01,
+        )
+        closed_decision = self.decide(optimizer, closed_state, self.FIXED_AFTERNOON)
+        asyncio.run(optimizer._apply(closed_state, closed_decision))
+
         self.assertIn(("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF), ha.calls)
         export_writes = [
             float(call[2])

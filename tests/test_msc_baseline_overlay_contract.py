@@ -2,15 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from datetime import datetime, timedelta
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
+from app import optimizer as optimizer_module
 from app.optimizer import (
     DISCHARGE_MODES,
     MODE_CMD_CHARGE_GRID,
     MODE_CMD_DISCHARGE_PV,
     MODE_MAX_SELF,
 )
-from app.models import BATTERY_EXPORT, EXPORT_BLOCKED, MSC_SURPLUS_CEILING
+from app.models import (
+    BATTERY_EXPORT, Decision, EXPORT_BLOCKED, HVACObservedValue,
+    HVACSolarInputContext, MSC_SURPLUS_CEILING,
+)
+import haos49_characterization_helpers as characterization_helpers
 from haos49_characterization_helpers import (
     Haos49CharacterizationCase,
     RecordingHA,
@@ -39,6 +46,109 @@ class ScriptedReadbackHA(RecordingHA):
             self._record_state_value(entity_id, observed)
             return observed
         return self.state_values.get(entity_id, default)
+
+
+class ClockedRecordingHA(RecordingHA):
+    """Actuator reports follow the same simulated clock as their application."""
+
+    def _record_state_value(self, entity_id: str, value: object) -> None:
+        reported = optimizer_module.datetime.now(timezone.utc).isoformat()
+        self.state_values[entity_id] = value
+        self._state_value_metadata[entity_id] = {
+            "last_updated": reported, "last_reported": reported,
+        }
+
+
+class LiveTransitionHA(RecordingHA):
+    """Commands are accepted; only explicit telemetry reports change readback."""
+
+    def __init__(self):
+        super().__init__(settle_numbers=False, settle_selects=False)
+        self.clock_utc = None
+        self.report_after_select = None
+
+    async def get_state_value(self, entity_id, default=""):
+        if self.report_after_select is not None:
+            report_entity, report_value = self.report_after_select
+            if entity_id == report_entity and ("select_option", report_entity, report_value) in self.calls:
+                # Explicitly scripted telemetry arrives on a later read, not as
+                # a side effect of service acceptance. Unscripted requests never settle.
+                self.clock_utc += timedelta(milliseconds=1)
+                self.state_values[report_entity] = report_value
+                reported = self.clock_utc.isoformat()
+                self._state_value_metadata[report_entity] = {
+                    "last_updated": reported, "last_reported": reported,
+                }
+                self.report_after_select = None
+        return await super().get_state_value(entity_id, default)
+
+    async def get_state_report_metadata(self, entity_ids):
+        return {
+            entity_id: {
+                "entity_id": entity_id,
+                "state": self.state_values[entity_id],
+                **self._state_value_metadata[entity_id],
+            }
+            for entity_id in entity_ids
+            if entity_id in self.state_values and entity_id in self._state_value_metadata
+        }
+
+
+@contextmanager
+def later_msc_report_clock(ha, when):
+    """Give these positive fixtures a later actuator report on one shared clock."""
+    moment = [when.replace(tzinfo=timezone.utc) if when.tzinfo is None else when.astimezone(timezone.utc)]
+
+    class ObservedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return moment[0].astimezone(tz) if tz else moment[0].replace(tzinfo=None)
+
+    original_select = ha.select_option
+
+    async def select_with_later_report(entity_id, value):
+        # The request has already started. Advance time before the existing
+        # actuator double independently records its successful state report.
+        moment[0] += timedelta(milliseconds=1)
+        return await original_select(entity_id, value)
+
+    ha.select_option = select_with_later_report
+    try:
+        with patch("app.optimizer.datetime", ObservedDateTime), patch.object(
+            characterization_helpers, "datetime", ObservedDateTime,
+        ):
+            yield
+    finally:
+        ha.select_option = original_select
+
+
+async def establish_observed_msc_baseline(case, optimizer, ha, when) -> None:
+    """Prepare ongoing MSC tests through real application, without a latch bypass.
+
+    Startup already observes both closed export and exact MSC. Only after the
+    live readback checks may application open the normal surplus ceiling. Solar
+    feedback, provider expiry and injected actuator failures start after this.
+    """
+    optimizer.ha = ha
+    cfg = optimizer.cfg
+    state = case.state(when, current_ems_mode=MODE_MAX_SELF, current_export_limit=0.01)
+    decision = Decision(
+        ems_mode=MODE_MAX_SELF,
+        export_limit=cfg.export_limit_high,
+        export_intent=MSC_SURPLUS_CEILING,
+        requires_verified_msc_before_export=True,
+        import_limit=0.0,
+        ess_charge_limit=cfg.ess_charge_limit_value,
+        ess_discharge_limit=cfg.ess_discharge_limit_value,
+        pv_max_power_limit=cfg.pv_max_power_normal,
+    )
+    with case.optimizer_time(when):
+        ha._record_state_value(cfg.ems_mode_select, MODE_MAX_SELF)
+        ha._record_state_value(cfg.grid_export_limit, 0.01)
+        result = await optimizer._apply(state, decision)
+    case.assertTrue(result.succeeded, result.error)
+    case.assertIn(("set_number", cfg.grid_export_limit, cfg.export_limit_high), ha.calls)
+    ha.calls.clear()
 
 
 class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
@@ -667,6 +777,655 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             (MODE_MAX_SELF, 0.0, 0.0, 25.0),
         )
 
+    def _assert_pending_transition_preserves_pv_safety_owner(
+        self, *, standby: bool,
+    ) -> None:
+        ha = RecordingHA(settle_numbers=False, settle_selects=False)
+        optimizer = self.optimizer(
+            ha,
+            standby_holdoff_enabled=standby,
+            standby_holdoff_end_time="23:59",
+            pv_forecast_holdoff_kwh=120.0,
+            ess_max_charging_limit="number.test_ess_charge",
+            ess_max_discharging_limit="number.test_ess_discharge",
+        )
+        optimizer._tz = timezone.utc
+        cfg = optimizer.cfg
+        expected_pv_limit = 2.0 if standby else 0.1
+        msc_call = ("select_option", cfg.ems_mode_select, MODE_MAX_SELF)
+        close_call = ("set_number", cfg.grid_export_limit, 0.01)
+        phases = (
+            ("open", 12.0, True, MODE_CMD_DISCHARGE_PV, True, False),
+            ("exact_msc_still_open", 12.0, True, MODE_MAX_SELF, True, False),
+            ("untrusted_close", 0.01, False, MODE_MAX_SELF, True, False),
+            ("untrusted_close_repeated", 0.01, False, MODE_MAX_SELF, False, False),
+            ("closed", 0.01, True, MODE_CMD_DISCHARGE_PV, True, True),
+            ("msc_unobserved", 0.01, True, MODE_MAX_SELF, False, True),
+            ("msc_not_exact", 0.01, True, "Maximum Self", True, True),
+        )
+        for name, export_limit, export_observed, ems, ems_observed, request_msc in phases:
+            with self.subTest(phase=name):
+                state = self._ordinary_state(
+                    60.0,
+                    feedin_price=0.0,
+                    feedin_price_cents=0.0,
+                    current_price=0.30 if standby else -0.10,
+                    current_price_cents=30.0 if standby else -10.0,
+                    price_is_negative=not standby,
+                    demand_window_active=True,
+                    demand_window_observed=True,
+                    load_kw=1.4,
+                    forecast_today_kwh=150.0,
+                    forecast_remaining_kwh=150.0,
+                    price_forecast_source_trusted=True,
+                    price_forecast_entries=[
+                        {
+                            "start_time": self.FIXED_AFTERNOON.timestamp() + 1800,
+                            "per_kwh": -0.10,
+                        },
+                    ],
+                    current_export_limit=export_limit,
+                    current_export_limit_observed=export_observed,
+                    current_ems_mode=ems,
+                    ems_mode_observed=ems_observed,
+                    current_import_limit=10.0,
+                    current_ess_charge_limit=0.01,
+                    current_ess_discharge_limit=25.0,
+                    current_pv_max_power_limit=25.0,
+                )
+                ha._record_state_value(cfg.grid_export_limit, export_limit)
+                ha._record_state_value(cfg.ems_mode_select, ems)
+                decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+                self.assertEqual(standby, decision.standby_holdoff_active)
+                self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+                self.assertEqual(0.0, decision.export_limit)
+                self.assertEqual(0.0, decision.import_limit)
+                self.assertEqual(expected_pv_limit, decision.pv_max_power_limit)
+                if standby:
+                    self.assertEqual(
+                        "standby_holdoff_active",
+                        decision.trace_values.get("pv_cap_reason"),
+                    )
+
+                call_start = len(ha.calls)
+                result = asyncio.run(optimizer._apply(state, decision))
+                cycle_calls = ha.calls[call_start:]
+
+                self.assertFalse(result.succeeded)
+                self.assertFalse(result.fallback_attempted)
+                self.assertTrue(decision.trace_gates.get("msc_transition_pending"))
+                self.assertIn(
+                    ("set_number", cfg.pv_max_power_limit, expected_pv_limit),
+                    cycle_calls,
+                )
+                self.assertIn(("set_number", cfg.grid_import_limit, 0.01), cycle_calls)
+                self.assertIn(
+                    ("set_number", cfg.ess_max_discharging_limit, 0.01),
+                    cycle_calls,
+                )
+                self.assertEqual(request_msc, msc_call in cycle_calls)
+                if not request_msc:
+                    self.assertIn(close_call, cycle_calls)
+                for method, entity_id, value in cycle_calls:
+                    if method != "set_number":
+                        continue
+                    if entity_id in {
+                        cfg.grid_export_limit,
+                        cfg.grid_import_limit,
+                        cfg.ess_max_discharging_limit,
+                    }:
+                        self.assertLessEqual(value, 0.01)
+                    if entity_id == cfg.pv_max_power_limit:
+                        self.assertLessEqual(value, expected_pv_limit)
+                    self.assertNotEqual(cfg.ess_max_charging_limit, entity_id)
+                optimizer._last_state = state
+                optimizer._last_decision = decision
+
+    def test_pending_msc_transition_preserves_standby_pv_restriction(self) -> None:
+        self._assert_pending_transition_preserves_pv_safety_owner(standby=True)
+
+    def test_pending_msc_transition_preserves_negative_price_pv_restriction(self) -> None:
+        self._assert_pending_transition_preserves_pv_safety_owner(standby=False)
+
+    def test_pending_transition_pv_restriction_survives_export_failure_and_fallback(self) -> None:
+        for raises in (False, True):
+            with self.subTest(export_close_raises=raises):
+                class FailedFirstExportHA(RecordingHA):
+                    export_entity = ""
+                    failed = False
+
+                    async def set_number(self, entity_id, value):
+                        if entity_id == self.export_entity and not self.failed:
+                            self.failed = True
+                            self.calls.append(("set_number", entity_id, value))
+                            if raises:
+                                raise RuntimeError("export actuator unavailable")
+                            return False
+                        return await super().set_number(entity_id, value)
+
+                ha = FailedFirstExportHA()
+                optimizer = self.optimizer(ha)
+                cfg = optimizer.cfg
+                ha.export_entity = cfg.grid_export_limit
+                state = self._ordinary_state(
+                    60.0,
+                    current_price=-0.10,
+                    current_price_cents=-10.0,
+                    price_is_negative=True,
+                    demand_window_active=True,
+                    demand_window_observed=True,
+                    current_ems_mode=MODE_CMD_DISCHARGE_PV,
+                    current_export_limit=12.0,
+                    current_pv_max_power_limit=25.0,
+                )
+                decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+                self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+                self.assertEqual(0.1, decision.pv_max_power_limit)
+
+                with later_msc_report_clock(ha, self.FIXED_AFTERNOON):
+                    result = asyncio.run(optimizer._apply(state, decision))
+
+                self.assertFalse(result.succeeded)
+                self.assertTrue(result.fallback_attempted)
+                self.assertTrue(result.fallback_succeeded)
+                pv_calls = [
+                    value for method, entity_id, value in ha.calls
+                    if method == "set_number" and entity_id == cfg.pv_max_power_limit
+                ]
+                self.assertEqual([0.1, 0.1], pv_calls)
+                self.assertLess(
+                    ha.calls.index(("set_number", cfg.pv_max_power_limit, 0.1)),
+                    ha.calls.index(("select_option", cfg.ems_mode_select, MODE_MAX_SELF)),
+                )
+                self.assertIn(("set_number", cfg.grid_import_limit, 0.01), ha.calls)
+                self.assertFalse(any(
+                    method == "set_number" and entity_id == cfg.grid_export_limit and value > 0.011
+                    for method, entity_id, value in ha.calls
+                ))
+
+    def test_settled_transition_discharge_failure_preserves_pv_safety_in_fallback(self) -> None:
+        async def run(standby, fallback_settles):
+            ha = ClockedRecordingHA()
+            moment = [self.FIXED_AFTERNOON.replace(tzinfo=timezone.utc)]
+
+            class ObservedDateTime(datetime):
+                @classmethod
+                def now(cls, tz=None):
+                    return moment[0].astimezone(tz) if tz else moment[0].replace(tzinfo=None)
+
+            original_select_option = ha.select_option
+
+            async def later_msc_report(entity_id, value):
+                # A genuine actuator report follows, rather than shares, the
+                # command's frozen timestamp. Preserve all recovery assertions.
+                moment[0] += timedelta(milliseconds=1)
+                return await original_select_option(entity_id, value)
+
+            ha.select_option = later_msc_report
+            optimizer = self.optimizer(
+                ha,
+                standby_holdoff_enabled=standby,
+                standby_holdoff_end_time="23:59",
+                pv_forecast_holdoff_kwh=120.0,
+                ess_max_discharging_limit="number.test_ess_discharge",
+            )
+            optimizer._tz = timezone.utc
+            cfg = optimizer.cfg
+            expected_pv_limit = 2.0 if standby else 0.1
+            failure_injected = False
+            original_set_number = ha.set_number
+
+            async def fail_discharge_once(entity_id, value):
+                nonlocal failure_injected
+                if entity_id == cfg.ess_max_discharging_limit and not failure_injected:
+                    failure_injected = True
+                    ha.calls.append(("set_number", entity_id, value))
+                    if not fallback_settles:
+                        # The transition settled, but export subsequently drifts
+                        # open and the fallback close is accepted without settling.
+                        ha._record_state_value(cfg.grid_export_limit, 12.0)
+                        ha.settle_numbers = False
+                    return False
+                return await original_set_number(entity_id, value)
+
+            for second in range(3):
+                when = self.FIXED_AFTERNOON + timedelta(seconds=second)
+                ems = MODE_MAX_SELF if second == 2 else MODE_CMD_DISCHARGE_PV
+                state = self._ordinary_state(
+                    60.0,
+                    when=when,
+                    feedin_price=0.0,
+                    feedin_price_cents=0.0,
+                    current_price=0.30 if standby else -0.10,
+                    current_price_cents=30.0 if standby else -10.0,
+                    price_is_negative=not standby,
+                    demand_window_active=True,
+                    demand_window_observed=True,
+                    load_kw=1.4,
+                    forecast_today_kwh=150.0,
+                    forecast_remaining_kwh=150.0,
+                    price_forecast_source_trusted=True,
+                    price_forecast_entries=[
+                        {"start_time": when.timestamp() + 1800, "per_kwh": -0.10},
+                    ],
+                    current_ems_mode=ems,
+                    current_export_limit=12.0 if second == 0 else 0.01,
+                    current_import_limit=0.01,
+                    current_pv_max_power_limit=25.0 if second == 0 else expected_pv_limit,
+                )
+                moment[0] = when.replace(tzinfo=timezone.utc)
+                with patch("app.optimizer.datetime", ObservedDateTime):
+                    ha._record_state_value(cfg.ems_mode_select, state.current_ems_mode)
+                    ha._record_state_value(cfg.grid_export_limit, state.current_export_limit)
+                    decision = self.decide(optimizer, state, when)
+                    self.assertEqual(standby, decision.standby_holdoff_active)
+                    self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+                    self.assertEqual(expected_pv_limit, decision.pv_max_power_limit)
+                    if second == 2:
+                        self.assertTrue(optimizer._msc_transition_observed(state))
+                        ha.set_number = fail_discharge_once
+                    call_start = len(ha.calls)
+                    event_start = len(ha.events)
+                    result = await optimizer._apply(state, decision)
+                cycle_calls = ha.calls[call_start:]
+                cycle_events = ha.events[event_start:]
+                self.assertFalse(result.succeeded)
+                if second < 2:
+                    self.assertFalse(result.fallback_attempted)
+                    self.assertEqual(
+                        second == 1,
+                        ("select_option", cfg.ems_mode_select, MODE_MAX_SELF) in cycle_calls,
+                    )
+                else:
+                    self.assertTrue(failure_injected)
+                    self.assertTrue(result.fallback_attempted)
+                    self.assertEqual(fallback_settles, result.fallback_succeeded, result.error)
+                    pv_calls = [
+                        value for method, entity_id, value in cycle_calls
+                        if method == "set_number" and entity_id == cfg.pv_max_power_limit
+                    ]
+                    self.assertTrue(pv_calls)
+                    self.assertTrue(all(value <= expected_pv_limit for value in pv_calls), pv_calls)
+                    self.assertLess(
+                        cycle_events.index(("set_number", cfg.pv_max_power_limit, expected_pv_limit)),
+                        cycle_events.index(("bulk_states", cfg.ems_mode_select, None)),
+                    )
+                    self.assertEqual(expected_pv_limit, ha.state_values[cfg.pv_max_power_limit])
+                self.assertFalse(any(
+                    method == "set_number" and entity_id == cfg.grid_export_limit and value > 0.011
+                    for method, entity_id, value in cycle_calls
+                ))
+                optimizer._last_state = state
+                optimizer._last_decision = decision
+
+        for standby in (True, False):
+            for fallback_settles in (True, False):
+                with self.subTest(standby=standby, fallback_settles=fallback_settles):
+                    asyncio.run(run(standby, fallback_settles))
+
+    def test_fallback_recovery_requires_fresh_post_request_msc_provenance(self) -> None:
+        async def run(scenario):
+            moment = [self.FIXED_AFTERNOON.replace(tzinfo=timezone.utc)]
+
+            class ObservedDateTime(datetime):
+                @classmethod
+                def now(cls, tz=None):
+                    return moment[0].astimezone(tz) if tz else moment[0].replace(tzinfo=None)
+
+            class FallbackObservationHA(ClockedRecordingHA):
+                export_failed = False
+                report = None
+
+                async def set_number(self, entity_id, value):
+                    if entity_id == cfg.grid_export_limit and not self.export_failed:
+                        self.export_failed = True
+                        self.calls.append(("set_number", entity_id, value))
+                        return False
+                    return await super().set_number(entity_id, value)
+
+                async def select_option(self, entity_id, value):
+                    self.calls.append(("select_option", entity_id, value))
+                    requested_at = moment[0]
+                    moment[0] += timedelta(seconds=1)
+                    observed = (
+                        "unavailable" if scenario == "unavailable"
+                        else MODE_CMD_DISCHARGE_PV if scenario == "unsettled"
+                        else MODE_MAX_SELF
+                    )
+                    reported_at = moment[0]
+                    if scenario == "stale":
+                        reported_at -= timedelta(hours=1)
+                    elif scenario in {"cached_before_request", "failed_request", "uncorrelated"}:
+                        reported_at = requested_at - timedelta(seconds=1)
+                    elif scenario == "same_request_timestamp":
+                        reported_at = requested_at
+                    elif scenario == "future":
+                        reported_at += timedelta(minutes=1)
+                    updated_at = reported_at
+                    if scenario == "fresh_unchanged_report":
+                        updated_at -= timedelta(hours=1)
+                    metadata = {
+                        "last_updated": updated_at.isoformat(),
+                        "last_reported": reported_at.isoformat(),
+                    }
+                    self.state_values[entity_id] = observed
+                    self._state_value_metadata[entity_id] = (
+                        {} if scenario == "missing_provenance" else metadata
+                    )
+                    self.report = {
+                        "entity_id": "select.wrong_entity" if scenario == "uncorrelated" else entity_id,
+                        "state": observed,
+                        **metadata,
+                    }
+                    if scenario == "uncorrelated":
+                        self.report["last_reported"] = moment[0].isoformat()
+                    return scenario != "failed_request"
+
+                async def get_state_report_metadata(self, entity_ids):
+                    if scenario == "missing_provenance" or cfg.ems_mode_select not in entity_ids:
+                        return {}
+                    return {cfg.ems_mode_select: self.report}
+
+            ha = FallbackObservationHA()
+            optimizer = self.optimizer(
+                ha,
+                ess_max_charging_limit="number.test_ess_charge",
+                ess_max_discharging_limit="number.test_ess_discharge",
+            )
+            cfg = optimizer.cfg
+            # Bound timeout only; retain the production polling and trust checks.
+            wait_for_exact = optimizer._wait_for_exact_entity_state
+
+            async def short_wait(*args, **kwargs):
+                kwargs["timeout_s"] = 0.01
+                return await wait_for_exact(*args, **kwargs)
+
+            optimizer._wait_for_exact_entity_state = short_wait
+            state = self._ordinary_state(
+                60.0,
+                current_export_limit=12.0,
+                current_import_limit=0.01,
+                current_ess_charge_limit=0.01,
+                current_ess_discharge_limit=0.01,
+                demand_window_active=False,
+                demand_window_observed=True,
+            )
+            decision = Decision(
+                ems_mode=MODE_MAX_SELF, export_limit=0.0,
+                export_intent=EXPORT_BLOCKED, import_limit=0.0,
+                ess_charge_limit=25.0, ess_discharge_limit=25.0,
+                pv_max_power_limit=25.0,
+            )
+            with patch("app.optimizer.datetime", ObservedDateTime):
+                result = await optimizer._apply(state, decision)
+                export_value, export_trusted = await optimizer._read_trusted_live_number(cfg.grid_export_limit)
+
+            self.assertFalse(result.succeeded)
+            self.assertTrue(result.fallback_attempted)
+            self.assertTrue(export_trusted)
+            self.assertEqual(0.01, export_value)
+            fresh = scenario in {"fresh_changed_state", "fresh_unchanged_report"}
+            recovery_entities = {
+                cfg.grid_import_limit, cfg.ess_max_charging_limit,
+                cfg.ess_max_discharging_limit, cfg.pv_max_power_limit,
+            }
+            recovered = {
+                entity_id for method, entity_id, value in ha.calls
+                if method == "set_number" and entity_id in recovery_entities and value > 0.011
+            }
+            self.assertEqual(recovery_entities if fresh else set(), recovered)
+            self.assertEqual(fresh, result.fallback_succeeded, result.error)
+            self.assertIn(("set_number", cfg.ess_max_discharging_limit, 0.01), ha.calls)
+            self.assertFalse(any(
+                method == "set_number" and entity_id == cfg.grid_export_limit and value > 0.011
+                for method, entity_id, value in ha.calls
+            ))
+
+        for scenario in (
+            "stale", "missing_provenance", "unavailable", "unsettled", "failed_request",
+            "cached_before_request", "same_request_timestamp", "future", "uncorrelated",
+            "fresh_changed_state", "fresh_unchanged_report",
+        ):
+            with self.subTest(scenario=scenario):
+                asyncio.run(run(scenario))
+
+    def _live_transition_optimizer(self, ha):
+        return self.optimizer(
+            ha,
+            ess_max_charging_limit="number.test_ess_charge",
+            ess_max_discharging_limit="number.test_ess_discharge",
+        )
+
+    async def _live_transition_cycle(
+        self, optimizer, ha, second, ems, export, *,
+        ems_second=None, export_second=None, owner=None, mode=None, discharge=False,
+    ):
+        """Supply the same timestamped reports to snapshot and live HA readback."""
+        when = self.FIXED_AFTERNOON + timedelta(seconds=second)
+        cfg = optimizer.cfg
+        control_mode = mode or cfg.automated_option
+
+        def report(entity_id, value, report_second):
+            available = value is not None
+            at = (self.FIXED_AFTERNOON + timedelta(seconds=report_second)).replace(tzinfo=timezone.utc)
+            ha.state_values[entity_id] = value if available else "unavailable"
+            ha._state_value_metadata[entity_id] = (
+                {"last_updated": at.isoformat(), "last_reported": at.isoformat()}
+                if available else {}
+            )
+            return HVACObservedValue(
+                value=value, available=available,
+                fresh=available and 0 <= second - report_second <= cfg.hvac_solar_data_max_age_seconds,
+                observed_at_ts=at.timestamp() if available else None,
+            )
+
+        ems_report = report(cfg.ems_mode_select, ems, second if ems_second is None else ems_second)
+        export_report = report(cfg.grid_export_limit, export, second if export_second is None else export_second)
+        state = self._ordinary_state(
+            95.7, when=when,
+            sigenergy_mode=control_mode,
+            current_ems_mode=ems or "unavailable",
+            ems_mode_observed=ems_report.available and ems_report.fresh,
+            current_export_limit=export if export is not None else 0.0,
+            current_export_limit_observed=export_report.available and export_report.fresh,
+            current_import_limit=0.01,
+            current_import_limit_observed=True,
+            demand_window_active=True,
+            demand_window_observed=True,
+            current_pv_max_power_limit=25.0,
+            current_price=-0.10 if owner == "negative" else 0.30,
+            price_is_negative=owner == "negative",
+        )
+        state.hvac_solar_inputs = HVACSolarInputContext(
+            live_snapshot=True,
+            control_mode=HVACObservedValue(
+                value=control_mode, available=True, fresh=True,
+                observed_at_ts=when.replace(tzinfo=timezone.utc).timestamp(),
+            ),
+            observed_ems_mode=ems_report,
+            observed_export_limit=export_report,
+        )
+        # This is observation metadata populated by _read_state, not a latch.
+        state._msc_ems_reported_at = ems_report.observed_at_ts
+        pv_limit = 2.0 if owner == "standby" else 0.1 if owner == "negative" else 25.0
+        decision = Decision(
+            ems_mode=MODE_CMD_DISCHARGE_PV if discharge else MODE_MAX_SELF,
+            export_limit=12.0 if discharge else 0.0 if owner else 25.0,
+            export_intent=BATTERY_EXPORT if discharge else EXPORT_BLOCKED if owner else MSC_SURPLUS_CEILING,
+            requires_verified_msc_before_export=not discharge and owner is None,
+            import_limit=0.0,
+            ess_charge_limit=25.0,
+            ess_discharge_limit=25.0,
+            pv_max_power_limit=pv_limit,
+            standby_holdoff_active=owner == "standby",
+        )
+        ha.calls.clear()
+        ha.clock_utc = when.replace(tzinfo=timezone.utc)
+
+        class ObservedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls.fromtimestamp(ha.clock_utc.timestamp(), tz)
+
+        with patch("app.optimizer.datetime", ObservedDateTime):
+            result = await optimizer._apply(state, decision)
+        self.assertTrue(state.hvac_solar_inputs.live_snapshot)
+        return result, list(ha.calls)
+
+    def _assert_live_transition_restrictive(self, optimizer, result, calls, *, msc):
+        cfg = optimizer.cfg
+        self.assertFalse(result.succeeded)
+        self.assertFalse(result.fallback_attempted)
+        self.assertEqual(msc, ("select_option", cfg.ems_mode_select, MODE_MAX_SELF) in calls)
+        if not msc:
+            self.assertIn(("set_number", cfg.grid_export_limit, 0.01), calls)
+        self.assertIn(("set_number", cfg.grid_import_limit, 0.01), calls)
+        self.assertIn(("set_number", cfg.ess_max_discharging_limit, 0.01), calls)
+        for method, entity_id, value in calls:
+            if method != "set_number":
+                continue
+            self.assertNotEqual(cfg.ess_max_charging_limit, entity_id)
+            if entity_id in {cfg.grid_export_limit, cfg.grid_import_limit, cfg.ess_max_discharging_limit}:
+                self.assertLessEqual(value, 0.011)
+
+    def test_live_multicycle_transition_loses_telemetry_then_recovers(self):
+        async def run():
+            ha = LiveTransitionHA()
+            optimizer = self._live_transition_optimizer(ha)
+            result, _ = await self._live_transition_cycle(
+                optimizer, ha, -1, MODE_CMD_DISCHARGE_PV, 12.0, discharge=True,
+            )
+            self.assertTrue(result.succeeded, result.error)
+            stages = (
+                (0, MODE_CMD_DISCHARGE_PV, 12.0, {}, False),
+                (1, MODE_CMD_DISCHARGE_PV, 0.01, {"export_second": 0}, False),
+                (2, MODE_CMD_DISCHARGE_PV, 0.01, {}, True),
+                (3, MODE_MAX_SELF, 0.01, {"ems_second": 2}, True),
+                (4, None, 0.01, {}, True),
+                (5, MODE_MAX_SELF, None, {}, False),
+                (6, MODE_MAX_SELF, 0.01, {"export_second": 5}, False),
+                (7, MODE_MAX_SELF, 0.01, {}, True),
+                (8, MODE_MAX_SELF, 0.01, {"ems_second": -200}, True),
+                (9, MODE_MAX_SELF, 0.01, {"ems_second": 7}, True),
+            )
+            for second, ems, export, metadata, msc in stages:
+                result, calls = await self._live_transition_cycle(
+                    optimizer, ha, second, ems, export, **metadata,
+                )
+                self._assert_live_transition_restrictive(optimizer, result, calls, msc=msc)
+            result, calls = await self._live_transition_cycle(optimizer, ha, 10, MODE_MAX_SELF, 0.01)
+            self.assertTrue(result.succeeded, result.error)
+            self.assertIn(("set_number", optimizer.cfg.grid_export_limit, 25.0), calls)
+            self.assertFalse(any(
+                method == "set_number" and entity_id == optimizer.cfg.grid_import_limit and value > 0.011
+                for method, entity_id, value in calls
+            ))
+        asyncio.run(run())
+
+    def test_live_restart_during_unfinished_transition_requires_new_observations(self):
+        async def run(restart_phase):
+            ha = LiveTransitionHA()
+            optimizer = self._live_transition_optimizer(ha)
+            await self._live_transition_cycle(optimizer, ha, -1, MODE_CMD_DISCHARGE_PV, 12.0, discharge=True)
+            result, calls = await self._live_transition_cycle(optimizer, ha, 0, MODE_CMD_DISCHARGE_PV, 12.0)
+            self._assert_live_transition_restrictive(optimizer, result, calls, msc=False)
+            if restart_phase == "msc_pending":
+                result, calls = await self._live_transition_cycle(optimizer, ha, 1, MODE_CMD_DISCHARGE_PV, 0.01)
+                self._assert_live_transition_restrictive(optimizer, result, calls, msc=True)
+
+            # New process state; retain only the physical HA observations.
+            optimizer = self._live_transition_optimizer(ha)
+            export = 0.01 if restart_phase == "msc_pending" else 12.0 if restart_phase == "close_pending" else None
+            result, calls = await self._live_transition_cycle(optimizer, ha, 2, MODE_CMD_DISCHARGE_PV, export)
+            self._assert_live_transition_restrictive(optimizer, result, calls, msc=restart_phase == "msc_pending")
+            result, calls = await self._live_transition_cycle(optimizer, ha, 3, MODE_CMD_DISCHARGE_PV, 0.01)
+            self._assert_live_transition_restrictive(optimizer, result, calls, msc=True)
+            request_second = 2 if restart_phase == "msc_pending" else 3
+            result, calls = await self._live_transition_cycle(
+                optimizer, ha, 4, MODE_MAX_SELF, 0.01, ems_second=request_second,
+            )
+            self._assert_live_transition_restrictive(optimizer, result, calls, msc=True)
+            result, calls = await self._live_transition_cycle(optimizer, ha, 5, MODE_MAX_SELF, 0.01)
+            self.assertTrue(result.succeeded, result.error)
+            self.assertIn(("set_number", optimizer.cfg.grid_export_limit, 25.0), calls)
+
+        for restart_phase in ("close_pending", "msc_pending", "telemetry_missing"):
+            with self.subTest(restart_phase=restart_phase):
+                asyncio.run(run(restart_phase))
+
+    def test_live_transition_preserves_independent_pv_and_demand_window_owners(self):
+        async def run(owner):
+            ha = LiveTransitionHA()
+            optimizer = self._live_transition_optimizer(ha)
+            await self._live_transition_cycle(optimizer, ha, -1, MODE_CMD_DISCHARGE_PV, 12.0, discharge=True)
+            for second, ems, export, msc in (
+                (0, MODE_CMD_DISCHARGE_PV, 12.0, False),
+                (1, MODE_CMD_DISCHARGE_PV, None, False),
+                (2, MODE_CMD_DISCHARGE_PV, 0.01, True),
+                (3, None, 0.01, True),
+                (4, MODE_MAX_SELF, 0.01, True),
+            ):
+                result, calls = await self._live_transition_cycle(optimizer, ha, second, ems, export, owner=owner)
+                if second < 4:
+                    self._assert_live_transition_restrictive(optimizer, result, calls, msc=msc)
+                else:
+                    self.assertTrue(result.succeeded, result.error)
+                limit = 2.0 if owner == "standby" else 0.1
+                self.assertIn(("set_number", optimizer.cfg.pv_max_power_limit, limit), calls)
+                for method, entity_id, value in calls:
+                    if method == "set_number":
+                        if entity_id == optimizer.cfg.pv_max_power_limit:
+                            self.assertLessEqual(value, limit)
+                        if entity_id in {optimizer.cfg.grid_import_limit, optimizer.cfg.grid_export_limit}:
+                            self.assertLessEqual(value, 0.011)
+        for owner in ("standby", "negative"):
+            with self.subTest(owner=owner):
+                asyncio.run(run(owner))
+
+    def test_live_pending_transition_yields_to_manual_and_force(self):
+        async def run(mode_name):
+            ha = LiveTransitionHA()
+            optimizer = self._live_transition_optimizer(ha)
+            cfg = optimizer.cfg
+            await self._live_transition_cycle(optimizer, ha, -1, MODE_CMD_DISCHARGE_PV, 12.0, discharge=True)
+            result, calls = await self._live_transition_cycle(optimizer, ha, 0, MODE_CMD_DISCHARGE_PV, 12.0)
+            self._assert_live_transition_restrictive(optimizer, result, calls, msc=False)
+            mode = getattr(cfg, mode_name)
+            if mode_name == "full_import_option":
+                ha.report_after_select = (cfg.ems_mode_select, MODE_CMD_CHARGE_GRID)
+            result, calls = await self._live_transition_cycle(optimizer, ha, 1, MODE_CMD_DISCHARGE_PV, 12.0, mode=mode)
+            self.assertTrue(result.succeeded, result.error)
+            self.assertNotIn(("select_option", cfg.ems_mode_select, MODE_MAX_SELF), calls)
+            if mode_name == "manual_option":
+                self.assertEqual([], calls)
+            else:
+                expected_ems = MODE_CMD_CHARGE_GRID if mode_name == "full_import_option" else MODE_CMD_DISCHARGE_PV
+                self.assertIn(("select_option", cfg.ems_mode_select, expected_ems), calls)
+        for mode_name in ("manual_option", "full_import_option", "full_export_option"):
+            with self.subTest(mode=mode_name):
+                asyncio.run(run(mode_name))
+
+    def test_live_force_import_without_observed_settlement_remains_failed(self):
+        async def run():
+            ha = LiveTransitionHA()
+            optimizer = self._live_transition_optimizer(ha)
+            cfg = optimizer.cfg
+            await self._live_transition_cycle(optimizer, ha, -1, MODE_CMD_DISCHARGE_PV, 12.0, discharge=True)
+            result, calls = await self._live_transition_cycle(optimizer, ha, 0, MODE_CMD_DISCHARGE_PV, 12.0)
+            self._assert_live_transition_restrictive(optimizer, result, calls, msc=False)
+            # Accepted Force commands receive no subsequent physical EMS report.
+            result, calls = await self._live_transition_cycle(
+                optimizer, ha, 1, MODE_CMD_DISCHARGE_PV, 12.0, mode=cfg.full_import_option,
+            )
+            self.assertFalse(result.succeeded)
+            self.assertFalse(result.fallback_attempted)
+            self.assertIn("manual mode drift correction failed: ems_mode", result.error)
+            self.assertIn(("select_option", cfg.ems_mode_select, MODE_CMD_CHARGE_GRID), calls)
+            self.assertNotIn(("select_option", cfg.ems_mode_select, MODE_MAX_SELF), calls)
+            self.assertEqual(MODE_CMD_DISCHARGE_PV, ha.state_values[cfg.ems_mode_select])
+        asyncio.run(run())
+
     def test_later_exact_msc_after_observed_close_reopens_normal_ceiling(self) -> None:
         ha = RecordingHA(settle_numbers=False, settle_selects=False)
         optimizer = self.optimizer(ha)
@@ -681,15 +1440,15 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             current_export_limit=0.01,
         )
         first = self.decide(optimizer, first_state, self.FIXED_AFTERNOON)
-        asyncio.run(optimizer._apply(first_state, first))
+        # Model a later report deterministically, even on coarse host clocks.
+        with self.optimizer_time(datetime.now() - timedelta(seconds=1)):
+            asyncio.run(optimizer._apply(first_state, first))
         first_cycle_calls = list(ha.calls)
         optimizer._last_state = first_state
         optimizer._last_decision = first
 
-        ha.state_values = {
-            optimizer.cfg.ems_mode_select: MODE_MAX_SELF,
-            optimizer.cfg.grid_export_limit: 0.01,
-        }
+        ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+        ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
         verified = self._ordinary_state(
             95.7,
             current_ems_mode=MODE_MAX_SELF,

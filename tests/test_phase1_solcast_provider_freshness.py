@@ -7,6 +7,10 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from app.ha_ws_client import HAWebSocketClient
 from haos49_characterization_helpers import Haos49CharacterizationCase, RecordingHA
+from test_msc_baseline_overlay_contract import (
+    ClockedRecordingHA,
+    establish_observed_msc_baseline,
+)
 import test_phase1_solar_dynamic_charge_ceiling_characterization as charge_fixture
 import test_phase1_forecast_solar_clock_telemetry_trust_characterization as forecast_fixture
 
@@ -472,11 +476,11 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
             for discontinuity in (False, True):
                 with self.subTest(discontinuity=discontinuity):
                     opt = self._optimizer(ess_max_charging_limit="number.test_charge")
+                    ha = ClockedRecordingHA()
+                    await establish_observed_msc_baseline(self, opt, ha, self.WHEN)
                     state, d = self.valid(opt)
                     state.current_export_limit = d.export_limit
                     state.current_import_limit = 1.0
-                    ha = RecordingHA(state_values={opt.cfg.ems_mode_select: "Maximum Self Consumption"})
-                    opt.ha = ha
                     original_set_number = ha.set_number
                     async def pending_import(entity, value):
                         if entity != opt.cfg.grid_import_limit:
@@ -512,11 +516,11 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
     def test_in_flight_reduced_charge_write_is_restored_in_same_application(self):
         async def check():
             opt = self._optimizer(ess_max_charging_limit="number.test_charge")
+            ha = ClockedRecordingHA()
+            await establish_observed_msc_baseline(self, opt, ha, self.WHEN)
             state, d = self.valid(opt)
             state.current_export_limit = d.export_limit
             state.current_import_limit = d.import_limit
-            ha = RecordingHA(state_values={opt.cfg.ems_mode_select: "Maximum Self Consumption"})
-            opt.ha = ha
             original = ha.set_number
             async def cross_deadline(entity, value):
                 result = await original(entity, value)
@@ -538,12 +542,12 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
                 ess_max_charging_limit="number.test_charge",
                 ess_max_discharging_limit="number.test_discharge",
             )
+            ha = ClockedRecordingHA()
+            await establish_observed_msc_baseline(self, opt, ha, self.WHEN)
             state, decision = self.valid(opt)
             state.current_export_limit = decision.export_limit
             state.current_import_limit = decision.import_limit
             opt._ws_connected = True
-            ha = RecordingHA(state_values={opt.cfg.ems_mode_select: "Maximum Self Consumption"})
-            opt.ha = ha
             original = ha.set_number
             writes = []
             reads = []

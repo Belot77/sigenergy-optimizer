@@ -1,39 +1,40 @@
 # Current State
 
-Last consolidated: 2026-10-08
+Last consolidated: 2026-10-10
 
 **CURRENT TRUTH ONLY:** durable control semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`.
 
 ## Release and worktree
 
-- Current live release: **2.3.56-haos67**.
+- Last recorded live release (8 October checkpoint): **2.3.56-haos67**. No live query was performed for this checkpoint.
 - Release/source commit: `1973ac643c29044e8bfb894873adfdd53c7eb4c8`.
 - Tag: `v2.3.56-haos67`.
 - Image: `ghcr.io/belot77/sigenergy-optimizer:2.3.56-haos67`.
 - The GitHub Actions release build completed successfully. Live startup reported `Runtime signature=2.3.56-haos67`, container source commit `1973ac6`, and `morning_slow_charge_runtime_disabled=False`.
 - Known-good rollback remains **2.3.54-haos65** at `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Do not promote `.66` to the documented rollback.
-- Writable worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`; branch: `fix/phase1-audit-remediation`; HEAD: `1973ac643c29044e8bfb894873adfdd53c7eb4c8`. The worktree was clean at the start of this documentation checkpoint, and both `origin/main` and `origin/fix/phase1-audit-remediation` resolved to the same commit.
+- Verified worktree: `C:\Projects\sigenergy_optimizer-phase1-remediation`; branch: `fix/phase2-observed-msc-transition`; HEAD: `e73f08580ff7a183b2f3709e3e511807882b768f`.
+- Phase 2 remains uncommitted and unstaged: nine existing implementation/test files plus six approved documentation updates at this checkpoint. No commit, release or deployment is performed here.
+- The recorded `.67` runtime signature/container source supersedes the older `.66` and unreleased `.67` status by date. Repository defaults are not live evidence; reconfirm installed identity at the deployment gate.
 - Continue work only in the remediation worktree. Do not edit the separate root worktree `C:\Projects\sigenergy_optimizer`.
 
-## Phase 1 status
+## Phase 2 local checkpoint and Phase 1 gate
 
-**Phase 1 is COMPLETE and LIVE-PROVEN.** Phase 2 transition safety is the exact next roadmap item and remains unimplemented.
+Phase 2 observed transition-settlement implementation is **code-validated, independently reviewed and locally complete**, but not committed, released, deployed or live-accepted. Independent production review and final test-delta review both **PASSED**.
 
-Final pre-release validation for `.67`:
+Final validation: **920 passed, 913 subtests passed, zero failures**, with **201 Pydantic deprecation warnings** (197 extra Field keyword warnings, three deprecated `.dict()` calls, one class-based Config warning). Compileall for `app` and `tests` and `git diff --check` **PASSED**. Both formerly frozen tests listed below now pass with their test bodies unchanged.
 
-- physical saturation relief: **35 passed / 20 subtests**;
-- affected Solar/controller tests: **140 passed / 221 subtests**;
-- independent protections: **250 passed / 266 subtests**;
-- full suite: **907 passed / 872 subtests**, with exactly the two expected frozen Phase 2 failures and no unexpected failures;
-- compileall: **PASS**;
-- `git diff --check`: **PASS**.
+The return path now requires export close, trusted observed closure, MSC request, trusted exact MSC strictly after that request, then permitted reopening. Fresh provenance, fail-closed fallback recovery and independent restrictive PV ownership remain required through uncertainty, restart and actuator failure. Manual/Force, Demand Window and Solar protections remain intact; see `CONTROL_CONTRACT.md`.
 
-The frozen Phase 2 tests remain:
+Phase 2 development proceeded with explicit approval **ahead of the roadmap's Phase 1 live gate**. The earlier blanket Phase 1 complete/live-proven statement is corrected: scoped `.67` Solar evidence does not close the retained acceptance dependency, including the separate Evening Boost follow-up and disposition of Solar threshold switching. Phase 1 is not marked accepted. High/Spike priority and unrelated Phase 1 issues remain parked.
+
+Earlier `.67` pre-release validation is retained in `CHANGELOG.md`; the Phase 2 result above is the current local validation gate.
+
+The formerly frozen Phase 2 tests, now passing unchanged, are:
 
 - `test_exact_msc_does_not_reopen_before_export_is_observed_closed`;
 - `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`.
 
-## Live operator configuration
+## Last recorded live operator configuration (8 October)
 
 - `grid_connection_export_limit_kw = 15.0`: this site's confirmed physical/grid export boundary. The software default remains `0.0` and must not be changed to 15.
 - `solar_surplus_fill_deadline_margin_minutes = 120`: this site's currently preferred operator tuning after live testing. The released software default remains 60 minutes and must not be changed by documentation work.
@@ -41,7 +42,7 @@ The frozen Phase 2 tests remain:
 
 These are site operator settings, not universal production defaults.
 
-## `.67` live acceptance
+## Recorded `.67` Solar live evidence (8 October)
 
 ### Morning Slow to Solar handover
 
@@ -65,10 +66,14 @@ Previously proven `.66` behavior remained preserved: provider-aware Solcast fres
 
 ## Protected behavior and Phase 2 evidence
 
-Preserve observed Automated ownership, exact MSC settlement, Manual/Force ownership, Demand Window import blocking, battery floor and reserve/forecast safeguards, fail-closed telemetry, normal PV MAX/high export permission, and explicit `BATTERY_EXPORT` ownership. Do not alter the durable contract in `CONTROL_CONTRACT.md` as part of status maintenance.
+Preserve observed Automated ownership, exact MSC settlement, Manual/Force ownership, Demand Window import blocking, battery floor and reserve/forecast safeguards, fail-closed telemetry, normal PV MAX/high export permission, and explicit `BATTERY_EXPORT` ownership. Durable settlement requirements are recorded in `CONTROL_CONTRACT.md`.
 
-Useful parked Phase 2 evidence from about 07:20-07:25 AEDT on 8 October: Morning Dump hovered near its approximately 15% floor and toggled off/on. On two exits, physical discharge/export briefly persisted after the owner disappeared, with battery discharge about 12.6-14.0 kW and grid export about 12.8-14.6 kW. The optimizer detected the continuing flow, commanded export closed to zero, and recovered to Morning Slow within seconds. This is not a Phase 1 defect; it is live evidence for the already-planned Phase 2 transition-safety work.
+Recorded Phase 2 motivation from about 07:20-07:25 AEDT on 8 October: Morning Dump hovered near its approximately 15% floor and toggled off/on. On two exits, physical discharge/export briefly persisted after the owner disappeared, with battery discharge about 12.6-14.0 kW and grid export about 12.8-14.6 kW. The optimizer detected the continuing flow, commanded export closed to zero, and recovered to Morning Slow within seconds. This is not a Phase 1 defect; it is live evidence for the Phase 2 transition-safety implementation now awaiting live acceptance.
 
 ## Exact next action
 
-Begin a new, separately approved Phase 2 transition-safety session. Implement only the observed settlement sequence already defined in `CONTROL_CONTRACT.md`; do not partially improvise it in Phase 1 logic. Recommended reasoning is **Ultra** because the work is safety-critical; speed is **Standard**.
+Obtain separate approval for **checkpoint commit and release preparation**. Explicitly resolve the retained Phase 1 gate before controlled deployment and Phase 2 live acceptance; local completion does not waive that dependency. Deployment and live actions require their own authorization. Retain `.65` as the known-good rollback.
+
+Live acceptance must correlate requests with fresh observed EMS, export/import limits, PV MAX, ESS charge/discharge limits, SoC, battery power, PV/load/grid flows and actuator ownership. Capture deliberate-discharge exit, observed closure before MSC request, exact MSC strictly after the request, then permitted reopening. Include unfinished-transition restart, telemetry loss/recovery, actuator failure/fallback, restrictive Standby/negative-price PV MAX, Demand Window and Manual/Force.
+
+Review monitor-only/dry-run decisions without treating them as physical proof; only with authorization capture controlled live requests and actual flows. Tests and accepted HA service calls do not prove physical inverter settlement. Live acceptance remains outstanding.

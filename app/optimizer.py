@@ -435,6 +435,17 @@ class _ActuatorApplicationResult:
     fallback_succeeded: Optional[bool] = None
 
 
+@dataclass
+class _MscTransition:
+    """Unfinished export-close / MSC observation barriers; never persisted."""
+
+    phase: str = "close"
+    close_requested_at: Optional[float] = None
+    close_request_state: Optional[SolarState] = None
+    msc_requested_at: Optional[float] = None
+    msc_request_state: Optional[SolarState] = None
+
+
 class SigEnergyOptimizer:
     def __init__(self, ha: HAClient, cfg: Settings) -> None:
         self.ha = ha
@@ -515,6 +526,8 @@ class SigEnergyOptimizer:
         self._solar_provider_baselined = False
         self._solar_provider_urgent = False
         self._solar_relief = _SolarPhysicalReliefState()
+        self._msc_transition: Optional[_MscTransition] = None
+        self._msc_baseline_established = False
 
     # ------------------------------------------------------------------
     # Public accessors for the web UI
@@ -2165,6 +2178,7 @@ class SigEnergyOptimizer:
             cfg.solar_power_now_sensor,
             cfg.grid_export_limit,
             cfg.grid_import_limit,
+            cfg.ems_mode_select,
             cfg.demand_window_sensor,
         ))))
         bulk = await self._enrich_state_report_metadata(bulk, report_entity_ids)
@@ -2724,6 +2738,12 @@ class SigEnergyOptimizer:
             and ems_mode_raw.lower() not in unavailable_states
         )
         s.current_ems_mode = ems_mode_raw if s.ems_mode_observed else ""
+        # Transition settlement needs report provenance, independently of the
+        # legacy selector-presence flag used by other control policies.
+        ems_reported_at = self._state_metadata_timestamp(ems_mode_obj or {})
+        setattr(s, "_msc_ems_reported_at", (
+            ems_reported_at.timestamp() if ems_reported_at is not None else None
+        ))
         ha_control_entity = str(cfg.ha_control_switch or "").strip()
         ha_control_obj = bulk.get(ha_control_entity)
         ha_control_raw_state = (
@@ -4455,9 +4475,9 @@ class SigEnergyOptimizer:
                     "and grid export."
                 )
         elif ordinary_msc_surplus_context:
-            # Phase 1 deliberately does not attempt a multi-cycle EMS transition.
             # A plain ordinary tier cannot retain a live ceiling while its MSC
-            # ownership or battery-flow evidence is unverified.
+            # ownership or battery-flow evidence is unverified. Application owns
+            # the observed transition barriers independently of this policy.
             desired_export_limit = 0.0
             desired_export_source = "ordinary_msc_surplus_closed"
             if not observed_automated_control_mode:
@@ -5097,6 +5117,17 @@ class SigEnergyOptimizer:
         if actual_import_cost_guard_blocking and desired_ems_mode in DISCHARGE_MODES:
             desired_ems_mode = MODE_MAX_SELF
         d.ems_mode = desired_ems_mode
+        msc_transition_pending = bool(
+            observed_automated_control_mode
+            and desired_ems_mode == MODE_MAX_SELF
+            and self._msc_transition is not None
+            and not self._msc_transition_observed(s)
+        )
+        if msc_transition_pending:
+            desired_export_limit = 0.0
+            d.export_limit = 0.0
+            d.export_intent = EXPORT_BLOCKED
+            d.requires_verified_msc_before_export = False
         d.solar_surplus_policy_active = bool(
             solar_surplus_bypass
             and solar_surplus_pv_only_high_ceiling_requested
@@ -5942,11 +5973,96 @@ class SigEnergyOptimizer:
             "cfg_pv_max_power_normal": cfg.pv_max_power_normal,
         }
 
+        d.trace_gates["msc_transition_pending"] = msc_transition_pending
+        d.trace_values["msc_transition_phase"] = (
+            self._msc_transition.phase if self._msc_transition is not None else "idle"
+        )
+        if msc_transition_pending:
+            d.export_reason = "Export held closed pending observed export closure and later exact MSC."
         return d
 
     # ------------------------------------------------------------------
     # 3. Apply decisions to Home Assistant
     # ------------------------------------------------------------------
+
+    def _msc_report_is_current(
+        self, s: SolarState, *, ems: bool, after: Optional[float] = None,
+    ) -> bool:
+        # Hand-built states opt into observation through the existing explicit
+        # flags. Real HA snapshots must additionally carry fresh report metadata;
+        # missing provenance on a live snapshot can never use that shortcut.
+        if not s.hvac_solar_inputs.live_snapshot:
+            return True
+        reported_at = (
+            getattr(s, "_msc_ems_reported_at", None) if ems
+            else s.hvac_solar_inputs.observed_export_limit.observed_at_ts
+        )
+        if reported_at is None or not math.isfinite(reported_at):
+            return False
+        age = datetime.now(timezone.utc).timestamp() - reported_at
+        return bool(
+            -5.0 <= age <= self.cfg.hvac_solar_data_max_age_seconds
+            and (after is None or reported_at > after)
+        )
+
+    def _msc_export_closed(self, s: SolarState) -> bool:
+        transition = self._msc_transition
+        return bool(
+            self._grid_limit_is_observed(
+                s.current_export_limit, s.current_export_limit_observed,
+            )
+            and s.current_export_limit <= 0.011
+            and (transition is None or s is not transition.close_request_state)
+            and self._msc_report_is_current(
+                s, ems=False,
+                after=transition.close_requested_at if transition else None,
+            )
+        )
+
+    def _msc_exact_observed(self, s: SolarState) -> bool:
+        return bool(
+            s.ems_mode_observed is True and s.current_ems_mode == MODE_MAX_SELF
+            and self._msc_report_is_current(s, ems=True)
+        )
+
+    def _msc_transition_observed(self, s: SolarState) -> bool:
+        transition = self._msc_transition
+        return bool(
+            transition is not None and transition.phase == "msc"
+            and s is not transition.msc_request_state
+            and self._msc_export_closed(s) and self._msc_exact_observed(s)
+            and self._msc_report_is_current(s, ems=True, after=transition.msc_requested_at)
+        )
+
+    async def _live_msc_export_ready(self, *, require_closed: bool) -> bool:
+        """Recheck live provenance after awaits, immediately before permission."""
+        entities = [self.cfg.ems_mode_select, self.cfg.grid_export_limit]
+        bulk = await self.ha.bulk_states(entities)
+        bulk = await self._enrich_state_report_metadata(bulk, entities)
+        now = datetime.now(timezone.utc)
+        transition = self._msc_transition
+        for entity_id in entities:
+            obj = bulk.get(entity_id)
+            if not isinstance(obj, dict) or not self._state_metadata_is_fresh(
+                obj, self.cfg.hvac_solar_data_max_age_seconds, observed_at=now,
+            ):
+                return False
+            reported_at = self._state_metadata_timestamp(obj)
+            if entity_id == self.cfg.ems_mode_select:
+                if obj.get("state") != MODE_MAX_SELF:
+                    return False
+                after = transition.msc_requested_at if transition else None
+            else:
+                try:
+                    value = float(obj.get("state"))
+                except (TypeError, ValueError, OverflowError):
+                    return False
+                if not math.isfinite(value) or value < 0 or (require_closed and value > 0.011):
+                    return False
+                after = transition.close_requested_at if transition else None
+            if after is not None and (reported_at is None or reported_at.timestamp() <= after):
+                return False
+        return True
 
     async def _wait_for_exact_entity_state(
         self,
@@ -5954,13 +6070,32 @@ class SigEnergyOptimizer:
         expected: str,
         *,
         timeout_s: float = 4.0,
+        observed_after: Optional[float] = None,
     ) -> bool:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_s
         while loop.time() < deadline:
-            current = str(await self.ha.get_state_value(entity_id, "") or "")
-            if current == expected:
-                return True
+            if observed_after is None:
+                current = str(await self.ha.get_state_value(entity_id, "") or "")
+                if current == expected:
+                    return True
+            else:
+                # Fallback recovery requires an independently reported state
+                # after its request, not an exact but cached state string.
+                bulk = await self.ha.bulk_states([entity_id])
+                bulk = await self._enrich_state_report_metadata(bulk, [entity_id])
+                obj = bulk.get(entity_id)
+                if isinstance(obj, dict) and obj.get("state") == expected:
+                    reported_at = self._state_metadata_timestamp(obj)
+                    if (
+                        reported_at is not None
+                        and reported_at.timestamp() > observed_after
+                        and self._state_metadata_is_fresh(
+                            obj, self.cfg.hvac_solar_data_max_age_seconds,
+                            observed_at=datetime.now(timezone.utc),
+                        )
+                    ):
+                        return True
             await asyncio.sleep(0.3)
         return False
 
@@ -6028,8 +6163,30 @@ class SigEnergyOptimizer:
             max(0.0, float(cfg.pv_max_power_normal)),
             _POWER_LIMIT_MAX_KW,
         )
+        # Independent PV safety ownership survives transition completion and
+        # every application failure, including fallback before PV application.
+        restrictive_pv_max_kw = None
+        pv_safety_owner = bool(
+            d.standby_holdoff_active
+            or (s.price_is_negative and s.current_price <= cfg.import_threshold_low)
+        )
+        if (
+            pv_safety_owner and math.isfinite(d.pv_max_power_limit)
+            and 0.0 <= d.pv_max_power_limit < normal_pv_max_kw
+        ):
+            restrictive_pv_max_kw = d.pv_max_power_limit
+            current_pv_max = s.current_pv_max_power_limit
+            if (
+                current_pv_max is not None and math.isfinite(current_pv_max)
+                and current_pv_max >= 0.0
+            ):
+                restrictive_pv_max_kw = min(restrictive_pv_max_kw, current_pv_max)
 
         async def _safe_fallback(reason: str) -> _ActuatorApplicationResult:
+            # Fallback owns its existing emergency sequence. Its service results
+            # must not discharge the later automatic export-reopening barrier.
+            self._msc_baseline_established = False
+            self._msc_transition = _MscTransition()
             self._clear_solar_physical_relief(d, "actuator_fallback")
             logger.error("Entering safe fallback: %s", reason)
             fallback_failures: list[str] = []
@@ -6067,6 +6224,7 @@ class SigEnergyOptimizer:
                 "grid export safety close",
                 lambda: ha.set_number(cfg.grid_export_limit, safe_export_close_kw),
             )
+            msc_requested_at = datetime.now(timezone.utc).timestamp()
             await _attempt(
                 "Maximum Self Consumption fallback",
                 lambda: ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF),
@@ -6087,6 +6245,11 @@ class SigEnergyOptimizer:
                         safe_ess_discharge_close_kw,
                     ),
                 )
+            if restrictive_pv_max_kw is not None:
+                await _attempt(
+                    "PV MAX safety restriction",
+                    lambda: ha.set_number(cfg.pv_max_power_limit, restrictive_pv_max_kw),
+                )
 
             export_close_observed = await _observe(
                 "grid export safety close settlement",
@@ -6103,6 +6266,7 @@ class SigEnergyOptimizer:
                     cfg.ems_mode_select,
                     MODE_MAX_SELF,
                     timeout_s=3.0,
+                    observed_after=msc_requested_at,
                 ),
             )
             safe_recovery_observed = bool(export_close_observed and msc_observed)
@@ -6132,13 +6296,11 @@ class SigEnergyOptimizer:
                             normal_ess_discharge_kw,
                         ),
                     )
-                await _attempt(
-                    "normal Automated PV MAX capability",
-                    lambda: ha.set_number(
-                        cfg.pv_max_power_limit,
-                        normal_pv_max_kw,
-                    ),
-                )
+                if restrictive_pv_max_kw is None:
+                    await _attempt(
+                        "normal Automated PV MAX capability",
+                        lambda: ha.set_number(cfg.pv_max_power_limit, normal_pv_max_kw),
+                    )
 
             if fallback_failures:
                 fallback_detail = "; ".join(fallback_failures)
@@ -6156,6 +6318,62 @@ class SigEnergyOptimizer:
                 fallback_succeeded=(
                     safe_recovery_observed and not fallback_failures
                 ),
+            )
+
+        async def _hold_msc_transition() -> _ActuatorApplicationResult:
+            self._clear_solar_physical_relief(d, "msc_transition_pending")
+            self._msc_baseline_established = False
+            transition = self._msc_transition
+            assert transition is not None
+
+            if not self._msc_export_closed(s):
+                # Reopening or loss of closure evidence cancels MSC proof.
+                if transition.phase != "close":
+                    transition = self._msc_transition = _MscTransition()
+                if transition.close_requested_at is None:
+                    transition.close_requested_at = datetime.now(timezone.utc).timestamp()
+                    transition.close_request_state = s
+                requests = [("export close", lambda: ha.set_number(
+                    cfg.grid_export_limit, safe_export_close_kw,
+                ))]
+            else:
+                if transition.phase == "close":
+                    transition.phase = "msc"
+                    transition.msc_requested_at = datetime.now(timezone.utc).timestamp()
+                    transition.msc_request_state = s
+                requests = [("MSC request", lambda: ha.select_option(
+                    cfg.ems_mode_select, MODE_MAX_SELF,
+                ))]
+
+            # Attempt every independent restriction even if another actuator
+            # fails. None of these writes restore normal permissive capability.
+            requests.append(("import close", lambda: ha.set_number(cfg.grid_import_limit, 0.01)))
+            if cfg.ess_max_discharging_limit:
+                requests.append(("ESS discharge clamp", lambda: ha.set_number(
+                    cfg.ess_max_discharging_limit, safe_ess_discharge_close_kw,
+                )))
+            if restrictive_pv_max_kw is not None:
+                requests.append(("PV MAX safety restriction", lambda: ha.set_number(
+                    cfg.pv_max_power_limit, restrictive_pv_max_kw,
+                )))
+            failures = []
+            for label, request in requests:
+                try:
+                    if await request() is not True:
+                        failures.append(f"{label} returned failure")
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    failures.append(f"{label} raised {type(exc).__name__}: {exc}")
+            if failures:
+                return await _safe_fallback(
+                    "MSC transition: " + "; ".join(failures),
+                )
+            d.trace_gates["msc_transition_pending"] = True
+            d.trace_values["msc_transition_phase"] = transition.phase
+            return _ActuatorApplicationResult(
+                succeeded=False,
+                error=f"MSC transition awaiting later trusted {transition.phase} observation",
             )
 
         effective_mode = self._manual_mode_override or s.sigenergy_mode
@@ -6181,6 +6399,8 @@ class SigEnergyOptimizer:
         # If in a manual mode, keep manual targets pinned when external writers drift
         # them (e.g. morning slow-charge branch in other automations).
         if effective_mode not in {cfg.automated_option, ""}:
+            self._msc_baseline_established = False
+            self._msc_transition = None
             self._clear_solar_physical_relief(d, "operator_owned")
             manual_targets = self._manual_mode_targets(
                 effective_mode,
@@ -6263,6 +6483,7 @@ class SigEnergyOptimizer:
             return _ActuatorApplicationResult(succeeded=True)
 
         if cfg.auto_enable_ha_control and not s.ha_control_switch_available:
+            self._msc_baseline_established = False
             self._clear_solar_physical_relief(d, "ha_control_unavailable")
             now_ts = datetime.now().timestamp()
             warning_key = (str(cfg.ha_control_switch), s.ha_control_switch_state)
@@ -6318,12 +6539,14 @@ class SigEnergyOptimizer:
             return _ActuatorApplicationResult(succeeded=True)
 
         if not effective_ha_control:
+            self._msc_baseline_established = False
             return _ActuatorApplicationResult(succeeded=True)
 
         if not (
             s.sigenergy_mode_observed
             and str(effective_mode) == str(cfg.automated_option)
         ):
+            self._msc_baseline_established = False
             logger.debug(
                 "Automatic inverter writes paused: SigEnergy Optimizer ownership "
                 "is not observed as %s",
@@ -6333,6 +6556,30 @@ class SigEnergyOptimizer:
 
         ems_mode_to_apply = d.ems_mode
         near_zero = 0.011
+
+        if ems_mode_to_apply in DISCHARGE_MODES:
+            # Remember even an attempted entry: the next safe return must prove
+            # closure independently of whether a discharge write reports success.
+            self._msc_baseline_established = False
+            self._msc_transition = _MscTransition()
+        elif ems_mode_to_apply == MODE_MAX_SELF:
+            transition_required = bool(
+                self._msc_transition is not None
+                or s.current_ems_mode in DISCHARGE_MODES
+                or not s.ems_mode_observed
+                or (
+                    d.requires_verified_msc_before_export
+                    and (
+                        not self._msc_exact_observed(s)
+                        or (not self._msc_baseline_established and not self._msc_export_closed(s))
+                    )
+                )
+            )
+            if transition_required:
+                if self._msc_transition is None:
+                    self._msc_transition = _MscTransition()
+                if not self._msc_transition_observed(s):
+                    return await _hold_msc_transition()
 
         export_limit_observed = self._grid_limit_is_observed(
             s.current_export_limit,
@@ -6394,25 +6641,8 @@ class SigEnergyOptimizer:
                 # A previously opened ceiling must never overlap EMS drift into a
                 # discharge mode while MSC is being reasserted. Close and confirm
                 # export first, then reopen only after exact MSC confirmation.
-                ok_close = await ha.set_number(
-                    cfg.grid_export_limit,
-                    safe_export_close_kw,
-                )
-                if not ok_close:
-                    return await _safe_fallback(
-                        "failed closing export before Maximum Self Consumption transition"
-                    )
-                if not await self._wait_for_number_at_most(
-                    cfg.grid_export_limit,
-                    safe_export_close_kw,
-                    timeout_s=3.0,
-                    tolerance=0.001,
-                ):
-                    return await _safe_fallback(
-                        "export limit did not close before Maximum Self Consumption transition"
-                    )
-                export_write_required = export_val > near_zero
-                export_written = export_val <= near_zero
+                self._msc_transition = _MscTransition(close_request_state=s)
+                return await _hold_msc_transition()
 
             # The decision snapshot can race an external EMS writer. Reassert and
             # confirm exact MSC immediately before deliberately opening the high
@@ -6426,6 +6656,11 @@ class SigEnergyOptimizer:
                 timeout_s=3.0,
             ):
                 return await _safe_fallback("Maximum Self Consumption did not settle before high PV-only export")
+            if not await self._live_msc_export_ready(
+                require_closed=self._msc_transition is not None,
+            ):
+                self._msc_transition = _MscTransition(close_request_state=s)
+                return await _hold_msc_transition()
 
         prepare_export_before_discharge = bool(
             ems_mode_to_apply in DISCHARGE_MODES
@@ -6618,6 +6853,9 @@ class SigEnergyOptimizer:
         await ha.set_input_number(cfg.min_soc_to_sunrise_helper, min(d.min_soc_to_sunrise, 100.0))
 
         if application_failures:
+            if self._msc_transition is not None:
+                self._msc_transition = _MscTransition()
+            self._msc_baseline_established = False
             self._clear_solar_physical_relief(d, "actuator_application_failed")
             return _ActuatorApplicationResult(
                 succeeded=False,
@@ -6633,6 +6871,9 @@ class SigEnergyOptimizer:
             d.ems_mode, d.export_limit, d.import_limit, d.pv_max_power_limit,
             d.outcome_reason[:80]
         )
+        if ems_mode_to_apply == MODE_MAX_SELF and self._msc_exact_observed(s):
+            self._msc_baseline_established = True
+            self._msc_transition = None
         return _ActuatorApplicationResult(succeeded=True)
 
     def _legacy_manual_power_caps_kw(

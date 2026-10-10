@@ -1779,6 +1779,15 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
 
     def test_apply_reasserts_and_confirms_msc_before_opening_high_ceiling(self) -> None:
         now_ts = datetime.now().timestamp()
+
+        def advance_observation_clock(seconds: float) -> None:
+            clock = patch(
+                f"{__name__}._FIXED_TEST_NOW_UTC",
+                datetime.fromtimestamp(now_ts + seconds, tz=timezone.utc),
+            )
+            clock.start()
+            self.addCleanup(clock.stop)
+
         ha = _RecordingHA()
         optimizer = self._optimizer(ha=ha, daytime_topup_max_soc=100.0)
         optimizer._is_evening_or_night = lambda _now: False
@@ -1792,47 +1801,60 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         )
         decision = optimizer._decide(state)
         self.assertTrue(decision.requires_verified_msc_before_export)
-        ha.state_values = {
-            optimizer.cfg.ems_mode_select: MODE_CMD_DISCHARGE_PV,
-            optimizer.cfg.grid_export_limit: 25.0,
-        }
+        ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)
+        ha._record_state_value(optimizer.cfg.grid_export_limit, 25.0)
 
         asyncio.run(optimizer._apply(state, decision))
 
-        control_calls = [
-            call
-            for call in ha.calls
-            if call[1] in {
-                optimizer.cfg.ems_mode_select,
-                optimizer.cfg.grid_export_limit,
-            }
-        ]
-        select_index = control_calls.index(
-            ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+        select_call = ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+        close_call = ("set_number", optimizer.cfg.grid_export_limit, 0.01)
+        export_call = ("set_number", optimizer.cfg.grid_export_limit, 25.0)
+        read_call = ("get_state_value", optimizer.cfg.ems_mode_select, "")
+        self.assertIn(close_call, ha.calls)
+        self.assertNotIn(select_call, ha.calls)
+        self.assertNotIn(export_call, ha.calls)
+        self.assertEqual(0.01, ha.state_values[optimizer.cfg.grid_export_limit])
+
+        advance_observation_clock(1.0)
+        closed_state = self._qualifying_full_battery_msc_state(
+            optimizer,
+            now_ts + 1.0,
+            current_ems_mode=MODE_CMD_DISCHARGE_PV,
+            current_export_limit=0.01,
+            ha_control_enabled=True,
+            ha_control_switch_available=True,
+            ha_control_switch_state="on",
         )
-        close_index = control_calls.index(
-            ("set_number", optimizer.cfg.grid_export_limit, 0.01)
+        closed_decision = optimizer._decide(closed_state)
+        second_cycle_start = len(ha.calls)
+        asyncio.run(optimizer._apply(closed_state, closed_decision))
+        second_cycle_calls = ha.calls[second_cycle_start:]
+
+        self.assertIn(select_call, second_cycle_calls)
+        self.assertNotIn(export_call, second_cycle_calls)
+        self.assertEqual(0.01, ha.state_values[optimizer.cfg.grid_export_limit])
+
+        advance_observation_clock(2.0)
+        ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+        ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
+        settled_state = self._qualifying_full_battery_msc_state(
+            optimizer,
+            now_ts + 2.0,
+            current_ems_mode=MODE_MAX_SELF,
+            current_export_limit=0.01,
+            ha_control_enabled=True,
+            ha_control_switch_available=True,
+            ha_control_switch_state="on",
         )
-        close_readback_index = next(
-            index
-            for index, call in enumerate(control_calls)
-            if index > close_index
-            and call[0] == "bulk_states"
-            and call[1] == optimizer.cfg.grid_export_limit
+        settled_decision = optimizer._decide(settled_state)
+        third_cycle_start = len(ha.calls)
+        asyncio.run(optimizer._apply(settled_state, settled_decision))
+        third_cycle_calls = ha.calls[third_cycle_start:]
+
+        self.assertIn(export_call, third_cycle_calls)
+        self.assertLess(
+            third_cycle_calls.index(read_call), third_cycle_calls.index(export_call)
         )
-        readback_index = next(
-            index
-            for index, call in enumerate(control_calls)
-            if index > select_index
-            and call == ("get_state_value", optimizer.cfg.ems_mode_select, "")
-        )
-        export_index = control_calls.index(
-            ("set_number", optimizer.cfg.grid_export_limit, 25.0)
-        )
-        self.assertLess(close_index, close_readback_index)
-        self.assertLess(close_readback_index, select_index)
-        self.assertLess(select_index, readback_index)
-        self.assertLess(readback_index, export_index)
 
     def test_morning_and_solar_apply_corrects_small_entity_over_cap_drift(self) -> None:
         now_ts = datetime.now().timestamp()
@@ -1846,6 +1868,24 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                     morning_slow_charge_rate_kw=3.7,
                 )
                 optimizer._is_evening_or_night = lambda _now: False
+                baseline_state = self._qualifying_full_battery_msc_state(
+                    optimizer,
+                    now_ts,
+                    current_export_limit=0.01,
+                    ha_control_enabled=True,
+                    ha_control_switch_available=True,
+                    ha_control_switch_state="on",
+                )
+                ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+                ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
+                baseline_result = asyncio.run(
+                    optimizer._apply(
+                        baseline_state,
+                        Decision(ems_mode=MODE_MAX_SELF, export_limit=0.0),
+                    )
+                )
+                self.assertTrue(baseline_result.succeeded, baseline_result.error)
+                ha.calls.clear()
                 if branch == "morning_slow_charge":
                     optimizer._morning_slow_charge_active = lambda *args, **kwargs: True
                     state = self._qualifying_full_battery_msc_state(
@@ -1873,10 +1913,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 decision = optimizer._decide(state)
                 self.assertEqual(18.06, decision.export_limit)
                 self.assertTrue(decision.requires_verified_msc_before_export)
-                ha.state_values = {
-                    optimizer.cfg.ems_mode_select: MODE_MAX_SELF,
-                    optimizer.cfg.grid_export_limit: 18.07,
-                }
+                ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+                ha._record_state_value(optimizer.cfg.grid_export_limit, 18.07)
 
                 asyncio.run(optimizer._apply(state, decision))
 
@@ -1910,6 +1948,24 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             morning_slow_charge_rate_kw=3.7,
         )
         optimizer._is_evening_or_night = lambda _now: False
+        baseline_state = self._qualifying_full_battery_msc_state(
+            optimizer,
+            now_ts,
+            current_export_limit=0.01,
+            ha_control_enabled=True,
+            ha_control_switch_available=True,
+            ha_control_switch_state="on",
+        )
+        ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+        ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
+        baseline_result = asyncio.run(
+            optimizer._apply(
+                baseline_state,
+                Decision(ems_mode=MODE_MAX_SELF, export_limit=0.0),
+            )
+        )
+        self.assertTrue(baseline_result.succeeded, baseline_result.error)
+        ha.calls.clear()
         optimizer._morning_slow_charge_active = lambda *args, **kwargs: True
         state = self._qualifying_full_battery_msc_state(
             optimizer,
@@ -1925,10 +1981,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         )
         decision = optimizer._decide(state)
         self.assertEqual(18.06, decision.export_limit)
-        ha.state_values = {
-            optimizer.cfg.ems_mode_select: MODE_MAX_SELF,
-            optimizer.cfg.grid_export_limit: 18.07,
-        }
+        ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+        ha._record_state_value(optimizer.cfg.grid_export_limit, 18.07)
         wait_calls: list[tuple[str, float, float]] = []
 
         async def reject_unsettled(

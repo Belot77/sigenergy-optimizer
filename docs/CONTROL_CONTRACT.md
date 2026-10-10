@@ -300,6 +300,10 @@ Safety-critical settlement requires provenance-bearing readback. Deliberate batt
 
 Safe fallback closes export first, requests Maximum Self Consumption, and clamps ESS discharge while settlement is unresolved. Permissive recovery requires observed export closure and observed exact Maximum Self Consumption; successful service calls are not proof. If settlement cannot be proven, normal import, ESS charge/discharge capability, and normal PV MAX recovery remain withheld, although Demand Window may continue to own import blocking. Fallback never creates `BATTERY_EXPORT`; Manual and Force behavior is unchanged. Observing settlement of the fallback `0.01 kW` export-close request is an intentional safety requirement.
 
+Fallback exact-MSC recovery proof must be fresh, provenance-backed and strictly later than the MSC request boundary, correlated to the observed EMS state. Stale, missing, unavailable, untrusted, pre-request or equal-timestamp reports cannot restore normal import or ESS capabilities. A genuinely later report of unchanged exact MSC may qualify; a cached string or accepted command cannot. Successful fallback recovery does not itself grant automatic export-reopening authority.
+
+An independently owned restrictive Standby or negative-price PV MAX request remains effective during pending transition, transition completion, actuator failure and every fallback path, including successful settlement. A lower valid restriction must not be raised by normal PV recovery. Required independent restrictive PV, import and ESS safety writes must not wait for transition settlement; unrelated permissive writes remain deferred. Demand Window retains import blocking during fallback recovery, and Manual/Force retain their own authority and settlement requirements.
+
 Export start/stop notifications are classified from trusted measured grid export. A changed export ceiling alone is not proof that physical export started or stopped.
 
 Manual and Force modes remain user-owned. Automated logic must not silently reinterpret them as ordinary MSC or deliberate battery export.
@@ -311,11 +315,15 @@ Negative-price, standby, freshness, remote-control availability, reserve, foreca
 Returning from deliberate battery export to an MSC surplus ceiling requires a multi-cycle observed transition:
 
 1. Close the export ceiling.
-2. On a later trusted observation, confirm export is actually closed.
+2. On a fresh, provenance-backed observation strictly after the close request, confirm export is actually closed.
 3. Request Maximum Self Consumption.
-4. On a later trusted observation, confirm exact Maximum Self Consumption.
-5. Only then reopen the normal high export ceiling.
+4. On a fresh, provenance-backed observation strictly after the MSC request, confirm exact Maximum Self Consumption.
+5. Only then reopen the permitted MSC/PV-only export ceiling, subject to all independent safety and ownership gates.
 
 Entering deliberate battery export must settle the export target before selecting a discharge EMS mode.
 
-No service-call result, cached request, or assumed inverter response may replace an observed state. This settlement sequence is Phase 2 work and must not be partially improvised inside Phase 1 policy logic.
+No service-call result, cached request, reused snapshot, equal-timestamp report or assumed inverter response may replace later observed settlement. EMS state and report provenance must agree; freshness and request/observation timing must use a coherent clock.
+
+Unfinished transitions remain restrictive across cycles, telemetry uncertainty and restart. Lost process-local evidence cannot authorize reopening; recovery requires the trusted observed sequence. Genuinely safe, freshly observed MSC at startup is distinct from an unresolved discharge-to-MSC transition and must not unnecessarily block otherwise safe Solar charging, fill-deadline recovery or provider-freshness protections. All independent charging and flow safeguards still apply.
+
+The multi-cycle return sequence above is distinct from the emergency fallback command ordering defined under telemetry and ownership safety. Fallback keeps export closed and requires observed settlement before permissive capability recovery; it is not a shortcut to reopen export.

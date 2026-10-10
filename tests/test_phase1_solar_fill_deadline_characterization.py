@@ -7,7 +7,10 @@ from unittest.mock import patch
 from app.config import Settings
 from app.models import MSC_SURPLUS_CEILING
 from app.optimizer import DISCHARGE_MODES, MODE_MAX_SELF
-from haos49_characterization_helpers import RecordingHA
+from test_msc_baseline_overlay_contract import (
+    ClockedRecordingHA,
+    establish_observed_msc_baseline,
+)
 from test_phase1_solar_dynamic_charge_ceiling_characterization import (
     SolarDynamicChargeFixture,
 )
@@ -202,6 +205,8 @@ class SolarFillDeadlineCharacterizationTests(SolarDynamicChargeFixture):
                 with self.subTest(crossing=crossing):
                     optimizer = self._optimizer(ess_max_charging_limit="number.test_charge")
                     when = self.WHEN + timedelta(hours=2, minutes=59)
+                    ha = ClockedRecordingHA()
+                    await establish_observed_msc_baseline(self, optimizer, ha, when)
                     sunset = self.WHEN + timedelta(hours=4)
                     state_values = {
                         "forecast_pv_kw": [6.0] * 3,
@@ -213,8 +218,6 @@ class SolarFillDeadlineCharacterizationTests(SolarDynamicChargeFixture):
                     state = self._state(when=when, **state_values)
                     state.current_export_limit = decision.export_limit
                     state.current_import_limit = 1.0 if crossing == "before_charge" else 0.01
-                    ha = RecordingHA(state_values={optimizer.cfg.ems_mode_select: MODE_MAX_SELF})
-                    optimizer.ha = ha
                     clock = [when]
                     deadline = sunset - timedelta(hours=1)
                     original_set_number = ha.set_number

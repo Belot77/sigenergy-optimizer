@@ -17,6 +17,7 @@ from haos49_characterization_helpers import (
     Haos49CharacterizationCase,
     RecordingHA,
 )
+from test_msc_baseline_overlay_contract import later_msc_report_clock
 
 
 class _ScriptedActuatorHA(RecordingHA):
@@ -402,7 +403,8 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         decision = self._closed_decision()
         decision.trace_values["battery_export_owner"] = "none"
 
-        result = asyncio.run(optimizer._apply(state, decision))
+        with later_msc_report_clock(ha, self.FIXED_AFTERNOON):
+            result = asyncio.run(optimizer._apply(state, decision))
 
         self.assertEqual(
             [
@@ -459,7 +461,8 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
             ess_discharge_limit_entity_max_kw=7.5,
         )
 
-        result = asyncio.run(optimizer._apply(state, self._closed_decision()))
+        with later_msc_report_clock(ha, self.FIXED_AFTERNOON):
+            result = asyncio.run(optimizer._apply(state, self._closed_decision()))
 
         self.assertEqual(
             [

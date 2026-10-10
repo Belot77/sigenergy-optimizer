@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-10 - Phase 2 observed transition settlement (local, uncommitted)
+
+- Close the discharge-to-MSC safety gap: export close -> trusted observed closure -> MSC request -> trusted exact MSC strictly after the request -> permitted reopening. Preserve restrictive state across cycles, restart and telemetry uncertainty.
+- Require fresh provenance-backed fallback settlement before permissive import/ESS recovery. Preserve independent restrictive Standby/negative-price PV MAX through transition completion, actuator failure and successful fallback; preserve Manual/Force, Demand Window, Solar fill-deadline, physical-relief and provider-freshness protections.
+- Independent production and final test-delta reviews passed. Final complete suite: **920 passed, 913 subtests, zero failures**, with **201 Pydantic deprecation warnings**. Compileall for app/tests and `git diff --check` passed. Both formerly frozen Phase 2 transition tests passed unchanged. Documentation-only checkpoint validation does not rerun tests or compileall.
+- Worktree `C:/Projects/sigenergy_optimizer-phase1-remediation`, branch `fix/phase2-observed-msc-transition`, HEAD `e73f08580ff7a183b2f3709e3e511807882b768f`. Nine implementation/test files remain modified and unstaged; six approved documentation updates join them. No commit, release, deployment or live acceptance is claimed.
+- Reconcile historical identity: the 8 October checkpoint records live `.67`, runtime signature `2.3.56-haos67`, source `1973ac643c29044e8bfb894873adfdd53c7eb4c8`, superseding the 7 October unreleased `.67`/live `.66` entry below. This is recorded runtime evidence, not an inference from repository defaults or a new live query. Keep `.65 / 9965e79133f38d5b9943dcf5a9b04ed6fdab1239` as rollback.
+- Phase 2 local development proceeded ahead of the roadmap's Phase 1 live gate; scoped `.67` Solar evidence does not establish formal Phase 1 acceptance. Retain the outstanding dependency and follow-ups. Park High/Spike priority and unrelated work.
+- Next gate: separate checkpoint commit/release-preparation approval, explicit disposition of the retained Phase 1 gate, then authorized controlled deployment and observed live acceptance. The evidence checklist is in `CURRENT_STATE.md`; tests and service success are not physical settlement proof.
+
 ## 2026-10-07 - 2.3.56-haos67 Phase 1 Solar candidate (locally prepared, unreleased)
 
 - Independent-review correction: reproduced active Solar relief surviving regressing feedback timestamps and corrected it by checking regression before the pre-command waiting return. Active relief now fails closed to the current Solar baseline and dependent feedback state resets. The conflicting characterization now distinguishes legitimate monotonic pre-command waiting from genuine regression, with baseline reapplication and fresh confirmations required after regression. Final independent review returned `ACCEPT FOR CHECKPOINT COMMIT`. Explicit user approval on 7 October confirms the unchanged 0.4 kW probe increment and supersedes the earlier 0.5 kW discussion.
