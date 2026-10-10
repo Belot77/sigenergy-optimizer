@@ -1,6 +1,6 @@
 # Roadmap
 
-This roadmap is ordered by dependency. Later work must not bypass the stated safety, validation, release, and live-proof gates.
+This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception; the limited .68 trial exception below does not waive inverter safety or accept Phase 1.
 
 ## 1. Phase 1 code validation
 
@@ -28,11 +28,11 @@ The 7 October decision resolves Solar's 15 kW value as physical saturation evide
 
 Separate observed follow-up: the 27 September morning trace showed Solar's aggregate energy budget crossing near its threshold with repeated export-ceiling switching. Investigate it independently; the near-full repair and these seven checkpoints do not establish a fix. The operator must decide from focused evidence whether it blocks final Phase 1 acceptance.
 
-Gate retained: Phase 1 release and live acceptance, including disposition of retained follow-ups, were prerequisites to beginning Phase 2. Explicit approval allowed Phase 2 local development ahead of this gate; this sequencing exception does not mark Phase 1 accepted or waive its outstanding live dependency.
+Gate retained: Phase 1 release and live acceptance, including disposition of retained follow-ups, were prerequisites to beginning Phase 2. Explicit approval allowed Phase 2 local development ahead of this gate; the later scoped trial decision below permits consideration of a limited .68 trial before full Phase 1 closure, without accepting Phase 1 or waiving inverter safety.
 
 ## 4. Phase 2 transition-settlement safety
 
-Status (10 October): **locally complete, code-validated and independently reviewed; uncommitted, unreleased and not live-accepted**. Development proceeded ahead of the Phase 1 live gate as recorded above.
+Status (10 October): **locally complete, code-validated and independently reviewed; committed locally, unreleased and not live-accepted**. Development proceeded ahead of the Phase 1 live gate as recorded above.
 
 The local implementation enforces the observed close -> later observe closed -> request MSC -> later observe exact MSC -> reopen sequence in `CONTROL_CONTRACT.md`. Entering deliberate battery export must settle its export target before discharge EMS. Service-call success never counts as observation.
 
@@ -43,7 +43,11 @@ Both formerly frozen tests now pass unchanged:
 
 Targeted protection validation and independent production/final test-delta reviews passed. Final suite: 920 passed / 913 subtests, zero failures, 201 Pydantic deprecation warnings; compileall and diff check passed.
 
-Next: separately authorized checkpoint commit/release preparation, explicit resolution of the retained Phase 1 gate, then separately authorized controlled deployment and observed live acceptance using `CURRENT_STATE.md`. High/Spike priority and unrelated Phase 1 issues remain parked; they must not be stacked onto this checkpoint.
+The implementation and .68 metadata are committed locally through `02c26af2ae47cdb5596a007b5055ba6fbd378bfa`. Explicit operator decision (10 October): defer Evening Boost reserve-instability and Solar threshold-switching fixes; allow consideration of a limited supervised .68 trial before full Phase 1 closure to validate the settlement repair independently. The deferred fixes and acceptance decisions remain open.
+
+Publication assessment: GO for separate approval. Deployment assessment: CONDITIONAL GO only after actual HA/effective settings and live observations prove Evening Boost cannot interfere and Solar switching is neither unsafe nor causing excessive actuator cycling. Unknown/failed conditions mean NO-GO; use the evidence, stop and .65 rollback checklist in `CURRENT_STATE.md`. This is not publication, deployment or setting-write authorization.
+
+Next: approve the gate-document commit, then exact publication actions; separately approve controlled deployment/restart/trial after operator checks. The combined High/Spike + Medium + independent tier SoC release remains unchanged and separate. Full Phase 1 acceptance is not granted by this exception or by a limited Phase 2 trial.
 
 Gate: Phase 2 must be stable and live-accepted before downstream integration or restructuring.
 

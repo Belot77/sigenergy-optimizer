@@ -297,3 +297,13 @@ Require fresh provenance-backed export closure before the return-path MSC reques
 The 8 October recorded `.67` runtime signature/container source and scoped Solar observations supersede the 7 October unreleased/live `.66` status above by date; they do not prove formal Phase 1 acceptance. Retain `.65` rollback. See `CURRENT_STATE.md` for exact identity, validation and outstanding evidence; no live query or release action is performed by this documentation checkpoint.
 
 Next authority is a separately approved checkpoint commit/release preparation, followed by explicit resolution of the retained Phase 1 gate and separately authorized deployment/live acceptance. High/Spike priority and unrelated work stay parked.
+
+## 2026-10-10 - Scoped Phase 1 deferral for consideration of a limited .68 trial
+
+Explicit operator approval: defer Evening Boost reserve-instability and Solar threshold-switching fixes and allow consideration of a limited .68 Phase 2 controlled live trial before full Phase 1 closure. Supersede only the blanket pre-trial closure requirement in earlier sequencing entries, including the earlier 10 October checkpoint; retain both unresolved fixes/acceptance decisions. Phase 1 is not accepted and no inverter safety requirement is waived.
+
+Rationale: obtain physical evidence for the independently reviewed observed-settlement safety repair without bundling unrelated policy changes. Trial scope must exclude Evening Boost interference and unsafe or excessive Solar actuator cycling, verified from actual HA/effective settings, timestamped owner/actuator observations and measured flows rather than source defaults. Missing evidence means no trial; scope failure during trial requires stopping.
+
+Publication is GO for separate approval on the existing validated source/metadata evidence. Deployment is CONDITIONAL GO only after operator preflight, supervision and stop/rollback arrangements pass and explicit live authorization is given. The detailed checklist is in `CURRENT_STATE.md`. This decision authorizes documentation/preflight only, not publication, installation, restarts or operator-setting writes.
+
+Retain .67 as last reported live and .65 as known-good rollback. A limited trial cannot establish unexercised protections or full Phase 1 acceptance. The next combined High/Spike + Medium + independent tier SoC package remains unchanged and separate.
