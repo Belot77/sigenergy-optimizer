@@ -15,26 +15,18 @@ Last consolidated: 2026-10-11
 
 - Worktree: `C:\Projects\sigenergy_optimizer-four-tier`.
 - Branch: `feature/four-tier-battery-export`.
-- HEAD and original pushed audit candidate: `5989b1c588b3c05e35ae1e13c3b333d2a2796f57`.
-- Independent ChatGPT GitHub audit returned **NO-GO** on the original candidate. The bounded remediation is locally validated but remains uncommitted and unpushed; independent re-audit of a new pushed SHA is pending. No release, installation or four-tier live acceptance is authorized.
-- Exact proposed checkpoint: **nine modified tracked files**, none staged and no untracked files. Preserve all changes and other worktrees:
-  - `app/optimizer.py`
-  - `tests/test_export_value_gate_advisory.py`
-  - `tests/test_four_tier_battery_export.py`
-  - `tests/test_haos49_transition_characterization.py`
-  - `tests/test_phase1_near_full_pv_only_safeguard_characterization.py`
-  - `docs/CURRENT_STATE.md`
-  - `docs/AI_HANDOVER.md`
-  - `docs/ROADMAP.md`
-  - `docs/CHANGELOG.md`
-- Final full suite, run once after remediation: **945 tests passed, 1079 subtests passed, zero failures, 206 warnings**. Compileall for `app`/`tests` with cache outside the worktree and `git diff --check` passed.
+- HEAD and independently reviewed corrected checkpoint: `bec1095539b96dbb90b62bd6eb047471e41801f6`. Original candidate: `5989b1c588b3c05e35ae1e13c3b333d2a2796f57`.
+- Corrected commit `Fix independent export arbitration and stabilize settlement characterization` contains exactly nine files and was pushed to `origin/feature/four-tier-battery-export`; local and remote SHA were verified equal. The post-audit handoff reports independent GitHub verification and an independent ChatGPT code-audit **GO**: both original arbitration blockers are resolved, with no new release-blocking defect identified in the reviewed code.
+- The original candidate's NO-GO is superseded for the corrected code checkpoint. **Code audit is complete; release authorization and physical/live acceptance remain outstanding.** This is the recorded independent audit outcome, not a new audit or HA observation performed for this documentation task.
+- Starting worktree was clean. This documentation-only checkpoint modifies exactly `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, `docs/ROADMAP.md` and `docs/CHANGELOG.md`; nothing is staged and no files are untracked. Production, tests, configuration, metadata, contract and historical decisions remain unchanged.
+- Retained reported final full suite, run once after remediation: **945 tests passed, 1079 subtests passed, zero failures, 206 warnings**. Compileall for `app`/`tests` with cache outside the worktree and `git diff --check` passed.
 - Focused validation: corrected transition test 1 / 9 subtests; complete transition file 7 / 9; actuator settlement/fallback 22 tests; arbitration 4 / 25; complete four-tier 19 / 136; Solar/Evening/Positive-FiT protections 292 / 277; independent Morning/Demand Window/Manual/Force/telemetry/import-cost/MSC protections 323 / 431. These runs overlap and must not be summed.
 - Warnings remain unchanged: 201 Pydantic extra `Field` argument deprecations, four `.dict()` deprecations and one class-based Config deprecation. The previously documented local timezone-data limitation remains an installation-validation gap, not proof of live behavior. Git also reports its existing LF-to-CRLF normalization advisory for the four-tier test; diff check finds no whitespace errors.
 - The retained production patch changes only arbitration in `_decide` and `_desired_export_limit`. No new production edit was made during final validation. `_apply`, settlement helpers, startup, hardware-cap helpers and release metadata remain unchanged from the original candidate. All four files predating the clock correction retain their recorded hashes.
 
 ## Bounded audit remediation
 
-Both original blockers are addressed in local code and regression coverage, subject to independent GitHub re-audit:
+The completed independent ChatGPT GitHub code audit confirms both original blockers are resolved in the corrected checkpoint:
 
 1. Rejected High/Spike battery proposals no longer suppress independently qualified Solar Bypass or Evening Boost. Qualified High/Spike proposals retain priority and all execution vetoes; a cost-vetoed candidate cannot obtain alternate permission through an overlapping policy.
 2. When arbitration selects an independent Solar/Evening policy, legacy High/Spike and Positive-FiT branches cannot intercept it. This preserves qualified Solar ownership when Medium defers, including with legacy opt-ins; it does not create lower-tier battery fallback.
@@ -61,17 +53,23 @@ The `.68` sequence remains mandatory: close export -> fresh trusted observed clo
 
 - **Phase 1 remains open.** Scoped `.67` Solar evidence for handover, physical relief/backoff and fill-deadline relinquishment remains recorded evidence; it does not close Evening Boost reserve/transition stability or Solar threshold-switching disposition. Those follow-ups remain explicitly deferred.
 - **Phase 2 has scoped `.68` acceptance only.** The 13-second observation gap and any broader or unexercised live scenarios remain outstanding. Automated tests and accepted service calls cannot fill observation gaps.
-- **Four-tier live acceptance is outstanding.** Code validation does not establish safe physical behavior or independent safety acceptance.
+- **Four-tier live acceptance is outstanding.** The completed code-audit GO does not establish safe physical behavior or complete release/live acceptance.
 - Further Evening Boost redesign, trusted non-positive-import redesign, Package 6B, experimental scheduling and later architecture/cleanup/GUI/Climate work remain parked under the roadmap; this package does not authorize them.
 
 ## Site tuning is not a software default
 
 Last reported operator tuning remains `grid_connection_export_limit_kw=15.0` and `solar_surplus_fill_deadline_margin_minutes=120`; software defaults remain **0.0** and **60** respectively. Morning Slow physical export headroom remains reported at **0.0**. Normal site export permission and PV MAX remain reported at 25 kW. Morning Dump's reported 15% operator floor is not a new software default. None of these settings was queried or written for this checkpoint.
 
-## Next approval and installation gate
+## Next approval and release-preparation gate
 
-Approved sequence: **validate -> obtain permission to commit/push the exact checkpoint -> independent ChatGPT GitHub safety audit -> explicit GO/NO-GO -> separately authorized HA installation**. A push is for review, not release or deployment permission. No corrected commit/push, tag, release, installation, restart or HA/inverter write is authorized by this checkpoint task.
+Next approval: commit/push this exact four-file documentation checkpoint, proposed message `Record haos69 code-audit GO and remaining release gates`. This task does not authorize that commit/push. No tag, build, release, deployment, installation, restart or HA/inverter write is authorized.
 
-Next approval: commit the exact nine-file corrected checkpoint with message `Fix independent export arbitration and stabilize settlement characterization`, then push only to `origin/feature/four-tier-battery-export` for independent ChatGPT re-audit. Reverify the retained hashes, scope and HEAD before staging; stop on any difference. Verify the complete new commit and remote SHA after an authorized push. The candidate remains NO-GO until independent review of that SHA and an explicit new GO/NO-GO decision. No tag/build/release or installation is included.
+After that documentation checkpoint, the next phase is **bounded .69 release preparation**, requiring separate authorization. Retain prepared candidate **2.3.58-haos69** and proposed tag **v2.3.58-haos69**. Release preparation must verify:
 
-Before any separately authorized live trial, verify the exact reviewed source/build identity, effective operator settings, observed authority and `.65` rollback readiness. Use monitor-only/dry-run observation to compare tier proposals, rejection reasons, final owners and requested limits without actuating. Under separate live authorization, capture timestamped requests, fresh readbacks and physical flows through deliberate export and MSC return; include reserve/cost boundaries and failed-candidate Morning preservation. Contain deferred Evening Boost/Solar switching risks, agree supervision and stop/rollback conditions, and label unexercised or missing observations as gaps. Stop for unsafe flows, lost authority, premature reopening, unproven settlement or limit violations. Do not infer permission to inject failures, change settings or restart from this checklist.
+- Exact reviewed source identity `bec1095539b96dbb90b62bd6eb047471e41801f6` and the relationship of any later documentation-only commit to that source.
+- No conflicting tag or release, and package/version consistency; prior checks do not substitute for checks at the release boundary.
+- Known-good `.65` rollback readiness.
+- Effective HA operator settings and observed authority before any installation; these have not been freshly queried.
+- A proposed monitor-only and controlled live-acceptance procedure, supervision, and explicit stopping/rollback conditions.
+
+Preserve roadmap dependencies and the open Phase 1/2 gates. Release preparation and code-audit GO do not authorize installation or declare live safety. Before separately authorized live work, confirm source/build identity, effective settings, authority and rollback readiness. Propose monitor-only observation of tier proposals, rejection reasons, final owners and requested limits; controlled live acceptance must capture timestamped requests, fresh readbacks and physical flows through deliberate export and MSC return, reserve/cost boundaries and failed-candidate Morning preservation. Contain unresolved Evening Boost reserve/transition stability and Solar threshold-switching risks. Stop for unsafe flows, lost authority, premature reopening, unproven settlement or limit violations, using separately approved rollback arrangements. Label unexercised scenarios and the 13-second observation gap as unresolved. No release-preparation checks or live actions were executed in this documentation task.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-11 - .69 post-audit documentation checkpoint
+
+- Record the post-audit handoff: corrected checkpoint `bec1095539b96dbb90b62bd6eb047471e41801f6`, message `Fix independent export arbitration and stabilize settlement characterization`, contains exactly nine files and is pushed to `origin/feature/four-tier-battery-export`. Original candidate `5989b1c588b3c05e35ae1e13c3b333d2a2796f57` remains the historical NO-GO baseline.
+- Independent ChatGPT GitHub code audit is **GO**: both original arbitration blockers are resolved, with no new release-blocking defect identified in the reviewed code. Earlier uncommitted/unpushed/pending-re-audit descriptions below are historical checkpoint records and are superseded for current status. Code-audit completion is distinct from release authorization and live acceptance.
+- Retain reported validation: **945 tests / 1079 subtests passed, zero failures, 206 classified Pydantic deprecation warnings**; compileall and diff checks passed. This task changes only CURRENT_STATE, AI_HANDOVER, ROADMAP and CHANGELOG; no test/compileall rerun, source/test/configuration/metadata change, or durable control/decision change.
+- Preserve prepared `2.3.58-haos69` / proposed `v2.3.58-haos69`, last reported live `2.3.57-haos68` (not freshly verified), known-good rollback `2.3.54-haos65`, incomplete Phase 1 acceptance, unresolved Evening Boost reserve/transition stability, outstanding Solar threshold-switching disposition, scoped Phase 2 acceptance with its unproven 13-second observation gap, and no four-tier physical/live acceptance. Effective operator settings have not been freshly queried.
+- Next: separately approve this four-file documentation commit/push, then separately authorize bounded .69 release preparation. Verify reviewed source identity, no tag/release conflicts, package/version consistency, `.65` rollback readiness, effective HA settings before installation, proposed monitor-only/controlled live acceptance and explicit stopping/rollback conditions. No commit/push, tag, build, release, deployment, installation/restart or HA/inverter write occurs in this documentation task.
+
 ## 2026-10-11 - Four-tier NO-GO remediation checkpoint (uncommitted)
 
 - Original 22-file candidate was committed and pushed as `5989b1c588b3c05e35ae1e13c3b333d2a2796f57`; independent ChatGPT GitHub audit returned NO-GO. Earlier pre-commit entries below record historical checkpoints, not current publication status.
