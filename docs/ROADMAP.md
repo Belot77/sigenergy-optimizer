@@ -51,21 +51,20 @@ Gate retained: full Phase 1 disposition and applicable Phase 2 live-proof requir
 
 ## 4A. Authorized four-tier battery-export package
 
-Status: **implemented and code-validated; uncommitted, unpushed, unreleased and not live-accepted** in `C:/Projects/sigenergy_optimizer-four-tier`, branch `feature/four-tier-battery-export`, HEAD `0aa616c55a87f204d30193d8006f2e57ba265941`. This authorization supersedes the earlier blanket parking of combined High/Spike, Medium and independent tier SoC work only.
+Status: **original candidate pushed and independently audited NO-GO; bounded remediation locally validated, uncommitted and unpushed** in `C:/Projects/sigenergy_optimizer-four-tier`, branch `feature/four-tier-battery-export`, HEAD `5989b1c588b3c05e35ae1e13c3b333d2a2796f57`. This authorization supersedes only the earlier parking of combined High/Spike, Medium and independent tier SoC work. It does not grant release or live acceptance.
 
-The final package disables ordinary Low deliberate export by policy regardless of persisted settings. Low classification/PV-only context and its compatible 100% default setting remain; Medium/High/Spike retain independent 40/20/10% floors, selected-tier ownership without fallback and guarded Morning preemption. Separately named policies retain independent authority below Medium. Proposal and final execution diagnostics remain distinct. Preserve ramp arithmetic, ordinary MSC, Solar, Morning, Demand Window, Manual/Force, reserve/forecast/physical safeguards and all `.68` settlement infrastructure. Value Gate remains advisory-only and operator tuning is not a software default.
+Ordinary Low battery sale remains disabled regardless of persisted floors/legacy opt-ins; compatible Low default is 100%, independent Medium/High/Spike floors are 40/20/10%. Both audit blockers are addressed locally: rejected High/Spike proposals no longer suppress independently qualified Solar/Evening, and selected independent policies cannot be intercepted by legacy tier/Positive-FiT branches when Medium defers. Qualified High/Spike priority and cost vetoes remain intact. No tier fallback, new ownership semantics or production settlement change is introduced.
 
-Final Low-policy validation: **941 tests passed, 1045 subtests passed, zero failures, 206 classified Pydantic deprecation warnings**; compileall (`app`, `tests`, external cache) and diff check passed. Warning/environment limits are recorded in `CURRENT_STATE.md`. The independent ChatGPT GitHub safety audit is **pending**.
+Final remediation validation: **945 tests / 1079 subtests passed, zero failures, 206 classified Pydantic deprecation warnings**; compileall with external cache and diff check passed. Nine deterministic timestamp subcases preserve the real strict-after application checks. The original intermittent failure's timestamps remain unavailable. Exact nine-file scope, focused results and evidence limits are recorded in `CURRENT_STATE.md`.
 
-Approved sequence:
+Next gates:
 
-1. Validation and the documentation checkpoint are complete for the 22-file pre-commit candidate.
-2. Obtain explicit permission to commit/push the exact validated checkpoint; publication for review is not deployment permission.
-3. Obtain an independent ChatGPT GitHub safety audit and resolve material findings under appropriate authorization.
-4. Make an explicit GO/NO-GO decision, retaining Phase 1/2 evidence gaps and deferred issues.
-5. Only then seek separately authorized HA installation and bounded live acceptance with identity, settings, observed-settlement and rollback checks.
+1. Obtain explicit permission for the exact validated nine-file correction, proposed message `Fix independent export arbitration and stabilize settlement characterization`.
+2. Reverify scope/hashes/HEAD, commit and push only the feature branch, then verify the new remote SHA. Publication for review is not deployment permission.
+3. Obtain independent ChatGPT GitHub re-audit of that SHA. The original NO-GO remains in force until a new explicit GO/NO-GO decision.
+4. Retain all Phase 1/2 evidence gaps and deferred issues; seek separately authorized HA installation and bounded live acceptance only after review and applicable gates.
 
-Candidate metadata `2.3.58-haos69` / proposed tag `v2.3.58-haos69` is prepared after upstream conflict checks; no tag, build, release or live action is authorized here. This package neither completes the broader control-ownership audit below nor authorizes architecture, cleanup, GUI or Climate work.
+Candidate identity remains `2.3.58-haos69`; remediation changes no release metadata and authorizes no tag, build, release or live action. Last reported live `.68`, known-good `.65` rollback, the unproven 13-second gap and outstanding Phase 1/2/four-tier acceptance remain unchanged. Architecture, cleanup, GUI, Climate and other parked work remain outside this package.
 
 ## 5. Short control-ownership audit
 

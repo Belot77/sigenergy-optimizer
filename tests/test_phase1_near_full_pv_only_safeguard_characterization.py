@@ -628,19 +628,34 @@ class Phase1NearFullPvOnlySafeguardCharacterizationTests(
         self.assertEqual("none", exact_full.trace_values["battery_export_owner"])
         self.assertEqual(MODE_MAX_SELF, exact_full.ems_mode)
 
-    def test_high_price_with_untrusted_available_energy_fails_closed(self) -> None:
+    def test_untrusted_energy_rejects_high_battery_export_but_preserves_qualified_solar(self) -> None:
         _state, decision = self._decide(
             self._optimizer(),
             available_energy_trusted=False,
             feedin_price=1.20,
             feedin_price_cents=120.0,
         )
-        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
-        self.assertEqual(0.0, decision.export_limit)
+        self.assertEqual("high", decision.trace_values["battery_export_tier"])
+        self.assertFalse(decision.trace_values["battery_export_proposal_qualified"])
+        self.assertFalse(decision.trace_values["battery_export_candidate_eligible"])
+        self.assertEqual(0.0, decision.trace_values["battery_export_calculated_power_kw"])
+        self.assertEqual("none", decision.trace_values["battery_export_owner"])
         self.assertEqual("none", decision.trace_values["battery_export_final_owner"])
         self.assertEqual("untrusted_or_empty_available_energy", decision.trace_values["battery_export_rejection"])
         self.assertFalse(decision.trace_gates["explicit_battery_export_owner_active"])
         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+        self.assertEqual("solar_surplus_pv_high", decision.trace_values["desired_export_source"])
+        self.assertTrue(decision.solar_surplus_policy_active)
+        self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
+        self.assertEqual(self.HIGH_CEILING_KW, decision.export_limit)
+        self.assertEqual(self.HIGH_CEILING_KW, decision.pv_max_power_limit)
+        self.assertTrue(decision.requires_verified_msc_before_export)
+        # The High-price path does not enter the named safeguard re-arbitration;
+        # retain the raw diagnostic without confusing it with final PV permission.
+        self.assertTrue(decision.battery_full_safeguard)
+        self.assertFalse(decision.trace_gates["battery_full_safeguard_soc_headroom_block"])
+        self.assertFalse(decision.trace_gates["battery_full_safeguard_solar_exception_active"])
 
     def test_morning_and_demand_owners_keep_their_independent_actuators(self) -> None:
         morning_slow_optimizer = self._optimizer(

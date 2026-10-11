@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -364,6 +364,52 @@ class FourTierDecisionTests(Haos49CharacterizationCase):
                     self.assertEqual(0.0, d.export_limit)
                     asyncio.run(optimizer._apply(state, d))
                     self.assertEqual([], ha.calls)
+
+    def test_evening_overlap_retains_qualified_high_spike_priority_and_independent_boost(self):
+        when = datetime(2026, 1, 15, 17, 30, tzinfo=timezone.utc)
+        for spike in (False, True):
+            for rejected in (False, True):
+                for summary in ({}, {"import_cost_floor_unknown": True}, {"today_highest_actual_import_price": 2.0}):
+                    with self.subTest(spike=spike, rejected=rejected, cost=summary):
+                        optimizer = self.optimizer(
+                            evening_boost_enabled=True, export_spike_threshold=1.0,
+                            battery_export_min_soc_high=80 if rejected else 20,
+                            battery_export_min_soc_spike=80 if rejected else 10,
+                        )
+                        optimizer._tz = timezone.utc
+                        # The shared state helper builds naive local sun times;
+                        # align them with this fixture's explicit UTC forecasts.
+                        state = self.state(
+                            when.replace(tzinfo=None),
+                            next_sunrise_ts=datetime(2026, 1, 16, 7, tzinfo=timezone.utc).timestamp(),
+                            next_sunset_ts=when.replace(hour=18, minute=0).timestamp(),
+                            timestamp=when,
+                            battery_soc=80.0, available_discharge_energy_kwh=24.0,
+                            feedin_price=1.20, feedin_price_cents=120.0,
+                            price_spike_active=spike, load_kw=0.0,
+                            solcast_detailed=[
+                                {"period_start": "2026-01-15T16:30:00+00:00", "pv_estimate": 10.0},
+                                {"period_start": "2026-01-15T17:00:00+00:00", "pv_estimate": 0.0},
+                            ],
+                        )
+                        with patch.object(optimizer, "_optimizer_import_topup_summary_today", return_value=summary):
+                            d = self.decide(optimizer, state, when)
+                        self.assertTrue(d.evening_export_boost_active)
+                        self.assertEqual(not rejected, d.trace_values["battery_export_proposal_qualified"])
+                        owner = "evening_export_boost" if rejected else "export_spike" if spike else "high_price"
+                        self.assertEqual(owner, d.trace_values["battery_export_owner"])
+                        self.assertFalse(d.trace_values["morning_preempted"])
+                        if summary:
+                            self.assertEqual("none", d.trace_values["battery_export_final_owner"])
+                            self.assertEqual("EXPORT_BLOCKED", d.export_intent)
+                            self.assertEqual(0.0, d.export_limit)
+                            self.assertEqual(MODE_MAX_SELF, d.ems_mode)
+                            self.assertTrue(d.trace_gates["actual_import_cost_guard_blocking"])
+                        else:
+                            self.assertEqual(owner, d.trace_values["battery_export_final_owner"])
+                            self.assertEqual(BATTERY_EXPORT, d.export_intent)
+                            self.assertGreater(d.export_limit, 0.01)
+                            self.assertEqual(MODE_CMD_DISCHARGE_PV, d.ems_mode)
 
     def test_medium_cannot_preempt_morning_and_value_gate_stays_advisory(self):
         optimizer = self.optimizer(max_battery_soc=100, export_value_gate_enabled=True,

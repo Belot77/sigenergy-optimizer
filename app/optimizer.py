@@ -4062,16 +4062,22 @@ class SigEnergyOptimizer:
             if (
                 not morning_dump_active and not morning_slow_for_policy
                 and (
-                    battery_export_tier in {"high", "spike"}
+                    (
+                        battery_export_tier in {"high", "spike"}
+                        and (
+                            battery_export_proposal_qualified
+                            or not (surplus_bypass_for_policy or evening_export_boost_active)
+                        )
+                    )
                     or (
                         battery_export_tier == "medium"
                         and not (evening_export_boost_active or surplus_bypass_for_policy or export_solar_override)
                     )
                 )
             ):
-                # Select the proposal even when closed: no second qualification
-                # against the legacy tier floor and no selected-tier fallback.
-                # Permission is applied after advisory evaluation below.
+                # Qualified proposals retain priority and their execution vetoes.
+                # A rejected tier stays closed unless a separate policy qualifies;
+                # it never borrows another battery tier's floor or authority.
                 return (
                     battery_export_candidate_kw,
                     battery_export_candidate_source,
@@ -4105,6 +4111,9 @@ class SigEnergyOptimizer:
                 within_morning_grace, feedin_price_trusted,
                 forecast_tomorrow_trusted=forecast_tomorrow_observation_trusted,
                 measured_pv_surplus=control_measured_pv_surplus_kw,
+                independent_policy_only=bool(
+                    surplus_bypass_for_policy or evening_export_boost_active
+                ),
             )
             raw_source = getattr(raw_choice, "source", "")
             if raw_source == "high_price_or_spike" or (
@@ -8854,7 +8863,8 @@ class SigEnergyOptimizer:
                                feedin_price_trusted: bool | None = None,
                                measured_pv_surplus: float | None = None, *,
                                forecast_tomorrow_trusted: bool,
-                               battery_soc_floor: float | None = None) -> float:
+                               battery_soc_floor: float | None = None,
+                               independent_policy_only: bool = False) -> float:
         cfg = self.cfg
         fit_cents = s.feedin_price_cents
         bsoc = s.battery_soc
@@ -8961,7 +8971,7 @@ class SigEnergyOptimizer:
                 return choice(0.0, "morning_slow_pv_closed")
             return choice(ceiling, "morning_slow_pv_high")
 
-        if high_price or spike:
+        if (high_price or spike) and not independent_policy_only:
             cap_val = min(tier_limit, cfg.export_limit_high)
             if spike and cfg.export_spike_full_power:
                 cap_val = max(tier_limit, cfg.cap_total_import)
@@ -8973,7 +8983,7 @@ class SigEnergyOptimizer:
                 "high_price_or_spike",
             )
 
-        if positive_fit_override:
+        if positive_fit_override and not independent_policy_only:
             eff_tier = tier_limit if tier_limit > 0 else cfg.export_limit_low
             limit = min(eff_tier, s.ess_max_discharge_kw)
             limit = cap_near_floor_to_pv(limit)

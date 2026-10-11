@@ -9,18 +9,39 @@ Last consolidated: 2026-10-11
 - Last reported live: **2.3.57-haos68**, source baseline `0aa616c55a87f204d30193d8006f2e57ba265941`. This is operator-reported live identity, not a new HA/runtime query or an inference from repository metadata.
 - Known-good rollback: **2.3.54-haos65**, commit `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Do not promote another build to rollback without evidence and approval.
 - `.68` has passed reported **scoped Phase 2 live acceptance**. Its **13-second observation gap remains documented and unproven**; neither that interval nor unexercised scenarios are assumed safe by observation.
-- Four-tier changes are local work on the `.68` source baseline. They are not part of the reported live installation. Prepared candidate identity: **2.3.58-haos69**, proposed tag `v2.3.58-haos69`. Fresh upstream tag/release checks found no conflict. The add-on config/build label/buildstamp, API version and runtime signature are synchronized; no tag, release or image was created.
+- The original four-tier candidate was committed and pushed for review as `5989b1c588b3c05e35ae1e13c3b333d2a2796f57`; it is not part of the reported live installation. Prepared candidate identity remains **2.3.58-haos69**, proposed tag `v2.3.58-haos69`. Remediation changes no release metadata and creates no tag, release or image.
 
 ## Active worktree and validation
 
 - Worktree: `C:\Projects\sigenergy_optimizer-four-tier`.
 - Branch: `feature/four-tier-battery-export`.
-- HEAD: `0aa616c55a87f204d30193d8006f2e57ba265941`.
-- Intentionally dirty pre-commit checkpoint: fifteen tracked implementation/test/metadata files plus these six checkpoint documents are modified and uncommitted (21 tracked files); `tests/test_four_tier_battery_export.py` remains untracked. The complete proposed commit contains 22 files. Preserve all changes and all other worktrees.
-- The final Low-policy candidate is **code-validated**, but **not committed, pushed, released, installed or live-accepted**. The independent ChatGPT GitHub safety audit is **pending**. Prior `.68` reviews do not constitute review of this delta.
-- Final full-suite validation: **941 tests passed, 1045 subtests passed, zero failures, 206 warnings**. Compileall for `app`/`tests`, with cache outside the worktree, and `git diff --check` passed. Targeted tariff trust: 24 tests / 2 subtests; four-tier: 18 / 124; independent Positive-FiT/MSC/Solar: 217 / 208. The preceding broader Morning/actuator/transition/ownership protection run passed 420 tests / 399 subtests. These runs overlap and must not be summed.
-- Warning accounting: 201 Pydantic deprecated extra `Field` keyword warnings, four deprecated `.dict()` calls and one class-based Config warning. These identify dependency-migration work, not live-safety proof. The local environment also logged unavailable `Australia/Adelaide` timezone data and UTC fallback; deterministic fixture times do not validate installation timezone behavior.
-- Production delta remains limited to `app/optimizer.py`, `app/config.py`, `app/routers/api.py`, `templates/index.html` and `.env.example`, with focused tests. The five established version/signature surfaces additionally prepare `.69` metadata only. Startup, hardware-cap helpers, `.68` transition/settlement infrastructure and `_apply` remain unchanged.
+- HEAD and original pushed audit candidate: `5989b1c588b3c05e35ae1e13c3b333d2a2796f57`.
+- Independent ChatGPT GitHub audit returned **NO-GO** on the original candidate. The bounded remediation is locally validated but remains uncommitted and unpushed; independent re-audit of a new pushed SHA is pending. No release, installation or four-tier live acceptance is authorized.
+- Exact proposed checkpoint: **nine modified tracked files**, none staged and no untracked files. Preserve all changes and other worktrees:
+  - `app/optimizer.py`
+  - `tests/test_export_value_gate_advisory.py`
+  - `tests/test_four_tier_battery_export.py`
+  - `tests/test_haos49_transition_characterization.py`
+  - `tests/test_phase1_near_full_pv_only_safeguard_characterization.py`
+  - `docs/CURRENT_STATE.md`
+  - `docs/AI_HANDOVER.md`
+  - `docs/ROADMAP.md`
+  - `docs/CHANGELOG.md`
+- Final full suite, run once after remediation: **945 tests passed, 1079 subtests passed, zero failures, 206 warnings**. Compileall for `app`/`tests` with cache outside the worktree and `git diff --check` passed.
+- Focused validation: corrected transition test 1 / 9 subtests; complete transition file 7 / 9; actuator settlement/fallback 22 tests; arbitration 4 / 25; complete four-tier 19 / 136; Solar/Evening/Positive-FiT protections 292 / 277; independent Morning/Demand Window/Manual/Force/telemetry/import-cost/MSC protections 323 / 431. These runs overlap and must not be summed.
+- Warnings remain unchanged: 201 Pydantic extra `Field` argument deprecations, four `.dict()` deprecations and one class-based Config deprecation. The previously documented local timezone-data limitation remains an installation-validation gap, not proof of live behavior. Git also reports its existing LF-to-CRLF normalization advisory for the four-tier test; diff check finds no whitespace errors.
+- The retained production patch changes only arbitration in `_decide` and `_desired_export_limit`. No new production edit was made during final validation. `_apply`, settlement helpers, startup, hardware-cap helpers and release metadata remain unchanged from the original candidate. All four files predating the clock correction retain their recorded hashes.
+
+## Bounded audit remediation
+
+Both original blockers are addressed in local code and regression coverage, subject to independent GitHub re-audit:
+
+1. Rejected High/Spike battery proposals no longer suppress independently qualified Solar Bypass or Evening Boost. Qualified High/Spike proposals retain priority and all execution vetoes; a cost-vetoed candidate cannot obtain alternate permission through an overlapping policy.
+2. When arbitration selects an independent Solar/Evening policy, legacy High/Spike and Positive-FiT branches cannot intercept it. This preserves qualified Solar ownership when Medium defers, including with legacy opt-ins; it does not create lower-tier battery fallback.
+
+Untrusted available energy still rejects High battery export with zero calculated power and no battery owner/discharge EMS. Independently qualified Solar may retain `MSC_SURPLUS_CEILING` under its own trusted evidence, flow, authority and settlement safeguards. The protected characterization now distinguishes those outcomes and retains unsafe-evidence coverage.
+
+The existing three-cycle Phase 2 test now uses a local shared deterministic clock, explicitly advancing between requests and observations. All original actuator-order assertions remain; nine subcases cover trusted later reports and equal, older, stale or missing export/MSC reports through real application checks. The mechanical indentation correction changes no expectation. A fixed-clock diagnostic reproduced the prior restrictive sequence, but the original failure's timestamps were not captured, so that historical occurrence's exact cause remains unproven. No production settlement defect or live acceptance is claimed.
 
 ## Four-tier behavior
 
@@ -49,8 +70,8 @@ Last reported operator tuning remains `grid_connection_export_limit_kw=15.0` and
 
 ## Next approval and installation gate
 
-Approved sequence: **validate -> obtain permission to commit/push the exact checkpoint -> independent ChatGPT GitHub safety audit -> explicit GO/NO-GO -> separately authorized HA installation**. A push is for review, not release or deployment permission. No commit, push, tag, release, installation, restart or HA/inverter write is authorized by this documentation task.
+Approved sequence: **validate -> obtain permission to commit/push the exact checkpoint -> independent ChatGPT GitHub safety audit -> explicit GO/NO-GO -> separately authorized HA installation**. A push is for review, not release or deployment permission. No corrected commit/push, tag, release, installation, restart or HA/inverter write is authorized by this checkpoint task.
 
-Next approval: one checkpoint commit with message `Implement guarded battery export tiers and prepare haos69 candidate`, then push only to `origin/feature/four-tier-battery-export`. Reverify the exact reviewed 22-file candidate before staging; stop on any difference. No tag/build/release is included in that proposed approval.
+Next approval: commit the exact nine-file corrected checkpoint with message `Fix independent export arbitration and stabilize settlement characterization`, then push only to `origin/feature/four-tier-battery-export` for independent ChatGPT re-audit. Reverify the retained hashes, scope and HEAD before staging; stop on any difference. Verify the complete new commit and remote SHA after an authorized push. The candidate remains NO-GO until independent review of that SHA and an explicit new GO/NO-GO decision. No tag/build/release or installation is included.
 
 Before any separately authorized live trial, verify the exact reviewed source/build identity, effective operator settings, observed authority and `.65` rollback readiness. Use monitor-only/dry-run observation to compare tier proposals, rejection reasons, final owners and requested limits without actuating. Under separate live authorization, capture timestamped requests, fresh readbacks and physical flows through deliberate export and MSC return; include reserve/cost boundaries and failed-candidate Morning preservation. Contain deferred Evening Boost/Solar switching risks, agree supervision and stop/rollback conditions, and label unexercised or missing observations as gaps. Stop for unsafe flows, lost authority, premature reopening, unproven settlement or limit violations. Do not infer permission to inject failures, change settings or restart from this checklist.

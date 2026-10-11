@@ -3224,6 +3224,93 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 self.assertFalse(decision.requires_verified_msc_before_export)
                 self.assertIn("held closed", decision.export_reason.lower())
 
+    def test_independent_solar_survives_rejected_tiers_and_medium_legacy_opt_ins(self) -> None:
+        for tier, fit, spike, soc, qualified in (
+            ("high", 1.20, False, 20.0, False),
+            ("spike", 1.20, True, 10.0, False),
+            ("medium", 0.40, False, 40.0, False),
+            ("medium", 0.40, False, 70.0, True),
+        ):
+            with self.subTest(tier=tier, soc=soc):
+                ha = _RecordingHA()
+                optimizer = self._optimizer(
+                    ha=ha, battery_full_safeguard_enabled=False,
+                    max_battery_soc=100.0, export_spike_threshold=1.0,
+                    allow_low_medium_export_positive_fit=True,
+                    allow_positive_fit_battery_discharging=True,
+                )
+                optimizer._is_evening_or_night = lambda _now: False
+                state = self._qualifying_solar_bypass_state(
+                    optimizer, datetime.now().timestamp(),
+                    feedin_price=fit, feedin_price_cents=fit * 100,
+                    price_spike_active=spike, battery_soc=soc,
+                    available_discharge_energy_kwh=soc * 0.3,
+                    ha_control_enabled=True, ha_control_switch_available=True,
+                    ha_control_switch_state="on",
+                )
+                decision = optimizer._decide(state)
+                self.assertEqual(tier, decision.trace_values["battery_export_tier"])
+                self.assertEqual(qualified, decision.trace_values["battery_export_proposal_qualified"])
+                self.assertFalse(decision.trace_values["battery_export_proposal_selected"])
+                self.assertTrue(decision.solar_surplus_policy_active)
+                self.assertEqual("solar_surplus_pv_high", decision.trace_values["desired_export_source"])
+                self.assertEqual("none", decision.trace_values["battery_export_owner"])
+                self.assertEqual("none", decision.trace_values["battery_export_final_owner"])
+                self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
+                self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+                self.assertEqual(optimizer.cfg.export_limit_high, decision.export_limit)
+                self.assertTrue(decision.requires_verified_msc_before_export)
+                self.assertFalse(decision.trace_values["morning_preempted"])
+                ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+                ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
+                asyncio.run(optimizer._apply(state, decision))
+                self.assertFalse(any(call[0] == "select_option" and call[2] in DISCHARGE_MODES for call in ha.calls))
+                self.assertIn(("set_number", optimizer.cfg.grid_export_limit, decision.export_limit), ha.calls)
+
+    def test_independent_solar_after_tier_rejection_still_requires_safe_evidence(self) -> None:
+        for values in (
+            {"forecast_remaining_observation_trusted": False},
+            {"solcast_detailed_source_trusted": False},
+            {"pv_power_trusted": False},
+            {"battery_power_sensor_kw": None, "grid_import_power_kw": None, "grid_export_power_kw": None},
+            {"battery_power_sensor_kw": -2.0, "grid_export_power_kw": 2.0},
+        ):
+            with self.subTest(evidence=values):
+                optimizer = self._optimizer(battery_full_safeguard_enabled=False, max_battery_soc=100.0)
+                optimizer._is_evening_or_night = lambda _now: False
+                state = self._qualifying_solar_bypass_state(
+                    optimizer, datetime.now().timestamp(), feedin_price=1.20,
+                    feedin_price_cents=120.0, battery_soc=20.0,
+                    available_discharge_energy_kwh=6.0, **values,
+                )
+                decision = optimizer._decide(state)
+                self.assertFalse(decision.solar_surplus_policy_active)
+                self.assertEqual("none", decision.trace_values["battery_export_final_owner"])
+                self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                self.assertEqual(0.0, decision.export_limit)
+                self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+
+    def test_cost_vetoed_high_spike_cannot_escape_through_solar_overlap(self) -> None:
+        for spike in (False, True):
+            for summary in ({"import_cost_floor_unknown": True}, {"today_highest_actual_import_price": 2.0}):
+                with self.subTest(spike=spike, cost=summary):
+                    optimizer = self._optimizer(battery_full_safeguard_enabled=False, max_battery_soc=100.0, export_spike_threshold=1.0)
+                    optimizer._is_evening_or_night = lambda _now: False
+                    state = self._qualifying_solar_bypass_state(
+                        optimizer, datetime.now().timestamp(), feedin_price=1.20,
+                        feedin_price_cents=120.0, price_spike_active=spike,
+                    )
+                    with patch.object(optimizer, "_optimizer_import_topup_summary_today", return_value=summary):
+                        decision = optimizer._decide(state)
+                    self.assertTrue(decision.solar_surplus_bypass)
+                    self.assertTrue(decision.trace_values["battery_export_proposal_selected"])
+                    self.assertEqual("export_spike" if spike else "high_price", decision.trace_values["battery_export_owner"])
+                    self.assertEqual("none", decision.trace_values["battery_export_final_owner"])
+                    self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                    self.assertEqual(0.0, decision.export_limit)
+                    self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+                    self.assertFalse(decision.trace_values["morning_preempted"])
+
     def test_solar_bypass_eligibility_does_not_capture_high_price_battery_export(self) -> None:
         now_ts = datetime.now().timestamp()
         optimizer = self._optimizer(battery_full_safeguard_enabled=False)

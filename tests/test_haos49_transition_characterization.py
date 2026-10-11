@@ -110,56 +110,131 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
         )
 
     def test_high_ceiling_drift_requires_later_closed_and_exact_msc_observations(self) -> None:
-        ha = RecordingHA()
-        optimizer = self.optimizer(ha)
-        ha.state_values = {
-            optimizer.cfg.ems_mode_select: MODE_CMD_DISCHARGE_PV,
-            optimizer.cfg.grid_export_limit: 0.01,
-        }
-        state = self._full_battery_opportunity(
-            current_ems_mode=MODE_MAX_SELF,
-            current_export_limit=0.01,
-        )
-        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import patch
 
-        asyncio.run(optimizer._apply(state, decision))
+        # Requests and simulated HA reports share one explicitly advanced clock.
+        # Accepted commands never substitute for a later report at the live gate.
+        class SettlementClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return clock_now.astimezone(tz) if tz is not None else clock_now.replace(tzinfo=None)
 
-        mode_call = ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
-        read_call = ("get_state_value", optimizer.cfg.ems_mode_select, "")
-        close_call = ("set_number", optimizer.cfg.grid_export_limit, 0.01)
-        export_call = ("set_number", optimizer.cfg.grid_export_limit, 25.0)
-        self.assertLess(ha.calls.index(read_call), ha.calls.index(close_call))
-        self.assertNotIn(mode_call, ha.calls)
-        self.assertNotIn(export_call, ha.calls)
+        cases = [("later", "both")] + [
+            (evidence, entity)
+            for evidence in ("equal", "older", "stale", "missing")
+            for entity in ("export", "msc")
+        ]
+        for evidence, observed_entity in cases:
+            with self.subTest(evidence=evidence, observed_entity=observed_entity):
+                clock_now = datetime.fromtimestamp(self.FIXED_AFTERNOON.timestamp(), timezone.utc)
+                with patch("app.optimizer.datetime", SettlementClock), patch(
+                    "haos49_characterization_helpers.datetime", SettlementClock,
+                ):
+                    ha = RecordingHA()
+                    optimizer = self.optimizer(ha)
+                    ha.state_values = {
+                        optimizer.cfg.ems_mode_select: MODE_CMD_DISCHARGE_PV,
+                        optimizer.cfg.grid_export_limit: 0.01,
+                    }
+                    state = self._full_battery_opportunity(
+                        current_ems_mode=MODE_MAX_SELF,
+                        current_export_limit=0.01,
+                    )
+                    decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
 
-        closed_state = self._full_battery_opportunity(
-            current_ems_mode=MODE_CMD_DISCHARGE_PV,
-            current_export_limit=0.01,
-        )
-        closed_decision = self.decide(optimizer, closed_state, self.FIXED_AFTERNOON)
-        second_cycle_start = len(ha.calls)
-        asyncio.run(optimizer._apply(closed_state, closed_decision))
-        second_cycle_calls = ha.calls[second_cycle_start:]
+                    asyncio.run(optimizer._apply(state, decision))
 
-        self.assertIn(mode_call, second_cycle_calls)
-        self.assertNotIn(export_call, second_cycle_calls)
-        self.assertEqual(0.01, ha.state_values[optimizer.cfg.grid_export_limit])
+                    mode_call = ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+                    read_call = ("get_state_value", optimizer.cfg.ems_mode_select, "")
+                    close_call = ("set_number", optimizer.cfg.grid_export_limit, 0.01)
+                    export_call = ("set_number", optimizer.cfg.grid_export_limit, 25.0)
+                    self.assertLess(ha.calls.index(read_call), ha.calls.index(close_call))
+                    self.assertNotIn(mode_call, ha.calls)
+                    self.assertNotIn(export_call, ha.calls)
 
-        ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
-        ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
-        settled_state = self._full_battery_opportunity(
-            current_ems_mode=MODE_MAX_SELF,
-            current_export_limit=0.01,
-        )
-        settled_decision = self.decide(optimizer, settled_state, self.FIXED_AFTERNOON)
-        third_cycle_start = len(ha.calls)
-        asyncio.run(optimizer._apply(settled_state, settled_decision))
-        third_cycle_calls = ha.calls[third_cycle_start:]
+                    transition = optimizer._msc_transition
+                    self.assertIsNotNone(transition)
+                    close_requested_at = transition.close_requested_at
+                    clock_now += timedelta(seconds=1)
+                    ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
+                    self.assertGreater(
+                        datetime.fromisoformat(ha._state_value_metadata[
+                            optimizer.cfg.grid_export_limit
+                        ]["last_reported"]).timestamp(), close_requested_at,
+                    )
+                    closed_state = self._full_battery_opportunity(
+                        current_ems_mode=MODE_CMD_DISCHARGE_PV,
+                        current_export_limit=0.01,
+                    )
+                    closed_decision = self.decide(optimizer, closed_state, self.FIXED_AFTERNOON)
+                    second_cycle_start = len(ha.calls)
+                    asyncio.run(optimizer._apply(closed_state, closed_decision))
+                    second_cycle_calls = ha.calls[second_cycle_start:]
 
-        self.assertIn(export_call, third_cycle_calls)
-        self.assertLess(
-            third_cycle_calls.index(read_call), third_cycle_calls.index(export_call)
-        )
+                    self.assertIn(mode_call, second_cycle_calls)
+                    self.assertNotIn(export_call, second_cycle_calls)
+                    self.assertEqual(0.01, ha.state_values[optimizer.cfg.grid_export_limit])
+
+                    msc_requested_at = optimizer._msc_transition.msc_requested_at
+                    self.assertGreater(msc_requested_at, close_requested_at)
+                    clock_now += timedelta(seconds=1)
+                    ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+                    ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
+                    self.assertGreater(
+                        datetime.fromisoformat(ha._state_value_metadata[
+                            optimizer.cfg.ems_mode_select
+                        ]["last_reported"]).timestamp(), msc_requested_at,
+                    )
+                    original_bulk_states = ha.bulk_states
+
+                    async def observed_states(entity_ids):
+                        states = await original_bulk_states(entity_ids)
+                        if evidence != "later":
+                            entity = (optimizer.cfg.grid_export_limit if observed_entity == "export"
+                                      else optimizer.cfg.ems_mode_select)
+                            if entity in states:
+                                report = dict(states[entity])
+                                boundary = close_requested_at if observed_entity == "export" else msc_requested_at
+                                if evidence == "missing":
+                                    report.pop("last_reported", None)
+                                    report.pop("last_updated", None)
+                                else:
+                                    offset = {"equal": 0, "older": -1, "stale": -1000}[evidence]
+                                    timestamp = datetime.fromtimestamp(boundary + offset, timezone.utc).isoformat()
+                                    report.update(last_reported=timestamp, last_updated=timestamp)
+                                states[entity] = report
+                        return states
+
+                    settled_state = self._full_battery_opportunity(
+                        current_ems_mode=MODE_MAX_SELF,
+                        current_export_limit=0.01,
+                    )
+                    settled_decision = self.decide(optimizer, settled_state, self.FIXED_AFTERNOON)
+                    self.assertEqual("MSC_SURPLUS_CEILING", settled_decision.export_intent)
+                    self.assertEqual(25.0, settled_decision.export_limit)
+                    self.assertEqual(MODE_MAX_SELF, settled_decision.ems_mode)
+                    self.assertEqual("none", settled_decision.trace_values["battery_export_final_owner"])
+                    third_cycle_start = len(ha.calls)
+                    with patch.object(ha, "bulk_states", side_effect=observed_states):
+                        asyncio.run(optimizer._apply(settled_state, settled_decision))
+                    third_cycle_calls = ha.calls[third_cycle_start:]
+
+                    if evidence == "later":
+                        self.assertIn(export_call, third_cycle_calls)
+                        self.assertLess(
+                            third_cycle_calls.index(read_call), third_cycle_calls.index(export_call)
+                        )
+                        self.assertIsNone(optimizer._msc_transition)
+                    else:
+                        self.assertNotIn(export_call, third_cycle_calls)
+                        for entity in (optimizer.cfg.grid_export_limit, optimizer.cfg.grid_import_limit,
+                                       optimizer.cfg.ess_max_discharging_limit):
+                            self.assertIn(("set_number", entity, 0.01), third_cycle_calls)
+                        self.assertEqual("close", optimizer._msc_transition.phase)
+                    self.assertNotIn(
+                        ("select_option", optimizer.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV), ha.calls,
+                    )
 
     def test_transition_into_discharge_settles_target_before_mode(self) -> None:
         ha = RecordingHA()
