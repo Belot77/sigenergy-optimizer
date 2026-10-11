@@ -167,6 +167,11 @@ class Settings(BaseSettings):
     export_limit_low: float = Field(5.0, env="EXPORT_LIMIT_LOW")
     export_limit_medium: float = Field(12.0, env="EXPORT_LIMIT_MEDIUM")
     export_limit_high: float = Field(25.0, env="EXPORT_LIMIT_HIGH")
+    # Compatibility setting only: ordinary Low battery export is disabled by policy.
+    battery_export_min_soc_low: float = Field(100.0, ge=0, le=100, allow_inf_nan=False, env="BATTERY_EXPORT_MIN_SOC_LOW")
+    battery_export_min_soc_medium: float = Field(40.0, ge=0, le=100, allow_inf_nan=False, env="BATTERY_EXPORT_MIN_SOC_MEDIUM")
+    battery_export_min_soc_high: float = Field(20.0, ge=0, le=100, allow_inf_nan=False, env="BATTERY_EXPORT_MIN_SOC_HIGH")
+    battery_export_min_soc_spike: float = Field(10.0, ge=0, le=100, allow_inf_nan=False, env="BATTERY_EXPORT_MIN_SOC_SPIKE")
     export_spike_threshold: float = Field(0.0, env="EXPORT_SPIKE_THRESHOLD")
     export_spike_min_soc: float = Field(0.0, env="EXPORT_SPIKE_MIN_SOC")
     export_spike_full_power: bool = Field(False, env="EXPORT_SPIKE_FULL_POWER")
@@ -351,6 +356,10 @@ class Settings(BaseSettings):
     pv_max_power_value: float = Field(30.0, env="PV_MAX_POWER_VALUE")
 
     @field_validator(
+        "battery_export_min_soc_low",
+        "battery_export_min_soc_medium",
+        "battery_export_min_soc_high",
+        "battery_export_min_soc_spike",
         "solar_surplus_forecast_safety_factor",
         "solar_surplus_fill_deadline_margin_minutes",
         mode="before",

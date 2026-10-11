@@ -1993,7 +1993,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
         self.assertGreater(decision.export_limit, 0.01)
 
-    def test_explicit_positive_fit_battery_discharge_override_remains_deliberate(
+    def test_legacy_positive_fit_battery_opt_in_remains_pv_only_in_low(
         self,
     ) -> None:
         optimizer = self.optimizer(
@@ -2001,7 +2001,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             allow_positive_fit_battery_discharging=True,
         )
         state = self._ordinary_state(
-            90.0,
+            90.1,  # Persisted opt-in cannot restore Low battery-export authority.
             feedin_price=0.05,
             feedin_price_cents=5.0,
             pv_kw=4.0,
@@ -2012,34 +2012,34 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
 
         self.assertEqual(
-            "positive_fit_override",
+            "ordinary_msc_surplus_ceiling",
             decision.trace_values.get("desired_export_source"),
         )
         self.assertEqual(
-            "positive_fit_override",
+            "none",
             decision.trace_values.get("battery_export_owner"),
         )
-        self.assertTrue(
+        self.assertFalse(
             bool(
                 decision.trace_gates.get(
                     "positive_fit_battery_export_authorized"
                 )
             )
         )
-        self.assertFalse(
+        self.assertTrue(
             bool(
                 decision.trace_gates.get(
                     "positive_fit_msc_surplus_policy_active"
                 )
             )
         )
-        self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
         self.assertEqual(
-            BATTERY_EXPORT,
+            MSC_SURPLUS_CEILING,
             decision.trace_values.get("requested_export_intent"),
         )
-        self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
-        self.assertEqual(5.0, decision.export_limit)
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+        self.assertEqual(25.0, decision.export_limit)
         self.assertEqual(25.0, decision.ess_discharge_limit)
 
     def test_positive_fit_policy_without_battery_discharge_uses_verified_msc_ceiling(
@@ -2241,30 +2241,26 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             solar_power_now_kw=0.0,
             load_kw=1.0,
         )
-        original_advisory = optimizer._export_value_gate_advisory
-
-        def import_cost_veto_advisory(*args, **kwargs):
-            result = original_advisory(*args, **kwargs)
-            result.update(
-                {
-                    "today_import_topup_kwh": 1.0,
-                    "today_highest_actual_import_price": 1.20,
-                    "import_cost_export_floor": 1.20,
-                    "import_cost_floor_trusted": True,
-                    "import_cost_floor_unknown": False,
-                }
-            )
-            return result
-
-        optimizer._export_value_gate_advisory = import_cost_veto_advisory
-
-        decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+        with patch.object(
+            optimizer,
+            "_optimizer_import_topup_summary_today",
+            return_value={
+                "today_import_topup_kwh": 1.0,
+                "today_highest_actual_import_price": 1.20,
+                "import_cost_floor_trusted": True,
+                "import_cost_floor_unknown": False,
+            },
+        ) as import_summary:
+            decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+        import_summary.assert_called_once()
 
         self.assertTrue(bool(decision.trace_gates.get("positive_fit_override")))
         self.assertTrue(
             bool(decision.trace_gates.get("actual_import_cost_guard_blocking"))
         )
         self.assertEqual("high_price", decision.trace_values.get("battery_export_owner"))
+        self.assertEqual("none", decision.trace_values["battery_export_final_owner"])
+        self.assertFalse(decision.trace_values["battery_export_candidate_eligible"])
         self.assert_contract_outputs(
             decision,
             (MODE_MAX_SELF, 0.0, 0.0, optimizer.cfg.pv_max_power_normal),
@@ -2425,7 +2421,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
         self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
 
-    def test_positive_fit_battery_export_enabled_retains_low_soc_export_guard(
+    def test_low_legacy_opt_in_at_partial_soc_uses_only_verified_msc(
         self,
     ) -> None:
         optimizer = self.optimizer(
@@ -2440,7 +2436,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
 
         decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
 
-        self.assertTrue(
+        self.assertFalse(
             bool(
                 decision.trace_gates.get(
                     "positive_fit_battery_export_authorized"
@@ -2449,9 +2445,11 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         )
         self.assert_contract_outputs(
             decision,
-            (MODE_MAX_SELF, 0.0, 0.0, optimizer.cfg.pv_max_power_normal),
+            (MODE_MAX_SELF, optimizer.cfg.export_limit_high, 0.0, optimizer.cfg.pv_max_power_normal),
         )
-        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
+        self.assertEqual("none", decision.trace_values["battery_export_final_owner"])
+        self.assertFalse(decision.trace_gates["explicit_battery_export_owner_active"])
         self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
 
 

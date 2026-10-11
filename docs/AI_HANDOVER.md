@@ -1,38 +1,19 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-10-10
+Last consolidated: 2026-10-11
 
-Read root/project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md`, `DECISIONS.md` and `ROADMAP.md`. Verify identity/status before editing.
+Read root/project `AGENTS.md`, then `CURRENT_STATE.md`, `CONTROL_CONTRACT.md` and the relevant decision/roadmap sections. Verify identity and status before editing; preserve dirty work.
 
-## Continuation checkpoint
+- Active worktree: `C:/Projects/sigenergy_optimizer-four-tier`; branch `feature/four-tier-battery-export`; HEAD `0aa616c55a87f204d30193d8006f2e57ba265941`. Other worktrees remain protected.
+- Dirty pre-commit checkpoint: fifteen tracked implementation/test/metadata files, six checkpoint docs (21 modified tracked files) and untracked `tests/test_four_tier_battery_export.py`; 22 proposed commit files. Nothing in the four-tier delta is committed, pushed, released or live-accepted.
+- Last **reported** live: `2.3.57-haos68`, source baseline `0aa616c55a87f204d30193d8006f2e57ba265941`; no new live query. Known-good rollback: `2.3.54-haos65`, `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`.
+- Final validation: **941 tests passed / 1045 subtests passed / zero failures / 206 warnings**. Compileall (`app`, `tests`, cache outside worktree) and diff check passed. Warnings: 201 deprecated Pydantic Field extras, four `.dict()` calls, one class-based Config; local timezone-data fallback to UTC is a separate environment limitation. The tariff characterization now proves Low MSC-only permission and separately qualified Medium export, including strict Medium-floor closure; invalid-telemetry tests are unchanged.
+- Independent **ChatGPT GitHub safety audit remains pending**. Prior `.68` acceptance/reviews do not cover four-tier changes.
 
-- Work only in `C:/Projects/sigenergy_optimizer-phase1-remediation`; never edit the protected root worktree.
-- Branch: `fix/phase2-observed-msc-transition`.
-- HEAD: `02c26af2ae47cdb5596a007b5055ba6fbd378bfa`.
-- Implementation checkpoint `22602e1ad225e39b7679a1af9d9bf3e04348e887` and .68 metadata at HEAD are committed locally. Four scoped-deferral documents are now modified, unstaged and uncommitted; no production/test changes.
-- Phase 2 observed transition settlement is locally complete, code-validated and independently reviewed. Production review and final test-delta review passed.
-- Final suite: **920 passed, 913 subtests, zero failures, 201 Pydantic deprecation warnings**. Compileall (`app`, `tests`) and `git diff --check` passed. Both formerly frozen transition tests passed unchanged; exact names are in `CURRENT_STATE.md`.
-- Last recorded live identity: `.67 / 2.3.56-haos67`, source `1973ac643c29044e8bfb894873adfdd53c7eb4c8`, based on the 8 October startup/runtime record, not repository defaults. No new live query was made here.
-- Known-good rollback: `.65 / 2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Do not promote `.66`.
+Ordinary deliberate battery export starts at Medium. Low is price classification/PV-only context and cannot own battery export, including at 100% SoC or with legacy opt-ins and persisted floors below 100%. The compatible Low key defaults to 100% but never enables Low sale. Medium/High/Spike floors remain 40/20/10%, independently validated as finite numeric 0-100 values (no booleans), with no selected-tier fallback. Preserve ramp arithmetic, reserves, trusted evidence, import-cost veto and physical limits. Solar/ordinary MSC remain PV-only; independently qualified Morning Dump/Evening Boost and Manual/Force retain separate authority. Only fully permitted positive bounded High/Spike proposals may preempt eligible Morning owners.
 
-## Prepared .68 release identity
+`battery_export_owner` is proposal provenance; `battery_export_final_owner` is the final decision owner, `none` under a blocking veto. Proposals and Value Gate advisory results never authorize actuation. Preserve the complete `.68` observed close -> observed closure -> MSC request -> later observed exact MSC -> permitted reopening sequence, all independent restrictive controls, MSC/Solar/Morning/Demand Window and Manual/Force.
 
-- Version: **2.3.57-haos68**; proposed tag: `v2.3.57-haos68`.
-- Proposed image: `ghcr.io/belot77/sigenergy-optimizer:2.3.57-haos68`.
-- Metadata committed locally; no tag, build, image publication, deployment or live acceptance. Existing local/remote tag checks found no conflicting .68/2.3.57 identity during release investigation.
-- All five established surfaces are synchronized: add-on config version, build version label, plain build stamp, API version and optimizer runtime signature. No controller, test or configuration-default changes.
-- Prior Phase 2 validation and both passed reviews remain the behavioural evidence; metadata preparation does not repeat the full suite or compileall.
+`.68` scoped Phase 2 live acceptance is reported passed; its **13-second observation gap remains unproven**, and broader/unexercised acceptance remains open. Phase 1 remains open for deferred Evening Boost stability and Solar threshold-switching disposition. Four-tier live acceptance is outstanding. Site 15 kW physical-boundary and 120-minute Solar-margin tuning are not software defaults (0.0 and 60).
 
-## Boundaries and outstanding gates
-
-Return from deliberate discharge requires close export -> trusted observed closure -> request MSC -> trusted exact MSC strictly after request -> permitted reopening. Preserve fresh provenance, fail-closed restart/telemetry handling, restrictive PV MAX through fallback, Manual/Force ownership and Demand Window import blocking. Solar fill-deadline, physical-relief and provider-freshness protections remain intact.
-
-Phase 1 remains open. The operator explicitly deferred Evening Boost reserve-instability and Solar threshold-switching fixes and permits consideration of a limited .68 trial before full Phase 1 closure. This scoped exception isolates validation of the observed-settlement repair; it neither accepts the deferred issues nor waives inverter safety. The later combined High/Spike + Medium + independent tier SoC package is unchanged and separate.
-
-## Trial gates and next approval
-
-**Publication: GO for approval** based on prior code/review and metadata validation; no publication action is authorized here. **Deployment: CONDITIONAL GO** for a supervised limited trial, only after actual HA/effective-setting and live checks show Evening Boost cannot interfere and Solar is not causing unsafe behaviour or excessive actuator cycling. Unknown/failed checks mean NO-GO.
-
-Use the publication/trial checklist in `CURRENT_STATE.md`. Check actual enabled/window settings and observed owners, agree the trial duration/cycling limit and stop authority, verify source/image identity and .65 rollback readiness, then capture timestamped requests, trusted readbacks and physical flows. Source defaults and service-call success are insufficient. Stop for lost safety ownership, unproven settlement, unintended export, Boost interference or unsafe/excessive cycling; rollback requires the agreed operator procedure. Restart/telemetry scenarios and any setting/mode changes need separate live authorization.
-
-Next: separately approve a local commit of these four gate documents, then exact publication scope. Controlled installation/restart/trial requires separate approval after operator checks pass, including stop/rollback arrangements. No live queries or writes occurred in this documentation checkpoint; Phase 2 remains code-validated, not live-accepted.
+Next: obtain explicit permission to commit/push the validated checkpoint, then independent ChatGPT GitHub audit, explicit GO/NO-GO, and separately authorized HA installation. Candidate `2.3.58-haos69` / proposed tag `v2.3.58-haos69` is prepared on all five metadata surfaces after fresh upstream conflict checks; no tag/build/release was created. Follow `CURRENT_STATE.md` for observation/stop/rollback gates and `ROADMAP.md` for parked work; no live changes are authorized by this checkpoint.

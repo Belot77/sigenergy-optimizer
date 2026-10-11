@@ -97,7 +97,8 @@ class Phase1D2PowerScalarTrustTests(Haos49CharacterizationCase):
         return self.state(self.FIXED_AFTERNOON, **values)
 
     def test_stale_or_unavailable_solcast_cannot_create_solar_override(self) -> None:
-        optimizer = self.optimizer()
+        # Isolate Solar Override from the independently eligible Medium tier.
+        optimizer = self.optimizer(battery_export_min_soc_medium=100.0)
         for name, available, fresh in (
             ("stale", True, False),
             ("unavailable", False, False),
@@ -121,6 +122,24 @@ class Phase1D2PowerScalarTrustTests(Haos49CharacterizationCase):
                 self.assertEqual("none", decision.trace_values["battery_export_owner"])
                 self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
                 self.assertNotEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+
+    def test_eligible_medium_uses_measured_pv_when_solcast_is_untrusted(self) -> None:
+        for available, fresh in ((True, False), (False, False)):
+            for solar_power in (0.0, 6.0, 600.0):
+                with self.subTest(available=available, fresh=fresh, solar_power=solar_power):
+                    optimizer = self.optimizer()
+                    state = self._state_with_power_trust(
+                        pv_kw=1.4, load_kw=1.0, solar_power_now_kw=solar_power,
+                        solar_available=available, solar_fresh=fresh,
+                    )
+                    decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+                    self.assertFalse(decision.trace_gates["solar_power_now_trusted"])
+                    self.assertFalse(decision.trace_gates["export_solar_override"])
+                    self.assertEqual("medium_price", decision.trace_values["battery_export_final_owner"])
+                    self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+                    # 0.4 kW surplus is below Solar Override's threshold; the
+                    # unchanged Medium ramp applies its 0.5 kW minimum transfer.
+                    self.assertAlmostEqual(0.5, decision.export_limit)
 
     def test_fresh_solcast_retains_solar_override_behavior(self) -> None:
         optimizer = self.optimizer()
@@ -176,8 +195,10 @@ class Phase1D2PowerScalarTrustTests(Haos49CharacterizationCase):
 
     def test_untrusted_pv_or_load_cannot_enlarge_near_floor_export_cap(self) -> None:
         optimizer = self.optimizer(
-            allow_low_medium_export_positive_fit=True,
-            allow_positive_fit_battery_discharging=True,
+            # Low sale is disabled; retain the near-floor PV-cap protection
+            # with an independently qualified High tier at the same 90% SoC.
+            battery_export_min_soc_high=89.98,
+            min_soc_floor=89.98,
         )
         for name, pv_trusted, load_trusted in (
             ("pv", False, True),
@@ -191,7 +212,7 @@ class Phase1D2PowerScalarTrustTests(Haos49CharacterizationCase):
                     pv_trusted=pv_trusted,
                     load_trusted=load_trusted,
                     battery_soc=optimizer.cfg.min_export_target_soc,
-                    feedin_price=0.05,
+                    feedin_price=1.10,
                     current_ems_mode=MODE_MAX_SELF,
                 )
                 decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
@@ -212,14 +233,14 @@ class Phase1D2PowerScalarTrustTests(Haos49CharacterizationCase):
             load_kw=1.0,
             solar_power_now_kw=0.0,
             battery_soc=optimizer.cfg.min_export_target_soc,
-            feedin_price=0.05,
+            feedin_price=1.10,
             current_ems_mode=MODE_MAX_SELF,
         )
         trusted = self.decide(optimizer, trusted_state, self.FIXED_AFTERNOON)
         self.assertGreater(trusted.export_limit, 0.01)
         self.assertEqual(BATTERY_EXPORT, trusted.export_intent)
         self.assertEqual(
-            "positive_fit_override",
+            "high_price",
             trusted.trace_values["battery_export_owner"],
         )
 

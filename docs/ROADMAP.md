@@ -1,6 +1,6 @@
 # Roadmap
 
-This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception; the limited .68 trial exception below does not waive inverter safety or accept Phase 1.
+This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
 
 ## 1. Phase 1 code validation
 
@@ -20,7 +20,7 @@ The checkpoint records the local code-validation result, durable semantics, live
 
 Feature-branch push: **COMPLETE** through `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce` on `origin/fix/phase1-audit-remediation`.
 
-The publication status above is historical. The 8 October checkpoint records `.67` release/startup and scoped Solar live evidence; see `CURRENT_STATE.md` for the last recorded identity and `.65` rollback. No current live query was made at this Phase 2 checkpoint.
+The publication status above is historical. The 8 October checkpoint records `.67` release/startup and scoped Solar live evidence. Last reported live is now `.68 / 2.3.57-haos68`, source baseline `0aa616c55a87f204d30193d8006f2e57ba265941`; `.65` remains rollback. This checkpoint makes no new live query; current identity and evidence limits are in `CURRENT_STATE.md`.
 
 Formal Phase 1 acceptance and explicit disposition of retained follow-ups remain **PENDING**. Scoped Solar evidence does not establish completion of the separate Evening Boost transition-stability dependency. Repository validation and service-call success are not live settlement proof.
 
@@ -32,7 +32,7 @@ Gate retained: Phase 1 release and live acceptance, including disposition of ret
 
 ## 4. Phase 2 transition-settlement safety
 
-Status (10 October): **locally complete, code-validated and independently reviewed; committed locally, unreleased and not live-accepted**. Development proceeded ahead of the Phase 1 live gate as recorded above.
+Status (11 October checkpoint): **reported live in `.68`, with scoped Phase 2 live acceptance passed**. The **13-second observation gap remains unproven**; broader/unexercised live acceptance remains outstanding. Development and the limited trial proceeded under the recorded Phase 1 sequencing exception, not Phase 1 completion.
 
 The local implementation enforces the observed close -> later observe closed -> request MSC -> later observe exact MSC -> reopen sequence in `CONTROL_CONTRACT.md`. Entering deliberate battery export must settle its export target before discharge EMS. Service-call success never counts as observation.
 
@@ -41,15 +41,31 @@ Both formerly frozen tests now pass unchanged:
 - `test_exact_msc_does_not_reopen_before_export_is_observed_closed`
 - `test_return_from_discharge_waits_for_observed_close_before_requesting_msc`
 
-Targeted protection validation and independent production/final test-delta reviews passed. Final suite: 920 passed / 913 subtests, zero failures, 201 Pydantic deprecation warnings; compileall and diff check passed.
+The prior `.68` protection validation and independent production/final test-delta reviews remain historical evidence for the settlement implementation. They do not constitute independent review of the four-tier delta.
 
-The implementation and .68 metadata are committed locally through `02c26af2ae47cdb5596a007b5055ba6fbd378bfa`. Explicit operator decision (10 October): defer Evening Boost reserve-instability and Solar threshold-switching fixes; allow consideration of a limited supervised .68 trial before full Phase 1 closure to validate the settlement repair independently. The deferred fixes and acceptance decisions remain open.
+The 10 October operator decision deferred Evening Boost reserve-instability and Solar threshold-switching fixes and allowed the limited `.68` trial. Those deferred fixes/acceptance decisions remain open. Scoped acceptance does not establish uninterrupted observation across the retained gap or validate unexercised restart, telemetry-loss or other scenarios.
 
-Publication assessment: GO for separate approval. Deployment assessment: CONDITIONAL GO only after actual HA/effective settings and live observations prove Evening Boost cannot interfere and Solar switching is neither unsafe nor causing excessive actuator cycling. Unknown/failed conditions mean NO-GO; use the evidence, stop and .65 rollback checklist in `CURRENT_STATE.md`. This is not publication, deployment or setting-write authorization.
+Any further live work requires separate authorization, effective-setting/authority checks, containment of deferred policy risks, supervision and stop/rollback arrangements. Unknown or failed prerequisites mean NO-GO. Preserve the full observed-settlement contract and all independent restrictive controls.
 
-Next: approve the gate-document commit, then exact publication actions; separately approve controlled deployment/restart/trial after operator checks. The combined High/Spike + Medium + independent tier SoC release remains unchanged and separate. Full Phase 1 acceptance is not granted by this exception or by a limited Phase 2 trial.
+Gate retained: full Phase 1 disposition and applicable Phase 2 live-proof requirements remain prerequisites to downstream restructuring/integration. The four-tier development authorization below is bounded and does not close those gates.
 
-Gate: Phase 2 must be stable and live-accepted before downstream integration or restructuring.
+## 4A. Authorized four-tier battery-export package
+
+Status: **implemented and code-validated; uncommitted, unpushed, unreleased and not live-accepted** in `C:/Projects/sigenergy_optimizer-four-tier`, branch `feature/four-tier-battery-export`, HEAD `0aa616c55a87f204d30193d8006f2e57ba265941`. This authorization supersedes the earlier blanket parking of combined High/Spike, Medium and independent tier SoC work only.
+
+The final package disables ordinary Low deliberate export by policy regardless of persisted settings. Low classification/PV-only context and its compatible 100% default setting remain; Medium/High/Spike retain independent 40/20/10% floors, selected-tier ownership without fallback and guarded Morning preemption. Separately named policies retain independent authority below Medium. Proposal and final execution diagnostics remain distinct. Preserve ramp arithmetic, ordinary MSC, Solar, Morning, Demand Window, Manual/Force, reserve/forecast/physical safeguards and all `.68` settlement infrastructure. Value Gate remains advisory-only and operator tuning is not a software default.
+
+Final Low-policy validation: **941 tests passed, 1045 subtests passed, zero failures, 206 classified Pydantic deprecation warnings**; compileall (`app`, `tests`, external cache) and diff check passed. Warning/environment limits are recorded in `CURRENT_STATE.md`. The independent ChatGPT GitHub safety audit is **pending**.
+
+Approved sequence:
+
+1. Validation and the documentation checkpoint are complete for the 22-file pre-commit candidate.
+2. Obtain explicit permission to commit/push the exact validated checkpoint; publication for review is not deployment permission.
+3. Obtain an independent ChatGPT GitHub safety audit and resolve material findings under appropriate authorization.
+4. Make an explicit GO/NO-GO decision, retaining Phase 1/2 evidence gaps and deferred issues.
+5. Only then seek separately authorized HA installation and bounded live acceptance with identity, settings, observed-settlement and rollback checks.
+
+Candidate metadata `2.3.58-haos69` / proposed tag `v2.3.58-haos69` is prepared after upstream conflict checks; no tag, build, release or live action is authorized here. This package neither completes the broader control-ownership audit below nor authorizes architecture, cleanup, GUI or Climate work.
 
 ## 5. Short control-ownership audit
 

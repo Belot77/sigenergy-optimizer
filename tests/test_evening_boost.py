@@ -62,7 +62,7 @@ class EveningBoostGateTests(unittest.TestCase):
 
     def test_evening_boost_can_activate_once_user_minimum_is_met(self) -> None:
         optimizer = self._optimizer(minimum_tomorrow_forecast_kwh=100.0)
-        now = datetime.now()
+        now = datetime(2026, 1, 15, 20, 0, tzinfo=timezone.utc)
         state = SolarState(
             battery_soc=85.0,
             forecast_tomorrow_kwh=120.0,

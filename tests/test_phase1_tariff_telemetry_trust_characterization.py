@@ -450,7 +450,7 @@ class Phase1TariffTelemetryTrustCharacterizationTests(Haos49CharacterizationCase
         self.assertEqual(0.1, decision.pv_max_power_limit)
         self.assertEqual(0.01, decision.ess_discharge_limit)
 
-    def test_fresh_finite_positive_fit_preserves_positive_fit_battery_owner(self) -> None:
+    def test_fresh_finite_positive_low_fit_preserves_only_msc_surplus(self) -> None:
         optimizer, state, decision = self._read_and_decide(
             price_state="0.30",
             feedin_state="0.05",
@@ -462,11 +462,50 @@ class Phase1TariffTelemetryTrustCharacterizationTests(Haos49CharacterizationCase
             allow_positive_fit_battery_discharging=True,
         )
 
-        self.assertEqual("positive_fit_override", decision.trace_values.get("battery_export_owner"))
-        self.assertEqual(BATTERY_EXPORT, decision.export_intent)
-        self.assertGreater(decision.export_limit, 0.01)
-        self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+        self.assertEqual("low", decision.trace_values.get("battery_export_tier"))
+        self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+        self.assertEqual("none", decision.trace_values.get("battery_export_final_owner"))
+        self.assertFalse(decision.trace_gates.get("positive_fit_battery_export_authorized"))
+        self.assertTrue(decision.trace_gates.get("positive_fit_msc_surplus_policy_active"))
+        self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
+        self.assertEqual(optimizer.cfg.export_limit_high, decision.export_limit)
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+        # MSC load-service capability is not commanded stored-energy export.
         self.assertEqual(optimizer.get_power_caps_kw(state)[1], decision.ess_discharge_limit)
+
+    def test_fresh_finite_positive_medium_fit_respects_independent_soc_floor(self) -> None:
+        for floor in (40.0, 70.0):
+            with self.subTest(medium_floor=floor):
+                optimizer, state, decision = self._read_and_decide(
+                    price_state="0.30",
+                    feedin_state="0.40",
+                    battery_soc=70.0,
+                    available_discharge_kwh=21.0,
+                    pv_kw=4.0,
+                    load_kw=1.0,
+                    allow_low_medium_export_positive_fit=True,
+                    allow_positive_fit_battery_discharging=True,
+                    # Keep the separate near-full Solar Override ineligible.
+                    max_battery_soc=100.0,
+                    battery_export_min_soc_medium=floor,
+                )
+                self.assertEqual("medium", decision.trace_values.get("battery_export_tier"))
+                self.assertEqual(floor, decision.trace_values.get("battery_export_selected_soc_floor"))
+                if floor < state.battery_soc:
+                    self.assertTrue(decision.trace_values.get("battery_export_candidate_eligible"))
+                    self.assertEqual("medium_price", decision.trace_values.get("battery_export_owner"))
+                    self.assertEqual("medium_price", decision.trace_values.get("battery_export_final_owner"))
+                    self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+                    self.assertGreater(decision.export_limit, 0.01)
+                    self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+                else:
+                    self.assertEqual("selected_soc_floor", decision.trace_values.get("battery_export_rejection"))
+                    self.assertEqual("none", decision.trace_values.get("battery_export_owner"))
+                    self.assertEqual("none", decision.trace_values.get("battery_export_final_owner"))
+                    self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                    self.assertEqual(0.0, decision.export_limit)
+                    self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+                self.assertEqual(optimizer.get_power_caps_kw(state)[1], decision.ess_discharge_limit)
 
     def test_fresh_finite_morning_slow_fit_preserves_package2_semantics(self) -> None:
         optimizer, state, decision = self._read_and_decide(

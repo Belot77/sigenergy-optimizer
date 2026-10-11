@@ -2361,7 +2361,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
         self.assertTrue(decision.requires_verified_msc_before_export)
 
-    def test_morning_slow_charge_retains_priority_over_high_price_and_spike(self) -> None:
+    def test_qualified_high_price_and_spike_preempt_morning_slow_charge(self) -> None:
         now_ts = datetime.now().timestamp()
         cases = (
             (
@@ -2418,21 +2418,25 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 else:
                     self.assertTrue(decision.export_spike_active)
                 self.assertEqual(
-                    "morning_slow_pv_high",
+                    "high_price_or_spike",
                     decision.trace_values.get("initial_desired_export_source"),
                 )
                 self.assertEqual(
-                    "morning_slow_charge",
+                    "none",
                     decision.trace_values.get("pv_only_branch_source"),
                 )
+                self.assertTrue(decision.trace_values["morning_preempted"])
+                self.assertTrue(decision.trace_values["battery_export_candidate_eligible"])
+                self.assertEqual("none", decision.trace_values["battery_export_rejection"])
+                self.assertFalse(decision.morning_slow_charge_active)
                 self.assertEqual(17.06, decision.export_limit)
-                self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
-                self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+                self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+                self.assertIn(decision.ems_mode, DISCHARGE_MODES)
                 self.assertEqual(
-                    optimizer.cfg.morning_slow_charge_rate_kw,
+                    optimizer.cfg.ess_charge_limit_value,
                     decision.ess_charge_limit,
                 )
-                self.assertTrue(decision.requires_verified_msc_before_export)
+                self.assertFalse(decision.requires_verified_msc_before_export)
 
     def test_morning_slow_charge_bypasses_ordinary_forecast_export_guards(self) -> None:
         now_ts = datetime.now().timestamp()
@@ -3417,19 +3421,20 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                         decision.trace_values.get("battery_export_owner"),
                     )
 
-    def test_solar_deferral_does_not_recalculate_higher_priority_positive_fit(self) -> None:
+    def test_disabled_low_positive_fit_does_not_displace_qualified_solar(self) -> None:
         now_ts = datetime.now().timestamp()
         optimizer = self._optimizer(
             allow_low_medium_export_positive_fit=True,
             allow_positive_fit_battery_discharging=True,
             battery_full_safeguard_enabled=False,
+            battery_export_min_soc_low=35.0,
         )
         optimizer._is_evening_or_night = lambda _now: False
         state = self._qualifying_solar_bypass_state(
             optimizer,
             now_ts,
-            battery_soc=20.0,
-            available_discharge_energy_kwh=6.0,
+            battery_soc=40.0,
+            available_discharge_energy_kwh=12.0,
             demand_window_active=True,
             pv_kw=12.0,
             solar_power_now_kw=12.0,
@@ -3440,21 +3445,24 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
 
         self.assertTrue(decision.solar_surplus_bypass)
         self.assertEqual(
-            "positive_fit_override",
+            "solar_surplus_pv_high",
             decision.trace_values.get("initial_desired_export_source"),
         )
         self.assertFalse(bool(decision.trace_gates.get("pv_only_branch_policy_deferred")))
         self.assertEqual(
-            "positive_fit_override",
+            "solar_surplus_pv_high",
             decision.trace_values.get("desired_export_source"),
         )
         self.assertEqual(
-            "positive_fit_override",
+            "none",
             decision.trace_values.get("battery_export_owner"),
         )
-        self.assertEqual(BATTERY_EXPORT, decision.export_intent)
-        self.assertIn(decision.ems_mode, DISCHARGE_MODES)
-        self.assertAlmostEqual(6.2, decision.export_limit)
+        self.assertEqual(MSC_SURPLUS_CEILING, decision.export_intent)
+        self.assertTrue(decision.solar_surplus_policy_active)
+        self.assertFalse(decision.trace_gates["positive_fit_battery_export_authorized"])
+        self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
+        self.assertAlmostEqual(optimizer.cfg.export_limit_high, decision.export_limit)
 
     def test_blocked_solar_bypass_cycle_does_not_seed_continuation_hysteresis(self) -> None:
         now_ts = datetime.now().timestamp()
@@ -4102,21 +4110,39 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             export_value_gate_enforce=True,
         )
         optimizer._is_evening_or_night = lambda _now: False
-        optimizer._desired_export_limit = lambda *args, **kwargs: 2.0
         state = self._state(
+            sigenergy_mode=optimizer.cfg.automated_option,
+            sigenergy_mode_observed=True,
             battery_soc=100.0,
-            feedin_price=0.50,
-            feedin_price_cents=50.0,
+            battery_soc_trusted=True,
+            battery_capacity_kwh=30.0,
+            battery_capacity_trusted=True,
+            available_discharge_energy_kwh=30.0,
+            available_discharge_energy_trusted=True,
+            # High qualifies without PV; exercise the real export calculation.
+            feedin_price=1.10,
+            feedin_price_cents=110.0,
+            price_is_actual=True,
             pv_kw=0.0,
+            pv_power_trusted=True,
             solar_power_now_kw=0.0,
             load_kw=0.0,
+            load_power_trusted=True,
+            pv_load_observations_coherent=True,
             battery_power_sensor_kw=-0.2,
+            forecast_remaining_observation_trusted=True,
+            forecast_tomorrow_observation_trusted=True,
             sun_above_horizon=True,
+            sun_state_observation_trusted=True,
             next_sunrise_ts=now_ts + (10.0 * 3600),
+            sunrise_observation_trusted=True,
             next_sunset_ts=now_ts + (6.0 * 3600),
+            sunset_observation_trusted=True,
             hours_to_sunrise=10.0,
             hours_to_sunset=6.0,
             current_ems_mode="Maximum Self Consumption",
+            ems_mode_observed=True,
+            demand_window_observed=True,
         )
 
         decision = optimizer._decide(state)

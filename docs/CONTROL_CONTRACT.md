@@ -44,14 +44,14 @@ Value Gate is advisory-only, including when its enforce setting is true. The ind
 
 ## Ordinary positive-FiT export
 
-Ordinary economic eligibility produces an MSC surplus ceiling, not a battery-discharge target. Time of day alone does not create stored-battery export authority.
+Ordinary MSC economic eligibility produces a surplus ceiling, not a battery-discharge target. The explicit four-tier battery-export policies below have separate qualification and execution permission. Time of day alone does not create stored-battery export authority.
 
 The configured positive-FiT policy has two independent controls:
 
 - `ALLOW_LOW_MEDIUM_EXPORT_POSITIVE_FIT` enables the separate export policy;
 - `ALLOW_POSITIVE_FIT_BATTERY_DISCHARGING` determines whether that policy may deliberately export stored battery energy.
 
-With battery discharging enabled, the qualifying policy is an explicit `BATTERY_EXPORT` owner. With it disabled, a verified Automated, exact-MSC, trusted-flow case may use a bounded `MSC_SURPLUS_CEILING`; otherwise it fails closed. The raw numeric policy target cannot manufacture battery-export authority.
+Neither legacy control authorizes ordinary Low battery sale. In Low, a verified Automated, exact-MSC, trusted-flow case may use a bounded `MSC_SURPLUS_CEILING`; otherwise it fails closed. Medium/High/Spike and separately named deliberate-export policies require their own independent qualification. The raw numeric policy target cannot manufacture battery-export authority.
 
 For ordinary MSC flow interpretation:
 
@@ -197,9 +197,40 @@ Provider trace evidence includes `solar_provider_state`, observed/high-water/ver
 
 ## Explicit deliberate battery-export policies
 
-Existing policies that genuinely own deliberate battery sale remain distinguishable. These include qualifying Morning Dump, high-price export, export spike, Evening Export Boost, explicitly enabled positive-FiT battery discharge, and established solar/export or external overrides where their current policy owns discharge.
+Policies that genuinely own deliberate battery sale remain distinguishable. These include qualifying Morning Dump, Medium-tier export, high-price export, export spike, Evening Export Boost, and established solar/export or external overrides where their policy owns discharge.
 
-Each owner remains subject to its own eligibility and all independent safety guards. Generic ordinary tier eligibility is never an owner.
+Each owner remains subject to its own eligibility and all independent safety guards. Generic ordinary MSC economic eligibility is never a deliberate battery-export owner.
+
+### Four independent battery-export tiers
+
+| Selected tier | SoC configuration key | Software default |
+| --- | --- | --- |
+| Low (compatibility only; battery sale disabled) | `battery_export_min_soc_low` | 100% |
+| Medium | `battery_export_min_soc_medium` | 40% |
+| High | `battery_export_min_soc_high` | 20% |
+| Spike | `battery_export_min_soc_spike` | 10% |
+
+Select the tier using the existing price thresholds and Spike activation rules. Ordinary automated deliberate battery export starts at Medium. Low remains a price classification and PV-only permission context. No persisted Low floor or legacy Positive-FiT opt-in may enable Low battery sale, even at 100% SoC. The selected eligible battery tier owns its economic eligibility and SoC floor; failure does not fall back to another tier, including Low. All four floors are independent: there is no required ordering. Configuration and API inputs must be numeric, finite and within 0-100 inclusive, with booleans rejected; UI/API round-trip and persistence retain those values.
+
+Battery export requires trusted SoC, rated capacity, available discharge energy and the evidence required by the relevant forecast/reserve protection. SoC must be strictly above the selected floor and the independent protected floor. Lowering a tier's economic floor cannot lower a physical, safety or protected reserve limit. Spike's economic-reserve exception never bypasses those protections, telemetry trust or operator authority.
+
+Preserve the existing price interpolation, SoC scaling, headroom, discharge-window divisor/boost, caps, rounding and Spike full-power arithmetic. Tier selection changes neither hardware capability domains nor the actuator/settlement contract.
+
+Forecast evidence remains context-dependent. Required Remaining Today or reserve evidence fails closed; there is no blanket tomorrow-trust veto for High/Spike. During daytime at SoC >=99%, poor or untrusted tomorrow evidence retains the existing measured-PV-surplus cap. Untrusted Solcast Power Now cannot inflate the control surplus; independently trusted measured PV may still support a separately eligible policy.
+
+The Low setting is retained for config/API/UI compatibility and defaults to 100%; it is not an execution gate that operators can lower to restore battery sale. Low cannot create `BATTERY_EXPORT`, a battery-export proposal/final owner, commanded discharge EMS or Morning preemption. Ordinary positive-FiT MSC, exact-full cheap-FiT and legitimate Solar Bypass retain their independently qualified PV-only behavior. Below-Medium deliberate discharge remains possible only through a separately named, explicitly qualified policy such as Morning Dump or Evening Boost, or operator-owned Manual/Force. These policies keep their own guards and priority; Low cannot supply accidental fallback authority.
+
+High/Spike may preempt Morning Dump or Morning Slow only after a valid positive bounded proposal, actual import-cost permission, observed Automated authority and all other guards pass. Use the same actual import-cost evidence and permission result for Morning preemption and final battery-export execution. A failed candidate leaves an otherwise eligible Morning owner intact. Morning Slow itself requires trusted remaining-forecast evidence; an ineligible Morning owner must not be artificially retained. Medium/Low do not gain High/Spike Morning-preemption authority. Preserve other owner priorities, Demand Window import blocking and Manual/Force ownership.
+
+### Proposal, permission and final ownership
+
+Keep the qualified proposal (tier/source, selected and protected SoC floors, bounded calculated power and reason) separate from execution permission and the final decision owner. `battery_export_owner` records proposal provenance; it may remain `high_price` or `export_spike` when an actual import-cost veto or unavailable observed operator authority blocks execution. That diagnostic is not battery-sale permission. A genuinely unqualified tier cannot fabricate a proposal owner.
+
+`battery_export_final_owner` is `none` when final export is blocked. A vetoed candidate must have zero export limit, `EXPORT_BLOCKED` intent, no commanded discharge through that candidate and no Morning preemption. Normal ESS discharge capability for MSC load service is a separate protection; a cost veto must not be repurposed into an unrelated discharge-cap clamp.
+
+The authoritative actual import-cost snapshot is shared by arbitration and advisory calculation. Unknown actual-cost evidence following optimizer import/top-up or a price below the actual-cost floor prevents applicable automatic battery-backed/mixed export; independently proven PV-only MSC and Manual/Force retain their established separate semantics. Value Gate remains advisory-only, including with enforcement configured. Preserve qualified proposals for advisory calculation when operator authority prevents execution, without granting actuator permission. `effective_battery_export_floor` remains a monetary value, never a SoC field.
+
+Diagnostics distinguish tier, selected/protected floor, proposal qualification/selection, execution eligibility or rejection, binding protection, calculated power, proposal owner, final decision owner and Morning preemption. Neither a proposal nor a final requested decision proves observed physical settlement.
 
 ## Evening Boost
 

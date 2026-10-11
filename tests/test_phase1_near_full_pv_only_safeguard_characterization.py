@@ -589,7 +589,7 @@ class Phase1NearFullPvOnlySafeguardCharacterizationTests(
     ) -> None:
         _state, deliberate = self._decide(
             self._optimizer(),
-            available_energy_trusted=False,
+            available_energy_trusted=True,
             feedin_price=1.20,
             feedin_price_cents=120.0,
         )
@@ -627,6 +627,20 @@ class Phase1NearFullPvOnlySafeguardCharacterizationTests(
         self.assertEqual(MSC_SURPLUS_CEILING, exact_full.export_intent)
         self.assertEqual("none", exact_full.trace_values["battery_export_owner"])
         self.assertEqual(MODE_MAX_SELF, exact_full.ems_mode)
+
+    def test_high_price_with_untrusted_available_energy_fails_closed(self) -> None:
+        _state, decision = self._decide(
+            self._optimizer(),
+            available_energy_trusted=False,
+            feedin_price=1.20,
+            feedin_price_cents=120.0,
+        )
+        self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+        self.assertEqual(0.0, decision.export_limit)
+        self.assertEqual("none", decision.trace_values["battery_export_final_owner"])
+        self.assertEqual("untrusted_or_empty_available_energy", decision.trace_values["battery_export_rejection"])
+        self.assertFalse(decision.trace_gates["explicit_battery_export_owner_active"])
+        self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
 
     def test_morning_and_demand_owners_keep_their_independent_actuators(self) -> None:
         morning_slow_optimizer = self._optimizer(

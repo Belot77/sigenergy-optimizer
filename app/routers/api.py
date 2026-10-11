@@ -47,6 +47,9 @@ _SOLAR_SURPLUS_STOP_PV_MARGIN_KEY = "solar_surplus_stop_pv_margin"
 _SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR_KEY = "solar_surplus_forecast_safety_factor"
 _SOLAR_SURPLUS_FILL_DEADLINE_MARGIN_KEY = "solar_surplus_fill_deadline_margin_minutes"
 _EVENING_BOOST_MIN_FEEDIN_PRICE_KEY = "evening_boost_min_feedin_price"
+_BATTERY_EXPORT_SOC_KEYS = {
+    f"battery_export_min_soc_{tier}" for tier in ("low", "medium", "high", "spike")
+}
 _GRID_CONNECTION_EXPORT_LIMIT_KEY = "grid_connection_export_limit_kw"
 _MORNING_SLOW_PHYSICAL_EXPORT_HEADROOM_KEY = (
     "morning_slow_physical_export_headroom_kw"
@@ -133,6 +136,13 @@ def _is_valid_time(value: str) -> bool:
 
 
 def _validate_config_value(cfg: Any, key: str, value: Any) -> str | None:
+    if key in _BATTERY_EXPORT_SOC_KEYS:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return "must be numeric"
+        if not math.isfinite(value):
+            return "must be a finite number"
+        if not 0.0 <= value <= 100.0:
+            return "must be between 0 and 100"
     if key in _MASKED_KEYS and value == "****":
         return "masked placeholder is not a valid value"
     if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
@@ -576,6 +586,8 @@ def _solar_surplus_status(d: Any, *, manual_active: bool) -> dict[str, Any]:
 def _coerce_config_value(cfg: Any, key: str, raw: Any) -> Any:
     current = getattr(cfg, key)
     current_type = type(current)
+    if key in _BATTERY_EXPORT_SOC_KEYS and isinstance(raw, bool):
+        raise ValueError("must be numeric")
 
     if key in {
         _SOLAR_SURPLUS_FORECAST_SAFETY_FACTOR_KEY,
@@ -1042,6 +1054,16 @@ async def get_status(request: Request) -> dict[str, Any]:
         "today_highest_actual_import_price": trace_values.get("today_highest_actual_import_price") if d else None,
         "import_cost_export_floor": trace_values.get("import_cost_export_floor") if d else None,
         "effective_battery_export_floor": trace_values.get("effective_battery_export_floor") if d else None,
+        "battery_export_policy": {
+            key: trace_values.get(key) for key in (
+                "battery_export_tier", "battery_export_selected_soc_floor",
+                "battery_export_protected_soc_floor", "battery_export_control_soc_floor",
+                "battery_export_candidate_eligible", "battery_export_rejection",
+                "battery_export_binding_protection", "battery_export_calculated_power_kw",
+                "battery_export_final_owner", "morning_preemption_requested",
+                "morning_preempted", "morning_preemption_reason",
+            )
+        },
         "actual_import_cost_guard_reason": trace_values.get("actual_import_cost_guard_reason") if d else None,
         "topoff_target_soc": trace_values.get("topoff_target_soc") if d else None,
         "battery_discharge_kw_for_pv_only": trace_values.get("battery_discharge_kw_for_pv_only") if d else None,

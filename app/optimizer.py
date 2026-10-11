@@ -116,7 +116,7 @@ _POWER_LIMIT_MAX_KW = 100.0
 # timestamp jitter; keep derived-flow coherence equally narrow and independent
 # of the much wider per-sensor freshness window.
 _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
-_RUNTIME_SIGNATURE = "2.3.57-haos68"
+_RUNTIME_SIGNATURE = "2.3.58-haos69"
 
 
 @dataclass
@@ -3565,6 +3565,8 @@ class SigEnergyOptimizer:
         positive_fit_battery_export_authorized = bool(
             positive_fit_override
             and cfg.allow_positive_fit_battery_discharging
+            # Persisted Low settings and legacy opt-ins cannot enable Low sale.
+            and (export_spike_active or s.feedin_price >= cfg.export_threshold_medium)
         )
 
         # Retain raw power values for diagnostics, but derive every permissive
@@ -3934,6 +3936,119 @@ class SigEnergyOptimizer:
         # ---- Morning dump limit -------------------------------------
         morning_dump_limit = min(cfg.export_limit_high, s.ess_max_discharge_kw)
 
+        # Select once: a rejected tier cannot borrow another tier's floor or
+        # economic eligibility. Low is classification/PV-only context, not sale.
+        battery_export_tier = (
+            "spike" if export_spike_active else
+            "high" if s.feedin_price >= cfg.export_threshold_high else
+            "medium" if s.feedin_price >= cfg.export_threshold_medium else
+            "low"
+        )
+        battery_export_selected_soc_floor = getattr(
+            cfg, f"battery_export_min_soc_{battery_export_tier}"
+        )
+        battery_export_protected_soc_floor = export_min_soc
+        battery_export_control_soc_floor = max(
+            battery_export_selected_soc_floor, battery_export_protected_soc_floor
+        )
+        battery_export_candidate_kw = 0.0
+        battery_export_candidate_source = "closed_battery_tier"
+        battery_export_candidate_tier_limit = 0.0
+        battery_export_rejection = "none"
+        tier_import_summary = self._optimizer_import_topup_summary_today()
+        tier_import_floor = tier_import_summary.get("today_highest_actual_import_price")
+        tier_import_cost_veto = bool(
+            tier_import_summary.get("import_cost_floor_unknown", False)
+            or (
+                tier_import_floor is not None
+                and s.feedin_price + 1e-9 < float(tier_import_floor)
+            )
+        )
+        battery_export_automated_authority = bool(
+            not self._manual_mode_override and s.sigenergy_mode_observed
+            and str(s.sigenergy_mode or "") == str(cfg.automated_option)
+        )
+        if not feedin_price_trusted or not import_price_trusted:
+            battery_export_rejection = "untrusted_tariff"
+        elif not battery_soc_trusted or not battery_capacity_trusted:
+            battery_export_rejection = "untrusted_soc_or_capacity"
+        elif not available_discharge_energy_trusted or control_available_energy_kwh <= 0:
+            battery_export_rejection = "untrusted_or_empty_available_energy"
+        elif is_evening_or_night and not sunrise_observation_trusted:
+            battery_export_rejection = "untrusted_forecast_or_reserve_evidence"
+        elif s.price_is_negative or s.feedin_price < 0.01 or standby_holdoff_active:
+            battery_export_rejection = "price_or_standby_protection"
+        elif battery_export_tier == "low":
+            battery_export_rejection = "low_battery_export_disabled_by_policy"
+        elif s.battery_soc <= battery_export_control_soc_floor:
+            battery_export_rejection = (
+                "protected_soc_floor" if battery_export_protected_soc_floor
+                > battery_export_selected_soc_floor else "selected_soc_floor"
+            )
+        else:
+            battery_export_candidate_tier_limit = self._export_tier_limit(
+                s, export_spike_active, False, pv_safeguard_active, False, False,
+                feedin_price_trusted=feedin_price_trusted,
+                battery_soc_floor=battery_export_selected_soc_floor,
+            )
+            # At night the legacy forecast guard uses the old economic 90%
+            # target. The selected tier now owns that target; the protected
+            # sunrise/physical floor above remains independently binding.
+            tier_forecast_guard = (
+                s.battery_soc <= battery_export_control_soc_floor
+                if is_evening_or_night else export_forecast_guard
+            )
+            candidate = self._desired_export_limit(
+                s, export_spike_active, False, export_blocked_effective,
+                tier_forecast_guard, battery_export_control_soc_floor,
+                battery_export_tier == "low", False, False, False,
+                morning_dump_limit, battery_full_safeguard_block,
+                battery_export_candidate_tier_limit, hours_to_sunrise, cap,
+                control_pv_surplus_kw, is_evening_or_night, False, False,
+                feedin_price_trusted,
+                measured_pv_surplus=control_measured_pv_surplus_kw,
+                forecast_tomorrow_trusted=forecast_tomorrow_observation_trusted,
+                battery_soc_floor=battery_export_selected_soc_floor,
+            )
+            if math.isfinite(candidate) and candidate > 0.01:
+                battery_export_candidate_kw = float(candidate)
+                battery_export_candidate_source = (
+                    "high_price_or_spike" if battery_export_tier in {"high", "spike"}
+                    else "medium_price" if battery_export_tier == "medium"
+                    else "positive_fit_override"
+                )
+            else:
+                battery_export_rejection = str(getattr(candidate, "source", "nonpositive_candidate"))
+                if battery_export_rejection == "closed_forecast_guard" and not forecast_remaining_observation_trusted:
+                    battery_export_rejection = "untrusted_forecast_or_reserve_evidence"
+
+        # Qualification is independent of execution permission. Retain this
+        # bounded proposal for advisory calculations, including cold starts.
+        battery_export_proposal_qualified = battery_export_candidate_kw > 0.01
+        battery_export_execution_permitted = bool(
+            battery_export_proposal_qualified
+            and not tier_import_cost_veto
+            and battery_export_automated_authority
+        )
+        if battery_export_proposal_qualified:
+            if tier_import_cost_veto:
+                battery_export_rejection = "actual_import_cost"
+            elif not battery_export_automated_authority:
+                battery_export_rejection = "automated_authority_unavailable"
+
+        morning_preemption_requested = bool(
+            battery_export_tier in {"high", "spike"}
+            and (morning_dump_active or morning_slow_charge_active)
+        )
+        morning_preempted = bool(
+            morning_preemption_requested and battery_export_execution_permitted
+        )
+        if morning_preempted:
+            morning_dump_active = False
+            morning_slow_charge_active = False
+            d.morning_dump_active = False
+            d.morning_slow_charge_active = False
+
         # ---- Desired export limit -----------------------------------
         # Keep exact policy provenance with the numeric result. Activity flags can
         # overlap, but only the branch that produced the limit may claim PV-only
@@ -3944,6 +4059,24 @@ class SigEnergyOptimizer:
             morning_slow_for_policy: bool,
             battery_full_safeguard_for_arbitration: bool,
         ) -> tuple[float, str, float]:
+            if (
+                not morning_dump_active and not morning_slow_for_policy
+                and (
+                    battery_export_tier in {"high", "spike"}
+                    or (
+                        battery_export_tier == "medium"
+                        and not (evening_export_boost_active or surplus_bypass_for_policy or export_solar_override)
+                    )
+                )
+            ):
+                # Select the proposal even when closed: no second qualification
+                # against the legacy tier floor and no selected-tier fallback.
+                # Permission is applied after advisory evaluation below.
+                return (
+                    battery_export_candidate_kw,
+                    battery_export_candidate_source,
+                    battery_export_candidate_tier_limit,
+                )
             tier_limit = self._export_tier_limit(
                 s,
                 export_spike_active,
@@ -3956,7 +4089,14 @@ class SigEnergyOptimizer:
             raw_choice = self._desired_export_limit(
                 s, export_spike_active, export_solar_override,
                 export_blocked_effective, export_forecast_guard,
-                export_min_soc, positive_fit_override, surplus_bypass_for_policy,
+                export_min_soc,
+                # Low's legacy positive-FiT context is MSC-only. It must not
+                # displace independently qualified Solar or Evening ownership.
+                positive_fit_override and not (
+                    battery_export_tier == "low"
+                    and (surplus_bypass_for_policy or evening_export_boost_active)
+                ),
+                surplus_bypass_for_policy,
                 evening_export_boost_active, morning_dump_active, morning_dump_limit,
                 battery_full_safeguard_for_arbitration,
                 tier_limit, hours_to_sunrise, cap,
@@ -3966,6 +4106,16 @@ class SigEnergyOptimizer:
                 forecast_tomorrow_trusted=forecast_tomorrow_observation_trusted,
                 measured_pv_surplus=control_measured_pv_surplus_kw,
             )
+            raw_source = getattr(raw_choice, "source", "")
+            if raw_source == "high_price_or_spike" or (
+                raw_source == "positive_fit_override"
+                and positive_fit_battery_export_authorized
+            ):
+                # Deliberate tier candidates must pass the selected floor and
+                # independent guards above, including below-Low positive-FiT.
+                # MSC-only Positive-FiT retains its original provenance and
+                # independent observed ownership/flow checks below.
+                return 0.0, "closed_battery_tier", float(tier_limit)
             return (
                 float(raw_choice),
                 str(getattr(raw_choice, "source", "external_override")),
@@ -3982,7 +4132,7 @@ class SigEnergyOptimizer:
             battery_full_safeguard_for_arbitration=battery_full_safeguard_block,
         )
         deliberate_source_requires_soc = bool(
-            desired_export_source in {"morning_dump", "high_price_or_spike", "solar_override"}
+            desired_export_source in {"morning_dump", "high_price_or_spike", "medium_price", "solar_override"}
             or (
                 desired_export_source == "positive_fit_override"
                 and positive_fit_battery_export_authorized
@@ -3992,10 +4142,8 @@ class SigEnergyOptimizer:
             desired_export_limit = 0.0
             desired_export_source = "closed_untrusted_battery_soc"
         initial_desired_export_source = desired_export_source
-        # Morning Slow Charge deliberately retains its established priority here:
-        # the hotfix contract requires any export selected by that branch to remain
-        # PV-only under MSC. Solar Bypass is the overlay that can coexist with and
-        # must defer to separately owned discharge/export policies.
+        # Surviving Morning Slow ownership remains PV-only under MSC. Only a
+        # fully qualified High/Spike candidate can have preempted it above.
         pv_only_branch_policy_deferred = bool(
             solar_surplus_bypass
             and initial_desired_export_source in {
@@ -4416,6 +4564,7 @@ class SigEnergyOptimizer:
         )
         ordinary_msc_surplus_context = bool(
             automatic_control_mode
+            and desired_export_source != "medium_price"
             and math.isfinite(feedin_price_for_pv_only)
             and ordinary_msc_economic_policy_active
             and forecast_remaining_observation_trusted
@@ -4507,6 +4656,7 @@ class SigEnergyOptimizer:
                 )
         battery_export_owner_by_source = {
             "morning_dump": "morning_dump",
+            "medium_price": "medium_price",
             "high_price_or_spike": (
                 "export_spike" if export_spike_active else "high_price"
             ),
@@ -4523,6 +4673,10 @@ class SigEnergyOptimizer:
         battery_export_owner = battery_export_owner_by_source.get(
             desired_export_source,
             "none",
+        )
+        battery_export_proposal_selected = bool(
+            battery_export_proposal_qualified
+            and desired_export_source == battery_export_candidate_source
         )
         if (
             desired_export_source == "ordinary_tier"
@@ -4752,6 +4906,7 @@ class SigEnergyOptimizer:
             productive_solar_end_ts=productive_solar_end_ts,
             now_ts=now_ts,
             export_spike_active=export_spike_active,
+            import_summary=tier_import_summary,
         )
         d.protected_reserve_soc = float(export_value_gate["protected_reserve_soc"])
         d.export_surplus_soc = float(export_value_gate["export_surplus_soc"])
@@ -4921,10 +5076,7 @@ class SigEnergyOptimizer:
                 if import_cost_export_floor is not None
                 else None
             )
-            if (
-                import_cost_floor_value is not None
-                and float(s.feedin_price or 0.0) + 1e-9 < import_cost_floor_value
-            ):
+            if tier_import_cost_veto:
                 actual_import_cost_guard_blocking = True
                 automatic_export_blocked_below_actual_import_cost = True
                 actual_import_cost_guard_reason = (
@@ -4956,6 +5108,19 @@ class SigEnergyOptimizer:
                 "Enforced veto: export blocked by value gate. "
                 f"{d.export_value_gate_reason}"
             )
+
+        battery_export_proposed_intent = requested_export_intent
+        if battery_export_proposal_selected:
+            # Preserve proposal provenance under a cost veto. Execution stays
+            # blocked below; battery_export_final_owner reports no live owner.
+            if not battery_export_execution_permitted:
+                # Advisory proposals never grant actuator authority. Keep cold
+                # operator restrictions and genuine cost vetoes independent of
+                # Value Gate's would_allow/would_block result.
+                desired_export_limit = 0.0
+                explicit_battery_export_owner_active = False
+                deliberate_battery_export_requested = False
+                requested_export_intent = EXPORT_BLOCKED
 
         desired_export_limit = self._bound_grid_export_request_kw(
             s,
@@ -5480,6 +5645,7 @@ class SigEnergyOptimizer:
         d.outcome_reason = "; ".join(p for p in parts if p and p != "n/a")
 
         export_branch_by_source = {
+            "medium_price": "medium_price",
             "morning_dump": "morning_dump",
             "morning_slow_closed": "morning_slow_charge",
             "morning_slow_pv_closed": "morning_slow_charge",
@@ -5863,6 +6029,29 @@ class SigEnergyOptimizer:
             "requested_export_intent": requested_export_intent,
             "export_intent": d.export_intent,
             "battery_export_owner": battery_export_owner,
+            "battery_export_tier": battery_export_tier,
+            "battery_export_selected_soc_floor": battery_export_selected_soc_floor,
+            "battery_export_protected_soc_floor": battery_export_protected_soc_floor,
+            "battery_export_control_soc_floor": battery_export_control_soc_floor,
+            "battery_export_proposal_qualified": battery_export_proposal_qualified,
+            "battery_export_proposal_source": battery_export_candidate_source,
+            "battery_export_proposal_selected": battery_export_proposal_selected,
+            "battery_export_proposed_intent": battery_export_proposed_intent,
+            "battery_export_candidate_eligible": battery_export_execution_permitted,
+            "battery_export_actual_import_cost_permitted": not tier_import_cost_veto,
+            "battery_export_rejection": battery_export_rejection,
+            "battery_export_calculated_power_kw": battery_export_candidate_kw,
+            "battery_export_final_owner": battery_export_owner if d.export_intent == BATTERY_EXPORT else "none",
+            "battery_export_binding_protection": (
+                "actual_import_cost" if actual_import_cost_guard_blocking else
+                "msc_transition" if msc_transition_pending else battery_export_rejection
+            ),
+            "morning_preemption_requested": morning_preemption_requested,
+            "morning_preempted": morning_preempted,
+            "morning_preemption_reason": (
+                "qualified_positive_candidate" if morning_preempted else
+                battery_export_rejection if morning_preemption_requested else "not_requested"
+            ),
             "pv_surplus_initiation_source": pv_surplus_initiation_source,
             "pv_surplus_estimated_init_reason": pv_surplus_estimated_init_reason,
             "pv_surplus_probe_export_cap_kw": pv_surplus_probe_export_cap_kw,
@@ -7731,10 +7920,13 @@ class SigEnergyOptimizer:
         productive_solar_end_ts: Optional[float],
         now_ts: float,
         export_spike_active: bool,
+        import_summary: dict[str, Any] | None = None,
     ) -> dict[str, float | bool | str | None]:
         cfg = self.cfg
         fit_price = float(s.feedin_price or 0.0)
         fit_cents = fit_price * 100.0
+        if import_summary is None:
+            import_summary = self._optimizer_import_topup_summary_today()
 
         def _mode_text() -> str:
             if bool(cfg.export_value_gate_enabled or cfg.export_value_gate_dry_run):
@@ -7743,7 +7935,6 @@ class SigEnergyOptimizer:
 
         gate_active = bool(cfg.export_value_gate_enabled or cfg.export_value_gate_dry_run)
         if not gate_active:
-            import_summary = self._optimizer_import_topup_summary_today()
             today_highest_actual_import_price_raw = import_summary.get("today_highest_actual_import_price")
             today_highest_actual_import_price = (
                 float(today_highest_actual_import_price_raw)
@@ -7822,7 +8013,6 @@ class SigEnergyOptimizer:
             + manual_import_premium
             - forecast_modifier,
         )
-        import_summary = self._optimizer_import_topup_summary_today()
         today_import_topup_kwh = float(import_summary.get("today_import_topup_kwh") or 0.0)
         today_highest_actual_import_price_raw = import_summary.get("today_highest_actual_import_price")
         today_highest_actual_import_price = (
@@ -8599,12 +8789,13 @@ class SigEnergyOptimizer:
         surplus_bypass: bool,
         *,
         feedin_price_trusted: bool | None = None,
+        battery_soc_floor: float | None = None,
     ) -> float:
         cfg = self.cfg
         fit = s.feedin_price
         bsoc = s.battery_soc
         below_boost_floor = bsoc < cfg.evening_aggressive_floor
-        below_target = bsoc < cfg.min_export_target_soc
+        below_target = bsoc < (cfg.min_export_target_soc if battery_soc_floor is None else battery_soc_floor)
 
         if feedin_price_trusted is None:
             try:
@@ -8662,7 +8853,8 @@ class SigEnergyOptimizer:
                                within_morning_grace: bool,
                                feedin_price_trusted: bool | None = None,
                                measured_pv_surplus: float | None = None, *,
-                               forecast_tomorrow_trusted: bool) -> float:
+                               forecast_tomorrow_trusted: bool,
+                               battery_soc_floor: float | None = None) -> float:
         cfg = self.cfg
         fit_cents = s.feedin_price_cents
         bsoc = s.battery_soc
@@ -8702,6 +8894,8 @@ class SigEnergyOptimizer:
             return choice(0.0, "closed_battery_full_safeguard")
 
         effective_export_floor = cfg.evening_aggressive_floor if evening_boost else cfg.min_export_target_soc
+        if battery_soc_floor is not None:
+            effective_export_floor = battery_soc_floor
 
         # No PV surplus during daytime → no export
         if (
@@ -9061,7 +9255,7 @@ class SigEnergyOptimizer:
         )
         if s.price_is_negative and s.current_price <= cfg.import_threshold_low:
             return self._bound_ess_request_kw(0.01, hw_discharge)
-        if positive_fit_owns_live_battery_export and s.battery_soc < cfg.min_export_target_soc:
+        if positive_fit_owns_live_battery_export and s.battery_soc <= cfg.battery_export_min_soc_low:
             if evening_boost and s.battery_soc >= cfg.evening_aggressive_floor:
                 return self._bound_ess_request_kw(hw_discharge, hw_discharge)
             return self._bound_ess_request_kw(0.01, hw_discharge)
