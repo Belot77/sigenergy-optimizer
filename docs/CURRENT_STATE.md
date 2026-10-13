@@ -9,14 +9,15 @@ Last consolidated: 2026-10-13
 - Last reported live: **2.3.58-haos69**, source `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`. This is the operator-reported original .69 release, not a freshly verified HA/runtime observation. It supersedes the earlier current .68 and pre-release .69 descriptions.
 - Known-good rollback remains **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Neither the original .69 release nor this local hotfix is promoted to known-good rollback.
 - Scoped Phase 2 acceptance was reported for `.68`; its **13-second observation gap remains unproven**. The reported .69 identity supplies no additional physical/live acceptance evidence.
-- No hotfix commit, push, release, deployment or live acceptance has occurred. No new hotfix version/tag is assigned and release metadata is unchanged.
+- The local code-bearing hotfix checkpoint is committed as `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9` (`Fix Demand Window exact-full PV-only export under MSC`). No GitHub publication, independent committed-SHA GitHub audit, merge, release, deployment or hotfix live acceptance has occurred. No new hotfix version/tag is assigned and release metadata is unchanged.
 
 ## Active worktree and validation
 
 - Worktree: `C:\Projects\sigenergy_optimizer-demand-window-hotfix`.
 - Branch: `fix/demand-window-exact-full-pv-only`.
-- HEAD: `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`.
-- Documentation preflight verified exactly two modified, unstaged files: `app/optimizer.py` and `tests/test_msc_baseline_overlay_contract.py`, with no staged or untracked files. This checkpoint adds only `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, `docs/ROADMAP.md`, `docs/CHANGELOG.md` and root `CHANGELOG.md`: exactly seven modified, unstaged files in total. The two existing code/test changes are preserved byte-for-byte.
+- Completed code-bearing checkpoint: `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`. This identifies the committed hotfix source, not necessarily the final branch HEAD after a subsequent documentation-only commit.
+- The operator completed and verified the seven-file local commit: `CHANGELOG.md`, `app/optimizer.py`, `docs/AI_HANDOVER.md`, `docs/CHANGELOG.md`, `docs/CURRENT_STATE.md`, `docs/ROADMAP.md` and `tests/test_msc_baseline_overlay_contract.py`. Documentation follow-up preflight verified the expected branch, HEAD `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9` and a clean worktree with no modified, staged or untracked files.
+- This separate documentation-only follow-up changes only `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, `docs/ROADMAP.md`, `docs/CHANGELOG.md` and root `CHANGELOG.md`. Production and tests are untouched; the completed code-bearing checkpoint remains identified independently of any later documentation-only HEAD.
 - Targeted regression: `test_demand_window_exact_full_pv_only_export_contract` failed before the production correction and passed afterward, checking final decisions for Demand Window OFF, ON and untrusted states without weakening assertions.
 - Independent protections: **466 tests / 611 subtests passed**, zero failures. Coverage includes Demand Window, exact-full/cheap-FiT, Manual/Force, MSC settlement, telemetry trust, actual import-cost guards, battery-export ownership, Morning and Solar policies.
 - Final full suite after the hotfix, run once: **946 tests / 1,079 subtests passed**, zero failures, **206 warnings**. Compileall for `app`/`tests` with bytecode cache outside the worktree and `git diff --check` passed. These are retained results from the preceding hotfix validation; tests and compileall are not rerun for this documentation-only checkpoint.
@@ -68,8 +69,15 @@ Previously reported operator tuning was `grid_connection_export_limit_kw=15.0` a
 
 ## Next approval and live-proof boundary
 
-Exact next gate: **review the seven-file checkpoint and seek separate commit approval**. Nothing is staged, committed or pushed by this task. Approval of a commit does not authorize a push, tag, build, release, deployment, installation, restart or HA/inverter write.
+Next actions:
 
-The hotfix has no independent code-review acceptance or live acceptance yet. Any later publication/release or controlled live work requires separate authorization, exact source/build identification, effective operator-setting/authority checks, .65 rollback readiness, supervision and explicit stop/rollback conditions. Monitor-only observation and controlled live acceptance must distinguish requested ceiling/intent from actual export, capture fresh timestamped actuator readbacks and physical flows, and retain all observed-settlement barriers. No live action is performed here.
+1. Review this five-file documentation correction.
+2. Obtain separate approval for its local documentation-only commit.
+3. Only afterward consider separately authorised GitHub push and independent committed-source review.
+4. Retain explicit release/deployment and live-acceptance gates; commit or push approval does not authorise live work.
+
+This task performs no staging, commit, push, tag, build, release, deployment, installation, restart or HA/inverter write.
+
+The hotfix has no independent committed-SHA GitHub audit or live acceptance yet. Any later publication/release or controlled live work requires separate authorization, exact source/build identification, effective operator-setting/authority checks, .65 rollback readiness, supervision and explicit stop/rollback conditions. Monitor-only observation and controlled live acceptance must distinguish requested ceiling/intent from actual export, capture fresh timestamped actuator readbacks and physical flows, and retain all observed-settlement barriers. No live action is performed here.
 
 Preserve roadmap dependencies and the open Phase 1/2 gates, including Evening Boost reserve/transition stability, Solar threshold-switching disposition, the unproven 13-second observation gap and unexercised four-tier scenarios. The original .69 release report and passing hotfix tests do not close those limitations.

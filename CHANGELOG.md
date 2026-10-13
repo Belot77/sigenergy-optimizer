@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-13 - Demand Window hotfix local commit reconciliation
+
+- The operator completed and verified local code-bearing checkpoint `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`, `Fix Demand Window exact-full PV-only export under MSC`, containing exactly seven files: `CHANGELOG.md`, `app/optimizer.py`, `docs/AI_HANDOVER.md`, `docs/CHANGELOG.md`, `docs/CURRENT_STATE.md`, `docs/ROADMAP.md` and `tests/test_msc_baseline_overlay_contract.py`. Preflight for this documentation-only follow-up verified that HEAD on `fix/demand-window-exact-full-pv-only` with a clean worktree. A subsequent documentation-only commit may advance branch HEAD; the completed code-bearing checkpoint stays identified by this SHA. Earlier uncommitted entries below remain historical.
+- Retain targeted red before production editing/green afterward; independent protections **466 tests / 611 subtests passed**; final full suite run once **946 tests / 1,079 subtests passed**, zero failures, **206 warnings**; compileall and diff check passed. Missing local Adelaide timezone data/UTC fallback remains a test-environment limitation. No tests or compileall are rerun for this follow-up; production/tests are untouched.
+- Original `2.3.58-haos69` remains operator-reported live at `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`, without fresh HA verification. Known-good rollback remains `.65 / 2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. No GitHub publication, independent committed-SHA GitHub audit, merge, release, deployment or hotfix live acceptance yet. Phase 1/2 and four-tier live-acceptance gaps, including the 13-second observation gap, remain open.
+- Next: review this five-file documentation correction -> obtain separate approval for its local documentation-only commit -> only afterward consider separately authorised GitHub push and independent committed-source review. Explicit release/deployment and live-acceptance gates remain. No staging, commit or push is performed by this follow-up.
+
 ## 2026-10-13 - Demand Window exact-full PV-only hotfix (local, uncommitted)
 
 - Remove the single unintended Demand Window exclusion: qualified exact-full cheap-FiT export now retains the configured, capability-bounded MSC surplus ceiling when ON, while ON/untrusted continue blocking import. OFF/untrusted export outcomes and exact-full, trusted-flow, ownership and settlement safeguards remain unchanged; no battery-export owner or discharge EMS is introduced.

@@ -59,17 +59,22 @@ Retained reported remediation validation: **945 tests / 1079 subtests passed, ze
 
 ## 4B. Bounded Demand Window hotfix checkpoint (2026-10-13)
 
-Current worktree `C:/Projects/sigenergy_optimizer-demand-window-hotfix`, branch `fix/demand-window-exact-full-pv-only`, HEAD `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`. The original `2.3.58-haos69` release is operator-reported live, not freshly verified; known-good rollback remains `2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Earlier pre-release .69 statements are historical.
+Current worktree `C:/Projects/sigenergy_optimizer-demand-window-hotfix`, branch `fix/demand-window-exact-full-pv-only`. Completed local code-bearing checkpoint: `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`, message `Fix Demand Window exact-full PV-only export under MSC`; a later documentation-only commit may advance branch HEAD without changing that code checkpoint. The original `2.3.58-haos69` release remains operator-reported live at `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`, not freshly HA-verified; known-good rollback remains `2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Earlier pre-release .69 statements are historical.
 
 The local hotfix removes one unintended Demand Window exclusion from exact-full cheap-FiT MSC PV-only readiness. Qualified ON now retains the configured, capability-bounded MSC surplus ceiling; ON/untrusted continue blocking import, without battery-export ownership or discharge EMS. OFF/untrusted export outcomes, exact-full/trust/ownership/settlement protections and independent policies remain unchanged. The original regression failed before production editing and passed afterward; independent protections passed **466 tests / 611 subtests**; the final full suite ran once and passed **946 tests / 1,079 subtests**, zero failures, **206 warnings**. Compileall with external cache and diff check passed. Missing local Adelaide timezone data/UTC fallback remains a test-environment limitation. These results are retained, not rerun for documentation.
 
-The seven-file checkpoint comprises the existing production/test diff and five documentation files, all modified and unstaged, with no untracked files. No hotfix commit, push, release, deployment or live acceptance has occurred; no new release identity is assigned.
+The completed local commit contains exactly seven files: `CHANGELOG.md`, `app/optimizer.py`, `docs/AI_HANDOVER.md`, `docs/CHANGELOG.md`, `docs/CURRENT_STATE.md`, `docs/ROADMAP.md` and `tests/test_msc_baseline_overlay_contract.py`. Preflight for this separate five-file documentation follow-up verified the expected branch, HEAD `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9` and a clean worktree with nothing modified, staged or untracked. Production and tests remain untouched. No GitHub publication, independent committed-SHA GitHub audit, merge, release, deployment or hotfix live acceptance has occurred; no new release identity is assigned.
 
 Next gates:
 
-1. **Review the seven-file checkpoint and seek separate commit approval.** This task authorizes no staging, commit or push; later publication/release/live actions require separate authorization.
-2. Before any separately authorized live work, verify exact source/build identity, effective HA settings and observed authority, .65 rollback readiness, supervision and monitor-only/controlled live-acceptance arrangements with explicit stopping/rollback conditions. No settings are inferred from defaults or freshly queried here.
-3. Retain Phase 1 incompleteness, unresolved Evening Boost reserve/transition stability, outstanding Solar threshold-switching disposition, scoped Phase 2 acceptance with its unproven 13-second gap, and outstanding four-tier/hotfix physical/live proof. Neither the .69 release report nor passing tests closes these gates.
+1. Review this five-file documentation correction.
+2. Obtain separate approval for its local documentation-only commit.
+3. Only afterward consider separately authorised GitHub push and independent committed-source review.
+4. Retain explicit release/deployment and live-acceptance gates; commit or push approval does not authorise live work.
+
+Before any separately authorised live work, verify exact source/build identity, effective HA settings and observed authority, .65 rollback readiness, supervision and monitor-only/controlled live-acceptance arrangements with explicit stopping/rollback conditions. No settings are inferred from defaults or freshly queried here.
+
+Retain Phase 1 incompleteness, unresolved Evening Boost reserve/transition stability, outstanding Solar threshold-switching disposition, scoped Phase 2 acceptance with its unproven 13-second gap, and outstanding four-tier/hotfix physical/live proof. Neither the .69 release report nor passing tests closes these gates.
 
 This bounded correction preserves the established phase ordering, dependencies and scoped sequencing exceptions. It does not authorize architecture, cleanup, GUI, Climate, broader control redesign, release preparation or live work.
 
