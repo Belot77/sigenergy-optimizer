@@ -59,24 +59,30 @@ Retained reported remediation validation: **945 tests / 1079 subtests passed, ze
 
 ## 4B. Bounded Demand Window hotfix checkpoint (2026-10-13)
 
-Current worktree `C:/Projects/sigenergy_optimizer-demand-window-hotfix`, branch `fix/demand-window-exact-full-pv-only`. Completed local code-bearing checkpoint: `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`, message `Fix Demand Window exact-full PV-only export under MSC`; a later documentation-only commit may advance branch HEAD without changing that code checkpoint. The original `2.3.58-haos69` release remains operator-reported live at `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`, not freshly HA-verified; known-good rollback remains `2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Earlier pre-release .69 statements are historical.
+Current worktree `C:/Projects/sigenergy_optimizer-demand-window-hotfix`, branch `fix/demand-window-exact-full-pv-only`. Published hotfix source: `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`; published documentation and verified clean pre-preparation HEAD: `a562fd269d4dea651afc39b535745a866f656295`. Independent GitHub code audit reported **GO for the bounded hotfix**. Any future release-preparation commit will contain this local metadata/documentation patch and have its own SHA; it is not assigned or claimed here.
+
+Candidate **2.3.59-haos70 is locally prepared only**, with all five established version markers aligned. It is not committed, pushed, tagged, built, released, installed or live-accepted. Production differences from the published hotfix are limited to the FastAPI version and `_RUNTIME_SIGNATURE`; tests, control behavior, contract, Dockerfile and build workflow are unchanged.
 
 The local hotfix removes one unintended Demand Window exclusion from exact-full cheap-FiT MSC PV-only readiness. Qualified ON now retains the configured, capability-bounded MSC surplus ceiling; ON/untrusted continue blocking import, without battery-export ownership or discharge EMS. OFF/untrusted export outcomes, exact-full/trust/ownership/settlement protections and independent policies remain unchanged. The original regression failed before production editing and passed afterward; independent protections passed **466 tests / 611 subtests**; the final full suite ran once and passed **946 tests / 1,079 subtests**, zero failures, **206 warnings**. Compileall with external cache and diff check passed. Missing local Adelaide timezone data/UTC fallback remains a test-environment limitation. These results are retained, not rerun for documentation.
 
-The completed local commit contains exactly seven files: `CHANGELOG.md`, `app/optimizer.py`, `docs/AI_HANDOVER.md`, `docs/CHANGELOG.md`, `docs/CURRENT_STATE.md`, `docs/ROADMAP.md` and `tests/test_msc_baseline_overlay_contract.py`. Preflight for this separate five-file documentation follow-up verified the expected branch, HEAD `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9` and a clean worktree with nothing modified, staged or untracked. Production and tests remain untouched. No GitHub publication, independent committed-SHA GitHub audit, merge, release, deployment or hotfix live acceptance has occurred; no new release identity is assigned.
+Verified preparation context reports proposed tag `v2.3.59-haos70` absent from remote Git tags and `gh release list` returning no GitHub releases. These are supplied checks, not refreshed here. GHCR image namespace conflict checking remains outstanding; recheck publication identities/conflicts before separately authorized publication. The tag-triggered workflow publishes version, major/minor and `latest` image tags and passes `SOURCE_REF=${{ github.sha }}`; no build or workflow change is performed.
+
+Original `2.3.58-haos69` remains operator-reported live at `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`, not freshly HA-verified; known-good rollback remains `2.3.54-haos65` at `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`.
+
+Release-preparation preflight matched the expected branch and clean pre-preparation HEAD. The patch is limited to five release-version surfaces and five approved documentation files; current validation is recorded in `CURRENT_STATE.md`.
 
 Next gates:
 
-1. Review this five-file documentation correction.
-2. Obtain separate approval for its local documentation-only commit.
-3. Only afterward consider separately authorised GitHub push and independent committed-source review.
-4. Retain explicit release/deployment and live-acceptance gates; commit or push approval does not authorise live work.
+1. Review the exact ten-file local, unstaged release-preparation checkpoint and validation results.
+2. Obtain separate approval to stage and create a local metadata/documentation-only commit on `fix/demand-window-exact-full-pv-only`; record its SHA separately from the published hotfix source and pre-preparation HEAD.
+3. Complete GHCR namespace/conflict and publication identity checks before separately authorized push, merge, tag, build or release.
+4. Retain separate installation and supervised live-acceptance approval, effective-setting/authority checks, .65 rollback readiness and explicit stop/rollback conditions. Commit approval does not authorize publication or live work.
 
 Before any separately authorised live work, verify exact source/build identity, effective HA settings and observed authority, .65 rollback readiness, supervision and monitor-only/controlled live-acceptance arrangements with explicit stopping/rollback conditions. No settings are inferred from defaults or freshly queried here.
 
 Retain Phase 1 incompleteness, unresolved Evening Boost reserve/transition stability, outstanding Solar threshold-switching disposition, scoped Phase 2 acceptance with its unproven 13-second gap, and outstanding four-tier/hotfix physical/live proof. Neither the .69 release report nor passing tests closes these gates.
 
-This bounded correction preserves the established phase ordering, dependencies and scoped sequencing exceptions. It does not authorize architecture, cleanup, GUI, Climate, broader control redesign, release preparation or live work.
+This bounded correction preserves the established phase ordering, dependencies and scoped sequencing exceptions. It does not authorize architecture, cleanup, GUI, Climate, broader control redesign or live work. The separately approved .70 metadata/documentation preparation remains local and unstaged.
 
 ## 5. Short control-ownership audit
 

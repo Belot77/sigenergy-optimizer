@@ -9,19 +9,30 @@ Last consolidated: 2026-10-13
 - Last reported live: **2.3.58-haos69**, source `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`. This is the operator-reported original .69 release, not a freshly verified HA/runtime observation. It supersedes the earlier current .68 and pre-release .69 descriptions.
 - Known-good rollback remains **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Neither the original .69 release nor this local hotfix is promoted to known-good rollback.
 - Scoped Phase 2 acceptance was reported for `.68`; its **13-second observation gap remains unproven**. The reported .69 identity supplies no additional physical/live acceptance evidence.
-- The local code-bearing hotfix checkpoint is committed as `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9` (`Fix Demand Window exact-full PV-only export under MSC`). No GitHub publication, independent committed-SHA GitHub audit, merge, release, deployment or hotfix live acceptance has occurred. No new hotfix version/tag is assigned and release metadata is unchanged.
+- Published hotfix source: `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`; published documentation and verified clean pre-preparation HEAD: `a562fd269d4dea651afc39b535745a866f656295`. Independent GitHub code audit reported **GO for the bounded hotfix**. Any future release-preparation commit will contain this local metadata/documentation patch and have its own SHA; it is not assigned or claimed here.
+- Candidate **2.3.59-haos70 is locally prepared only**, with all five established version markers aligned. It is not committed, pushed, tagged, built, released, installed or live-accepted. Production differences from the published hotfix are limited to the FastAPI version and `_RUNTIME_SIGNATURE`; tests, control behavior, contract, Dockerfile and build workflow are unchanged.
+- Verified preparation context reports proposed tag `v2.3.59-haos70` absent from remote Git tags and `gh release list` returning no GitHub releases. These are supplied checks, not refreshed here. GHCR image namespace conflict checking remains outstanding; recheck publication identities/conflicts before separately authorized publication. The tag-triggered workflow publishes version, major/minor and `latest` image tags and passes `SOURCE_REF=${{ github.sha }}`; no build or workflow change is performed.
 
 ## Active worktree and validation
 
 - Worktree: `C:\Projects\sigenergy_optimizer-demand-window-hotfix`.
 - Branch: `fix/demand-window-exact-full-pv-only`.
-- Completed code-bearing checkpoint: `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`. This identifies the committed hotfix source, not necessarily the final branch HEAD after a subsequent documentation-only commit.
-- The operator completed and verified the seven-file local commit: `CHANGELOG.md`, `app/optimizer.py`, `docs/AI_HANDOVER.md`, `docs/CHANGELOG.md`, `docs/CURRENT_STATE.md`, `docs/ROADMAP.md` and `tests/test_msc_baseline_overlay_contract.py`. Documentation follow-up preflight verified the expected branch, HEAD `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9` and a clean worktree with no modified, staged or untracked files.
-- This separate documentation-only follow-up changes only `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, `docs/ROADMAP.md`, `docs/CHANGELOG.md` and root `CHANGELOG.md`. Production and tests are untouched; the completed code-bearing checkpoint remains identified independently of any later documentation-only HEAD.
+- Published code-bearing checkpoint: `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`; current pre-preparation HEAD: `a562fd269d4dea651afc39b535745a866f656295`. A future preparation commit is a separate identity.
+- Release-preparation preflight verified the expected branch, HEAD `a562fd269d4dea651afc39b535745a866f656295` and a clean worktree with nothing staged or untracked.
+- Approved local scope: five release-version surfaces plus `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, `docs/ROADMAP.md`, `docs/CHANGELOG.md` and root `CHANGELOG.md`; no test or control-logic changes.
 - Targeted regression: `test_demand_window_exact_full_pv_only_export_contract` failed before the production correction and passed afterward, checking final decisions for Demand Window OFF, ON and untrusted states without weakening assertions.
 - Independent protections: **466 tests / 611 subtests passed**, zero failures. Coverage includes Demand Window, exact-full/cheap-FiT, Manual/Force, MSC settlement, telemetry trust, actual import-cost guards, battery-export ownership, Morning and Solar policies.
-- Final full suite after the hotfix, run once: **946 tests / 1,079 subtests passed**, zero failures, **206 warnings**. Compileall for `app`/`tests` with bytecode cache outside the worktree and `git diff --check` passed. These are retained results from the preceding hotfix validation; tests and compileall are not rerun for this documentation-only checkpoint.
+- Retained hotfix validation: **946 tests / 1,079 subtests passed**, zero failures, **206 warnings**; compileall and `git diff --check` passed. Release-preparation validation is recorded separately below; it does not establish live acceptance.
 - Missing local `Australia/Adelaide` timezone data caused UTC fallback in optimizer fixture logs. This is a test-environment limitation, not installed-timezone or live-behaviour proof. The full-suite warnings remain the recorded Pydantic deprecations.
+
+## Local .70 release-preparation validation (2026-10-13)
+
+- Exact-marker extraction asserted all five values equal `2.3.59-haos70`; existing release consistency checks passed: `python -m pytest -q -p no:cacheprovider tests/test_release_version_consistency.py` (**2 passed**).
+- Demand Window regression and independent protections passed: **356 tests / 468 subtests**, zero failures, **203 Pydantic deprecation warnings**. Command: `python -m pytest -q -p no:cacheprovider tests/test_msc_baseline_overlay_contract.py tests/test_demand_window_pv_max.py tests/test_phase1_actuator_settlement_fallback_characterization.py tests/test_phase1_authority_fail_closed_characterization.py tests/test_four_tier_battery_export.py tests/test_export_value_gate_advisory.py tests/test_phase1_capability_model_characterization.py tests/test_phase1_battery_telemetry_trust_characterization.py tests/test_solar_surplus_redesign.py tests/test_phase1_morning_slow_relief_characterization.py`. This includes exact-full ON/OFF/untrusted, Manual/Force, observed settlement, actual import-cost, four-tier ownership, telemetry/capability, Morning and Solar protections.
+- Final pre-checkpoint full suite run once: `python -m pytest -q -p no:cacheprovider --disable-warnings` -> **946 tests / 1,079 subtests passed**, zero failures, **206 Pydantic deprecation warnings**, in 128.42 seconds. Warning display was shortened; warning counts and test selection were unchanged.
+- `python -m compileall -q app tests` passed with `PYTHONPYCACHEPREFIX` pointing to a unique external temporary cache. `git diff --check` passed. Complete diff review and exact ten-file scope checks passed; all changes remain local and unstaged, with no untracked files. No test, control logic, source-clone or workflow changes were needed.
+- Test runs use `PYTHONDONTWRITEBYTECODE=1` and disable pytest's cache provider to keep generated files out of the worktree.
+- Production-content comparison against published hotfix `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9` passed after normalizing Git LF/checkout CRLF: exactly the FastAPI version and `_RUNTIME_SIGNATURE` substitutions. The initial raw-byte comparison encountered checkout line endings; this was a verification-method correction, with no source change or test failure. Tests, control contract, Dockerfile and workflow match the published hotfix.
 
 ## Demand Window / exact-full PV-only hotfix
 
@@ -71,13 +82,13 @@ Previously reported operator tuning was `grid_connection_export_limit_kw=15.0` a
 
 Next actions:
 
-1. Review this five-file documentation correction.
-2. Obtain separate approval for its local documentation-only commit.
-3. Only afterward consider separately authorised GitHub push and independent committed-source review.
-4. Retain explicit release/deployment and live-acceptance gates; commit or push approval does not authorise live work.
+1. Review the exact ten-file local, unstaged release-preparation checkpoint and validation results.
+2. Obtain separate approval to stage and create a local metadata/documentation-only commit on `fix/demand-window-exact-full-pv-only`; record its SHA separately from the published hotfix source and pre-preparation HEAD.
+3. Complete GHCR namespace/conflict and publication identity checks before separately authorized push, merge, tag, build or release.
+4. Retain separate installation and supervised live-acceptance approval, effective-setting/authority checks, .65 rollback readiness and explicit stop/rollback conditions. Commit approval does not authorize publication or live work.
 
 This task performs no staging, commit, push, tag, build, release, deployment, installation, restart or HA/inverter write.
 
-The hotfix has no independent committed-SHA GitHub audit or live acceptance yet. Any later publication/release or controlled live work requires separate authorization, exact source/build identification, effective operator-setting/authority checks, .65 rollback readiness, supervision and explicit stop/rollback conditions. Monitor-only observation and controlled live acceptance must distinguish requested ceiling/intent from actual export, capture fresh timestamped actuator readbacks and physical flows, and retain all observed-settlement barriers. No live action is performed here.
+The published hotfix has independent GitHub code-audit GO; hotfix physical/live acceptance remains outstanding. Any later publication/release or controlled live work requires separate authorization, exact source/build identification, effective operator-setting/authority checks, .65 rollback readiness, supervision and explicit stop/rollback conditions. Monitor-only observation and controlled live acceptance must distinguish requested ceiling/intent from actual export, capture fresh timestamped actuator readbacks and physical flows, and retain all observed-settlement barriers. No live action is performed here.
 
 Preserve roadmap dependencies and the open Phase 1/2 gates, including Evening Boost reserve/transition stability, Solar threshold-switching disposition, the unproven 13-second observation gap and unexercised four-tier scenarios. The original .69 release report and passing hotfix tests do not close those limitations.
