@@ -4708,7 +4708,6 @@ class SigEnergyOptimizer:
             and ordinary_msc_flow_ok
             and live_pv_plausible_for_msc_ceiling
             and not s.price_is_negative
-            and not trusted_demand_window_active
             and not morning_slow_charge_active
             and not standby_holdoff_active
             and not battery_full_safeguard_block

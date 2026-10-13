@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-13 - Demand Window exact-full PV-only hotfix (local, uncommitted)
+
+- Remove the single unintended Demand Window exclusion: qualified exact-full cheap-FiT export now retains the configured, capability-bounded MSC surplus ceiling when ON, while ON/untrusted continue blocking import. OFF/untrusted export outcomes and exact-full, trusted-flow, ownership and settlement safeguards remain unchanged; no battery-export owner or discharge EMS is introduced.
+- Add the unchanged characterization test: targeted red before production editing, green afterward for ON/OFF/untrusted. Independent protections: **466 tests / 611 subtests passed**; final full suite run once: **946 tests / 1,079 subtests passed**, zero failures, **206 warnings**. Compileall and diff check passed. Local missing Adelaide timezone data/UTC fallback limits test-environment proof; this documentation-only checkpoint reruns neither tests nor compileall.
+- Original .69 (`2.3.58-haos69`) is operator-reported live at `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`, without fresh HA verification; known-good rollback remains .65 (`2.3.54-haos65`) at `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. No hotfix commit, push, release, deployment or live acceptance; Phase 1/2 evidence gaps remain open. Next: **review the seven-file checkpoint and seek separate commit approval**. No release metadata changes.
+
 ## 2.3.56-haos67 - locally prepared, unreleased candidate - 2026-10-07
 
 - Target Solar battery fill at trusted same-day sunset minus 60 minutes by default; zero preserves sunset timing. Keep forecast safety at 1.20, release restrictive charging at the deadline, and preserve later full-battery surplus export.

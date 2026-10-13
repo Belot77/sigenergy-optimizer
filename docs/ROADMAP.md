@@ -20,7 +20,7 @@ The checkpoint records the local code-validation result, durable semantics, live
 
 Feature-branch push: **COMPLETE** through `06efdfd0512e2b88f3431d6206b42c0af7b1c5ce` on `origin/fix/phase1-audit-remediation`.
 
-The publication status above is historical. The 8 October checkpoint records `.67` release/startup and scoped Solar live evidence. Last reported live is now `.68 / 2.3.57-haos68`, source baseline `0aa616c55a87f204d30193d8006f2e57ba265941`; `.65` remains rollback. This checkpoint makes no new live query; current identity and evidence limits are in `CURRENT_STATE.md`.
+The publication status above is historical. The 8 October checkpoint records `.67` release/startup and scoped Solar live evidence. Last operator-reported live is now `.69 / 2.3.58-haos69`, source `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`; `.65 / 9965e79133f38d5b9943dcf5a9b04ed6fdab1239` remains known-good rollback. This checkpoint makes no new live query; current identity and evidence limits are in `CURRENT_STATE.md`.
 
 Formal Phase 1 acceptance and explicit disposition of retained follow-ups remain **PENDING**. Scoped Solar evidence does not establish completion of the separate Evening Boost transition-stability dependency. Repository validation and service-call success are not live settlement proof.
 
@@ -32,7 +32,7 @@ Gate retained: Phase 1 release and live acceptance, including disposition of ret
 
 ## 4. Phase 2 transition-settlement safety
 
-Status (11 October checkpoint): **reported live in `.68`, with scoped Phase 2 live acceptance passed**. The **13-second observation gap remains unproven**; broader/unexercised live acceptance remains outstanding. Development and the limited trial proceeded under the recorded Phase 1 sequencing exception, not Phase 1 completion.
+Status: **scoped Phase 2 live acceptance was reported for `.68`; current operator-reported release is `.69`**. The newer release identity adds no fresh acceptance evidence. The **13-second observation gap remains unproven**; broader/unexercised live acceptance remains outstanding. Development and the limited trial proceeded under the recorded Phase 1 sequencing exception, not Phase 1 completion.
 
 The local implementation enforces the observed close -> later observe closed -> request MSC -> later observe exact MSC -> reopen sequence in `CONTROL_CONTRACT.md`. Entering deliberate battery export must settle its export target before discharge EMS. Service-call success never counts as observation.
 
@@ -51,20 +51,27 @@ Gate retained: full Phase 1 disposition and applicable Phase 2 live-proof requir
 
 ## 4A. Authorized four-tier battery-export package
 
-Status: **corrected checkpoint committed/pushed; independent ChatGPT GitHub code audit GO**, as reported in the post-audit handoff. Worktree `C:/Projects/sigenergy_optimizer-four-tier`, branch `feature/four-tier-battery-export`, HEAD `bec1095539b96dbb90b62bd6eb047471e41801f6`. Original candidate `5989b1c588b3c05e35ae1e13c3b333d2a2796f57` received NO-GO; the corrected nine-file commit `Fix independent export arbitration and stabilize settlement characterization` was pushed to `origin/feature/four-tier-battery-export`. Both original blockers are resolved and no new release-blocking defect was identified in the reviewed code. This supersedes the code NO-GO only; release and physical/live acceptance remain outstanding. The bounded development authorization does not waive Phase 1/2 dependencies.
+Historical code-review status: **corrected checkpoint committed/pushed; independent ChatGPT GitHub code audit GO**, as reported in the post-audit handoff. Historical worktree `C:/Projects/sigenergy_optimizer-four-tier`, branch `feature/four-tier-battery-export`, HEAD `bec1095539b96dbb90b62bd6eb047471e41801f6`. Original candidate `5989b1c588b3c05e35ae1e13c3b333d2a2796f57` received NO-GO; the corrected nine-file commit `Fix independent export arbitration and stabilize settlement characterization` was pushed to `origin/feature/four-tier-battery-export`. Both original blockers are resolved and no new release-blocking defect was identified in the reviewed code. This superseded the code NO-GO only. The original .69 release is now operator-reported live at `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`; physical/live acceptance gaps remain outstanding, and that historical audit does not cover the new hotfix. The bounded development authorization does not waive Phase 1/2 dependencies.
 
 Ordinary Low battery sale remains disabled regardless of persisted floors/legacy opt-ins; compatible Low default is 100%, independent Medium/High/Spike floors are 40/20/10%. Both audit blockers are resolved in the independently reviewed code: rejected High/Spike proposals no longer suppress independently qualified Solar/Evening, and selected independent policies cannot be intercepted by legacy tier/Positive-FiT branches when Medium defers. Qualified High/Spike priority and cost vetoes remain intact. No tier fallback, new ownership semantics or production settlement change is introduced.
 
 Retained reported remediation validation: **945 tests / 1079 subtests passed, zero failures, 206 classified Pydantic deprecation warnings**; compileall with external cache and diff check passed. Nine deterministic timestamp subcases preserve the real strict-after application checks. The original intermittent failure's timestamps remain unavailable. The corrected commit contains nine files. Current documentation scope, retained validation and evidence limits are recorded in `CURRENT_STATE.md`; tests and compileall were not rerun for this docs-only checkpoint.
 
+## 4B. Bounded Demand Window hotfix checkpoint (2026-10-13)
+
+Current worktree `C:/Projects/sigenergy_optimizer-demand-window-hotfix`, branch `fix/demand-window-exact-full-pv-only`, HEAD `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`. The original `2.3.58-haos69` release is operator-reported live, not freshly verified; known-good rollback remains `2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Earlier pre-release .69 statements are historical.
+
+The local hotfix removes one unintended Demand Window exclusion from exact-full cheap-FiT MSC PV-only readiness. Qualified ON now retains the configured, capability-bounded MSC surplus ceiling; ON/untrusted continue blocking import, without battery-export ownership or discharge EMS. OFF/untrusted export outcomes, exact-full/trust/ownership/settlement protections and independent policies remain unchanged. The original regression failed before production editing and passed afterward; independent protections passed **466 tests / 611 subtests**; the final full suite ran once and passed **946 tests / 1,079 subtests**, zero failures, **206 warnings**. Compileall with external cache and diff check passed. Missing local Adelaide timezone data/UTC fallback remains a test-environment limitation. These results are retained, not rerun for documentation.
+
+The seven-file checkpoint comprises the existing production/test diff and five documentation files, all modified and unstaged, with no untracked files. No hotfix commit, push, release, deployment or live acceptance has occurred; no new release identity is assigned.
+
 Next gates:
 
-1. Obtain separate approval to commit/push the four-file post-audit documentation checkpoint, proposed message `Record haos69 code-audit GO and remaining release gates`.
-2. After that checkpoint, obtain separate authorization for **bounded .69 release preparation**. Verify exact reviewed source `bec1095539b96dbb90b62bd6eb047471e41801f6`, no conflicting tag/release, package/version consistency, and known-good `.65` rollback readiness.
-3. Before installation, verify effective HA operator settings/authority and propose monitor-only plus controlled live acceptance with explicit stopping/rollback conditions and supervision. Settings have not been freshly queried; no installation, restart or inverter write is authorized.
-4. Retain Phase 1 incompleteness, unresolved Evening Boost reserve/transition stability, outstanding Solar threshold-switching disposition, scoped Phase 2 acceptance with its unproven 13-second gap, and outstanding four-tier physical/live acceptance. A code-audit GO does not close these gates.
+1. **Review the seven-file checkpoint and seek separate commit approval.** This task authorizes no staging, commit or push; later publication/release/live actions require separate authorization.
+2. Before any separately authorized live work, verify exact source/build identity, effective HA settings and observed authority, .65 rollback readiness, supervision and monitor-only/controlled live-acceptance arrangements with explicit stopping/rollback conditions. No settings are inferred from defaults or freshly queried here.
+3. Retain Phase 1 incompleteness, unresolved Evening Boost reserve/transition stability, outstanding Solar threshold-switching disposition, scoped Phase 2 acceptance with its unproven 13-second gap, and outstanding four-tier/hotfix physical/live proof. Neither the .69 release report nor passing tests closes these gates.
 
-Prepared candidate remains `2.3.58-haos69`, proposed tag `v2.3.58-haos69`. Last reported live remains `2.3.57-haos68`, not freshly verified; known-good rollback remains `2.3.54-haos65`. No release-preparation verification, tag, build, release, deployment or live action is executed or authorized by this documentation task. Architecture, cleanup, GUI, Climate and other parked work retain their existing dependencies.
+This bounded correction preserves the established phase ordering, dependencies and scoped sequencing exceptions. It does not authorize architecture, cleanup, GUI, Climate, broader control redesign, release preparation or live work.
 
 ## 5. Short control-ownership audit
 

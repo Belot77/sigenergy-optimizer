@@ -1,32 +1,38 @@
 # Current State
 
-Last consolidated: 2026-10-11
+Last consolidated: 2026-10-13
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
 ## Live identity and rollback
 
-- Last reported live: **2.3.57-haos68**, source baseline `0aa616c55a87f204d30193d8006f2e57ba265941`. This is operator-reported live identity, not a new HA/runtime query or an inference from repository metadata.
-- Known-good rollback: **2.3.54-haos65**, commit `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Do not promote another build to rollback without evidence and approval.
-- `.68` has passed reported **scoped Phase 2 live acceptance**. Its **13-second observation gap remains documented and unproven**; neither that interval nor unexercised scenarios are assumed safe by observation.
-- The original four-tier candidate was committed and pushed for review as `5989b1c588b3c05e35ae1e13c3b333d2a2796f57`; it is not part of the reported live installation. Prepared candidate identity remains **2.3.58-haos69**, proposed tag `v2.3.58-haos69`. Remediation changes no release metadata and creates no tag, release or image.
+- Last reported live: **2.3.58-haos69**, source `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`. This is the operator-reported original .69 release, not a freshly verified HA/runtime observation. It supersedes the earlier current .68 and pre-release .69 descriptions.
+- Known-good rollback remains **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Neither the original .69 release nor this local hotfix is promoted to known-good rollback.
+- Scoped Phase 2 acceptance was reported for `.68`; its **13-second observation gap remains unproven**. The reported .69 identity supplies no additional physical/live acceptance evidence.
+- No hotfix commit, push, release, deployment or live acceptance has occurred. No new hotfix version/tag is assigned and release metadata is unchanged.
 
 ## Active worktree and validation
 
-- Worktree: `C:\Projects\sigenergy_optimizer-four-tier`.
-- Branch: `feature/four-tier-battery-export`.
-- HEAD and independently reviewed corrected checkpoint: `bec1095539b96dbb90b62bd6eb047471e41801f6`. Original candidate: `5989b1c588b3c05e35ae1e13c3b333d2a2796f57`.
-- Corrected commit `Fix independent export arbitration and stabilize settlement characterization` contains exactly nine files and was pushed to `origin/feature/four-tier-battery-export`; local and remote SHA were verified equal. The post-audit handoff reports independent GitHub verification and an independent ChatGPT code-audit **GO**: both original arbitration blockers are resolved, with no new release-blocking defect identified in the reviewed code.
-- The original candidate's NO-GO is superseded for the corrected code checkpoint. **Code audit is complete; release authorization and physical/live acceptance remain outstanding.** This is the recorded independent audit outcome, not a new audit or HA observation performed for this documentation task.
-- Starting worktree was clean. This documentation-only checkpoint modifies exactly `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, `docs/ROADMAP.md` and `docs/CHANGELOG.md`; nothing is staged and no files are untracked. Production, tests, configuration, metadata, contract and historical decisions remain unchanged.
-- Retained reported final full suite, run once after remediation: **945 tests passed, 1079 subtests passed, zero failures, 206 warnings**. Compileall for `app`/`tests` with cache outside the worktree and `git diff --check` passed.
-- Focused validation: corrected transition test 1 / 9 subtests; complete transition file 7 / 9; actuator settlement/fallback 22 tests; arbitration 4 / 25; complete four-tier 19 / 136; Solar/Evening/Positive-FiT protections 292 / 277; independent Morning/Demand Window/Manual/Force/telemetry/import-cost/MSC protections 323 / 431. These runs overlap and must not be summed.
-- Warnings remain unchanged: 201 Pydantic extra `Field` argument deprecations, four `.dict()` deprecations and one class-based Config deprecation. The previously documented local timezone-data limitation remains an installation-validation gap, not proof of live behavior. Git also reports its existing LF-to-CRLF normalization advisory for the four-tier test; diff check finds no whitespace errors.
-- The retained production patch changes only arbitration in `_decide` and `_desired_export_limit`. No new production edit was made during final validation. `_apply`, settlement helpers, startup, hardware-cap helpers and release metadata remain unchanged from the original candidate. All four files predating the clock correction retain their recorded hashes.
+- Worktree: `C:\Projects\sigenergy_optimizer-demand-window-hotfix`.
+- Branch: `fix/demand-window-exact-full-pv-only`.
+- HEAD: `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`.
+- Documentation preflight verified exactly two modified, unstaged files: `app/optimizer.py` and `tests/test_msc_baseline_overlay_contract.py`, with no staged or untracked files. This checkpoint adds only `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, `docs/ROADMAP.md`, `docs/CHANGELOG.md` and root `CHANGELOG.md`: exactly seven modified, unstaged files in total. The two existing code/test changes are preserved byte-for-byte.
+- Targeted regression: `test_demand_window_exact_full_pv_only_export_contract` failed before the production correction and passed afterward, checking final decisions for Demand Window OFF, ON and untrusted states without weakening assertions.
+- Independent protections: **466 tests / 611 subtests passed**, zero failures. Coverage includes Demand Window, exact-full/cheap-FiT, Manual/Force, MSC settlement, telemetry trust, actual import-cost guards, battery-export ownership, Morning and Solar policies.
+- Final full suite after the hotfix, run once: **946 tests / 1,079 subtests passed**, zero failures, **206 warnings**. Compileall for `app`/`tests` with bytecode cache outside the worktree and `git diff --check` passed. These are retained results from the preceding hotfix validation; tests and compileall are not rerun for this documentation-only checkpoint.
+- Missing local `Australia/Adelaide` timezone data caused UTC fallback in optimizer fixture logs. This is a test-environment limitation, not installed-timezone or live-behaviour proof. The full-suite warnings remain the recorded Pydantic deprecations.
 
-## Bounded audit remediation
+## Demand Window / exact-full PV-only hotfix
 
-The completed independent ChatGPT GitHub code audit confirms both original blockers are resolved in the corrected checkpoint:
+The confirmed defect affected an otherwise qualifying exact-100%-SoC, cheap-positive-FiT MSC PV-only opportunity: Demand Window OFF and untrusted received the configured high MSC surplus ceiling, but trusted ON returned `0 kW` and `EXPORT_BLOCKED`. ON and untrusted correctly blocked import.
+
+The narrow correction removes only `and not trusted_demand_window_active` from `pv_only_msc_transition_ready`. Qualified ON now receives the same configured, capability-bounded `MSC_SURPLUS_CEILING`; import remains blocked. OFF and untrusted behaviour is preserved. The transferred 49-line characterization test is the only test addition; existing expectations are unchanged.
+
+Exact-full qualification, observed Automated/exact MSC authority, trusted safe flow evidence, actuator settlement and physical bounds remain mandatory. Below-100% cheap-FiT protection remains intact. The change creates no `BATTERY_EXPORT` owner or discharge EMS and leaves Morning, Solar Surplus, ordinary export, Manual/Force and actual import-cost protections unchanged. Settlement/application helpers and capability helpers are unchanged. Automated decision/test evidence is not proof of physical export or live settlement.
+
+## Original .69 audit remediation (historical context)
+
+The historical independent ChatGPT GitHub code audit reported GO for corrected checkpoint `bec1095539b96dbb90b62bd6eb047471e41801f6`, resolving both original blockers. That review does not cover the new Demand Window delta:
 
 1. Rejected High/Spike battery proposals no longer suppress independently qualified Solar Bypass or Evening Boost. Qualified High/Spike proposals retain priority and all execution vetoes; a cost-vetoed candidate cannot obtain alternate permission through an overlapping policy.
 2. When arbitration selects an independent Solar/Evening policy, legacy High/Spike and Positive-FiT branches cannot intercept it. This preserves qualified Solar ownership when Medium defers, including with legacy opt-ins; it does not create lower-tier battery fallback.
@@ -53,23 +59,17 @@ The `.68` sequence remains mandatory: close export -> fresh trusted observed clo
 
 - **Phase 1 remains open.** Scoped `.67` Solar evidence for handover, physical relief/backoff and fill-deadline relinquishment remains recorded evidence; it does not close Evening Boost reserve/transition stability or Solar threshold-switching disposition. Those follow-ups remain explicitly deferred.
 - **Phase 2 has scoped `.68` acceptance only.** The 13-second observation gap and any broader or unexercised live scenarios remain outstanding. Automated tests and accepted service calls cannot fill observation gaps.
-- **Four-tier live acceptance is outstanding.** The completed code-audit GO does not establish safe physical behavior or complete release/live acceptance.
+- **Four-tier live acceptance is outstanding.** The completed code-audit GO does not establish safe physical behavior or complete physical/live acceptance.
 - Further Evening Boost redesign, trusted non-positive-import redesign, Package 6B, experimental scheduling and later architecture/cleanup/GUI/Climate work remain parked under the roadmap; this package does not authorize them.
 
 ## Site tuning is not a software default
 
-Last reported operator tuning remains `grid_connection_export_limit_kw=15.0` and `solar_surplus_fill_deadline_margin_minutes=120`; software defaults remain **0.0** and **60** respectively. Morning Slow physical export headroom remains reported at **0.0**. Normal site export permission and PV MAX remain reported at 25 kW. Morning Dump's reported 15% operator floor is not a new software default. None of these settings was queried or written for this checkpoint.
+Previously reported operator tuning was `grid_connection_export_limit_kw=15.0` and `solar_surplus_fill_deadline_margin_minutes=120`; software defaults remain **0.0** and **60** respectively. Morning Slow physical export headroom was reported at **0.0**, normal site export permission and PV MAX at 25 kW, and Morning Dump's operator floor at 15%. These are historical operator reports, not freshly verified current settings or authority to change defaults. No operator settings were queried or written for this checkpoint.
 
-## Next approval and release-preparation gate
+## Next approval and live-proof boundary
 
-Next approval: commit/push this exact four-file documentation checkpoint, proposed message `Record haos69 code-audit GO and remaining release gates`. This task does not authorize that commit/push. No tag, build, release, deployment, installation, restart or HA/inverter write is authorized.
+Exact next gate: **review the seven-file checkpoint and seek separate commit approval**. Nothing is staged, committed or pushed by this task. Approval of a commit does not authorize a push, tag, build, release, deployment, installation, restart or HA/inverter write.
 
-After that documentation checkpoint, the next phase is **bounded .69 release preparation**, requiring separate authorization. Retain prepared candidate **2.3.58-haos69** and proposed tag **v2.3.58-haos69**. Release preparation must verify:
+The hotfix has no independent code-review acceptance or live acceptance yet. Any later publication/release or controlled live work requires separate authorization, exact source/build identification, effective operator-setting/authority checks, .65 rollback readiness, supervision and explicit stop/rollback conditions. Monitor-only observation and controlled live acceptance must distinguish requested ceiling/intent from actual export, capture fresh timestamped actuator readbacks and physical flows, and retain all observed-settlement barriers. No live action is performed here.
 
-- Exact reviewed source identity `bec1095539b96dbb90b62bd6eb047471e41801f6` and the relationship of any later documentation-only commit to that source.
-- No conflicting tag or release, and package/version consistency; prior checks do not substitute for checks at the release boundary.
-- Known-good `.65` rollback readiness.
-- Effective HA operator settings and observed authority before any installation; these have not been freshly queried.
-- A proposed monitor-only and controlled live-acceptance procedure, supervision, and explicit stopping/rollback conditions.
-
-Preserve roadmap dependencies and the open Phase 1/2 gates. Release preparation and code-audit GO do not authorize installation or declare live safety. Before separately authorized live work, confirm source/build identity, effective settings, authority and rollback readiness. Propose monitor-only observation of tier proposals, rejection reasons, final owners and requested limits; controlled live acceptance must capture timestamped requests, fresh readbacks and physical flows through deliberate export and MSC return, reserve/cost boundaries and failed-candidate Morning preservation. Contain unresolved Evening Boost reserve/transition stability and Solar threshold-switching risks. Stop for unsafe flows, lost authority, premature reopening, unproven settlement or limit violations, using separately approved rollback arrangements. Label unexercised scenarios and the 13-second observation gap as unresolved. No release-preparation checks or live actions were executed in this documentation task.
+Preserve roadmap dependencies and the open Phase 1/2 gates, including Evening Boost reserve/transition stability, Solar threshold-switching disposition, the unproven 13-second observation gap and unexercised four-tier scenarios. The original .69 release report and passing hotfix tests do not close those limitations.

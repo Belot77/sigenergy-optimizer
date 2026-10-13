@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-13 - Demand Window exact-full PV-only hotfix (local, uncommitted)
+
+- Remove one unintended Demand Window exclusion from `pv_only_msc_transition_ready`. An otherwise qualified exact-full cheap-positive-FiT opportunity now retains the configured, capability-bounded `MSC_SURPLUS_CEILING` with Demand Window ON. ON/untrusted still block import; OFF/untrusted export outcomes remain unchanged. No battery-export owner or discharge EMS is introduced; exact-full, telemetry, ownership, settlement and independent-policy protections remain intact.
+- Transfer the exact 49-line characterization test without changing existing expectations. Targeted test: one failure before production editing, then one pass covering ON/OFF/untrusted. Independent protections: **466 tests / 611 subtests passed**. Final full suite run once: **946 tests / 1,079 subtests passed**, zero failures, **206 warnings**. Compileall app/tests with external cache and `git diff --check` passed. Missing local `Australia/Adelaide` timezone data caused UTC fallback; passing tests do not establish installed-timezone behaviour or live safety.
+- Original `2.3.58-haos69` is operator-reported live at `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`, not freshly HA-verified. Known-good rollback remains `.65 / 2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. The hotfix is local and uncommitted on `fix/demand-window-exact-full-pv-only`; no new version/tag, push, release, deployment or live acceptance. Existing Phase 1/2 limitations, including the unproven 13-second gap, remain open.
+- Five documentation updates join the preserved two-file code/test diff as seven modified, unstaged files. This documentation-only task reruns neither tests nor compileall. Next gate: **review the seven-file checkpoint and seek separate commit approval**. No staging, commit/push or live action is authorized.
+
 ## 2026-10-11 - .69 post-audit documentation checkpoint
 
 - Record the post-audit handoff: corrected checkpoint `bec1095539b96dbb90b62bd6eb047471e41801f6`, message `Fix independent export arbitration and stabilize settlement characterization`, contains exactly nine files and is pushed to `origin/feature/four-tier-battery-export`. Original candidate `5989b1c588b3c05e35ae1e13c3b333d2a2796f57` remains the historical NO-GO baseline.

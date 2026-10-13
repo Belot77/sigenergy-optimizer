@@ -569,6 +569,55 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         )
         self.assertTrue(decision.requires_verified_msc_before_export)
 
+    def test_demand_window_exact_full_pv_only_export_contract(self) -> None:
+        """Demand Window owns import blocking, not qualified exact-full PV export."""
+        actual = {}
+        expected = {}
+        for name, active, observed, import_blocked in (
+            ("off", False, True, False),
+            ("on", True, True, True),
+            ("untrusted", False, False, True),
+        ):
+            # Fresh optimizers and identical qualifying inputs isolate Demand Window.
+            optimizer = self.optimizer()
+            state = self._full_opportunity(
+                feedin_price=0.095,
+                feedin_price_cents=9.5,
+                current_ems_mode=MODE_MAX_SELF,
+                ems_mode_observed=True,
+                demand_window_active=active,
+                demand_window_observed=observed,
+            )
+            decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
+
+            self.assertEqual(0.0, decision.trace_values["export_tier_limit"], name)
+            self.assertTrue(decision.trace_gates["topoff_target_met"], name)
+            self.assertTrue(decision.trace_gates["pv_only_discharge_ok"], name)
+            actual[name] = {
+                "export_limit": decision.export_limit,
+                "ems_mode": decision.ems_mode,
+                "export_intent": decision.export_intent,
+                "battery_export_owner": decision.trace_values["battery_export_owner"],
+                "battery_export_final_owner": decision.trace_values["battery_export_final_owner"],
+                "import_limit": decision.import_limit,
+                "import_blocked": decision.trace_gates["demand_window_import_blocked"],
+                "pv_max_power_limit": decision.pv_max_power_limit,
+            }
+            expected[name] = {
+                "export_limit": optimizer.cfg.export_limit_high,
+                "ems_mode": MODE_MAX_SELF,
+                "export_intent": MSC_SURPLUS_CEILING,
+                "battery_export_owner": "none",
+                "battery_export_final_owner": "none",
+                # Ordinary policy requests no import at full SoC even when OFF.
+                "import_limit": 0.0,
+                "import_blocked": import_blocked,
+                "pv_max_power_limit": optimizer.cfg.pv_max_power_normal,
+            }
+
+        self.maxDiff = None
+        self.assertEqual(expected, actual)
+
     def test_cheap_fit_at_100_percent_keeps_ceiling_for_load_serving_discharge(
         self,
     ) -> None:
