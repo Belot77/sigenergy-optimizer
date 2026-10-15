@@ -1,31 +1,25 @@
 # Current State
 
-Last consolidated: 2026-10-13
+Last consolidated: 2026-10-15
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
 ## Live identity and rollback
-
-- Last reported live: **2.3.58-haos69**, source `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`. This is the operator-reported original .69 release, not a freshly verified HA/runtime observation. It supersedes the earlier current .68 and pre-release .69 descriptions.
-- Known-good rollback remains **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Neither the original .69 release nor this local hotfix is promoted to known-good rollback.
-- Scoped Phase 2 acceptance was reported for `.68`; its **13-second observation gap remains unproven**. The reported .69 identity supplies no additional physical/live acceptance evidence.
-- Published hotfix source: `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`; published documentation and verified clean pre-preparation HEAD: `a562fd269d4dea651afc39b535745a866f656295`. Independent GitHub code audit reported **GO for the bounded hotfix**. Any future release-preparation commit will contain this local metadata/documentation patch and have its own SHA; it is not assigned or claimed here.
-- Candidate **2.3.59-haos70 is locally prepared only**, with all five established version markers aligned. It is not committed, pushed, tagged, built, released, installed or live-accepted. Production differences from the published hotfix are limited to the FastAPI version and `_RUNTIME_SIGNATURE`; tests, control behavior, contract, Dockerfile and build workflow are unchanged.
-- Verified preparation context reports proposed tag `v2.3.59-haos70` absent from remote Git tags and `gh release list` returning no GitHub releases. These are supplied checks, not refreshed here. GHCR image namespace conflict checking remains outstanding; recheck publication identities/conflicts before separately authorized publication. The tag-triggered workflow publishes version, major/minor and `latest` image tags and passes `SOURCE_REF=${{ github.sha }}`; no build or workflow change is performed.
-
+- Last **operator-reported** live release: **2.3.59-haos70**, source `08f4daf53941bd850a4fe392b458c42b1df68b47`. This is not a new Home Assistant/runtime verification. Stage A introduced no installed-system changes.
+- Protected known-good rollback: **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Do not promote .70 to known-good without supervised live acceptance.
+- Morning Dump physically activated on 15 October; minimum SoC deliberately set to 15%, and timing option set to 1.0 hour before sunrise (existing implementation runs from sunrise through one hour afterward). Morning Slow was observed near 2 kW and physical export near 15 kW. Evening Boost disabled. Approximate 15 October PV forecast: 130 kWh. These are reported observations/settings, not renewed authority verification.
+- Phase 1 remains open, including exact-full Demand Window PV-only physical proof, Evening Boost reserve/transition stability and Solar threshold-switching disposition. Phase 2 retains only scoped .68 acceptance; a 13-second observation gap and broader cases remain unproven. Four-tier and .70 physical acceptance remain outstanding.
+- Preserve .65 rollback readiness before any later supervised live testing. Passing tests and successful service calls do not prove inverter settlement.
 ## Active worktree and validation
-
-- Worktree: `C:\Projects\sigenergy_optimizer-demand-window-hotfix`.
-- Branch: `fix/demand-window-exact-full-pv-only`.
-- Published code-bearing checkpoint: `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`; current pre-preparation HEAD: `a562fd269d4dea651afc39b535745a866f656295`. A future preparation commit is a separate identity.
-- Release-preparation preflight verified the expected branch, HEAD `a562fd269d4dea651afc39b535745a866f656295` and a clean worktree with nothing staged or untracked.
-- Approved local scope: five release-version surfaces plus `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, `docs/ROADMAP.md`, `docs/CHANGELOG.md` and root `CHANGELOG.md`; no test or control-logic changes.
-- Targeted regression: `test_demand_window_exact_full_pv_only_export_contract` failed before the production correction and passed afterward, checking final decisions for Demand Window OFF, ON and untrusted states without weakening assertions.
-- Independent protections: **466 tests / 611 subtests passed**, zero failures. Coverage includes Demand Window, exact-full/cheap-FiT, Manual/Force, MSC settlement, telemetry trust, actual import-cost guards, battery-export ownership, Morning and Solar policies.
-- Retained hotfix validation: **946 tests / 1,079 subtests passed**, zero failures, **206 warnings**; compileall and `git diff --check` passed. Release-preparation validation is recorded separately below; it does not establish live acceptance.
-- Missing local `Australia/Adelaide` timezone data caused UTC fallback in optimizer fixture logs. This is a test-environment limitation, not installed-timezone or live-behaviour proof. The full-suite warnings remain the recorded Pydantic deprecations.
-
-## Local .70 release-preparation validation (2026-10-13)
+- Current Stage A worktree: `C:\Projects\sigenergy_optimizer-authority-stage-a`; branch `test/control-authority-safety-characterization`; pre-checkpoint base HEAD `08f4daf53941bd850a4fe392b458c42b1df68b47`. After the approved local checkpoint, read Git HEAD for the new commit SHA. No push, merge, release, deploy or HA/inverter action is authorised.
+- Stage A scope: modified `tests/test_phase1_d7_liveness_characterization.py` (22 additions/1 deletion), new `tests/test_control_authority_safety_characterization.py` (47,885 bytes), and this document plus `docs/AI_HANDOVER.md`.
+- Stage A tests-only characterization **GO**, independently accepted on 15 October: corrected characterization **25 passed, 47 deliberately red**, corrected D7 test passed, recent independent protections **77 tests/89 subtests passed**, zero unexpected failures, AST/whitespace checks passed. The earlier baseline yielded 311 existing tests/409 subtests passed. No Stage A full-suite rerun was required.
+- The 47 red cases are deliberately executable regressions exposing known baseline authority/actuator safety defects. Do not skip, xfail, delete or weaken them. A non-green isolated Stage A branch is expected; do not merge into a branch requiring green CI until Stage B resolves the defects.
+- The seven initial review weaknesses (authority continuation, ESS restriction independence, unknown-vs-Manual, expiry during awaits, dispatch/refresh timing, Force ownership, restart/metadata evidence) were corrected and independently accepted. Fixture E reproduced unsafe boundary T+1/report T+2/dispatch T+3 versus valid report T+2/boundary-and-dispatch T+3 through the real waiter.
+- Protected reference worktree: `C:\Projects\sigenergy_optimizer-evening-priority`, branch `test/evening-medium-priority-characterization`, base HEAD `08f4daf...`, containing exactly ten intentionally dirty files. This is **NO-GO for production, commit or deployment**. Never reset, stash, discard, overwrite, commit, delete or copy its optimizer file wholesale. Stage A checkpoint does not touch it.
+- Stage B production authority/actuator repair **not yet approved**. Preserve verified Automated / Unknown / confirmed Manual-or-Force distinctions, request-time and application-time authority, dispatch boundaries, independent Demand/ESS/PV restrictions, observed settlement, fallback and safe operator ownership. Preserve unattended restart auto-enable with current Automated verification; no new persistent OFF database or mandatory handback redesign.
+## Historical .70 release-preparation validation (2026-10-13)
+The following is retained test evidence from before the operator-reported .70 installation, not a current release-preparation status.
 
 - Exact-marker extraction asserted all five values equal `2.3.59-haos70`; existing release consistency checks passed: `python -m pytest -q -p no:cacheprovider tests/test_release_version_consistency.py` (**2 passed**).
 - Demand Window regression and independent protections passed: **356 tests / 468 subtests**, zero failures, **203 Pydantic deprecation warnings**. Command: `python -m pytest -q -p no:cacheprovider tests/test_msc_baseline_overlay_contract.py tests/test_demand_window_pv_max.py tests/test_phase1_actuator_settlement_fallback_characterization.py tests/test_phase1_authority_fail_closed_characterization.py tests/test_four_tier_battery_export.py tests/test_export_value_gate_advisory.py tests/test_phase1_capability_model_characterization.py tests/test_phase1_battery_telemetry_trust_characterization.py tests/test_solar_surplus_redesign.py tests/test_phase1_morning_slow_relief_characterization.py`. This includes exact-full ON/OFF/untrusted, Manual/Force, observed settlement, actual import-cost, four-tier ownership, telemetry/capability, Morning and Solar protections.
@@ -75,20 +69,13 @@ The `.68` sequence remains mandatory: close export -> fresh trusted observed clo
 - Further Evening Boost redesign, trusted non-positive-import redesign, Package 6B, experimental scheduling and later architecture/cleanup/GUI/Climate work remain parked under the roadmap; this package does not authorize them.
 
 ## Site tuning is not a software default
-
-Previously reported operator tuning was `grid_connection_export_limit_kw=15.0` and `solar_surplus_fill_deadline_margin_minutes=120`; software defaults remain **0.0** and **60** respectively. Morning Slow physical export headroom was reported at **0.0**, normal site export permission and PV MAX at 25 kW, and Morning Dump's operator floor at 15%. These are historical operator reports, not freshly verified current settings or authority to change defaults. No operator settings were queried or written for this checkpoint.
-
+- Reported physical grid-connection export cap: **15 kW**; previously reported normal permission/PV MAX **25 kW**, Morning Slow near **2 kW**, Morning Dump SoC minimum **15%**, timing setting **1.0 hour** and Evening Boost **disabled**.
+- Previously reported `solar_surplus_fill_deadline_margin_minutes=120` and Morning Slow physical export headroom 0.0 remain historical reports, not rechecked effective settings. Do not infer other effective settings from source defaults or change defaults to match site tuning.
+- No HA settings or inverter controls were written in Stage A.
 ## Next approval and live-proof boundary
-
-Next actions:
-
-1. Review the exact ten-file local, unstaged release-preparation checkpoint and validation results.
-2. Obtain separate approval to stage and create a local metadata/documentation-only commit on `fix/demand-window-exact-full-pv-only`; record its SHA separately from the published hotfix source and pre-preparation HEAD.
-3. Complete GHCR namespace/conflict and publication identity checks before separately authorized push, merge, tag, build or release.
-4. Retain separate installation and supervised live-acceptance approval, effective-setting/authority checks, .65 rollback readiness and explicit stop/rollback conditions. Commit approval does not authorize publication or live work.
-
-This task performs no staging, commit, push, tag, build, release, deployment, installation, restart or HA/inverter write.
-
-The published hotfix has independent GitHub code-audit GO; hotfix physical/live acceptance remains outstanding. Any later publication/release or controlled live work requires separate authorization, exact source/build identification, effective operator-setting/authority checks, .65 rollback readiness, supervision and explicit stop/rollback conditions. Monitor-only observation and controlled live acceptance must distinguish requested ceiling/intent from actual export, capture fresh timestamped actuator readbacks and physical flows, and retain all observed-settlement barriers. No live action is performed here.
-
-Preserve roadmap dependencies and the open Phase 1/2 gates, including Evening Boost reserve/transition stability, Solar threshold-switching disposition, the unproven 13-second observation gap and unexercised four-tier scenarios. The original .69 release report and passing hotfix tests do not close those limitations.
+1. Stage A is a local, isolated **tests + docs checkpoint only**; current branch HEAD after commit identifies that checkpoint. No push, merge, installation, restart or HA/inverter write is included.
+2. Scope Stage B **separately**; no Stage B production write is authorised by this checkpoint. Candidate core scope: `app/optimizer.py`, `app/ha_client.py`, necessary targeted tests. Additional files/API wiring require demonstrated need and separate approval.
+3. Stage B must satisfy the 47 red authority/settlement regressions while preserving the reviewed narrow Medium-over-Evening Boost priority hunk and established startup/manual behaviour; no wholesale transfer from the protected worktree.
+4. Stage B validation: Stage A regressions, independent Manual/Force, Demand, MSC, Solar, Morning, fallback, reconnect and responsiveness protections; one final full suite, compileall, diff check and independent safety review. Stop on unexpected failures; never weaken protection tests.
+5. Before any later live acceptance: obtain separate installation approval; preserve .65 rollback, current authority, effective site settings and timestamped inverter evidence (EMS, PV MAX, import/export ceilings, ESS limits, SoC, battery/PV/grid flows, reason/owner). Service-call success does not establish physical settlement.
+6. Roadmap order remains outstanding Phase 1 physical proof, Phase 2 transition safety, short control-ownership audit, Climate Manager integration, then diagnostics/replay/experimental solar scheduling.

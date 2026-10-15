@@ -579,6 +579,20 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
         ha = RecordingHA(settle_numbers=False)
         optimizer = self.optimizer(ha)
         optimizer._wait_for_number_at_most = AsyncMock(return_value=False)
+        observed_at = datetime.fromtimestamp(
+            self.FIXED_AFTERNOON.timestamp(), timezone.utc,
+        ).isoformat()
+        # This test owns its authority evidence; shared doubles stay unchanged.
+        for entity_id, value in (
+            (optimizer.cfg.sigenergy_mode_select, optimizer.cfg.automated_option),
+            (optimizer.cfg.ha_control_switch, "on"),
+        ):
+            ha.states[entity_id] = {
+                "state": value,
+                "attributes": {},
+                "last_updated": observed_at,
+                "last_reported": observed_at,
+            }
         state = self.state(
             self.FIXED_AFTERNOON,
             current_ems_mode=MODE_MAX_SELF,
@@ -595,13 +609,20 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
             export_intent=BATTERY_EXPORT,
         )
 
-        result = asyncio.run(optimizer._apply(state, decision))
+        with self.optimizer_time(self.FIXED_AFTERNOON):
+            result = asyncio.run(optimizer._apply(state, decision))
 
         self.assertFalse(result.succeeded)
         self.assertNotIn(
             ("select_option", optimizer.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV),
             ha.calls,
         )
+        self.assertIn(("set_number", optimizer.cfg.grid_export_limit, 5.0), ha.calls)
+        optimizer._wait_for_number_at_most.assert_any_await(
+            optimizer.cfg.grid_export_limit, 5.0, timeout_s=3.0,
+        )
+        self.assertTrue(result.fallback_attempted)
+        self.assertIn("export limit did not settle at or below 5.00kW", result.error)
 
     def test_none_grid_provenance_is_not_legacy_permissive_proof(self) -> None:
         ha = RecordingHA()
