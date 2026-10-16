@@ -1,12 +1,12 @@
 # Changelog
 
-## Unreleased development - Stage B - 2026-10-16
+## 2.3.60-haos71 - Stage B release candidate preparation - 2026-10-16
 
 - Completed candidate authority/actuator safety correction: refresh Automated ownership and observed Remote EMS ON at dispatch, reject conflicting actuator observations, and require request-specific post-dispatch settlement of the intended export target before deliberate discharge.
 - Keep independently owned ESS charge/discharge restrictions through successful fallback, alongside Demand Window import and restrictive PV protections; recovery releases only fallback-owned restrictions.
 - Keep pending authenticated Force requests through unchanged Automated selector reports; require a verified newer selector state transition for supersession and stop subsequent old-request writes/retries. Preserve Manual/Force targets, including 25 kW, and ordinary verified unattended restart/auto-enable.
 - Include the narrow Medium-over-Evening Boost priority correction; broader oscillation, reserve and physical acceptance remain open in `CURRENT_STATE.md` O1-O9.
-- Candidate `fix/control-authority-safety` at HEAD `2a60a62097d16344711a64cf96e5e52d177556e0` has 19 uncommitted source/test modifications. Supplied focused independent review passed A/B/C; retained final validation **1,036 tests / 1,084 subtests, zero failures**, compileall and diff check passed. No rerun for documentation and no release/deployment/live acceptance claimed. **Stage B remains NO-GO for deployment.**
+- Completed Stage B checkpoint `ae4a974692aae1300c97845fcc32d4cfa6c2bdea` (`ae4a974692aa`) is committed and pushed on `fix/control-authority-safety`. PR #20 is open against `main`, not merged. Prepare **2.3.60-haos71** in exactly five existing release markers; production logic/tests remain identical to that checkpoint. Proposed tag `v2.3.60-haos71` is not created. The candidate is not published, installed or live-proven. All nine operational issues O1-O9 remain open. Supplied focused independent review passed A/B/C; retained final validation **1,036 tests / 1,084 subtests, zero failures**, compileall and diff check passed. No full-suite rerun for version-only preparation; existing release consistency tests, external-cache compileall and complete diff/scope checks are required before the authorised preparation commit/push. Publication and supervised installation/live acceptance require separate approval. Git tag/release and public GHCR version manifest were absent at preflight; package-version listing lacks `read:packages` permission. **Stage B remains NO-GO for deployment.**
 - Latest operator-reported live `.70 / 2.3.59-haos70` at `08f4daf53941bd850a4fe392b458c42b1df68b47`; protected rollback `.65 / 2.3.54-haos65` at `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Older release-preparation entries below are historical, not current live status.
 
 ## 2.3.59-haos70 - historical local preparation - 2026-10-13

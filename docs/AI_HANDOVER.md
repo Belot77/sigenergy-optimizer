@@ -6,8 +6,8 @@ Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STAT
 
 ## Current Stage B checkpoint
 
-- Writable worktree `C:\Projects\sigenergy_optimizer-authority-stage-b`; verified branch `fix/control-authority-safety`, HEAD `2a60a62097d16344711a64cf96e5e52d177556e0`, origin `https://github.com/Belot77/sigenergy-optimizer`.
-- Current worktree is dirty with exactly **25 modified, unstaged files: 19 source/test files plus six approved documents**; nothing staged or untracked. The original 19 remain uncommitted and byte-preserved during documentation work. No staging, commit, publication or live action is authorised by documentation completion.
+- Writable worktree `C:\Projects\sigenergy_optimizer-authority-stage-b`; branch `fix/control-authority-safety`, origin `https://github.com/Belot77/sigenergy-optimizer`. Completed Stage B checkpoint: `ae4a974692aae1300c97845fcc32d4cfa6c2bdea` (`ae4a974692aa`), committed and pushed. PR #20 is open against `main`, not merged.
+- Release candidate **2.3.60-haos71** is prepared with all five release markers aligned. This release-preparation commit contains only those markers and four approved documents; Stage B safety code/tests remain identical to the completed checkpoint. Candidate is not tagged, published, installed or live-proven.
 - Stage B implementation completed, including narrow Medium-over-Evening Boost priority correction. Supplied independent focused review passed corrections A/B/C. Retained final validation: **1,036 tests / 1,084 subtests, zero failures**; compileall and diff check passed. No full-suite/compileall rerun for documentation.
 - **No supervised live acceptance. Stage B remains NO-GO for deployment.** Review/test success does not prove live settlement.
 
@@ -29,20 +29,16 @@ Preserve current Automated/Unknown/confirmed Manual-Force distinctions, dispatch
 
 ## Exact continuation sequence
 
-Documentation review passed on 16 October 2026. The exact next action is to obtain explicit approval to stage the identified 25 files and create one local development checkpoint commit; no Git mutation is authorised yet.
+The operator authorised one normal `.71` release-preparation commit and push on `fix/control-authority-safety`. The earlier 25-file development checkpoint is completed at `ae4a974692aa`; its pre-commit approval and dirty-state descriptions are superseded. PR #20 remains open and unmerged.
 
-1. Review this documentation-only change.
-2. Obtain separate approval for staging and committing the development checkpoint.
-3. Obtain separate approval for any publication, release or installation.
-4. Plan supervised live acceptance with .65 rollback ready.
-5. Capture actual inverter state and physical-flow evidence.
-6. Close or explicitly retain unresolved operational bugs based on evidence.
-7. Proceed to the short control-ownership audit and existing approved roadmap.
+1. Obtain separate approval for publication, including any merge, tag-triggered image build and release. Proposed tag `v2.3.60-haos71` is not created by this preparation.
+2. Obtain separate approval for supervised installation and live acceptance with .65 rollback ready.
+3. Capture actual inverter state and physical-flow evidence.
+4. Close or explicitly retain unresolved operational bugs based on evidence.
+5. Proceed to the short control-ownership audit and existing approved roadmap.
 
 Before any separately approved live acceptance, verify actual source/build, effective settings, current authority and .65 rollback readiness; plan supervision and explicit stop/rollback conditions. Capture timestamped requested/observed EMS, PV MAX, import/export ceilings, ESS limits, SoC, battery/PV/grid flows and reason/owner. Service-call success is not settlement.
 
 Preserve the full approved roadmap order: ownership audit -> architecture -> project cleanup -> full GUI/UX -> Climate Manager integration. Climate Manager broadly works and is not the current priority.
 
-After an approved commit, report the actual new SHA, exact committed file list and verified Git cleanliness. The HEAD and dirty-state statements above describe this pre-commit checkpoint; they do not identify the future commit. Any later documentation reconciliation must preserve this distinction and requires its own scoped approval; do not amend or silently create a second commit.
-
-Recommended next Codex session: **CURRENT; Medium reasoning; Standard speed** for the approved local checkpoint operation; use NEW only if this session is unavailable or confused. Any later safety-sensitive live-acceptance planning requires its own approved scope; do not infer approval from this recommendation.
+Release validation: run the existing release-version consistency tests, compileall with an external cache, complete diff review and exact nine-file scope/marker-only checks. Retain the final full-suite evidence above; do not rerun the full suite for version-only preparation. Git tag/release absence and public GHCR version-manifest absence were reconfirmed before preparation; GitHub package listing lacks `read:packages` permission. Recheck publication identities at the separately approved publication gate.

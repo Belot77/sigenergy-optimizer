@@ -12,10 +12,10 @@ Last consolidated: 2026-10-16
 - Preserve .65 rollback readiness before any later supervised live testing. Passing tests and successful service calls do not prove inverter settlement.
 ## Active Stage B candidate and validation
 
-- Verified local worktree: `C:\Projects\sigenergy_optimizer-authority-stage-b`; branch `fix/control-authority-safety`; HEAD `2a60a62097d16344711a64cf96e5e52d177556e0`; origin `https://github.com/Belot77/sigenergy-optimizer`.
-- Preflight: exactly **19 modified, unstaged source/test files**, no staged or untracked files. All 19 remain uncommitted and must be preserved byte-for-byte during this documentation-only checkpoint. The six-document delta is additional to those 19 files: current status is **25 modified, unstaged files**, nothing staged or untracked.
+- Worktree: `C:\Projects\sigenergy_optimizer-authority-stage-b`; branch `fix/control-authority-safety`; origin `https://github.com/Belot77/sigenergy-optimizer`. Completed Stage B checkpoint **`ae4a974692aae1300c97845fcc32d4cfa6c2bdea`** (`ae4a974692aa`) is committed and pushed. PR #20 is **open against `main`, not merged**. The earlier 25-file dirty/pre-commit checkpoint is complete.
+- Candidate **2.3.60-haos71** is prepared in the five existing release markers only, with four approved documentation updates. Production logic and tests remain identical to `ae4a974692aa`. The candidate is not tagged, published, installed or live-proven. Proposed tag: `v2.3.60-haos71`; no tag is created by preparation.
 - Stage B implementation is **completed**, including the narrow Medium-over-Evening Boost priority correction and authority/actuator safety repair. Defects A, B and C are corrected; the supplied independent focused review passed all three corrections.
-- Retained final full-suite result supplied for this checkpoint: **1,036 tests / 1,084 subtests, zero failures**. Compileall and `git diff --check` passed. Tests and compileall are not rerun for this documentation-only task; the documentation diff check is separate.
+- Retained final full-suite result supplied for this checkpoint: **1,036 tests / 1,084 subtests, zero failures**. Compileall and `git diff --check` passed. The full suite is not rerun for version-only preparation; release consistency, compileall with an external cache, diff and exact-scope checks are the preparation gate.
 - **No supervised live acceptance yet. Stage B remains NO-GO for deployment.** Automated validation and independent code review do not prove inverter settlement or physical flow.
 
 ### Completed safety corrections
@@ -104,16 +104,16 @@ The `.68` sequence remains mandatory: close export -> fresh trusted observed clo
 - No HA settings or inverter controls are written by this checkpoint.
 ## Next action and remaining gates
 
-Documentation review passed on 16 October 2026. The exact next action is separate approval to stage the identified 25 files and create one local development checkpoint commit. Documentation completion authorises no later step. The sequence below remains authoritative; its documentation-review step is complete.
+The development checkpoint is completed at `ae4a974692aa`. The operator authorised one normal `.71` metadata/documentation commit and branch push; the previous staging/commit approval sequence and dirty-state snapshot are superseded. PR #20 remains open, not merged.
 
-After any approved commit, report the actual new SHA, committed file list and verified cleanliness. Current HEAD/dirty-state descriptions here are a pre-commit snapshot. A later documentation-state reconciliation requires scoped approval; no amend or automatic second commit is included.
+Release identity preflight reconfirmed the proposed Git tag and GitHub release absent, with no public GHCR manifest for `ghcr.io/belot77/sigenergy-optimizer:2.3.60-haos71` (404 `MANIFEST_UNKNOWN`). GitHub package-version listing returned 403 because `read:packages` is unavailable; publication must recheck identities and shared image aliases before any build. No image is published here.
 
-1. Review this documentation-only change.
-2. Obtain separate approval for staging and committing the development checkpoint.
-3. Obtain separate approval for any publication, release or installation.
-4. Plan supervised live acceptance with .65 rollback ready.
-5. Capture actual inverter state and physical-flow evidence.
-6. Close or explicitly retain unresolved operational bugs based on evidence.
-7. Proceed to the short control-ownership audit and existing approved roadmap.
+1. Obtain separate approval for publication, including any merge, tag-triggered image build and release.
+2. Obtain separate approval for supervised installation/live acceptance with .65 rollback ready.
+3. Capture actual inverter state and physical-flow evidence.
+4. Close or explicitly retain all nine unresolved operational issues O1-O9 based on evidence.
+5. Proceed to the short control-ownership audit and existing approved roadmap.
+
+Stage B remains **NO-GO for deployment**. Reported live `.70` and protected `.65` rollback are unchanged.
 
 The approved roadmap order remains authoritative, including architecture, project cleanup and full GUI/UX work before Climate Manager integration. Climate Manager broadly works and is not the current priority. Before later authorised live work, verify effective settings/current authority and capture timestamped EMS, PV MAX, import/export ceilings, ESS limits, SoC, battery/PV/grid flows and reason/owner with explicit stop/rollback conditions.
