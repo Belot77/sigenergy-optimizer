@@ -1,6 +1,15 @@
 # Changelog
 
-## 2.3.59-haos70 - locally prepared only - 2026-10-13
+## Unreleased development - Stage B - 2026-10-16
+
+- Completed candidate authority/actuator safety correction: refresh Automated ownership and observed Remote EMS ON at dispatch, reject conflicting actuator observations, and require request-specific post-dispatch settlement of the intended export target before deliberate discharge.
+- Keep independently owned ESS charge/discharge restrictions through successful fallback, alongside Demand Window import and restrictive PV protections; recovery releases only fallback-owned restrictions.
+- Keep pending authenticated Force requests through unchanged Automated selector reports; require a verified newer selector state transition for supersession and stop subsequent old-request writes/retries. Preserve Manual/Force targets, including 25 kW, and ordinary verified unattended restart/auto-enable.
+- Include the narrow Medium-over-Evening Boost priority correction; broader oscillation, reserve and physical acceptance remain open in `CURRENT_STATE.md` O1-O9.
+- Candidate `fix/control-authority-safety` at HEAD `2a60a62097d16344711a64cf96e5e52d177556e0` has 19 uncommitted source/test modifications. Supplied focused independent review passed A/B/C; retained final validation **1,036 tests / 1,084 subtests, zero failures**, compileall and diff check passed. No rerun for documentation and no release/deployment/live acceptance claimed. **Stage B remains NO-GO for deployment.**
+- Latest operator-reported live `.70 / 2.3.59-haos70` at `08f4daf53941bd850a4fe392b458c42b1df68b47`; protected rollback `.65 / 2.3.54-haos65` at `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Older release-preparation entries below are historical, not current live status.
+
+## 2.3.59-haos70 - historical local preparation - 2026-10-13
 
 - Published hotfix source: `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`; published documentation and verified clean pre-preparation HEAD: `a562fd269d4dea651afc39b535745a866f656295`. Independent GitHub code audit reported **GO for the bounded hotfix**. Any future release-preparation commit will contain this local metadata/documentation patch and have its own SHA; it is not assigned or claimed here.
 - Candidate **2.3.59-haos70 is locally prepared only**, with all five established version markers aligned. It is not committed, pushed, tagged, built, released, installed or live-accepted. Production differences from the published hotfix are limited to the FastAPI version and `_RUNTIME_SIGNATURE`; tests, control behavior, contract, Dockerfile and build workflow are unchanged.

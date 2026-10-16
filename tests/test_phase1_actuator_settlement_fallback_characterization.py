@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
 
 from app.models import (
@@ -68,6 +69,47 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
     """Package 5 characterization; production policy remains deliberately unchanged."""
 
     MORNING = datetime(2026, 1, 15, 9, 0, 0)
+
+    @staticmethod
+    def _supply_owner(optimizer, ha, when, mode):
+        # Ownership is explicit test evidence, never inferred from a software
+        # default or successful actuator request. Manual callers retain Manual.
+        reported = when.isoformat()
+        for entity, value in (
+            (optimizer.cfg.sigenergy_mode_select, mode),
+            (optimizer.cfg.ha_control_switch, "on"),
+        ):
+            ha.states[entity] = {
+                "entity_id": entity, "state": value, "attributes": {},
+                "last_updated": reported, "last_reported": reported,
+            }
+
+    @contextmanager
+    def _automated_fallback_clock(self, optimizer, ha, when):
+        with later_msc_report_clock(ha, when) as moment:
+            self._supply_owner(optimizer, ha, moment[0], optimizer.cfg.automated_option)
+            original_bulk_states = ha.bulk_states
+            closure_report_pending = True
+
+            async def later_closure_report(entity_ids):
+                nonlocal closure_report_pending
+                entity = optimizer.cfg.grid_export_limit
+                if (
+                    closure_report_pending and entity in entity_ids
+                    and ha.calls.count(("set_number", entity, 0.01)) == 2
+                ):
+                    # Only opted-in fixtures supply this independent physical
+                    # report. An accepted close command alone proves nothing.
+                    moment[0] += timedelta(milliseconds=1)
+                    ha._record_state_value(entity, 0.01)
+                    closure_report_pending = False
+                return await original_bulk_states(entity_ids)
+
+            ha.bulk_states = later_closure_report
+            try:
+                yield
+            finally:
+                ha.bulk_states = original_bulk_states
 
     @staticmethod
     def _fresh(value: float | str | bool) -> HVACObservedValue:
@@ -295,6 +337,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
             settle_selects=False,
         )
         optimizer = self._morning_slow_optimizer(ha)
+        self._supply_owner(optimizer, ha, datetime.now(timezone.utc), optimizer.cfg.automated_option)
         state = self._morning_slow_state(
             battery_discharge_kw=0.273,
             grid_export_kw=1.837,
@@ -317,6 +360,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         )
         optimizer = self._morning_slow_optimizer(ha)
         cfg = optimizer.cfg
+        self._supply_owner(optimizer, ha, datetime.now(timezone.utc), cfg.automated_option)
         ha._record_state_value(cfg.grid_export_limit, 25.0)
         state = self._morning_slow_state(
             battery_discharge_kw=0.273,
@@ -356,6 +400,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         )
         optimizer = self.optimizer(ha)
         cfg = optimizer.cfg
+        self._supply_owner(optimizer, ha, datetime.now(timezone.utc), cfg.automated_option)
         ha._record_state_value(cfg.grid_export_limit, 25.0)
         ha.outcomes[("set_number", cfg.grid_import_limit)] = [False]
         state = self._automatic_apply_state(
@@ -403,7 +448,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         decision = self._closed_decision()
         decision.trace_values["battery_export_owner"] = "none"
 
-        with later_msc_report_clock(ha, self.FIXED_AFTERNOON):
+        with self._automated_fallback_clock(optimizer, ha, self.FIXED_AFTERNOON):
             result = asyncio.run(optimizer._apply(state, decision))
 
         self.assertEqual(
@@ -461,7 +506,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
             ess_discharge_limit_entity_max_kw=7.5,
         )
 
-        with later_msc_report_clock(ha, self.FIXED_AFTERNOON):
+        with self._automated_fallback_clock(optimizer, ha, self.FIXED_AFTERNOON):
             result = asyncio.run(optimizer._apply(state, self._closed_decision()))
 
         self.assertEqual(
@@ -493,6 +538,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         ha = _ScriptedActuatorHA(settle_numbers=False)
         optimizer = self.optimizer(ha)
         cfg = optimizer.cfg
+        self._supply_owner(optimizer, ha, datetime.now(timezone.utc), cfg.automated_option)
         ha._record_state_value(cfg.grid_export_limit, 25.0)
         ha.outcomes[("set_number", cfg.grid_export_limit)] = [False, True]
         state = self._automatic_apply_state(
@@ -532,7 +578,10 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
             demand_window_observed=True,
         )
 
-        result = asyncio.run(optimizer._apply(state, self._closed_decision()))
+        # Closure is observed, but the intentionally absent MSC report remains
+        # absent. This negative case cannot recover through command acceptance.
+        with self._automated_fallback_clock(optimizer, ha, datetime.now(timezone.utc)):
+            result = asyncio.run(optimizer._apply(state, self._closed_decision()))
 
         self.assertEqual(
             [
@@ -561,6 +610,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         ha = _ScriptedActuatorHA()
         optimizer = self.optimizer(ha)
         cfg = optimizer.cfg
+        self._supply_owner(optimizer, ha, datetime.now(timezone.utc), cfg.automated_option)
         ha.outcomes = {
             ("set_number", cfg.grid_export_limit): [False, False],
             ("select_option", cfg.ems_mode_select): [False],
@@ -585,6 +635,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         ha = _ScriptedActuatorHA()
         optimizer = self.optimizer(ha)
         cfg = optimizer.cfg
+        self._supply_owner(optimizer, ha, datetime.now(timezone.utc), cfg.automated_option)
         ha.outcomes = {
             ("set_number", cfg.grid_export_limit): [False, False],
             ("select_option", cfg.ems_mode_select): [False],
@@ -610,6 +661,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         ha = _ScriptedActuatorHA()
         optimizer = self.optimizer(ha)
         cfg = optimizer.cfg
+        self._supply_owner(optimizer, ha, datetime.now(timezone.utc), cfg.automated_option)
         ha.outcomes[("set_number", cfg.grid_export_limit)] = [
             False,
             RuntimeError("fallback export request failed"),
@@ -640,6 +692,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         ha = _ScriptedActuatorHA()
         optimizer = self.optimizer(ha)
         cfg = optimizer.cfg
+        self._supply_owner(optimizer, ha, datetime.now(timezone.utc), cfg.automated_option)
         ha.state_values = {
             cfg.ems_mode_select: MODE_CMD_CHARGE_GRID,
             cfg.grid_export_limit: 25.0,
@@ -661,6 +714,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         ha = _ScriptedActuatorHA()
         optimizer = self.optimizer(ha)
         cfg = optimizer.cfg
+        self._supply_owner(optimizer, ha, datetime.now(timezone.utc), cfg.automated_option)
         ha.state_values = {
             cfg.ems_mode_select: MODE_CMD_CHARGE_GRID,
             cfg.grid_export_limit: 25.0,
@@ -680,6 +734,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         ha = _ScriptedActuatorHA()
         optimizer = self.optimizer(ha)
         cfg = optimizer.cfg
+        self._supply_owner(optimizer, ha, datetime.now(timezone.utc), cfg.automated_option)
         ha.outcomes[("set_number", cfg.grid_export_limit)] = [False, True]
         decision = self._closed_decision(pv_max_power_limit=10.0)
 
@@ -691,6 +746,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         ha = _ScriptedActuatorHA()
         optimizer = self.optimizer(ha)
         cfg = optimizer.cfg
+        self._supply_owner(optimizer, ha, datetime.now(timezone.utc), cfg.automated_option)
         ha.outcomes[("set_number", cfg.pv_max_power_limit)] = [False]
         state = self._automatic_apply_state(current_export_limit=0.01)
         decision = self._closed_decision(pv_max_power_limit=10.0)
@@ -789,6 +845,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
     ) -> None:
         ha = RecordingHA()
         optimizer = self.optimizer(ha)
+        self._supply_owner(optimizer, ha, datetime.now(timezone.utc), optimizer.cfg.manual_option)
         state = self._automatic_apply_state(
             sigenergy_mode=optimizer.cfg.manual_option,
             current_export_limit=7.0,

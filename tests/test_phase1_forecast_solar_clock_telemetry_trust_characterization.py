@@ -34,6 +34,7 @@ class Phase1ForecastSolarClockTelemetryTrustCharacterizationTests(
         return {
             "state": state,
             "attributes": dict(attributes or {}),
+            "last_updated": reported_utc.isoformat(),
             "last_reported": reported_utc.isoformat(),
         }
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import unittest
 from unittest.mock import AsyncMock
+from datetime import datetime, timezone
 
 from app.models import Decision, SolarState
 from app.optimizer import (
@@ -15,9 +16,24 @@ from haos49_characterization_helpers import (
     Haos49CharacterizationCase,
     RecordingHA,
 )
+from test_msc_baseline_overlay_contract import later_msc_report_clock
 
 
 class Haos49FailureCharacterizationTests(Haos49CharacterizationCase):
+    @staticmethod
+    def _supply_current_owner(optimizer, ha, mode, remote):
+        reported = datetime.now(timezone.utc).isoformat()
+        for entity, value in (
+            (optimizer.cfg.sigenergy_mode_select, mode),
+            (optimizer.cfg.ha_control_switch, remote),
+        ):
+            ha.states[entity] = {
+                "state": value, "last_updated": reported, "last_reported": reported,
+            }
+        for entity, value in list(ha.state_values.items()):
+            if entity not in ha._state_value_metadata:
+                ha._record_state_value(entity, value)
+
     def assert_outputs(
         self,
         decision,
@@ -209,6 +225,7 @@ class Haos49FailureCharacterizationTests(Haos49CharacterizationCase):
         )
         self.assertTrue(decision.needs_ha_control_switch)
 
+        self._supply_current_owner(optimizer, ha, optimizer.cfg.automated_option, "off")
         asyncio.run(optimizer._apply(state, decision))
 
         enable_call = ("turn_on", optimizer.cfg.ha_control_switch, True)
@@ -249,6 +266,7 @@ class Haos49FailureCharacterizationTests(Haos49CharacterizationCase):
             decision,
             (MODE_CMD_CHARGE_GRID, 0.0, 25.0, 0.1, 25.0, 0.01),
         )
+        self._supply_current_owner(optimizer, ha, optimizer.cfg.automated_option, "on")
         asyncio.run(optimizer._apply(state, decision))
 
         self.assertFalse(any(call[0] == "turn_on" for call in ha.calls))
@@ -269,6 +287,7 @@ class Haos49FailureCharacterizationTests(Haos49CharacterizationCase):
         }
         optimizer._wait_for_exact_entity_state = AsyncMock(return_value=False)
 
+        self._supply_current_owner(optimizer, ha, optimizer.cfg.automated_option, "on")
         asyncio.run(optimizer._apply(state, decision))
 
         self.assertNotIn(
@@ -279,6 +298,7 @@ class Haos49FailureCharacterizationTests(Haos49CharacterizationCase):
             current_export_limit=0.01,
         )
         closed_decision = self.decide(optimizer, closed_state, self.FIXED_AFTERNOON)
+        self._supply_current_owner(optimizer, ha, optimizer.cfg.automated_option, "on")
         asyncio.run(optimizer._apply(closed_state, closed_decision))
 
         self.assertIn(("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF), ha.calls)
@@ -458,7 +478,9 @@ class Haos49FailureCharacterizationTests(Haos49CharacterizationCase):
                 assert targets is not None
                 ha.state_values[optimizer.cfg.ems_mode_select] = targets["ems_mode"]
 
-                asyncio.run(optimizer._apply(state, Decision()))
+                self._supply_current_owner(optimizer, ha, mode, "unavailable")
+                with later_msc_report_clock(ha, datetime.now(timezone.utc)):
+                    asyncio.run(optimizer._apply(state, Decision()))
 
                 self.assertIn(
                     ("select_option", cfg.ems_mode_select, targets["ems_mode"]),

@@ -481,6 +481,11 @@ class SigEnergyOptimizer:
         self._last_battery_full_notice_at: Optional[datetime] = None
         self._last_battery_empty_notice_at: Optional[datetime] = None
         self._manual_mode_override: Optional[str] = None
+        self._manual_mode_requested_at: Optional[float] = None
+        self._last_observed_control_mode: Optional[str] = None
+        # Recorded immediately before dispatch, after authority refresh. These
+        # process-local boundaries are never substitutes for later HA reports.
+        self._number_settlement_requests: dict[str, tuple[float, float, bool]] = {}
         self._manual_ess_charge_override_kw: Optional[float] = None
         self._manual_ess_discharge_override_kw: Optional[float] = None
         self._morning_slow_charge_runtime_disabled: bool = False
@@ -2006,6 +2011,15 @@ class SigEnergyOptimizer:
     ) -> dict[str, dict[str, Any]]:
         """Merge only correlated State-object ``last_reported`` metadata."""
         report_metadata_reader = getattr(self.ha, "get_state_report_metadata", None)
+        mode_entity = self.cfg.sigenergy_mode_select
+        mode_obj = bulk.get(mode_entity)
+        if mode_entity in entity_ids and isinstance(mode_obj, dict):
+            # Keep invalid direct chronology rejected even if sanitizing an
+            # unreliable REST last_reported would otherwise hide the defect.
+            mode_obj = dict(mode_obj)
+            if self._state_metadata_timestamp(mode_obj) is None:
+                mode_obj["_control_mode_metadata_conflict"] = True
+            bulk[mode_entity] = mode_obj
         if not callable(report_metadata_reader):
             return bulk
 
@@ -2035,8 +2049,6 @@ class SigEnergyOptimizer:
                 continue
             if metadata.get("entity_id") != entity_id:
                 continue
-            if snapshot.get("state") != metadata.get("state"):
-                continue
             snapshot_updated_at = self._parse_aware_metadata_timestamp(
                 snapshot.get("last_updated")
             )
@@ -2046,11 +2058,38 @@ class SigEnergyOptimizer:
             metadata_reported_at = self._parse_aware_metadata_timestamp(
                 metadata.get("last_reported")
             )
+            if snapshot.get("state") != metadata.get("state") or (
+                snapshot_updated_at != metadata_updated_at
+            ):
+                if entity_id in {
+                    self.cfg.grid_export_limit, self.cfg.grid_import_limit,
+                    self.cfg.ems_mode_select, self.cfg.pv_max_power_limit,
+                    self.cfg.ess_max_charging_limit, self.cfg.ess_max_discharging_limit,
+                }:
+                    # Neither conflicting read can prove actuator settlement.
+                    rejected = dict(snapshot)
+                    rejected["_actuator_metadata_conflict"] = True
+                    bulk[entity_id] = rejected
+                if (
+                    entity_id in {mode_entity, self.cfg.ha_control_switch}
+                    and metadata_updated_at is not None
+                    and metadata_reported_at is not None
+                    and metadata_reported_at >= metadata_updated_at
+                    and (snapshot_updated_at is None or metadata_updated_at >= snapshot_updated_at)
+                    and metadata_reported_at <= datetime.now(timezone.utc) + timedelta(seconds=5)
+                ):
+                    # A conflicting later read revokes authority. It does not
+                    # manufacture a confirmed operator selection from metadata.
+                    rejected = dict(snapshot)
+                    rejected["_control_mode_metadata_conflict"] = True
+                    bulk[entity_id] = rejected
+                continue
             if (
                 snapshot_updated_at is None
                 or metadata_updated_at is None
                 or metadata_reported_at is None
                 or snapshot_updated_at != metadata_updated_at
+                or metadata_reported_at < metadata_updated_at
             ):
                 continue
             enriched = dict(snapshot)
@@ -2063,11 +2102,15 @@ class SigEnergyOptimizer:
         cls,
         obj: dict[str, Any],
     ) -> Optional[datetime]:
-        for field in ("last_reported", "last_updated"):
-            parsed = cls._parse_aware_metadata_timestamp(obj.get(field))
-            if parsed is not None:
-                return parsed
-        return None
+        if obj.get("_actuator_metadata_conflict"):
+            return None
+        updated = cls._parse_aware_metadata_timestamp(obj.get("last_updated"))
+        if updated is None:
+            return None
+        if "last_reported" not in obj:
+            return updated
+        reported = cls._parse_aware_metadata_timestamp(obj.get("last_reported"))
+        return reported if reported is not None and reported >= updated else None
 
     @classmethod
     def _state_metadata_is_fresh(
@@ -2089,6 +2132,8 @@ class SigEnergyOptimizer:
     async def _read_trusted_live_number(
         self,
         entity_id: str,
+        *,
+        observed_after: Optional[float] = None,
     ) -> tuple[Optional[float], bool]:
         """Read a non-negative grid limit and its independently proven liveness."""
         bulk = await self.ha.bulk_states([entity_id])
@@ -2112,7 +2157,98 @@ class SigEnergyOptimizer:
             self.cfg.hvac_solar_data_max_age_seconds,
             observed_at=datetime.now(timezone.utc),
         )
+        reported = self._state_metadata_timestamp(obj)
+        if observed_after is not None:
+            trusted = bool(trusted and reported is not None and reported.timestamp() > observed_after)
         return value, trusted
+
+    def _control_mode_observation(
+        self, obj: Optional[dict[str, Any]], *, observed_at: datetime,
+    ) -> HVACObservedValue:
+        """Recognize ownership from a current read, never a default or cache."""
+        if not isinstance(obj, dict) or obj.get("_control_mode_metadata_conflict"):
+            return HVACObservedValue()
+        value = str(obj.get("state", "")).strip()
+        if value not in {
+            self.cfg.automated_option, self.cfg.manual_option,
+            self.cfg.full_export_option, self.cfg.full_import_option,
+            self.cfg.full_import_pv_option, self.cfg.block_flow_option,
+        }:
+            return HVACObservedValue()
+        reported = self._state_metadata_timestamp(obj)
+        chronology_valid = bool(
+            reported is not None and reported <= observed_at + timedelta(seconds=5)
+        )
+        fresh = chronology_valid and (
+            str(self.cfg.sigenergy_mode_select).startswith("input_select.")
+            or self._state_metadata_is_fresh(
+                obj, self.cfg.hvac_solar_data_max_age_seconds, observed_at=observed_at,
+            )
+        )
+        return HVACObservedValue(
+            value=value, available=True, fresh=bool(fresh),
+            observed_at_ts=reported.timestamp() if reported is not None else None,
+        )
+
+    def _remember_control_mode(
+        self, observation: HVACObservedValue, state_obj: Optional[dict[str, Any]] = None,
+    ) -> None:
+        if not (observation.available and observation.fresh):
+            return
+        mode = str(observation.value)
+        # Report freshness proves currentness, not a new operator selection.
+        # A pending authenticated request yields only to a verified state change
+        # strictly after that request; an old pin has no such claim.
+        if self._manual_mode_override and mode != self._manual_mode_override:
+            if self._manual_mode_requested_at is not None:
+                changed = self._parse_aware_metadata_timestamp((state_obj or {}).get("last_changed"))
+                updated = self._parse_aware_metadata_timestamp((state_obj or {}).get("last_updated"))
+                if not (
+                    changed is not None and updated is not None
+                    and observation.observed_at_ts is not None
+                    and self._manual_mode_requested_at < changed.timestamp()
+                    <= updated.timestamp() <= observation.observed_at_ts
+                ):
+                    return
+            self._manual_mode_override = None
+            self._manual_mode_requested_at = None
+            self._manual_ess_charge_override_kw = None
+            self._manual_ess_discharge_override_kw = None
+        self._last_observed_control_mode = mode
+
+    async def _read_control_authority(
+        self, evidence: Optional[dict[str, dict[str, Any]]] = None,
+    ) -> tuple[HVACObservedValue, str]:
+        """Refresh ownership and Remote EMS together; evaluate after all awaits."""
+        entities = [self.cfg.sigenergy_mode_select, self.cfg.ha_control_switch]
+        if evidence is not None:
+            entities.extend(entity for entity in evidence if entity not in entities)
+        try:
+            bulk = await self.ha.bulk_states(entities)
+            bulk = await self._enrich_state_report_metadata(
+                bulk, entities,
+            )
+            if evidence is not None:
+                for entity in evidence:
+                    evidence[entity] = bulk.get(entity, {})
+            observation = self._control_mode_observation(
+                bulk.get(entities[0]), observed_at=datetime.now(timezone.utc),
+            )
+            self._remember_control_mode(observation, bulk.get(entities[0]))
+            switch = bulk.get(entities[1], {})
+            switch_state = str(switch.get("state", "")).strip().lower()
+            if (
+                not str(entities[1]).startswith("switch.")
+                or switch_state not in {"on", "off"}
+                or switch.get("_control_mode_metadata_conflict")
+            ):
+                switch_state = "unknown"
+            return observation, switch_state
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Current control authority read failed: %s", exc)
+            return HVACObservedValue(), "unknown"
 
     async def _read_state(self) -> SolarState:
         cfg = self.cfg
@@ -2180,6 +2316,7 @@ class SigEnergyOptimizer:
             cfg.grid_import_limit,
             cfg.ems_mode_select,
             cfg.demand_window_sensor,
+            cfg.sigenergy_mode_select,
         ))))
         bulk = await self._enrich_state_report_metadata(bulk, report_entity_ids)
 
@@ -2302,24 +2439,10 @@ class SigEnergyOptimizer:
             else:
                 sun_observation = HVACObservedValue()
 
-        configured_control_modes = {
-            cfg.automated_option,
-            cfg.full_export_option,
-            cfg.full_import_option,
-            cfg.full_import_pv_option,
-            cfg.block_flow_option,
-            cfg.manual_option,
-        }
-        control_mode_observation = _observed_text(
-            cfg.sigenergy_mode_select,
-            current_when_present=str(cfg.sigenergy_mode_select).startswith("input_select."),
-            max_age_seconds=live_max_age,
+        control_mode_observation = self._control_mode_observation(
+            bulk.get(cfg.sigenergy_mode_select), observed_at=observed_at,
         )
-        if (
-            control_mode_observation.available
-            and control_mode_observation.value not in configured_control_modes
-        ):
-            control_mode_observation = HVACObservedValue()
+        self._remember_control_mode(control_mode_observation, bulk.get(cfg.sigenergy_mode_select))
 
         pv_power_observation = _observed_number(
             cfg.pv_power_sensor,
@@ -3010,26 +3133,20 @@ class SigEnergyOptimizer:
         s.last_import_notification = _sv(cfg.last_import_notification, "stopped")
 
         # ---- Mode select ----------------------------------------------
-        sigenergy_mode_obj = bulk.get(cfg.sigenergy_mode_select)
-        sigenergy_mode_raw = (
-            str(sigenergy_mode_obj.get("state", "")).strip()
-            if sigenergy_mode_obj
-            else ""
-        )
         s.sigenergy_mode_observed = bool(
-            sigenergy_mode_raw
-            and sigenergy_mode_raw.lower() not in unavailable_states
+            control_mode_observation.available and control_mode_observation.fresh
         )
         last_mode = self._last_state.sigenergy_mode if self._last_state else ""
-        mode_default = self._manual_mode_override or last_mode or cfg.automated_option
-        s.sigenergy_mode = _sv(cfg.sigenergy_mode_select, mode_default)
-        if self._manual_mode_override and s.sigenergy_mode in {cfg.automated_option, ""}:
-            logger.warning(
-                "Mode selector read as '%s' while manual override '%s' is active; preserving manual mode",
-                s.sigenergy_mode,
-                self._manual_mode_override,
-            )
+        mode_default = (
+            self._manual_mode_override or self._last_observed_control_mode
+            or last_mode or cfg.automated_option
+        )
+        s.sigenergy_mode = (
+            str(control_mode_observation.value) if s.sigenergy_mode_observed else mode_default
+        )
+        if self._manual_mode_override and s.sigenergy_mode != self._manual_mode_override:
             s.sigenergy_mode = self._manual_mode_override
+            s.sigenergy_mode_observed = False
 
         return s
 
@@ -4071,7 +4188,11 @@ class SigEnergyOptimizer:
                     )
                     or (
                         battery_export_tier == "medium"
-                        and not (evening_export_boost_active or surplus_bypass_for_policy or export_solar_override)
+                        and not (surplus_bypass_for_policy or export_solar_override)
+                        and (
+                            battery_export_proposal_qualified
+                            or not evening_export_boost_active
+                        )
                     )
                 )
             ):
@@ -6231,7 +6352,10 @@ class SigEnergyOptimizer:
             and self._msc_report_is_current(s, ems=True, after=transition.msc_requested_at)
         )
 
-    async def _live_msc_export_ready(self, *, require_closed: bool) -> bool:
+    async def _live_msc_export_ready(
+        self, *, require_closed: bool,
+        export_after: Optional[float] = None, msc_after: Optional[float] = None,
+    ) -> bool:
         """Recheck live provenance after awaits, immediately before permission."""
         entities = [self.cfg.ems_mode_select, self.cfg.grid_export_limit]
         bulk = await self.ha.bulk_states(entities)
@@ -6248,7 +6372,7 @@ class SigEnergyOptimizer:
             if entity_id == self.cfg.ems_mode_select:
                 if obj.get("state") != MODE_MAX_SELF:
                     return False
-                after = transition.msc_requested_at if transition else None
+                after = msc_after if msc_after is not None else transition.msc_requested_at if transition else None
             else:
                 try:
                     value = float(obj.get("state"))
@@ -6256,7 +6380,7 @@ class SigEnergyOptimizer:
                     return False
                 if not math.isfinite(value) or value < 0 or (require_closed and value > 0.011):
                     return False
-                after = transition.close_requested_at if transition else None
+                after = export_after if export_after is not None else transition.close_requested_at if transition else None
             if after is not None and (reported_at is None or reported_at.timestamp() <= after):
                 return False
         return True
@@ -6304,14 +6428,23 @@ class SigEnergyOptimizer:
         timeout_s: float = 4.0,
         tolerance: float = 0.011,
     ) -> bool:
+        # Automatic dispatch records the request after its authority refresh.
+        # Deliberate discharge needs the intended target, while safety closure
+        # and bounded PV corrections retain their separate upper-bound meaning.
+        request = self._number_settlement_requests.get(entity_id)
+        observed_after = request[1] if request is not None else None
+        exact_target = bool(request is not None and request[2])
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_s
         while loop.time() < deadline:
-            numeric_value, trusted = await self._read_trusted_live_number(entity_id)
+            numeric_value, trusted = await self._read_trusted_live_number(
+                entity_id, observed_after=observed_after,
+            )
             if (
                 trusted
                 and numeric_value is not None
                 and numeric_value <= maximum + tolerance
+                and (not exact_target or abs(numeric_value - maximum) <= tolerance)
             ):
                 return True
             await asyncio.sleep(0.3)
@@ -6379,7 +6512,159 @@ class SigEnergyOptimizer:
             ):
                 restrictive_pv_max_kw = min(restrictive_pv_max_kw, current_pv_max)
 
+        authority_revoked = False
+        had_automated_authority = False
+        last_mode_requested_at: Optional[float] = None
+
+        def _authority_paused(*, fallback_attempted: bool = False) -> _ActuatorApplicationResult:
+            self._msc_baseline_established = False
+            self._clear_solar_physical_relief(d, "control_authority_lost")
+            return _ActuatorApplicationResult(
+                succeeded=False, error="current Automated ownership or Remote EMS ON is unverified",
+                fallback_attempted=fallback_attempted,
+                fallback_succeeded=False if fallback_attempted else None,
+            )
+
+        async def _authority_permits(
+            *, restrictive: bool = False,
+            evidence: Optional[dict[str, dict[str, Any]]] = None,
+        ) -> bool:
+            nonlocal authority_revoked, had_automated_authority
+            ownership, remote = await self._read_control_authority(evidence)
+            observed = bool(ownership.available and ownership.fresh)
+            automated = bool(
+                observed and ownership.value == cfg.automated_option
+                and not self._manual_mode_override
+            )
+            if not automated or remote != "on":
+                authority_revoked = True
+            if automated and remote == "on" and not authority_revoked:
+                had_automated_authority = True
+                return True
+            # Unknown is not confirmed Manual/Force. Only already-owned safety
+            # restrictions may continue, with current control capability and no
+            # credible operator takeover, including one remembered before loss.
+            operator_mode = self._manual_mode_override or self._last_observed_control_mode
+            if self._last_state and self._last_state.sigenergy_mode != cfg.automated_option:
+                operator_mode = operator_mode or self._last_state.sigenergy_mode
+            return bool(
+                restrictive and had_automated_authority and remote == "on"
+                and not (observed and ownership.value != cfg.automated_option)
+                and operator_mode in {None, "", cfg.automated_option}
+            )
+
+        def _number_matches(obj: dict[str, Any], value: float, after: Optional[float], *, exact: bool) -> bool:
+            try:
+                current = float(obj.get("state"))
+            except (TypeError, ValueError, OverflowError):
+                return False
+            reported = self._state_metadata_timestamp(obj)
+            return bool(
+                math.isfinite(current) and current >= 0.0
+                and (abs(current - value) <= 0.011 if exact else current <= value + 0.001)
+                and reported is not None and (after is None or reported.timestamp() > after)
+                and self._state_metadata_is_fresh(
+                    obj, cfg.hvac_solar_data_max_age_seconds, observed_at=datetime.now(timezone.utc),
+                )
+            )
+
+        def _msc_matches(obj: dict[str, Any], after: Optional[float]) -> bool:
+            reported = self._state_metadata_timestamp(obj)
+            return bool(
+                obj.get("state") == MODE_MAX_SELF and reported is not None
+                and (after is None or reported.timestamp() > after)
+                and self._state_metadata_is_fresh(
+                    obj, cfg.hvac_solar_data_max_age_seconds, observed_at=datetime.now(timezone.utc),
+                )
+            )
+
+        async def _automatic_number(
+            entity: str, value: float, *, restrictive: bool = False, exact: bool = False,
+            recovery: Optional[tuple[float, float]] = None,
+        ) -> bool:
+            evidence: dict[str, dict[str, Any]] = {}
+            if recovery is not None or (entity == cfg.grid_export_limit and value > 0.011 and d.requires_verified_msc_before_export):
+                evidence[cfg.ems_mode_select] = {}
+                evidence[cfg.grid_export_limit] = {}
+            battery_discharge_capability = bool(
+                entity == cfg.ess_max_discharging_limit and value > 0.011
+                and d.export_intent == BATTERY_EXPORT
+            )
+            if battery_discharge_capability:
+                evidence[cfg.grid_export_limit] = {}
+            if not await _authority_permits(restrictive=restrictive, evidence=evidence):
+                return False
+            if recovery is not None:
+                if not (
+                    _msc_matches(evidence[cfg.ems_mode_select], recovery[1])
+                    and _number_matches(evidence[cfg.grid_export_limit], safe_export_close_kw, recovery[0], exact=False)
+                ):
+                    return False
+            elif cfg.ems_mode_select in evidence:
+                if not _msc_matches(evidence[cfg.ems_mode_select], last_mode_requested_at):
+                    return False
+                if self._msc_transition is not None and not _number_matches(
+                    evidence[cfg.grid_export_limit], safe_export_close_kw,
+                    self._msc_transition.close_requested_at, exact=False,
+                ):
+                    return False
+            if battery_discharge_capability:
+                request = self._number_settlement_requests.get(cfg.grid_export_limit)
+                intended = self._bound_grid_export_request_kw(s, d.export_limit)
+                after = request[1] if request is not None and abs(request[0] - intended) <= 0.001 else None
+                if not _number_matches(evidence[cfg.grid_export_limit], intended, after, exact=True):
+                    return False
+            requested_at = datetime.now(timezone.utc).timestamp()
+            self._number_settlement_requests[entity] = (value, requested_at, exact)
+            if entity == cfg.grid_export_limit and value <= 0.011 and self._msc_transition is not None:
+                self._msc_transition.close_requested_at = requested_at
+                self._msc_transition.close_request_state = s
+            return await ha.set_number(entity, value)
+
+        async def _automatic_mode(mode: str, *, restrictive: bool = False) -> bool:
+            nonlocal last_mode_requested_at
+            evidence = {cfg.grid_export_limit: {}} if mode in DISCHARGE_MODES else {}
+            if not await _authority_permits(restrictive=restrictive, evidence=evidence):
+                return False
+            if evidence:
+                request = self._number_settlement_requests.get(cfg.grid_export_limit)
+                if request is None or not _number_matches(
+                    evidence[cfg.grid_export_limit], request[0], request[1], exact=True,
+                ):
+                    return False
+            last_mode_requested_at = datetime.now(timezone.utc).timestamp()
+            if mode == MODE_MAX_SELF and self._msc_transition is not None:
+                self._msc_transition.msc_requested_at = last_mode_requested_at
+                self._msc_transition.msc_request_state = s
+            return await ha.select_option(cfg.ems_mode_select, mode)
+
+        async def _independent_restrictions() -> list[str]:
+            requests = [("grid import safety close", cfg.grid_import_limit, 0.01)]
+            if (
+                cfg.ess_max_charging_limit and d.ess_charge_limit <= 0.011
+                and d.trace_values.get("ess_charge_limit_owner") != "solar_surplus"
+            ):
+                requests.append(("ESS charge safety restriction", cfg.ess_max_charging_limit,
+                                 max(0.0, d.ess_charge_limit)))
+            if cfg.ess_max_discharging_limit and d.ess_discharge_limit <= 0.011:
+                requests.append(("ESS discharge safety restriction", cfg.ess_max_discharging_limit,
+                                 max(0.0, d.ess_discharge_limit)))
+            if restrictive_pv_max_kw is not None:
+                requests.append(("PV MAX safety restriction", cfg.pv_max_power_limit, restrictive_pv_max_kw))
+            failures = []
+            for label, entity, value in requests:
+                try:
+                    if await _automatic_number(entity, value, restrictive=True) is not True:
+                        failures.append(f"{label} returned failure")
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    failures.append(f"{label} raised {type(exc).__name__}: {exc}")
+            return failures
+
         async def _safe_fallback(reason: str) -> _ActuatorApplicationResult:
+            if not await _authority_permits(restrictive=True):
+                return _authority_paused()
             # Fallback owns its existing emergency sequence. Its service results
             # must not discharge the later automatic export-reopening barrier.
             self._msc_baseline_established = False
@@ -6419,33 +6704,44 @@ class SigEnergyOptimizer:
 
             await _attempt(
                 "grid export safety close",
-                lambda: ha.set_number(cfg.grid_export_limit, safe_export_close_kw),
+                lambda: _automatic_number(cfg.grid_export_limit, safe_export_close_kw, restrictive=True),
             )
-            msc_requested_at = datetime.now(timezone.utc).timestamp()
+            export_request = self._number_settlement_requests.get(cfg.grid_export_limit)
+            export_requested_at = export_request[1] if export_request else None
             await _attempt(
                 "Maximum Self Consumption fallback",
-                lambda: ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF),
+                lambda: _automatic_mode(MODE_MAX_SELF, restrictive=True),
             )
+            msc_requested_at = last_mode_requested_at
             demand_window_import_blocked = bool(
                 s.demand_window_active or not s.demand_window_observed
             )
             if demand_window_import_blocked:
                 await _attempt(
                     "Demand Window grid import safety close",
-                    lambda: ha.set_number(cfg.grid_import_limit, 0.01),
+                    lambda: _automatic_number(cfg.grid_import_limit, 0.01, restrictive=True),
+                )
+            if (
+                cfg.ess_max_charging_limit and d.ess_charge_limit <= 0.011
+                and d.trace_values.get("ess_charge_limit_owner") != "solar_surplus"
+            ):
+                await _attempt(
+                    "ESS charge safety restriction",
+                    lambda: _automatic_number(cfg.ess_max_charging_limit, max(0.0, d.ess_charge_limit), restrictive=True),
                 )
             if cfg.ess_max_discharging_limit:
                 await _attempt(
                     "ESS discharge safety clamp",
-                    lambda: ha.set_number(
+                    lambda: _automatic_number(
                         cfg.ess_max_discharging_limit,
                         safe_ess_discharge_close_kw,
+                        restrictive=True,
                     ),
                 )
             if restrictive_pv_max_kw is not None:
                 await _attempt(
                     "PV MAX safety restriction",
-                    lambda: ha.set_number(cfg.pv_max_power_limit, restrictive_pv_max_kw),
+                    lambda: _automatic_number(cfg.pv_max_power_limit, restrictive_pv_max_kw, restrictive=True),
                 )
 
             export_close_observed = await _observe(
@@ -6466,13 +6762,25 @@ class SigEnergyOptimizer:
                     observed_after=msc_requested_at,
                 ),
             )
-            safe_recovery_observed = bool(export_close_observed and msc_observed)
+            safe_recovery_observed = bool(
+                export_close_observed and msc_observed
+                and export_requested_at is not None and msc_requested_at is not None
+            )
+
+            async def _recovery_number(entity: str, value: float) -> bool:
+                # Settlement can be superseded while awaiting another report or
+                # authority refresh. Recheck both immediately before recovery.
+                if export_requested_at is None or msc_requested_at is None:
+                    return False
+                return await _automatic_number(entity, value, recovery=(export_requested_at, msc_requested_at))
 
             if safe_recovery_observed:
+                # Settlement permits recovery only within limits still owned
+                # independently of this fallback's temporary safety clamp.
                 if not demand_window_import_blocked:
                     await _attempt(
                         "normal Automated grid import capability",
-                        lambda: ha.set_number(
+                        lambda: _recovery_number(
                             cfg.grid_import_limit,
                             normal_grid_import_kw,
                         ),
@@ -6480,23 +6788,25 @@ class SigEnergyOptimizer:
                 if cfg.ess_max_charging_limit:
                     await _attempt(
                         "normal Automated ESS charge capability",
-                        lambda: ha.set_number(
+                        lambda: _recovery_number(
                             cfg.ess_max_charging_limit,
-                            normal_ess_charge_kw,
+                            normal_ess_charge_kw
+                            if d.trace_values.get("ess_charge_limit_owner") == "solar_surplus"
+                            else min(normal_ess_charge_kw, max(0.0, d.ess_charge_limit)),
                         ),
                     )
                 if cfg.ess_max_discharging_limit:
                     await _attempt(
                         "normal Automated ESS discharge capability",
-                        lambda: ha.set_number(
+                        lambda: _recovery_number(
                             cfg.ess_max_discharging_limit,
-                            normal_ess_discharge_kw,
+                            min(normal_ess_discharge_kw, max(0.0, d.ess_discharge_limit)),
                         ),
                     )
                 if restrictive_pv_max_kw is None:
                     await _attempt(
                         "normal Automated PV MAX capability",
-                        lambda: ha.set_number(cfg.pv_max_power_limit, normal_pv_max_kw),
+                        lambda: _recovery_number(cfg.pv_max_power_limit, normal_pv_max_kw),
                     )
 
             if fallback_failures:
@@ -6530,28 +6840,38 @@ class SigEnergyOptimizer:
                 if transition.close_requested_at is None:
                     transition.close_requested_at = datetime.now(timezone.utc).timestamp()
                     transition.close_request_state = s
-                requests = [("export close", lambda: ha.set_number(
+                requests = [("export close", lambda: _automatic_number(
                     cfg.grid_export_limit, safe_export_close_kw,
+                    restrictive=True,
                 ))]
             else:
                 if transition.phase == "close":
                     transition.phase = "msc"
                     transition.msc_requested_at = datetime.now(timezone.utc).timestamp()
                     transition.msc_request_state = s
-                requests = [("MSC request", lambda: ha.select_option(
-                    cfg.ems_mode_select, MODE_MAX_SELF,
+                requests = [("MSC request", lambda: _automatic_mode(
+                    MODE_MAX_SELF, restrictive=True,
                 ))]
 
             # Attempt every independent restriction even if another actuator
             # fails. None of these writes restore normal permissive capability.
-            requests.append(("import close", lambda: ha.set_number(cfg.grid_import_limit, 0.01)))
+            requests.append(("import close", lambda: _automatic_number(cfg.grid_import_limit, 0.01, restrictive=True)))
+            if (
+                cfg.ess_max_charging_limit and d.ess_charge_limit <= 0.011
+                and d.trace_values.get("ess_charge_limit_owner") != "solar_surplus"
+            ):
+                requests.append(("ESS charge restriction", lambda: _automatic_number(
+                    cfg.ess_max_charging_limit, max(0.0, d.ess_charge_limit), restrictive=True,
+                )))
             if cfg.ess_max_discharging_limit:
-                requests.append(("ESS discharge clamp", lambda: ha.set_number(
+                requests.append(("ESS discharge clamp", lambda: _automatic_number(
                     cfg.ess_max_discharging_limit, safe_ess_discharge_close_kw,
+                    restrictive=True,
                 )))
             if restrictive_pv_max_kw is not None:
-                requests.append(("PV MAX safety restriction", lambda: ha.set_number(
+                requests.append(("PV MAX safety restriction", lambda: _automatic_number(
                     cfg.pv_max_power_limit, restrictive_pv_max_kw,
+                    restrictive=True,
                 )))
             failures = []
             for label, request in requests:
@@ -6573,25 +6893,12 @@ class SigEnergyOptimizer:
                 error=f"MSC transition awaiting later trusted {transition.phase} observation",
             )
 
-        effective_mode = self._manual_mode_override or s.sigenergy_mode
-        if self._manual_mode_override and s.sigenergy_mode != self._manual_mode_override:
-            logger.warning(
-                "Mode selector drift detected (%s -> %s); restoring manual selection",
-                s.sigenergy_mode,
-                self._manual_mode_override,
-            )
-            ok_restore = await ha.select_option(cfg.sigenergy_mode_select, self._manual_mode_override)
-            if not ok_restore:
-                logger.error(
-                    "Failed to restore mode selector %s to %s",
-                    cfg.sigenergy_mode_select,
-                    self._manual_mode_override,
-                )
-                application_failures.append(
-                    f"failed restoring mode selector to {self._manual_mode_override}"
-                )
-            s.sigenergy_mode = self._manual_mode_override
-            effective_mode = self._manual_mode_override
+        ownership, remote = await self._read_control_authority()
+        if not (ownership.available and ownership.fresh):
+            return _authority_paused()
+        effective_mode = str(ownership.value)
+        if self._manual_mode_override and effective_mode != self._manual_mode_override:
+            return _authority_paused()
 
         # If in a manual mode, keep manual targets pinned when external writers drift
         # them (e.g. morning slow-charge branch in other automations).
@@ -6599,6 +6906,8 @@ class SigEnergyOptimizer:
             self._msc_baseline_established = False
             self._msc_transition = None
             self._clear_solar_physical_relief(d, "operator_owned")
+            if s.sigenergy_mode != effective_mode or not s.sigenergy_mode_observed:
+                return _authority_paused()
             manual_targets = self._manual_mode_targets(
                 effective_mode,
                 s,
@@ -6679,7 +6988,10 @@ class SigEnergyOptimizer:
                 )
             return _ActuatorApplicationResult(succeeded=True)
 
-        if cfg.auto_enable_ha_control and not s.ha_control_switch_available:
+        if not (s.sigenergy_mode_observed and s.sigenergy_mode == cfg.automated_option):
+            return _authority_paused()
+
+        if cfg.auto_enable_ha_control and remote not in {"on", "off"}:
             self._msc_baseline_established = False
             self._clear_solar_physical_relief(d, "ha_control_unavailable")
             now_ts = datetime.now().timestamp()
@@ -6702,10 +7014,10 @@ class SigEnergyOptimizer:
                 self._last_ha_control_switch_warning_key = warning_key
             return _ActuatorApplicationResult(succeeded=True)
 
-        effective_ha_control = s.ha_control_enabled
+        effective_ha_control = remote == "on"
 
         # Auto-enable an explicitly available HA control switch if needed.
-        if d.needs_ha_control_switch and not s.ha_control_enabled:
+        if d.needs_ha_control_switch and remote == "off":
             self._clear_solar_physical_relief(d, "ha_control_not_observed")
             now_ts = datetime.now().timestamp()
             last_attempt = self._last_ha_control_enable_attempt_at
@@ -6738,6 +7050,8 @@ class SigEnergyOptimizer:
         if not effective_ha_control:
             self._msc_baseline_established = False
             return _ActuatorApplicationResult(succeeded=True)
+
+        had_automated_authority = True
 
         if not (
             s.sigenergy_mode_observed
@@ -6844,13 +7158,14 @@ class SigEnergyOptimizer:
             # The decision snapshot can race an external EMS writer. Reassert and
             # confirm exact MSC immediately before deliberately opening the high
             # automatic PV-only ceiling, even when the snapshot already reported MSC.
-            ok_mode = await ha.select_option(cfg.ems_mode_select, MODE_MAX_SELF)
+            ok_mode = await _automatic_mode(MODE_MAX_SELF)
             if not ok_mode:
                 return await _safe_fallback("failed reasserting Maximum Self Consumption before high PV-only export")
             if not await self._wait_for_exact_entity_state(
                 cfg.ems_mode_select,
                 MODE_MAX_SELF,
                 timeout_s=3.0,
+                observed_after=last_mode_requested_at,
             ):
                 return await _safe_fallback("Maximum Self Consumption did not settle before high PV-only export")
             if not await self._live_msc_export_ready(
@@ -6864,7 +7179,7 @@ class SigEnergyOptimizer:
             and (
                 not export_limit_observed
                 or s.current_ems_mode != ems_mode_to_apply
-                or export_val + 1e-6 < float(s.current_export_limit or 0.0)
+                or abs(export_val - float(s.current_export_limit or 0.0)) >= cfg.min_change_threshold
             )
         )
         if prepare_export_before_discharge:
@@ -6872,7 +7187,7 @@ class SigEnergyOptimizer:
             # selected discharge EMS. Write and confirm the deliberate export target
             # first; an intentional battery-export target is preserved rather than
             # replaced with an unrelated blanket low cap.
-            ok_export = await ha.set_number(cfg.grid_export_limit, export_val)
+            ok_export = await _automatic_number(cfg.grid_export_limit, export_val, exact=True)
             if not ok_export:
                 return await _safe_fallback(
                     f"failed lowering export limit to {export_val:.2f}kW before discharge EMS"
@@ -6893,13 +7208,13 @@ class SigEnergyOptimizer:
             and s.current_ems_mode != ems_mode_to_apply
         ):
             logger.info("EMS mode: %s → %s", s.current_ems_mode, ems_mode_to_apply)
-            ok_mode = await ha.select_option(cfg.ems_mode_select, ems_mode_to_apply)
+            ok_mode = await _automatic_mode(ems_mode_to_apply, restrictive=ems_mode_to_apply == MODE_MAX_SELF)
             if not ok_mode:
                 return await _safe_fallback(f"failed setting EMS mode to {ems_mode_to_apply}")
 
         # Export limit
         if export_write_required and not export_written:
-            ok_export = await ha.set_number(cfg.grid_export_limit, export_val)
+            ok_export = await _automatic_number(cfg.grid_export_limit, export_val, restrictive=export_val <= near_zero)
             if not ok_export:
                 return await _safe_fallback(f"failed setting export limit to {export_val:.2f}kW")
             if (
@@ -6915,36 +7230,17 @@ class SigEnergyOptimizer:
                     f"PV-only export limit did not settle at or below {export_val:.2f}kW"
                 )
             if export_val <= near_zero and not pv_only_over_cap_correction_required:
-                observed_export_limit_kw, export_close_trusted = (
-                    await self._read_trusted_live_number(cfg.grid_export_limit)
-                )
-                export_close_observed = bool(
-                    export_close_trusted
-                    and observed_export_limit_kw is not None
-                    and observed_export_limit_kw <= near_zero
+                export_close_observed = await self._wait_for_number_at_most(
+                    cfg.grid_export_limit, export_val, timeout_s=3.0, tolerance=0.001,
                 )
                 if not export_close_observed:
                     error = (
                         "ordinary export safety close requested successfully but "
                         "observed readback remains open or unavailable"
                     )
-                    try:
-                        import_close_ok = await ha.set_number(
-                            cfg.grid_import_limit,
-                            0.01,
-                        )
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as exc:
-                        return _ActuatorApplicationResult(
-                            succeeded=False,
-                            error=(
-                                f"{error}; grid import safety close raised "
-                                f"{type(exc).__name__}: {exc}"
-                            ),
-                        )
-                    if not import_close_ok:
-                        error = f"{error}; grid import safety close returned failure"
+                    restriction_failures = await _independent_restrictions()
+                    if restriction_failures:
+                        error += "; " + "; ".join(restriction_failures)
                     return _ActuatorApplicationResult(
                         succeeded=False,
                         error=error,
@@ -6982,13 +7278,16 @@ class SigEnergyOptimizer:
             )
         )
         if import_write_required:
-            ok_import = await ha.set_number(cfg.grid_import_limit, import_val)
+            ok_import = await _automatic_number(cfg.grid_import_limit, import_val, restrictive=import_val <= near_zero)
             if not ok_import:
                 return await _safe_fallback(f"failed setting import limit to {import_val:.2f}kW")
 
         # ESS charge / discharge limits
         # All preceding awaits may cross the deadline or a source epoch change.
         # Check again directly before constructing and writing a reduced request.
+        if not await _authority_permits():
+            await _independent_restrictions()
+            return _authority_paused()
         self._recheck_solar_charge_authority(s, d, datetime.now(timezone.utc).timestamp())
         charge_cap_kw, discharge_cap_kw = self.get_power_caps_kw(s)
         charge_limit = self._bound_ess_request_kw(
@@ -7015,6 +7314,9 @@ class SigEnergyOptimizer:
                 # A pending service request can itself cross D or an epoch
                 # boundary. Restore the selected normal request in this same
                 # serialized application when that happens.
+                if not await _authority_permits():
+                    await _independent_restrictions()
+                    return _authority_paused()
                 self._recheck_solar_charge_authority(s, d, datetime.now(timezone.utc).timestamp())
                 if not d.trace_gates.get("solar_charge_ceiling_owned") or d.ess_charge_limit != charge_limit:
                     restored_charge = self._bound_ess_request_kw(d.ess_charge_limit, charge_cap_kw)
@@ -7024,7 +7326,7 @@ class SigEnergyOptimizer:
                         )
                     charge_limit = restored_charge
         if cfg.ess_max_discharging_limit:
-            ok_dis = await ha.set_number(cfg.ess_max_discharging_limit, discharge_limit)
+            ok_dis = await _automatic_number(cfg.ess_max_discharging_limit, discharge_limit, restrictive=discharge_limit <= near_zero)
             if not ok_dis:
                 reason = f"failed setting ESS discharge limit to {discharge_limit:.2f}kW"
                 if application_failures:
@@ -7033,13 +7335,18 @@ class SigEnergyOptimizer:
 
         # PV max power limit
         if abs(d.pv_max_power_limit - s.current_pv_max_power_limit) > 0.05:
-            ok_pv = await ha.set_number(cfg.pv_max_power_limit, d.pv_max_power_limit)
+            ok_pv = await _automatic_number(
+                cfg.pv_max_power_limit, d.pv_max_power_limit,
+                restrictive=restrictive_pv_max_kw is not None and d.pv_max_power_limit <= restrictive_pv_max_kw,
+            )
             if not ok_pv:
                 application_failures.append(
                     f"failed setting PV MAX limit to {d.pv_max_power_limit:.2f}kW"
                 )
 
         # Reason text helper
+        if authority_revoked:
+            return _authority_paused()
         reason = d.outcome_reason[:250]
         if reason:
             await ha.set_input_text(cfg.reason_text_helper, reason)
@@ -7258,14 +7565,36 @@ class SigEnergyOptimizer:
     ) -> dict[str, bool]:
         cfg = self.cfg
         ha = self.ha
+        superseded = False
+
+        async def _still_owned() -> bool:
+            nonlocal superseded
+            if superseded:
+                return False
+            if mode_label is None:
+                return True
+            observation, _remote = await self._read_control_authority()
+            if observation.available and observation.fresh and observation.value == mode_label:
+                return True
+            if self._manual_mode_override == mode_label and self._manual_mode_requested_at is not None:
+                # The authenticated request owns this transaction while HA is
+                # catching up. A newer credible selection clears the pin in
+                # _remember_control_mode, and stops all subsequent retries.
+                return True
+            superseded = True
+            return False
 
         async def _set_number_with_retry(entity_id: str, value: float, retries: int = 3) -> bool:
+            if not await _still_owned():
+                return False
             ok = await ha.set_number(entity_id, value)
             if ok:
                 return True
             for attempt in range(1, retries):
                 # Allow EMS mode transition and HA integration state to settle.
                 await asyncio.sleep(0.7)
+                if not await _still_owned():
+                    return False
                 ok = await ha.set_number(entity_id, value)
                 if ok:
                     logger.info(
@@ -7278,6 +7607,9 @@ class SigEnergyOptimizer:
 
         async def _select_mode_with_retry(entity_id: str, expected: str, retries: int = 4) -> bool:
             for attempt in range(retries):
+                if not await _still_owned():
+                    return False
+                requested_at = datetime.now(timezone.utc).timestamp()
                 ok = await ha.select_option(entity_id, expected)
                 if not ok:
                     await asyncio.sleep(0.5)
@@ -7286,7 +7618,10 @@ class SigEnergyOptimizer:
                     entity_id,
                     expected,
                     timeout_s=3.0,
+                    observed_after=requested_at,
                 )
+                if not await _still_owned():
+                    return False
                 if settled:
                     if attempt > 0:
                         logger.info(
@@ -7306,9 +7641,9 @@ class SigEnergyOptimizer:
                 target_mode,
             )
 
-        ok_exp = await ha.set_number(cfg.grid_export_limit, float(targets["grid_export_limit"]))
-        ok_imp = await ha.set_number(cfg.grid_import_limit, float(targets["grid_import_limit"]))
-        ok_pv = await ha.set_number(cfg.pv_max_power_limit, float(targets["pv_max_power_limit"]))
+        ok_exp = await _set_number_with_retry(cfg.grid_export_limit, float(targets["grid_export_limit"]), retries=1)
+        ok_imp = await _set_number_with_retry(cfg.grid_import_limit, float(targets["grid_import_limit"]), retries=1)
+        ok_pv = await _set_number_with_retry(cfg.pv_max_power_limit, float(targets["pv_max_power_limit"]), retries=1)
 
         ok_chg = True
         if cfg.ess_max_charging_limit and "ess_charge_limit" in targets:
@@ -7358,6 +7693,7 @@ class SigEnergyOptimizer:
 
         async with self._control_lock:
             # Update the input_select in HA
+            requested_at = datetime.now(timezone.utc).timestamp()
             ok_mode_select = await ha.select_option(cfg.sigenergy_mode_select, mode_label)
             if not ok_mode_select:
                 raise RuntimeError(
@@ -7365,10 +7701,12 @@ class SigEnergyOptimizer:
                 )
             if mode_label == cfg.automated_option:
                 self._manual_mode_override = None
+                self._manual_mode_requested_at = None
                 self._manual_ess_charge_override_kw = None
                 self._manual_ess_discharge_override_kw = None
             else:
                 self._manual_mode_override = mode_label
+                self._manual_mode_requested_at = requested_at
                 if mode_label in {
                     cfg.block_flow_option,
                     cfg.full_export_option,
@@ -7393,6 +7731,8 @@ class SigEnergyOptimizer:
 
             if mode_label == cfg.manual_option:
                 refreshed_state = await self._read_state()
+                if self._manual_mode_override != mode_label:
+                    raise RuntimeError(f"Manual mode request '{mode_label}' was superseded before application completed")
                 refreshed_state.sigenergy_mode = mode_label
                 self._last_state = refreshed_state
                 self._manual_ess_charge_override_kw = None
@@ -7404,6 +7744,8 @@ class SigEnergyOptimizer:
             # Re-read live state right before computing manual targets so stale
             # per-cycle values cannot contaminate one-shot manual writes.
             current_state = await self._read_state()
+            if self._manual_mode_override != mode_label:
+                raise RuntimeError(f"Manual mode request '{mode_label}' was superseded before application completed")
             targets = self._manual_mode_targets(
                 mode_label,
                 current_state,
@@ -7424,6 +7766,8 @@ class SigEnergyOptimizer:
                     self._manual_ess_charge_override_kw = None
                     self._manual_ess_discharge_override_kw = None
                 refreshed_state = await self._read_state()
+                if self._manual_mode_override != mode_label:
+                    raise RuntimeError(f"Manual mode request '{mode_label}' was superseded before application completed")
                 refreshed_state.sigenergy_mode = mode_label
                 self._last_state = refreshed_state
                 decision = self._decide(refreshed_state)

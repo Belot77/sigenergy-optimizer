@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from dataclasses import replace
+from datetime import timezone
+
+import app.optimizer as optimizer_module
+from app.models import HVACObservedValue
 
 from app.optimizer import (
     MODE_CMD_DISCHARGE_PV,
@@ -11,9 +16,26 @@ from haos49_characterization_helpers import (
     Haos49CharacterizationCase,
     RecordingHA,
 )
+from test_msc_baseline_overlay_contract import later_msc_report_clock
 
 
 class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
+    @staticmethod
+    def _supply_current_authority(optimizer, ha):
+        reported = optimizer_module.datetime.now(timezone.utc).isoformat()
+        for entity, value in (
+            (optimizer.cfg.sigenergy_mode_select, optimizer.cfg.automated_option),
+            (optimizer.cfg.ha_control_switch, "on"),
+        ):
+            ha.states[entity] = {
+                "state": value, "last_updated": reported, "last_reported": reported,
+            }
+        # Initial actuator snapshots need provenance; never refresh an existing
+        # actuator report merely because another application cycle starts.
+        for entity, value in list(ha.state_values.items()):
+            if entity not in ha._state_value_metadata:
+                ha._record_state_value(entity, value)
+
     def _full_battery_opportunity(self, **overrides: object):
         values: dict[str, object] = {
             "battery_soc": 100.0,
@@ -67,6 +89,7 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
         )
         decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
 
+        self._supply_current_authority(optimizer, ha)
         asyncio.run(optimizer._apply(state, decision))
 
         mode_call = (
@@ -143,6 +166,7 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
                     )
                     decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
 
+                    self._supply_current_authority(optimizer, ha)
                     asyncio.run(optimizer._apply(state, decision))
 
                     mode_call = ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
@@ -169,6 +193,7 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
                     )
                     closed_decision = self.decide(optimizer, closed_state, self.FIXED_AFTERNOON)
                     second_cycle_start = len(ha.calls)
+                    self._supply_current_authority(optimizer, ha)
                     asyncio.run(optimizer._apply(closed_state, closed_decision))
                     second_cycle_calls = ha.calls[second_cycle_start:]
 
@@ -215,9 +240,41 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
                     self.assertEqual(25.0, settled_decision.export_limit)
                     self.assertEqual(MODE_MAX_SELF, settled_decision.ems_mode)
                     self.assertEqual("none", settled_decision.trace_values["battery_export_final_owner"])
+                    # Snapshot and live reads describe the same scripted report.
+                    # Without live provenance a hand-built snapshot opts out of
+                    # the very request-boundary checks this matrix characterizes.
+                    reports = asyncio.run(observed_states([
+                        optimizer.cfg.ems_mode_select, optimizer.cfg.grid_export_limit,
+                    ]))
+                    def report_timestamp(entity):
+                        raw = reports[entity].get("last_reported")
+                        return datetime.fromisoformat(raw).timestamp() if raw else None
+
+                    settled_state._msc_ems_reported_at = report_timestamp(optimizer.cfg.ems_mode_select)
+                    export_reported_at = report_timestamp(optimizer.cfg.grid_export_limit)
+                    settled_state.hvac_solar_inputs = replace(
+                        settled_state.hvac_solar_inputs, live_snapshot=True,
+                        observed_export_limit=HVACObservedValue(
+                            value=0.01, available=export_reported_at is not None,
+                            fresh=export_reported_at is not None and
+                            0 <= clock_now.timestamp() - export_reported_at <= optimizer.cfg.hvac_solar_data_max_age_seconds,
+                            observed_at_ts=export_reported_at,
+                        ),
+                    )
                     third_cycle_start = len(ha.calls)
+                    original_select = ha.select_option
+
+                    async def later_reassertion(entity_id, value):
+                        nonlocal clock_now
+                        if evidence == "later":
+                            clock_now += timedelta(milliseconds=1)
+                        return await original_select(entity_id, value)
+
                     with patch.object(ha, "bulk_states", side_effect=observed_states):
-                        asyncio.run(optimizer._apply(settled_state, settled_decision))
+                        if evidence == "later":
+                            ha.select_option = later_reassertion
+                        self._supply_current_authority(optimizer, ha)
+                        application_result = asyncio.run(optimizer._apply(settled_state, settled_decision))
                     third_cycle_calls = ha.calls[third_cycle_start:]
 
                     if evidence == "later":
@@ -228,10 +285,29 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
                         self.assertIsNone(optimizer._msc_transition)
                     else:
                         self.assertNotIn(export_call, third_cycle_calls)
-                        for entity in (optimizer.cfg.grid_export_limit, optimizer.cfg.grid_import_limit,
-                                       optimizer.cfg.ess_max_discharging_limit):
-                            self.assertIn(("set_number", entity, 0.01), third_cycle_calls)
-                        self.assertEqual("close", optimizer._msc_transition.phase)
+                        if observed_entity == "msc":
+                            # Bad MSC evidence cannot undo independently proven
+                            # closure, or authorize recovery of permissive limits.
+                            self.assertFalse(application_result.succeeded)
+                            self.assertTrue(optimizer._msc_export_closed(settled_state))
+                            self.assertFalse(optimizer._msc_transition_observed(settled_state))
+                            self.assertFalse(optimizer._msc_baseline_established)
+                            self.assertEqual("msc", optimizer._msc_transition.phase)
+                            self.assertIn(mode_call, third_cycle_calls)
+                            self.assertNotIn(close_call, third_cycle_calls)
+                            self.assertEqual(0.01, ha.state_values[optimizer.cfg.grid_export_limit])
+                            for entity in (optimizer.cfg.grid_import_limit,
+                                           optimizer.cfg.ess_max_discharging_limit):
+                                self.assertIn(("set_number", entity, 0.01), third_cycle_calls)
+                            self.assertFalse(any(
+                                call[0] == "set_number" and float(call[2]) > 0.011
+                                for call in third_cycle_calls
+                            ))
+                        else:
+                            for entity in (optimizer.cfg.grid_export_limit, optimizer.cfg.grid_import_limit,
+                                           optimizer.cfg.ess_max_discharging_limit):
+                                self.assertIn(("set_number", entity, 0.01), third_cycle_calls)
+                            self.assertEqual("close", optimizer._msc_transition.phase)
                     self.assertNotIn(
                         ("select_option", optimizer.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV), ha.calls,
                     )
@@ -266,7 +342,18 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
         self.assertEqual(25.0, decision.ess_charge_limit)
         self.assertEqual(12.0, decision.ess_discharge_limit)
 
-        asyncio.run(optimizer._apply(state, decision))
+        original_number = ha.set_number
+        with later_msc_report_clock(
+            ha, optimizer_module.datetime.now(timezone.utc),
+        ) as moment:
+            async def later_number_report(entity_id, value):
+                from datetime import timedelta
+                moment[0] += timedelta(milliseconds=1)
+                return await original_number(entity_id, value)
+
+            with unittest.mock.patch.object(ha, "set_number", side_effect=later_number_report):
+                self._supply_current_authority(optimizer, ha)
+                asyncio.run(optimizer._apply(state, decision))
 
         export_call = ("set_number", optimizer.cfg.grid_export_limit, 12.0)
         read_call = ("bulk_states", optimizer.cfg.grid_export_limit, None)
@@ -304,6 +391,7 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
         self.assertEqual(25.0, decision.ess_discharge_limit)
         self.assertEqual("blocked_or_zero", decision.trace_values["export_branch"])
 
+        self._supply_current_authority(optimizer, ha)
         asyncio.run(optimizer._apply(state, decision))
 
         mode_call = ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
@@ -324,6 +412,7 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
             current_export_limit=0.01,
         )
         closed_decision = self.decide(optimizer, closed_state, self.FIXED_AFTERNOON)
+        self._supply_current_authority(optimizer, ha)
         asyncio.run(optimizer._apply(closed_state, closed_decision))
 
         self.assertLess(ha.calls.index(close_call), ha.calls.index(mode_call))

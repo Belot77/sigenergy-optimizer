@@ -4,6 +4,7 @@ import asyncio
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 
 from app.config import Settings
 from app.models import Decision, SolarState
@@ -121,7 +122,12 @@ class RemoteEMSControlTests(unittest.TestCase):
     def test_valid_off_switch_is_enabled_once_then_retry_is_suppressed(self) -> None:
         ha = _RemoteEMSRecordingHA()
         optimizer = self._optimizer(ha)
-        state = self._state()
+        now = datetime.now(timezone.utc).isoformat()
+        ha.states[optimizer.cfg.sigenergy_mode_select] = {
+            "state": optimizer.cfg.automated_option, "last_updated": now, "last_reported": now,
+        }
+        ha.states[REAL_CONTROL_SWITCH] = {"state": "off"}
+        state = self._state(sigenergy_mode_observed=True)
         decision = self._decision()
 
         asyncio.run(optimizer._apply(state, decision))
@@ -133,7 +139,12 @@ class RemoteEMSControlTests(unittest.TestCase):
     def test_missing_or_unavailable_switch_never_calls_turn_on_and_warning_is_throttled(self) -> None:
         ha = _RemoteEMSRecordingHA()
         optimizer = self._optimizer(ha)
+        now = datetime.now(timezone.utc).isoformat()
+        ha.states[optimizer.cfg.sigenergy_mode_select] = {
+            "state": optimizer.cfg.automated_option, "last_updated": now, "last_reported": now,
+        }
         state = self._state(
+            sigenergy_mode_observed=True,
             ha_control_switch_available=False,
             ha_control_switch_state="unavailable",
         )

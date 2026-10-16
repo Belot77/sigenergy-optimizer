@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -11,8 +12,25 @@ from haos49_characterization_helpers import Haos49CharacterizationCase, Recordin
 from test_msc_baseline_overlay_contract import (
     ClockedRecordingHA,
     establish_observed_msc_baseline,
+    later_msc_report_clock,
 )
 import test_phase1_solar_dynamic_charge_ceiling_characterization as charge_fixture
+
+
+@contextmanager
+def post_request_select_reports(ha, advance_clock):
+    """Let opted-in positive fixtures report after each actual mode request."""
+    original = ha.select_option
+
+    async def report_later(entity, value):
+        advance_clock()
+        return await original(entity, value)
+
+    ha.select_option = report_later
+    try:
+        yield
+    finally:
+        ha.select_option = original
 
 
 class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
@@ -206,17 +224,17 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
         async def run():
             opt = self._optimizer()
             ha = ClockedRecordingHA()
-            await establish_observed_msc_baseline(self, opt, ha, self.WHEN)
+            await establish_observed_msc_baseline(self, opt, ha, self.WHEN - timedelta(seconds=1))
             baseline = 0.81
 
             def decide(second, **flow):
-                state, decision = self._decision(opt, second, battery_soc=55.0, **flow)
+                state, decision = self._decision(opt, second - 0.001, battery_soc=55.0, **flow)
                 self._assert_solar_controls(opt, decision)
                 self.assertEqual(baseline, decision.trace_values["solar_charge_ceiling_baseline_kw"])
                 return state, decision
 
             async def apply(second, state, decision):
-                with self.optimizer_time(self.WHEN + timedelta(seconds=second)):
+                with later_msc_report_clock(ha, self.WHEN + timedelta(seconds=second - 0.001)):
                     result = await opt._apply(state, decision)
                 self.assertTrue(result.succeeded, result.error)
 
@@ -456,6 +474,7 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
             ha.states[entity] = {
                 "state": value,
                 "attributes": {},
+                "last_updated": datetime.fromtimestamp(source_ts, timezone.utc).isoformat(),
                 "last_reported": datetime.fromtimestamp(source_ts, timezone.utc).isoformat(),
             }
         for elapsed in (0, 10):
@@ -468,6 +487,7 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
             self.assertTrue(state.derived_power_flow_coherent)
 
         del ha.states[opt.cfg.pv_power_sensor]["last_reported"]
+        del ha.states[opt.cfg.pv_power_sensor]["last_updated"]
         with self.optimizer_time(self.WHEN + timedelta(seconds=11)):
             missing = asyncio.run(opt._read_state())
         self.assertIsNone(missing.hvac_solar_inputs.pv_power.observed_at_ts)
@@ -531,9 +551,9 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
         async def run():
             opt = self._optimizer()
             ha = ClockedRecordingHA()
-            await establish_observed_msc_baseline(self, opt, ha, self.WHEN)
+            await establish_observed_msc_baseline(self, opt, ha, self.WHEN - timedelta(seconds=1))
             state, decision = self._decision(opt, 0)
-            with self.optimizer_time(self.WHEN):
+            with later_msc_report_clock(ha, self.WHEN):
                 result = await opt._apply(state, decision)
             self.assertTrue(result.succeeded, result.error)
             self.assertIn(("set_number", "number.test_charge", 0.0), ha.calls)
@@ -551,7 +571,10 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
                     opt.ha = ha
                     state, decision = self._decision(opt, second)
                     self._assert_solar_controls(opt, decision)
+                    self.assertEqual("solar_surplus", decision.trace_values["ess_charge_limit_owner"])
                     with self.optimizer_time(self.WHEN + timedelta(seconds=second)):
+                        ha._record_state_value(opt.cfg.sigenergy_mode_select, opt.cfg.automated_option)
+                        ha._record_state_value(opt.cfg.ha_control_switch, "on")
                         ha._record_state_value(opt.cfg.ems_mode_select, MODE_MAX_SELF)
                         ha._record_state_value(opt.cfg.grid_export_limit, 25.0)
                         ha.calls.clear()
@@ -560,6 +583,8 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
                     self.assertFalse(result.succeeded)
                     self.assertTrue(decision.trace_gates["msc_transition_pending"])
                     self.assertIn(("set_number", opt.cfg.grid_export_limit, 0.01), ha.calls)
+                    self.assertIn(("set_number", opt.cfg.grid_import_limit, 0.01), ha.calls)
+                    self.assertIn(("set_number", opt.cfg.ess_max_discharging_limit, 0.01), ha.calls)
                     self.assertEqual(25.0, ha.state_values[opt.cfg.grid_export_limit])
                     self.assertNotIn(("select_option", opt.cfg.ems_mode_select, MODE_MAX_SELF), ha.calls)
                     self.assertFalse(any(
@@ -578,7 +603,7 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
         async def run():
             opt = self._optimizer()
             ha = ClockedRecordingHA()
-            await establish_observed_msc_baseline(self, opt, ha, self.WHEN)
+            await establish_observed_msc_baseline(self, opt, ha, self.WHEN - timedelta(seconds=1))
             state, decision = self._decision(opt, 0)
             original = ha.set_number
 
@@ -588,11 +613,11 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
                 return await original(entity, value)
 
             ha.set_number = fail_charge
-            with self.optimizer_time(self.WHEN):
+            with later_msc_report_clock(ha, self.WHEN):
                 result = await opt._apply(state, decision)
             self.assertFalse(result.succeeded)
             for second in range(1, 4):
-                _, next_decision = self._decision(opt, second)
+                _, next_decision = self._decision(opt, second, current_export_limit=float(ha.state_values[opt.cfg.grid_export_limit]))
                 self.assertEqual(0.0, next_decision.ess_charge_limit)
         asyncio.run(run())
 
@@ -606,7 +631,7 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
         async def run():
             opt = self._optimizer()
             ha = ClockedRecordingHA()
-            await establish_observed_msc_baseline(self, opt, ha, self.WHEN)
+            await establish_observed_msc_baseline(self, opt, ha, self.WHEN - timedelta(seconds=1))
             self._decision(opt, 0)
             self._command(opt, 0.0, 0)
             self._decision(opt, 1)
@@ -633,7 +658,9 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
                 return result
 
             ha.set_number = cross_flow_age
-            with patch("app.optimizer.datetime", AdvancingDateTime):
+            with patch("app.optimizer.datetime", AdvancingDateTime), post_request_select_reports(
+                ha, lambda: moment.__setitem__(0, moment[0] + 0.001),
+            ):
                 result = await opt._apply(state, decision)
             self.assertTrue(crossed)
             self.assertTrue(result.succeeded, result.error)

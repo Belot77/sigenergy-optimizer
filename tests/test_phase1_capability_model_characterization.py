@@ -5,7 +5,9 @@ import math
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from unittest.mock import patch
 
 from app.config import Settings
 from app.models import Decision, SolarState
@@ -583,7 +585,31 @@ class Phase1CapabilityModelCharacterizationTests(unittest.TestCase):
                     filtered_full_export["grid_export_limit"],
                 )
 
-        ha = _RecordingHA()
+        moment = [datetime(2026, 10, 16, 0, 0, tzinfo=timezone.utc)]
+
+        class ForceReportHA(_RecordingHA):
+            async def bulk_states(self, entity_ids):
+                if (
+                    cfg.ems_mode_select in entity_ids
+                    and ("select_option", cfg.ems_mode_select, MODE_CMD_CHARGE_GRID)
+                    in self.calls
+                ):
+                    # Script a separate post-request inverter report. Accepted
+                    # commands alone do not provide settlement metadata.
+                    moment[0] += timedelta(milliseconds=1)
+                    self.states[cfg.ems_mode_select] = {
+                        "state": MODE_CMD_CHARGE_GRID,
+                        "last_updated": moment[0].isoformat(),
+                        "last_reported": moment[0].isoformat(),
+                    }
+                return await super().bulk_states(entity_ids)
+
+        class ForceDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return moment[0].astimezone(tz) if tz else moment[0].replace(tzinfo=None)
+
+        ha = ForceReportHA()
         apply_optimizer = self.optimizer(
             ha,
             ess_limit_fallback_kw=30.0,
@@ -591,8 +617,19 @@ class Phase1CapabilityModelCharacterizationTests(unittest.TestCase):
             ess_discharge_limit_value=25.0,
         )
         cfg = apply_optimizer.cfg
+        for entity_id, value in (
+            (cfg.sigenergy_mode_select, cfg.full_import_option),
+            (cfg.ha_control_switch, "on"),
+            (cfg.ems_mode_select, MODE_MAX_SELF),
+        ):
+            ha.states[entity_id] = {
+                "state": value,
+                "last_updated": moment[0].isoformat(),
+                "last_reported": moment[0].isoformat(),
+            }
         apply_state = SolarState(
             sigenergy_mode=cfg.full_import_option,
+            sigenergy_mode_observed=True,
             current_ems_mode=MODE_MAX_SELF,
             current_export_limit=5.0,
             current_import_limit=5.0,
@@ -604,7 +641,8 @@ class Phase1CapabilityModelCharacterizationTests(unittest.TestCase):
             ess_discharge_limit_entity_max_kw=11.0,
         )
 
-        result = asyncio.run(apply_optimizer._apply(apply_state, Decision()))
+        with patch("app.optimizer.datetime", ForceDateTime):
+            result = asyncio.run(apply_optimizer._apply(apply_state, Decision()))
 
         self.assertTrue(result.succeeded)
         self.assertIn(("set_number", cfg.grid_export_limit, 0.01), ha.calls)

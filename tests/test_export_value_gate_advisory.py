@@ -5,7 +5,8 @@ import math
 import os
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from app.config import Settings
@@ -132,6 +133,41 @@ class _BulkStateHA:
 
 
 class ExportValueGateAdvisoryTests(unittest.TestCase):
+    @contextmanager
+    def _application_fixture(self, optimizer, ha, *, owner):
+        """Opt these application scenarios into current, explicit ownership."""
+        global _FIXED_TEST_NOW_UTC
+        cfg = optimizer.cfg
+        for entity, value in (
+            (cfg.sigenergy_mode_select, owner), (cfg.ha_control_switch, "on"),
+        ):
+            ha._record_state_value(entity, value)
+        for entity, value in list(ha.state_values.items()):
+            if entity not in ha._state_value_metadata:
+                ha._record_state_value(entity, value)
+
+        original_select, original_number = ha.select_option, ha.set_number
+
+        async def later_select_report(entity, value):
+            global _FIXED_TEST_NOW_UTC
+            if ha.settle_selects and value not in ha.failed_select_values:
+                _FIXED_TEST_NOW_UTC += timedelta(milliseconds=1)
+            return await original_select(entity, value)
+
+        async def later_number_report(entity, value):
+            global _FIXED_TEST_NOW_UTC
+            if ha.settle_numbers:
+                _FIXED_TEST_NOW_UTC += timedelta(milliseconds=1)
+            return await original_number(entity, value)
+
+        # Only configured successful reports advance the clock. Intentionally
+        # unsettled actuators keep their original state and report provenance.
+        with patch(f"{__name__}._FIXED_TEST_NOW_UTC", _FIXED_TEST_NOW_UTC):
+            with patch.object(ha, "select_option", side_effect=later_select_report), patch.object(
+                ha, "set_number", side_effect=later_number_report,
+            ):
+                yield
+
     def setUp(self) -> None:
         test_clock = patch(f"{__name__}.datetime", _FixedDateTime)
         optimizer_clock = patch("app.optimizer.datetime", _FixedDateTime)
@@ -1686,6 +1722,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 self.assertEqual(0.0, invalid_soc_state.battery_soc)
 
         ha.states[cfg.sigenergy_mode_select]["state"] = cfg.automated_option
+        reported = datetime.now(timezone.utc).isoformat()
+        ha.states[cfg.sigenergy_mode_select].update(last_updated=reported, last_reported=reported)
         exact_helper_state = asyncio.run(optimizer._read_state())
 
         self.assertEqual(cfg.automated_option, exact_helper_state.sigenergy_mode)
@@ -1804,7 +1842,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)
         ha._record_state_value(optimizer.cfg.grid_export_limit, 25.0)
 
-        asyncio.run(optimizer._apply(state, decision))
+        with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+            asyncio.run(optimizer._apply(state, decision))
 
         select_call = ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
         close_call = ("set_number", optimizer.cfg.grid_export_limit, 0.01)
@@ -1827,7 +1866,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         )
         closed_decision = optimizer._decide(closed_state)
         second_cycle_start = len(ha.calls)
-        asyncio.run(optimizer._apply(closed_state, closed_decision))
+        with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+            asyncio.run(optimizer._apply(closed_state, closed_decision))
         second_cycle_calls = ha.calls[second_cycle_start:]
 
         self.assertIn(select_call, second_cycle_calls)
@@ -1848,7 +1888,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         )
         settled_decision = optimizer._decide(settled_state)
         third_cycle_start = len(ha.calls)
-        asyncio.run(optimizer._apply(settled_state, settled_decision))
+        with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+            asyncio.run(optimizer._apply(settled_state, settled_decision))
         third_cycle_calls = ha.calls[third_cycle_start:]
 
         self.assertIn(export_call, third_cycle_calls)
@@ -1878,12 +1919,13 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 )
                 ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
                 ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
-                baseline_result = asyncio.run(
-                    optimizer._apply(
-                        baseline_state,
-                        Decision(ems_mode=MODE_MAX_SELF, export_limit=0.0),
+                with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+                    baseline_result = asyncio.run(
+                        optimizer._apply(
+                            baseline_state,
+                            Decision(ems_mode=MODE_MAX_SELF, export_limit=0.0),
+                        )
                     )
-                )
                 self.assertTrue(baseline_result.succeeded, baseline_result.error)
                 ha.calls.clear()
                 if branch == "morning_slow_charge":
@@ -1916,7 +1958,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
                 ha._record_state_value(optimizer.cfg.grid_export_limit, 18.07)
 
-                asyncio.run(optimizer._apply(state, decision))
+                with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+                    asyncio.run(optimizer._apply(state, decision))
 
                 select_call = (
                     "select_option",
@@ -1958,12 +2001,13 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         )
         ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
         ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
-        baseline_result = asyncio.run(
-            optimizer._apply(
-                baseline_state,
-                Decision(ems_mode=MODE_MAX_SELF, export_limit=0.0),
+        with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+            baseline_result = asyncio.run(
+                optimizer._apply(
+                    baseline_state,
+                    Decision(ems_mode=MODE_MAX_SELF, export_limit=0.0),
+                )
             )
-        )
         self.assertTrue(baseline_result.succeeded, baseline_result.error)
         ha.calls.clear()
         optimizer._morning_slow_charge_active = lambda *args, **kwargs: True
@@ -1997,7 +2041,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
 
         optimizer._wait_for_number_at_most = reject_unsettled
 
-        result = asyncio.run(optimizer._apply(state, decision))
+        with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+            result = asyncio.run(optimizer._apply(state, decision))
 
         target_call = ("set_number", optimizer.cfg.grid_export_limit, 18.06)
         fallback_close = ("set_number", optimizer.cfg.grid_export_limit, 0.01)
@@ -2072,7 +2117,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             optimizer.cfg.grid_export_limit: 25.0,
         }
 
-        asyncio.run(optimizer._apply(state, decision))
+        with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+            asyncio.run(optimizer._apply(state, decision))
 
         export_writes = [
             float(call[2])
@@ -2121,7 +2167,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             optimizer.cfg.grid_export_limit: 25.0,
         }
 
-        asyncio.run(optimizer._apply(state, decision))
+        with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+            asyncio.run(optimizer._apply(state, decision))
 
         lower_call = ("set_number", optimizer.cfg.grid_export_limit, 1.4)
         discharge_call = ("select_option", optimizer.cfg.ems_mode_select, decision.ems_mode)
@@ -2174,7 +2221,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             optimizer.cfg.grid_export_limit: 25.0,
         }
 
-        asyncio.run(optimizer._apply(state, decision))
+        with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+            asyncio.run(optimizer._apply(state, decision))
 
         lower_call = ("set_number", optimizer.cfg.grid_export_limit, 1.4)
         discharge_call = ("select_option", optimizer.cfg.ems_mode_select, decision.ems_mode)
@@ -2210,7 +2258,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             optimizer.cfg.grid_export_limit: 25.0,
         }
 
-        asyncio.run(optimizer._apply(state, decision))
+        with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+            asyncio.run(optimizer._apply(state, decision))
 
         export_call = ("set_number", optimizer.cfg.grid_export_limit, 1.4)
         discharge_call = ("select_option", optimizer.cfg.ems_mode_select, decision.ems_mode)
@@ -2255,7 +2304,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             optimizer.cfg.grid_export_limit: 25.0,
         }
 
-        asyncio.run(optimizer._apply(state, decision))
+        with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+            asyncio.run(optimizer._apply(state, decision))
 
         self.assertNotIn(
             ("select_option", optimizer.cfg.ems_mode_select, decision.ems_mode),
@@ -3263,7 +3313,8 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 self.assertFalse(decision.trace_values["morning_preempted"])
                 ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
                 ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
-                asyncio.run(optimizer._apply(state, decision))
+                with self._application_fixture(optimizer, ha, owner=optimizer.cfg.automated_option):
+                    asyncio.run(optimizer._apply(state, decision))
                 self.assertFalse(any(call[0] == "select_option" and call[2] in DISCHARGE_MODES for call in ha.calls))
                 self.assertIn(("set_number", optimizer.cfg.grid_export_limit, decision.export_limit), ha.calls)
 
@@ -4443,11 +4494,19 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         decision = optimizer._decide(state)
         optimizer._freeze_decision_to_live_mode(state, decision, cfg.manual_option)
 
-        asyncio.run(optimizer._apply(state, decision))
+        with self._application_fixture(optimizer, ha, owner=optimizer.cfg.manual_option):
+            asyncio.run(optimizer._apply(state, decision))
 
         self.assertFalse(bool(decision.trace_gates.get("pv_only_msc_high_ceiling_active")))
         self.assertEqual(state.current_export_limit, decision.export_limit)
-        self.assertEqual(ha.calls, [])
+        self.assertFalse(any(
+            call[0] in {"set_number", "select_option", "turn_on", "turn_off"}
+            for call in ha.calls
+        ))
+        self.assertTrue(all(
+            call[0] in {"bulk_states", "get_state_value"} for call in ha.calls
+        ))
+        self.assertIn(("bulk_states", cfg.sigenergy_mode_select, None), ha.calls)
         self.assertIn("optimizer writes paused", decision.outcome_reason)
 
     def test_hidden_pv_diagnostics_populate_when_estimated_exceeds_measured(self) -> None:

@@ -763,7 +763,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
         states = self._bulk_states(cfg, updated_at=now)
         states[cfg.solar_power_now_sensor] = self._ha_state(
             2.0,
-            now,
+            now - timedelta(seconds=300),
             reported_at=now - timedelta(seconds=300),
         )
         optimizer = self._optimizer(
@@ -1010,7 +1010,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result.state, "unavailable")
                 self.assertEqual(result.reason_code, "required_data_stale")
 
-    async def test_unusable_last_reported_falls_back_to_valid_last_updated(
+    async def test_unusable_last_reported_does_not_authorize_freshness(
         self,
     ) -> None:
         cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)
@@ -1020,6 +1020,7 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
             "",
             "not-a-timestamp",
             now.replace(tzinfo=None).isoformat(),
+            (now - timedelta(seconds=1)).isoformat(),
         )
         for raw_last_reported in invalid_reported_values:
             with self.subTest(last_reported=raw_last_reported):
@@ -1030,8 +1031,14 @@ class HVACSolarPermissionTests(unittest.IsolatedAsyncioTestCase):
                 state = await optimizer._read_state()
                 result = self._evaluate(optimizer, state.hvac_solar_inputs)
 
-                self.assertTrue(state.hvac_solar_inputs.pv_power.fresh)
-                self.assertNotEqual(result.state, "unavailable")
+                # A present but unusable or contradictory report is distinct
+                # from optional last_reported metadata being absent entirely.
+                self.assertTrue(state.hvac_solar_inputs.pv_power.available)
+                self.assertFalse(state.hvac_solar_inputs.pv_power.fresh)
+                self.assertIsNone(state.hvac_solar_inputs.pv_power.observed_at_ts)
+                self.assertEqual(result.state, "unavailable")
+                self.assertEqual(result.reason_code, "required_data_stale")
+                self.assertFalse(result.data_fresh)
 
     async def test_unchanged_valid_control_mode_helper_is_current(self) -> None:
         cfg = Settings(_env_file=None, hvac_solar_data_max_age_seconds=120.0)

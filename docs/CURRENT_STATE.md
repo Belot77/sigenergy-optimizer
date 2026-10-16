@@ -1,23 +1,52 @@
 # Current State
 
-Last consolidated: 2026-10-15
+Last consolidated: 2026-10-16
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
 ## Live identity and rollback
-- Last **operator-reported** live release: **2.3.59-haos70**, source `08f4daf53941bd850a4fe392b458c42b1df68b47`. This is not a new Home Assistant/runtime verification. Stage A introduced no installed-system changes.
+- Last **operator-reported** live release: **2.3.59-haos70**, source `08f4daf53941bd850a4fe392b458c42b1df68b47`. This is not a new Home Assistant/runtime verification. This documentation checkpoint makes no installed-system changes.
 - Protected known-good rollback: **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Do not promote .70 to known-good without supervised live acceptance.
 - Morning Dump physically activated on 15 October; minimum SoC deliberately set to 15%, and timing option set to 1.0 hour before sunrise (existing implementation runs from sunrise through one hour afterward). Morning Slow was observed near 2 kW and physical export near 15 kW. Evening Boost disabled. Approximate 15 October PV forecast: 130 kWh. These are reported observations/settings, not renewed authority verification.
 - Phase 1 remains open, including exact-full Demand Window PV-only physical proof, Evening Boost reserve/transition stability and Solar threshold-switching disposition. Phase 2 retains only scoped .68 acceptance; a 13-second observation gap and broader cases remain unproven. Four-tier and .70 physical acceptance remain outstanding.
 - Preserve .65 rollback readiness before any later supervised live testing. Passing tests and successful service calls do not prove inverter settlement.
-## Active worktree and validation
-- Current Stage A worktree: `C:\Projects\sigenergy_optimizer-authority-stage-a`; branch `test/control-authority-safety-characterization`; pre-checkpoint base HEAD `08f4daf53941bd850a4fe392b458c42b1df68b47`. After the approved local checkpoint, read Git HEAD for the new commit SHA. No push, merge, release, deploy or HA/inverter action is authorised.
-- Stage A scope: modified `tests/test_phase1_d7_liveness_characterization.py` (22 additions/1 deletion), new `tests/test_control_authority_safety_characterization.py` (47,885 bytes), and this document plus `docs/AI_HANDOVER.md`.
-- Stage A tests-only characterization **GO**, independently accepted on 15 October: corrected characterization **25 passed, 47 deliberately red**, corrected D7 test passed, recent independent protections **77 tests/89 subtests passed**, zero unexpected failures, AST/whitespace checks passed. The earlier baseline yielded 311 existing tests/409 subtests passed. No Stage A full-suite rerun was required.
-- The 47 red cases are deliberately executable regressions exposing known baseline authority/actuator safety defects. Do not skip, xfail, delete or weaken them. A non-green isolated Stage A branch is expected; do not merge into a branch requiring green CI until Stage B resolves the defects.
-- The seven initial review weaknesses (authority continuation, ESS restriction independence, unknown-vs-Manual, expiry during awaits, dispatch/refresh timing, Force ownership, restart/metadata evidence) were corrected and independently accepted. Fixture E reproduced unsafe boundary T+1/report T+2/dispatch T+3 versus valid report T+2/boundary-and-dispatch T+3 through the real waiter.
-- Protected reference worktree: `C:\Projects\sigenergy_optimizer-evening-priority`, branch `test/evening-medium-priority-characterization`, base HEAD `08f4daf...`, containing exactly ten intentionally dirty files. This is **NO-GO for production, commit or deployment**. Never reset, stash, discard, overwrite, commit, delete or copy its optimizer file wholesale. Stage A checkpoint does not touch it.
-- Stage B production authority/actuator repair **not yet approved**. Preserve verified Automated / Unknown / confirmed Manual-or-Force distinctions, request-time and application-time authority, dispatch boundaries, independent Demand/ESS/PV restrictions, observed settlement, fallback and safe operator ownership. Preserve unattended restart auto-enable with current Automated verification; no new persistent OFF database or mandatory handback redesign.
+## Active Stage B candidate and validation
+
+- Verified local worktree: `C:\Projects\sigenergy_optimizer-authority-stage-b`; branch `fix/control-authority-safety`; HEAD `2a60a62097d16344711a64cf96e5e52d177556e0`; origin `https://github.com/Belot77/sigenergy-optimizer`.
+- Preflight: exactly **19 modified, unstaged source/test files**, no staged or untracked files. All 19 remain uncommitted and must be preserved byte-for-byte during this documentation-only checkpoint. The six-document delta is additional to those 19 files: current status is **25 modified, unstaged files**, nothing staged or untracked.
+- Stage B implementation is **completed**, including the narrow Medium-over-Evening Boost priority correction and authority/actuator safety repair. Defects A, B and C are corrected; the supplied independent focused review passed all three corrections.
+- Retained final full-suite result supplied for this checkpoint: **1,036 tests / 1,084 subtests, zero failures**. Compileall and `git diff --check` passed. Tests and compileall are not rerun for this documentation-only task; the documentation diff check is separate.
+- **No supervised live acceptance yet. Stage B remains NO-GO for deployment.** Automated validation and independent code review do not prove inverter settlement or physical flow.
+
+### Completed safety corrections
+
+- **A - Contradictory actuator evidence:** conflicting actuator observations cannot prove settlement. Deliberate discharge requires the intended export target, with fresh provenance-bearing evidence strictly after its own dispatch boundary; a smaller value sufficient for a safety close is not proof of a deliberate discharge target.
+- **B - Independent ESS restrictions:** successful fallback cannot restore ESS charge/discharge capability above independently owned restrictions. Solar relinquishment restores only the otherwise safe normal charge request; Demand Window import blocking and independent PV restrictions remain effective.
+- **C - Pending Force ownership:** unchanged Automated selector reports prove freshness, not a new operator selection. A pending authenticated Force request yields to a verified selector state transition strictly after its request, with coherent change/update/report timestamps; supersession stops subsequent writes/retries.
+
+Current Automated ownership and observed Remote EMS ON remain required at application/dispatch boundaries. Unknown evidence fails closed; independent restrictive writes remain available while unrelated permissive recovery waits for observed settlement. Preserve ordinary unattended restart/auto-enable after current Automated verification and observed Remote EMS ON, authenticated Manual/Force and `/set_ess`; no persistent OFF registry or mandatory restart handback redesign.
+
+### Protected reference and historical Stage A evidence
+
+- Stage A tests-only characterization was independently accepted on 15 October: 25 passed, 47 deliberately red baseline regressions; corrected D7 passed; independent protections 77 tests/89 subtests passed, zero unexpected failures. These are historical baseline results, not current Stage B failures. Preserve the regression assertions.
+- Protected reference: `C:\Projects\sigenergy_optimizer-evening-priority`, branch `test/evening-medium-priority-characterization`, base `08f4daf...`, ten intentionally dirty files. Never reset, stash, discard, overwrite, commit, delete or wholesale-copy its optimizer. This checkpoint does not touch it or the Stage A worktree.
+
+## Outstanding operational bug register
+
+All entries remain open for the stated evidence or decision. Candidate fixes and passing automated tests do not close live acceptance. Earlier precise evidence references below and in `ROADMAP.md` remain applicable; no new trace or root cause is claimed here.
+
+| ID | Issue | Classification and outstanding disposition |
+| --- | --- | --- |
+| O1 | Medium versus Evening Boost | Confirmed software defect; narrow priority correction implemented in candidate. Supervised live acceptance outstanding; broader Boost stability is O4. |
+| O2 | Unexpected export interruptions/cycling | Observed but unexplained behaviour. Root cause and resolution not established; capture requests, actuator readbacks and physical flows. |
+| O3 | Solar Override | Observed but unexplained unexpected activation and reported export-ceiling discrepancies; ownership questions require reconciliation of actual requests, observed actuators and physical flows. No proven root cause. Related 27 September Solar threshold-switching evidence is retained in `ROADMAP.md` section 3; it does not establish the cause of all Solar Override reports. |
+| O4 | Evening Boost oscillation | Observed unstable switching and SoC requirements; operator-policy review and live acceptance outstanding. Not proven resolved by O1. Retained Phase 1 follow-up and 10 October deferral: `ROADMAP.md` sections 3-4. |
+| O5 | Overnight battery reserve | Operator-policy decision pending: Medium/High thresholds, tomorrow-PV awareness and enough battery until solar takes over. Proposed 30-cent tuning is not approved; no threshold changes authorised. |
+| O6 | Morning Dump / Morning Slow | Reported discharge/charging interactions, unexpected depletion and possible ownership overlap; explanation and live verification outstanding. Reported 15 October settings/flows above are context, not acceptance. |
+| O7 | Demand Window at exact-full SoC | Live-acceptance requirement: prove PV-only surplus export without deliberate battery export or grid import. Retain the hotfix evidence below and `ROADMAP.md` section 4B; automated tests do not prove physical outcome. |
+| O8 | 13-second transition observation gap | Evidence/live-acceptance requirement unresolved. Scoped `.68` acceptance cannot fill the gap or establish unexercised cases; see `ROADMAP.md` section 4. |
+| O9 | Obsolete, overlapping or misleading policies/settings | Scheduled short control-ownership/configuration audit, including Solar Override and configuration ownership. No removal, redesign or policy decision in this checkpoint. See `ROADMAP.md` section 5. |
+
 ## Historical .70 release-preparation validation (2026-10-13)
 The following is retained test evidence from before the operator-reported .70 installation, not a current release-preparation status.
 
@@ -71,11 +100,20 @@ The `.68` sequence remains mandatory: close export -> fresh trusted observed clo
 ## Site tuning is not a software default
 - Reported physical grid-connection export cap: **15 kW**; previously reported normal permission/PV MAX **25 kW**, Morning Slow near **2 kW**, Morning Dump SoC minimum **15%**, timing setting **1.0 hour** and Evening Boost **disabled**.
 - Previously reported `solar_surplus_fill_deadline_margin_minutes=120` and Morning Slow physical export headroom 0.0 remain historical reports, not rechecked effective settings. Do not infer other effective settings from source defaults or change defaults to match site tuning.
-- No HA settings or inverter controls were written in Stage A.
-## Next approval and live-proof boundary
-1. Stage A is a local, isolated **tests + docs checkpoint only**; current branch HEAD after commit identifies that checkpoint. No push, merge, installation, restart or HA/inverter write is included.
-2. Scope Stage B **separately**; no Stage B production write is authorised by this checkpoint. Candidate core scope: `app/optimizer.py`, `app/ha_client.py`, necessary targeted tests. Additional files/API wiring require demonstrated need and separate approval.
-3. Stage B must satisfy the 47 red authority/settlement regressions while preserving the reviewed narrow Medium-over-Evening Boost priority hunk and established startup/manual behaviour; no wholesale transfer from the protected worktree.
-4. Stage B validation: Stage A regressions, independent Manual/Force, Demand, MSC, Solar, Morning, fallback, reconnect and responsiveness protections; one final full suite, compileall, diff check and independent safety review. Stop on unexpected failures; never weaken protection tests.
-5. Before any later live acceptance: obtain separate installation approval; preserve .65 rollback, current authority, effective site settings and timestamped inverter evidence (EMS, PV MAX, import/export ceilings, ESS limits, SoC, battery/PV/grid flows, reason/owner). Service-call success does not establish physical settlement.
-6. Roadmap order remains outstanding Phase 1 physical proof, Phase 2 transition safety, short control-ownership audit, Climate Manager integration, then diagnostics/replay/experimental solar scheduling.
+- The physical inverter grid-export maximum is reportedly configured to **15 kW**, not freshly verified here. Legacy Force targets remain unchanged, including **25 kW**. Physical grid-export enforcement and ESS limits are separate controls; do not infer live enforcement from software targets or tests.
+- No HA settings or inverter controls are written by this checkpoint.
+## Next action and remaining gates
+
+Documentation review passed on 16 October 2026. The exact next action is separate approval to stage the identified 25 files and create one local development checkpoint commit. Documentation completion authorises no later step. The sequence below remains authoritative; its documentation-review step is complete.
+
+After any approved commit, report the actual new SHA, committed file list and verified cleanliness. Current HEAD/dirty-state descriptions here are a pre-commit snapshot. A later documentation-state reconciliation requires scoped approval; no amend or automatic second commit is included.
+
+1. Review this documentation-only change.
+2. Obtain separate approval for staging and committing the development checkpoint.
+3. Obtain separate approval for any publication, release or installation.
+4. Plan supervised live acceptance with .65 rollback ready.
+5. Capture actual inverter state and physical-flow evidence.
+6. Close or explicitly retain unresolved operational bugs based on evidence.
+7. Proceed to the short control-ownership audit and existing approved roadmap.
+
+The approved roadmap order remains authoritative, including architecture, project cleanup and full GUI/UX work before Climate Manager integration. Climate Manager broadly works and is not the current priority. Before later authorised live work, verify effective settings/current authority and capture timestamped EMS, PV MAX, import/export ceilings, ESS limits, SoC, battery/PV/grid flows and reason/owner with explicit stop/rollback conditions.

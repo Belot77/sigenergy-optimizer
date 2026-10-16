@@ -341,6 +341,16 @@ Manual and Force modes remain user-owned. Automated logic must not silently rein
 
 Negative-price, standby, freshness, remote-control availability, reserve, forecast, and other established safety policies keep their existing ownership and priority unless a separately approved change says otherwise.
 
+## Authority, request settlement and fallback ownership
+
+Automated control requires current verified Automated ownership and observed Remote EMS ON, rechecked after awaits and immediately before dispatch. Unknown authority fails closed. Preserve ordinary unattended restart/auto-enable after current Automated verification; a successful enable call alone grants no authority. No persistent OFF registry or mandatory restart handback is introduced.
+
+Settlement is specific to the dispatched request. Conflicting actuator state/metadata observations cannot establish settlement; report timestamps must be coherent with state and update provenance. Deliberate discharge requires the intended bounded export target, not merely a lower safe value, proven by a fresh trusted report strictly after that target's dispatch boundary. Safety closes and bounded restrictive corrections retain their upper-bound semantics. Recheck settlement and authority before permissive recovery; a later contradiction or takeover invalidates prior proof.
+
+Successful fallback releases only its temporary restrictions. ESS charge and discharge recovery remain bounded by independently owned decision limits and normal safe/trusted capabilities. Relinquished Solar charge ownership restores the otherwise applicable safe normal charge request; it cannot remove another owner's restriction. Demand Window import blocking and independent restrictive PV MAX remain effective through failed or successful fallback.
+
+An authenticated pending Manual/Force request is not cancelled by repeated unchanged Automated selector reports. Supersession requires a verified differing selector state transition strictly after the request, with coherent `request < last_changed <= last_updated <= observed report` evidence. Freshness alone does not prove an operator transition. Once superseded, subsequent writes and retries for the old request stop. Manual/Force targets, including the legacy 25 kW target, remain unchanged. Physical grid-export enforcement and ESS limits remain separate controls.
+
 ## Phase 2 transition contract
 
 Returning from deliberate battery export to an MSC surplus ceiling requires a multi-cycle observed transition:

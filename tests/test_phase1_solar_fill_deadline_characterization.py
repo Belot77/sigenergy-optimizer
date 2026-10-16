@@ -4,6 +4,8 @@ import asyncio
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+from test_phase1_solar_physical_relief_characterization import post_request_select_reports
+
 from app.config import Settings
 from app.models import MSC_SURPLUS_CEILING
 from app.optimizer import DISCHARGE_MODES, MODE_MAX_SELF
@@ -206,7 +208,7 @@ class SolarFillDeadlineCharacterizationTests(SolarDynamicChargeFixture):
                     optimizer = self._optimizer(ess_max_charging_limit="number.test_charge")
                     when = self.WHEN + timedelta(hours=2, minutes=59)
                     ha = ClockedRecordingHA()
-                    await establish_observed_msc_baseline(self, optimizer, ha, when)
+                    await establish_observed_msc_baseline(self, optimizer, ha, when - timedelta(seconds=1))
                     sunset = self.WHEN + timedelta(hours=4)
                     state_values = {
                         "forecast_pv_kw": [6.0] * 3,
@@ -237,7 +239,9 @@ class SolarFillDeadlineCharacterizationTests(SolarDynamicChargeFixture):
                         return result
 
                     ha.set_number = cross_deadline
-                    with patch("app.optimizer.datetime", MovingDateTime):
+                    with patch("app.optimizer.datetime", MovingDateTime), post_request_select_reports(
+                        ha, lambda: clock.__setitem__(0, clock[0] + timedelta(milliseconds=1)),
+                    ):
                         result = await optimizer._apply(state, decision)
 
                     self.assertTrue(result.succeeded, result.error)
