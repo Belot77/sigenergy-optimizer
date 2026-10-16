@@ -33,6 +33,7 @@ class Phase1TariffTelemetryTrustCharacterizationTests(Haos49CharacterizationCase
         return {
             "state": state,
             "attributes": dict(attributes or {}),
+            "last_updated": observed_at.isoformat(),
             "last_reported": observed_at.isoformat(),
         }
 

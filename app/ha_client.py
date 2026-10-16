@@ -146,6 +146,7 @@ class HAClient:
                     return {}
                 if not isinstance(row.get("state"), str):
                     return {}
+                timestamps = {}
                 for field in ("last_updated", "last_reported"):
                     raw_timestamp = row.get(field)
                     if not isinstance(raw_timestamp, str):
@@ -155,6 +156,9 @@ class HAClient:
                     )
                     if parsed.tzinfo is None or parsed.utcoffset() is None:
                         return {}
+                    timestamps[field] = parsed
+                if timestamps["last_reported"] < timestamps["last_updated"]:
+                    return {}
                 metadata[entity_id] = {
                     field: row[field]
                     for field in required_fields

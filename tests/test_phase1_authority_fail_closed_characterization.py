@@ -2,18 +2,173 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from app.models import Decision, SolarState
 from app.optimizer import (
     DISCHARGE_MODES,
     MODE_CMD_CHARGE_GRID,
+    MODE_CMD_CHARGE_PV,
+    MODE_CMD_DISCHARGE_PV,
     MODE_MAX_SELF,
 )
 from haos49_characterization_helpers import (
     Haos49CharacterizationCase,
     RecordingHA,
 )
+from test_control_authority_safety_characterization import _Rig
+
+
+@pytest.fixture
+def authority_rig():
+    rig = _Rig()
+    try:
+        yield rig
+    finally:
+        rig.case.tearDown()
+
+
+def test_contradictory_export_metadata_cannot_settle_discharge_target(authority_rig):
+    rig = authority_rig
+    rig.automated()
+    cfg = rig.opt.cfg
+    rig.ha.observe(cfg.grid_export_limit, 25.0)
+
+    async def contradictory_report(ha, method, entity, value):
+        if entity == cfg.grid_export_limit and value == 5.0:
+            rig.clock.advance()
+            ha.observe(entity, 5.0)  # Later REST snapshot appears to settle.
+            rig.clock.advance()
+            ha.metadata[entity].update(
+                state="25.0", last_updated=rig.clock.now.isoformat(),
+                last_reported=rig.clock.now.isoformat(),
+            )
+
+    rig.ha.on_write = contradictory_report
+    state = rig.state(current_export_limit=25.0, demand_window_active=True)
+    decision = rig.discharge()
+    decision.ess_charge_limit = 0.01
+    decision.ess_discharge_limit = 0.01
+    result = rig.apply(state, decision)
+
+    assert ("set_number", cfg.grid_export_limit, 5.0) in rig.ha.calls
+    assert not any(method == "select_option" and value in DISCHARGE_MODES
+                   for method, entity, value in rig.ha.calls if entity == cfg.ems_mode_select)
+    assert not result.succeeded
+    assert result.fallback_attempted
+    for entity in (cfg.grid_import_limit, cfg.ess_max_charging_limit,
+                   cfg.ess_max_discharging_limit):
+        assert ("set_number", entity, 0.01) in rig.ha.calls
+
+
+def _pending_force_reports(rig, evidence="unchanged", *, settle_ems=True):
+    cfg = rig.opt.cfg
+    rig.opt.cfg.ess_limit_fallback_kw = 25.0
+    rig.automated()
+    original_change = rig.clock.now
+    for rows in (rig.ha.reports, rig.ha.metadata):
+        rows[cfg.sigenergy_mode_select]["last_changed"] = original_change.isoformat()
+    rig.read()
+    rig.clock.advance()
+
+    async def report(ha, method, entity, value):
+        rig.clock.advance()
+        if entity == cfg.sigenergy_mode_select:
+            if evidence in {"Manual", "Automated"}:
+                # The Force selection really occurs before a newer external
+                # transition, including a genuine handback to Automated.
+                ha.observe(entity, value)
+                rig.clock.advance()
+                ha.observe(entity, evidence)
+                changed = rig.clock.now.isoformat()
+            else:
+                ha.observe(entity, "unavailable" if evidence == "unavailable" else cfg.automated_option,
+                           updated=original_change if evidence == "unchanged" else rig.clock.now)
+                changed = original_change.isoformat()
+                if evidence == "malformed_change":
+                    changed = "not-a-timestamp"
+                elif evidence == "future_change":
+                    changed = (rig.clock.now + timedelta(seconds=1)).isoformat()
+                elif evidence == "equal_request":
+                    changed = datetime.fromtimestamp(rig.opt._manual_mode_requested_at
+                                                     or rig.clock.now.timestamp() - 1,
+                                                     timezone.utc).isoformat()
+            for rows in (ha.reports, ha.metadata):
+                if evidence != "missing_change":
+                    rows[entity]["last_changed"] = changed
+            if evidence == "metadata_conflict":
+                ha.metadata[entity]["state"] = cfg.manual_option
+        elif entity != cfg.ems_mode_select or settle_ems:
+            ha.observe(entity, value)
+
+    rig.ha.on_write = report
+
+
+@pytest.mark.parametrize("mode,ems,export_kw,import_kw", [
+    ("Force Full Export", MODE_CMD_DISCHARGE_PV, 25.0, 0.01),
+    ("Force Full Import", MODE_CMD_CHARGE_GRID, 0.01, 25.0),
+    ("Force Full Import + PV", MODE_CMD_CHARGE_PV, 0.01, 25.0),
+    ("Prevent Import & Export", MODE_MAX_SELF, 0.01, 0.01),
+])
+def test_unchanged_automated_report_preserves_pending_force_targets(
+    authority_rig, mode, ems, export_kw, import_kw,
+):
+    rig = authority_rig
+    _pending_force_reports(rig)
+    cfg = rig.opt.cfg
+    rig.clock.run(rig.opt.apply_manual_mode(mode))
+    assert rig.opt._manual_mode_override == mode
+    assert ("select_option", cfg.ems_mode_select, ems) in rig.ha.calls
+    for entity, value in ((cfg.grid_export_limit, export_kw), (cfg.grid_import_limit, import_kw),
+                          (cfg.pv_max_power_limit, cfg.pv_max_power_value),
+                          (cfg.ess_max_charging_limit, 25.0), (cfg.ess_max_discharging_limit, 25.0)):
+        assert ("set_number", entity, value) in rig.ha.calls
+
+
+@pytest.mark.parametrize("selection", ["Manual", "Automated"])
+def test_verified_newer_selector_transition_supersedes_force_visibly(authority_rig, selection):
+    rig = authority_rig
+    _pending_force_reports(rig, selection)
+    with pytest.raises(RuntimeError, match="superseded"):
+        rig.clock.run(rig.opt.apply_manual_mode(rig.opt.cfg.full_export_option))
+    assert rig.opt._manual_mode_override is None
+    assert rig.writes() == []
+
+
+@pytest.mark.parametrize("evidence", [
+    "attribute_update", "missing_change", "malformed_change", "future_change",
+    "equal_request", "metadata_conflict", "unavailable",
+])
+def test_ambiguous_selector_evidence_keeps_force_and_blocks_stale_auto(authority_rig, evidence):
+    rig = authority_rig
+    _pending_force_reports(rig, evidence)
+    pending_auto = rig.state(current_export_limit=25.0)
+    rig.clock.run(rig.opt.apply_manual_mode(rig.opt.cfg.full_export_option))
+    assert rig.opt._manual_mode_override == rig.opt.cfg.full_export_option
+    assert ("select_option", rig.opt.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV) in rig.ha.calls
+    boundary = len(rig.ha.calls)
+    result = rig.apply(pending_auto, rig.discharge())
+    assert not result.succeeded
+    assert rig.ha.calls[boundary:] == []
+
+
+def test_pending_force_unsettled_ems_failure_is_visible(authority_rig):
+    rig = authority_rig
+    _pending_force_reports(rig, settle_ems=False)
+    with pytest.raises(RuntimeError, match="target writes failed.*ems_mode"):
+        rig.clock.run(rig.opt.apply_manual_mode(rig.opt.cfg.full_export_option))
+    assert rig.opt._manual_mode_override == rig.opt.cfg.full_export_option
+
+
+@pytest.mark.parametrize("newer", ["Automated", "Manual", "Force Full Import"])
+def test_newer_authenticated_request_supersedes_prior_force(authority_rig, newer):
+    rig = authority_rig
+    _pending_force_reports(rig)
+    rig.clock.run(rig.opt.apply_manual_mode(rig.opt.cfg.full_export_option))
+    rig.clock.run(rig.opt.apply_manual_mode(newer))
+    assert rig.opt._manual_mode_override == (None if newer == "Automated" else newer)
 
 
 class Phase1AuthorityFailClosedCharacterizationTests(Haos49CharacterizationCase):
@@ -318,6 +473,8 @@ class Phase1AuthorityFailClosedCharacterizationTests(Haos49CharacterizationCase)
     def test_successful_ha_control_request_does_not_grant_same_cycle_actuator_authority(self) -> None:
         ha = RecordingHA(settle_switch=False, turn_on_result=True)
         optimizer = self.optimizer(ha)
+        ha._record_state_value(optimizer.cfg.sigenergy_mode_select, optimizer.cfg.automated_option)
+        ha._record_state_value(optimizer.cfg.ha_control_switch, "off")
 
         cycle_1_state = self._negative_import_state(
             optimizer.cfg.automated_option,
@@ -332,6 +489,9 @@ class Phase1AuthorityFailClosedCharacterizationTests(Haos49CharacterizationCase)
         cycle_1_calls = list(ha.calls)
 
         ha.calls.clear()
+        # The second cycle receives an actual current ON report, independently
+        # of turn_on's successful return in the first cycle.
+        ha._record_state_value(optimizer.cfg.ha_control_switch, "on")
         cycle_2_state = self._negative_import_state(
             optimizer.cfg.automated_option,
             True,
@@ -369,7 +529,11 @@ class Phase1AuthorityFailClosedCharacterizationTests(Haos49CharacterizationCase)
                 "state": raw_state,
                 "attributes": {},
             }
-        return asyncio.run(optimizer._read_state())
+        parsed = asyncio.run(optimizer._read_state())
+        # These tests isolate grid-position trust under verified ownership.
+        ha._record_state_value(optimizer.cfg.sigenergy_mode_select, optimizer.cfg.automated_option)
+        ha._record_state_value(optimizer.cfg.ha_control_switch, "on")
+        return parsed
 
     def _closed_decision(self) -> Decision:
         return Decision(

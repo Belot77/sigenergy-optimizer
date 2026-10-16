@@ -27,6 +27,7 @@ class Phase1PVLoadTelemetryTrustCharacterizationTests(Haos49CharacterizationCase
         return {
             "state": state,
             "attributes": dict(attributes or {}),
+            "last_updated": reported_utc.isoformat(),
             "last_reported": reported_utc.isoformat(),
         }
 

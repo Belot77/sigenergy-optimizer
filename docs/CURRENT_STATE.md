@@ -1,31 +1,54 @@
 # Current State
 
-Last consolidated: 2026-10-13
+Last consolidated: 2026-10-16
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
 ## Live identity and rollback
+- Last **operator-reported** live release: **2.3.59-haos70**, source `08f4daf53941bd850a4fe392b458c42b1df68b47`. This is not a new Home Assistant/runtime verification. This documentation checkpoint makes no installed-system changes.
+- Protected known-good rollback: **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Do not promote .70 to known-good without supervised live acceptance.
+- Morning Dump physically activated on 15 October; minimum SoC deliberately set to 15%, and timing option set to 1.0 hour before sunrise (existing implementation runs from sunrise through one hour afterward). Morning Slow was observed near 2 kW and physical export near 15 kW. Evening Boost disabled. Approximate 15 October PV forecast: 130 kWh. These are reported observations/settings, not renewed authority verification.
+- Phase 1 remains open, including exact-full Demand Window PV-only physical proof, Evening Boost reserve/transition stability and Solar threshold-switching disposition. Phase 2 retains only scoped .68 acceptance; a 13-second observation gap and broader cases remain unproven. Four-tier and .70 physical acceptance remain outstanding.
+- Preserve .65 rollback readiness before any later supervised live testing. Passing tests and successful service calls do not prove inverter settlement.
+## Active Stage B candidate and validation
 
-- Last reported live: **2.3.58-haos69**, source `b90fdeafce5e40e206ffd17dce5e1a8c810519e6`. This is the operator-reported original .69 release, not a freshly verified HA/runtime observation. It supersedes the earlier current .68 and pre-release .69 descriptions.
-- Known-good rollback remains **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Neither the original .69 release nor this local hotfix is promoted to known-good rollback.
-- Scoped Phase 2 acceptance was reported for `.68`; its **13-second observation gap remains unproven**. The reported .69 identity supplies no additional physical/live acceptance evidence.
-- Published hotfix source: `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`; published documentation and verified clean pre-preparation HEAD: `a562fd269d4dea651afc39b535745a866f656295`. Independent GitHub code audit reported **GO for the bounded hotfix**. Any future release-preparation commit will contain this local metadata/documentation patch and have its own SHA; it is not assigned or claimed here.
-- Candidate **2.3.59-haos70 is locally prepared only**, with all five established version markers aligned. It is not committed, pushed, tagged, built, released, installed or live-accepted. Production differences from the published hotfix are limited to the FastAPI version and `_RUNTIME_SIGNATURE`; tests, control behavior, contract, Dockerfile and build workflow are unchanged.
-- Verified preparation context reports proposed tag `v2.3.59-haos70` absent from remote Git tags and `gh release list` returning no GitHub releases. These are supplied checks, not refreshed here. GHCR image namespace conflict checking remains outstanding; recheck publication identities/conflicts before separately authorized publication. The tag-triggered workflow publishes version, major/minor and `latest` image tags and passes `SOURCE_REF=${{ github.sha }}`; no build or workflow change is performed.
+- Worktree: `C:\Projects\sigenergy_optimizer-authority-stage-b`; branch `fix/control-authority-safety`; origin `https://github.com/Belot77/sigenergy-optimizer`. Completed Stage B checkpoint **`ae4a974692aae1300c97845fcc32d4cfa6c2bdea`** (`ae4a974692aa`) is committed and pushed. PR #20 is **open against `main`, not merged**. The earlier 25-file dirty/pre-commit checkpoint is complete.
+- Candidate **2.3.60-haos71** is prepared in the five existing release markers only, with four approved documentation updates. Production logic and tests remain identical to `ae4a974692aa`. The candidate is not tagged, published, installed or live-proven. Proposed tag: `v2.3.60-haos71`; no tag is created by preparation.
+- Stage B implementation is **completed**, including the narrow Medium-over-Evening Boost priority correction and authority/actuator safety repair. Defects A, B and C are corrected; the supplied independent focused review passed all three corrections.
+- Retained final full-suite result supplied for this checkpoint: **1,036 tests / 1,084 subtests, zero failures**. Compileall and `git diff --check` passed. The full suite is not rerun for version-only preparation; release consistency, compileall with an external cache, diff and exact-scope checks are the preparation gate.
+- **No supervised live acceptance yet. Stage B remains NO-GO for deployment.** Automated validation and independent code review do not prove inverter settlement or physical flow.
 
-## Active worktree and validation
+### Completed safety corrections
 
-- Worktree: `C:\Projects\sigenergy_optimizer-demand-window-hotfix`.
-- Branch: `fix/demand-window-exact-full-pv-only`.
-- Published code-bearing checkpoint: `67fae5db2451fbf3e706b10cf4e2dbad07b38bd9`; current pre-preparation HEAD: `a562fd269d4dea651afc39b535745a866f656295`. A future preparation commit is a separate identity.
-- Release-preparation preflight verified the expected branch, HEAD `a562fd269d4dea651afc39b535745a866f656295` and a clean worktree with nothing staged or untracked.
-- Approved local scope: five release-version surfaces plus `docs/CURRENT_STATE.md`, `docs/AI_HANDOVER.md`, `docs/ROADMAP.md`, `docs/CHANGELOG.md` and root `CHANGELOG.md`; no test or control-logic changes.
-- Targeted regression: `test_demand_window_exact_full_pv_only_export_contract` failed before the production correction and passed afterward, checking final decisions for Demand Window OFF, ON and untrusted states without weakening assertions.
-- Independent protections: **466 tests / 611 subtests passed**, zero failures. Coverage includes Demand Window, exact-full/cheap-FiT, Manual/Force, MSC settlement, telemetry trust, actual import-cost guards, battery-export ownership, Morning and Solar policies.
-- Retained hotfix validation: **946 tests / 1,079 subtests passed**, zero failures, **206 warnings**; compileall and `git diff --check` passed. Release-preparation validation is recorded separately below; it does not establish live acceptance.
-- Missing local `Australia/Adelaide` timezone data caused UTC fallback in optimizer fixture logs. This is a test-environment limitation, not installed-timezone or live-behaviour proof. The full-suite warnings remain the recorded Pydantic deprecations.
+- **A - Contradictory actuator evidence:** conflicting actuator observations cannot prove settlement. Deliberate discharge requires the intended export target, with fresh provenance-bearing evidence strictly after its own dispatch boundary; a smaller value sufficient for a safety close is not proof of a deliberate discharge target.
+- **B - Independent ESS restrictions:** successful fallback cannot restore ESS charge/discharge capability above independently owned restrictions. Solar relinquishment restores only the otherwise safe normal charge request; Demand Window import blocking and independent PV restrictions remain effective.
+- **C - Pending Force ownership:** unchanged Automated selector reports prove freshness, not a new operator selection. A pending authenticated Force request yields to a verified selector state transition strictly after its request, with coherent change/update/report timestamps; supersession stops subsequent writes/retries.
 
-## Local .70 release-preparation validation (2026-10-13)
+Current Automated ownership and observed Remote EMS ON remain required at application/dispatch boundaries. Unknown evidence fails closed; independent restrictive writes remain available while unrelated permissive recovery waits for observed settlement. Preserve ordinary unattended restart/auto-enable after current Automated verification and observed Remote EMS ON, authenticated Manual/Force and `/set_ess`; no persistent OFF registry or mandatory restart handback redesign.
+
+### Protected reference and historical Stage A evidence
+
+- Stage A tests-only characterization was independently accepted on 15 October: 25 passed, 47 deliberately red baseline regressions; corrected D7 passed; independent protections 77 tests/89 subtests passed, zero unexpected failures. These are historical baseline results, not current Stage B failures. Preserve the regression assertions.
+- Protected reference: `C:\Projects\sigenergy_optimizer-evening-priority`, branch `test/evening-medium-priority-characterization`, base `08f4daf...`, ten intentionally dirty files. Never reset, stash, discard, overwrite, commit, delete or wholesale-copy its optimizer. This checkpoint does not touch it or the Stage A worktree.
+
+## Outstanding operational bug register
+
+All entries remain open for the stated evidence or decision. Candidate fixes and passing automated tests do not close live acceptance. Earlier precise evidence references below and in `ROADMAP.md` remain applicable; no new trace or root cause is claimed here.
+
+| ID | Issue | Classification and outstanding disposition |
+| --- | --- | --- |
+| O1 | Medium versus Evening Boost | Confirmed software defect; narrow priority correction implemented in candidate. Supervised live acceptance outstanding; broader Boost stability is O4. |
+| O2 | Unexpected export interruptions/cycling | Observed but unexplained behaviour. Root cause and resolution not established; capture requests, actuator readbacks and physical flows. |
+| O3 | Solar Override | Observed but unexplained unexpected activation and reported export-ceiling discrepancies; ownership questions require reconciliation of actual requests, observed actuators and physical flows. No proven root cause. Related 27 September Solar threshold-switching evidence is retained in `ROADMAP.md` section 3; it does not establish the cause of all Solar Override reports. |
+| O4 | Evening Boost oscillation | Observed unstable switching and SoC requirements; operator-policy review and live acceptance outstanding. Not proven resolved by O1. Retained Phase 1 follow-up and 10 October deferral: `ROADMAP.md` sections 3-4. |
+| O5 | Overnight battery reserve | Operator-policy decision pending: Medium/High thresholds, tomorrow-PV awareness and enough battery until solar takes over. Proposed 30-cent tuning is not approved; no threshold changes authorised. |
+| O6 | Morning Dump / Morning Slow | Reported discharge/charging interactions, unexpected depletion and possible ownership overlap; explanation and live verification outstanding. Reported 15 October settings/flows above are context, not acceptance. |
+| O7 | Demand Window at exact-full SoC | Live-acceptance requirement: prove PV-only surplus export without deliberate battery export or grid import. Retain the hotfix evidence below and `ROADMAP.md` section 4B; automated tests do not prove physical outcome. |
+| O8 | 13-second transition observation gap | Evidence/live-acceptance requirement unresolved. Scoped `.68` acceptance cannot fill the gap or establish unexercised cases; see `ROADMAP.md` section 4. |
+| O9 | Obsolete, overlapping or misleading policies/settings | Scheduled short control-ownership/configuration audit, including Solar Override and configuration ownership. No removal, redesign or policy decision in this checkpoint. See `ROADMAP.md` section 5. |
+
+## Historical .70 release-preparation validation (2026-10-13)
+The following is retained test evidence from before the operator-reported .70 installation, not a current release-preparation status.
 
 - Exact-marker extraction asserted all five values equal `2.3.59-haos70`; existing release consistency checks passed: `python -m pytest -q -p no:cacheprovider tests/test_release_version_consistency.py` (**2 passed**).
 - Demand Window regression and independent protections passed: **356 tests / 468 subtests**, zero failures, **203 Pydantic deprecation warnings**. Command: `python -m pytest -q -p no:cacheprovider tests/test_msc_baseline_overlay_contract.py tests/test_demand_window_pv_max.py tests/test_phase1_actuator_settlement_fallback_characterization.py tests/test_phase1_authority_fail_closed_characterization.py tests/test_four_tier_battery_export.py tests/test_export_value_gate_advisory.py tests/test_phase1_capability_model_characterization.py tests/test_phase1_battery_telemetry_trust_characterization.py tests/test_solar_surplus_redesign.py tests/test_phase1_morning_slow_relief_characterization.py`. This includes exact-full ON/OFF/untrusted, Manual/Force, observed settlement, actual import-cost, four-tier ownership, telemetry/capability, Morning and Solar protections.
@@ -75,20 +98,22 @@ The `.68` sequence remains mandatory: close export -> fresh trusted observed clo
 - Further Evening Boost redesign, trusted non-positive-import redesign, Package 6B, experimental scheduling and later architecture/cleanup/GUI/Climate work remain parked under the roadmap; this package does not authorize them.
 
 ## Site tuning is not a software default
+- Reported physical grid-connection export cap: **15 kW**; previously reported normal permission/PV MAX **25 kW**, Morning Slow near **2 kW**, Morning Dump SoC minimum **15%**, timing setting **1.0 hour** and Evening Boost **disabled**.
+- Previously reported `solar_surplus_fill_deadline_margin_minutes=120` and Morning Slow physical export headroom 0.0 remain historical reports, not rechecked effective settings. Do not infer other effective settings from source defaults or change defaults to match site tuning.
+- The physical inverter grid-export maximum is reportedly configured to **15 kW**, not freshly verified here. Legacy Force targets remain unchanged, including **25 kW**. Physical grid-export enforcement and ESS limits are separate controls; do not infer live enforcement from software targets or tests.
+- No HA settings or inverter controls are written by this checkpoint.
+## Next action and remaining gates
 
-Previously reported operator tuning was `grid_connection_export_limit_kw=15.0` and `solar_surplus_fill_deadline_margin_minutes=120`; software defaults remain **0.0** and **60** respectively. Morning Slow physical export headroom was reported at **0.0**, normal site export permission and PV MAX at 25 kW, and Morning Dump's operator floor at 15%. These are historical operator reports, not freshly verified current settings or authority to change defaults. No operator settings were queried or written for this checkpoint.
+The development checkpoint is completed at `ae4a974692aa`. The operator authorised one normal `.71` metadata/documentation commit and branch push; the previous staging/commit approval sequence and dirty-state snapshot are superseded. PR #20 remains open, not merged.
 
-## Next approval and live-proof boundary
+Release identity preflight reconfirmed the proposed Git tag and GitHub release absent, with no public GHCR manifest for `ghcr.io/belot77/sigenergy-optimizer:2.3.60-haos71` (404 `MANIFEST_UNKNOWN`). GitHub package-version listing returned 403 because `read:packages` is unavailable; publication must recheck identities and shared image aliases before any build. No image is published here.
 
-Next actions:
+1. Obtain separate approval for publication, including any merge, tag-triggered image build and release.
+2. Obtain separate approval for supervised installation/live acceptance with .65 rollback ready.
+3. Capture actual inverter state and physical-flow evidence.
+4. Close or explicitly retain all nine unresolved operational issues O1-O9 based on evidence.
+5. Proceed to the short control-ownership audit and existing approved roadmap.
 
-1. Review the exact ten-file local, unstaged release-preparation checkpoint and validation results.
-2. Obtain separate approval to stage and create a local metadata/documentation-only commit on `fix/demand-window-exact-full-pv-only`; record its SHA separately from the published hotfix source and pre-preparation HEAD.
-3. Complete GHCR namespace/conflict and publication identity checks before separately authorized push, merge, tag, build or release.
-4. Retain separate installation and supervised live-acceptance approval, effective-setting/authority checks, .65 rollback readiness and explicit stop/rollback conditions. Commit approval does not authorize publication or live work.
+Stage B remains **NO-GO for deployment**. Reported live `.70` and protected `.65` rollback are unchanged.
 
-This task performs no staging, commit, push, tag, build, release, deployment, installation, restart or HA/inverter write.
-
-The published hotfix has independent GitHub code-audit GO; hotfix physical/live acceptance remains outstanding. Any later publication/release or controlled live work requires separate authorization, exact source/build identification, effective operator-setting/authority checks, .65 rollback readiness, supervision and explicit stop/rollback conditions. Monitor-only observation and controlled live acceptance must distinguish requested ceiling/intent from actual export, capture fresh timestamped actuator readbacks and physical flows, and retain all observed-settlement barriers. No live action is performed here.
-
-Preserve roadmap dependencies and the open Phase 1/2 gates, including Evening Boost reserve/transition stability, Solar threshold-switching disposition, the unproven 13-second observation gap and unexercised four-tier scenarios. The original .69 release report and passing hotfix tests do not close those limitations.
+The approved roadmap order remains authoritative, including architecture, project cleanup and full GUI/UX work before Climate Manager integration. Climate Manager broadly works and is not the current priority. Before later authorised live work, verify effective settings/current authority and capture timestamped EMS, PV MAX, import/export ceilings, ESS limits, SoC, battery/PV/grid flows and reason/owner with explicit stop/rollback conditions.

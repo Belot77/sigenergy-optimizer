@@ -67,10 +67,10 @@ class LiveTransitionHA(RecordingHA):
         self.clock_utc = None
         self.report_after_select = None
 
-    async def get_state_value(self, entity_id, default=""):
+    def _deliver_scripted_report(self, entity_ids):
         if self.report_after_select is not None:
             report_entity, report_value = self.report_after_select
-            if entity_id == report_entity and ("select_option", report_entity, report_value) in self.calls:
+            if report_entity in entity_ids and ("select_option", report_entity, report_value) in self.calls:
                 # Explicitly scripted telemetry arrives on a later read, not as
                 # a side effect of service acceptance. Unscripted requests never settle.
                 self.clock_utc += timedelta(milliseconds=1)
@@ -80,6 +80,13 @@ class LiveTransitionHA(RecordingHA):
                     "last_updated": reported, "last_reported": reported,
                 }
                 self.report_after_select = None
+
+    async def bulk_states(self, entity_ids):
+        self._deliver_scripted_report(entity_ids)
+        return await super().bulk_states(entity_ids)
+
+    async def get_state_value(self, entity_id, default=""):
+        self._deliver_scripted_report([entity_id])
         return await super().get_state_value(entity_id, default)
 
     async def get_state_report_metadata(self, entity_ids):
@@ -97,7 +104,7 @@ class LiveTransitionHA(RecordingHA):
 @contextmanager
 def later_msc_report_clock(ha, when):
     """Give these positive fixtures a later actuator report on one shared clock."""
-    moment = [when.replace(tzinfo=timezone.utc) if when.tzinfo is None else when.astimezone(timezone.utc)]
+    moment = [datetime.fromtimestamp(when.timestamp(), timezone.utc)]
 
     class ObservedDateTime(datetime):
         @classmethod
@@ -117,7 +124,7 @@ def later_msc_report_clock(ha, when):
         with patch("app.optimizer.datetime", ObservedDateTime), patch.object(
             characterization_helpers, "datetime", ObservedDateTime,
         ):
-            yield
+            yield moment
     finally:
         ha.select_option = original_select
 
@@ -142,7 +149,9 @@ async def establish_observed_msc_baseline(case, optimizer, ha, when) -> None:
         ess_discharge_limit=cfg.ess_discharge_limit_value,
         pv_max_power_limit=cfg.pv_max_power_normal,
     )
-    with case.optimizer_time(when):
+    with later_msc_report_clock(ha, when):
+        ha._record_state_value(cfg.sigenergy_mode_select, cfg.automated_option)
+        ha._record_state_value(cfg.ha_control_switch, "on")
         ha._record_state_value(cfg.ems_mode_select, MODE_MAX_SELF)
         ha._record_state_value(cfg.grid_export_limit, 0.01)
         result = await optimizer._apply(state, decision)
@@ -153,6 +162,20 @@ async def establish_observed_msc_baseline(case, optimizer, ha, when) -> None:
 
 class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
     """Future MSC baseline; current haos53 is expected to fail architecture cases."""
+
+    @staticmethod
+    def _supply_current_authority(optimizer, ha, observed_at):
+        # These actuator scenarios explicitly own Automated control. Supply it
+        # through current HA reads independently of their decision snapshots.
+        reported = observed_at.isoformat()
+        for entity, value in (
+            (optimizer.cfg.sigenergy_mode_select, optimizer.cfg.automated_option),
+            (optimizer.cfg.ha_control_switch, "on"),
+        ):
+            ha.states[entity] = {
+                "entity_id": entity, "state": value, "attributes": {},
+                "last_updated": reported, "last_reported": reported,
+            }
 
     def assert_contract_outputs(
         self,
@@ -685,10 +708,13 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             with self.subTest(raw_mode=raw_mode):
                 ha = RecordingHA()
                 optimizer = self.optimizer(ha)
+                observed_at = datetime.now(timezone.utc).isoformat()
                 ha.states = {
                     optimizer.cfg.sigenergy_mode_select: {
                         "state": optimizer.cfg.automated_option,
                         "attributes": {},
+                        "last_updated": observed_at,
+                        "last_reported": observed_at,
                     },
                     optimizer.cfg.ems_mode_select: {
                         "state": raw_mode,
@@ -719,6 +745,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
     def test_successful_msc_request_is_not_observation(self) -> None:
         ha = RecordingHA(settle_numbers=False, settle_selects=False)
         optimizer = self.optimizer(ha)
+        self._supply_current_authority(optimizer, ha, datetime.now(timezone.utc))
         ha.state_values = {
             optimizer.cfg.ems_mode_select: MODE_CMD_DISCHARGE_PV,
             optimizer.cfg.grid_export_limit: 0.01,
@@ -770,6 +797,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
     ) -> None:
         ha = RecordingHA(settle_numbers=False, settle_selects=False)
         optimizer = self.optimizer(ha)
+        self._supply_current_authority(optimizer, ha, datetime.now(timezone.utc))
         ha.state_values = {
             optimizer.cfg.ems_mode_select: MODE_CMD_DISCHARGE_PV,
             optimizer.cfg.grid_export_limit: 12.0,
@@ -797,6 +825,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
     def test_exact_msc_does_not_reopen_before_export_is_observed_closed(self) -> None:
         ha = RecordingHA(settle_numbers=False, settle_selects=False)
         optimizer = self.optimizer(ha)
+        self._supply_current_authority(optimizer, ha, datetime.now(timezone.utc))
         ha.state_values = {
             optimizer.cfg.ems_mode_select: MODE_CMD_DISCHARGE_PV,
             optimizer.cfg.grid_export_limit: 12.0,
@@ -840,6 +869,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         )
         optimizer._tz = timezone.utc
         cfg = optimizer.cfg
+        self._supply_current_authority(optimizer, ha, datetime.now(timezone.utc))
         expected_pv_limit = 2.0 if standby else 0.1
         msc_call = ("select_option", cfg.ems_mode_select, MODE_MAX_SELF)
         close_call = ("set_number", cfg.grid_export_limit, 0.01)
@@ -943,6 +973,20 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                 class FailedFirstExportHA(RecordingHA):
                     export_entity = ""
                     failed = False
+                    closure_report_pending = True
+
+                    async def bulk_states(self, entity_ids):
+                        closure = ("set_number", self.export_entity, 0.01)
+                        if (
+                            self.closure_report_pending and self.export_entity in entity_ids
+                            and self.calls.count(closure) == 2
+                        ):
+                            # This positive fallback explicitly supplies a later
+                            # physical closure report, separate from acceptance.
+                            moment[0] += timedelta(milliseconds=1)
+                            self._record_state_value(self.export_entity, 0.01)
+                            self.closure_report_pending = False
+                        return await super().bulk_states(entity_ids)
 
                     async def set_number(self, entity_id, value):
                         if entity_id == self.export_entity and not self.failed:
@@ -972,7 +1016,8 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                 self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
                 self.assertEqual(0.1, decision.pv_max_power_limit)
 
-                with later_msc_report_clock(ha, self.FIXED_AFTERNOON):
+                with later_msc_report_clock(ha, self.FIXED_AFTERNOON) as moment:
+                    self._supply_current_authority(optimizer, ha, moment[0])
                     result = asyncio.run(optimizer._apply(state, decision))
 
                 self.assertFalse(result.succeeded)
@@ -994,7 +1039,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                 ))
 
     def test_settled_transition_discharge_failure_preserves_pv_safety_in_fallback(self) -> None:
-        async def run(standby, fallback_settles):
+        async def run(standby, fallback_settles, charge_restricted):
             ha = ClockedRecordingHA()
             moment = [self.FIXED_AFTERNOON.replace(tzinfo=timezone.utc)]
 
@@ -1022,8 +1067,25 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             optimizer._tz = timezone.utc
             cfg = optimizer.cfg
             expected_pv_limit = 2.0 if standby else 0.1
+            self._supply_current_authority(optimizer, ha, moment[0])
             failure_injected = False
+            closure_report_pending = True
             original_set_number = ha.set_number
+            original_bulk_states = ha.bulk_states
+
+            async def later_fallback_closure(entity_ids):
+                nonlocal closure_report_pending
+                if (
+                    fallback_settles and failure_injected and closure_report_pending
+                    and cfg.grid_export_limit in entity_ids
+                    and ha.calls.count(("set_number", cfg.grid_export_limit, 0.01)) == 2
+                ):
+                    moment[0] += timedelta(milliseconds=1)
+                    ha._record_state_value(cfg.grid_export_limit, 0.01)
+                    closure_report_pending = False
+                return await original_bulk_states(entity_ids)
+
+            ha.bulk_states = later_fallback_closure
 
             async def fail_discharge_once(entity_id, value):
                 nonlocal failure_injected
@@ -1071,6 +1133,11 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                     self.assertEqual(standby, decision.standby_holdoff_active)
                     self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
                     self.assertEqual(expected_pv_limit, decision.pv_max_power_limit)
+                    if charge_restricted:
+                        # An independent ESS owner remains active through the
+                        # transition and the emergency fallback recovery.
+                        decision.ess_charge_limit = 0.01
+                        decision.trace_values["ess_charge_limit_owner"] = "independent_safety"
                     if second == 2:
                         self.assertTrue(optimizer._msc_transition_observed(state))
                         ha.set_number = fail_discharge_once
@@ -1090,6 +1157,17 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                     self.assertTrue(failure_injected)
                     self.assertTrue(result.fallback_attempted)
                     self.assertEqual(fallback_settles, result.fallback_succeeded, result.error)
+                    for entity, limit in (
+                        (cfg.ess_max_charging_limit, decision.ess_charge_limit),
+                        (cfg.ess_max_discharging_limit, decision.ess_discharge_limit),
+                    ):
+                        if limit <= 0.011:
+                            ess_calls = [value for method, target, value in cycle_calls
+                                         if method == "set_number" and target == entity]
+                            self.assertTrue(ess_calls)
+                            self.assertTrue(all(value <= limit for value in ess_calls), ess_calls)
+                            if fallback_settles:
+                                self.assertEqual(limit, ha.state_values[entity])
                     pv_calls = [
                         value for method, entity_id, value in cycle_calls
                         if method == "set_number" and entity_id == cfg.pv_max_power_limit
@@ -1110,8 +1188,10 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
 
         for standby in (True, False):
             for fallback_settles in (True, False):
-                with self.subTest(standby=standby, fallback_settles=fallback_settles):
-                    asyncio.run(run(standby, fallback_settles))
+                for charge_restricted in (True, False):
+                    with self.subTest(standby=standby, fallback_settles=fallback_settles,
+                                      charge_restricted=charge_restricted):
+                        asyncio.run(run(standby, fallback_settles, charge_restricted))
 
     def test_fallback_recovery_requires_fresh_post_request_msc_provenance(self) -> None:
         async def run(scenario):
@@ -1125,6 +1205,22 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             class FallbackObservationHA(ClockedRecordingHA):
                 export_failed = False
                 report = None
+                closure_report_pending = True
+
+                async def bulk_states(self, entity_ids):
+                    # Script an independent later closure observation for this
+                    # MSC-provenance matrix. Service acceptance alone never
+                    # supplies the post-request settlement proof.
+                    closure_request = ("set_number", cfg.grid_export_limit, 0.01)
+                    if (
+                        self.closure_report_pending
+                        and cfg.grid_export_limit in entity_ids
+                        and self.calls.count(closure_request) == 2
+                    ):
+                        moment[0] += timedelta(milliseconds=1)
+                        self._record_state_value(cfg.grid_export_limit, 0.01)
+                        self.closure_report_pending = False
+                    return await super().bulk_states(entity_ids)
 
                 async def set_number(self, entity_id, value):
                     if entity_id == cfg.grid_export_limit and not self.export_failed:
@@ -1183,6 +1279,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                 ess_max_discharging_limit="number.test_ess_discharge",
             )
             cfg = optimizer.cfg
+            self._supply_current_authority(optimizer, ha, moment[0])
             # Bound timeout only; retain the production polling and trust checks.
             wait_for_exact = optimizer._wait_for_exact_entity_state
 
@@ -1271,6 +1368,11 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
 
         ems_report = report(cfg.ems_mode_select, ems, second if ems_second is None else ems_second)
         export_report = report(cfg.grid_export_limit, export, second if export_second is None else export_second)
+        # Supply the same explicit owner to current HA reads and the snapshot.
+        # Mode takeovers are reported once before application, never overwritten
+        # during an awaited command. Missing actuator evidence remains missing.
+        report(cfg.sigenergy_mode_select, control_mode, second)
+        report(cfg.ha_control_switch, "on", second)
         state = self._ordinary_state(
             95.7, when=when,
             sigenergy_mode=control_mode,
@@ -1363,6 +1465,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                     optimizer, ha, second, ems, export, **metadata,
                 )
                 self._assert_live_transition_restrictive(optimizer, result, calls, msc=msc)
+            ha.report_after_select = (optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
             result, calls = await self._live_transition_cycle(optimizer, ha, 10, MODE_MAX_SELF, 0.01)
             self.assertTrue(result.succeeded, result.error)
             self.assertIn(("set_number", optimizer.cfg.grid_export_limit, 25.0), calls)
@@ -1395,6 +1498,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                 optimizer, ha, 4, MODE_MAX_SELF, 0.01, ems_second=request_second,
             )
             self._assert_live_transition_restrictive(optimizer, result, calls, msc=True)
+            ha.report_after_select = (optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
             result, calls = await self._live_transition_cycle(optimizer, ha, 5, MODE_MAX_SELF, 0.01)
             self.assertTrue(result.succeeded, result.error)
             self.assertIn(("set_number", optimizer.cfg.grid_export_limit, 25.0), calls)
@@ -1443,6 +1547,8 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             mode = getattr(cfg, mode_name)
             if mode_name == "full_import_option":
                 ha.report_after_select = (cfg.ems_mode_select, MODE_CMD_CHARGE_GRID)
+            elif mode_name == "full_export_option":
+                ha.report_after_select = (cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)
             result, calls = await self._live_transition_cycle(optimizer, ha, 1, MODE_CMD_DISCHARGE_PV, 12.0, mode=mode)
             self.assertTrue(result.succeeded, result.error)
             self.assertNotIn(("select_option", cfg.ems_mode_select, MODE_MAX_SELF), calls)
@@ -1460,10 +1566,24 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             ha = LiveTransitionHA()
             optimizer = self._live_transition_optimizer(ha)
             cfg = optimizer.cfg
+
+            def observe_owner(second, mode):
+                # Mirror each explicit operator selection in live HA evidence,
+                # independently of the actuator reports supplied by the cycle.
+                at = (self.FIXED_AFTERNOON + timedelta(seconds=second)).replace(tzinfo=timezone.utc).isoformat()
+                for entity, value in ((cfg.sigenergy_mode_select, mode), (cfg.ha_control_switch, "on")):
+                    ha.state_values[entity] = value
+                    ha._state_value_metadata[entity] = {
+                        "last_updated": at, "last_reported": at,
+                    }
+
+            observe_owner(-1, cfg.automated_option)
             await self._live_transition_cycle(optimizer, ha, -1, MODE_CMD_DISCHARGE_PV, 12.0, discharge=True)
+            observe_owner(0, cfg.automated_option)
             result, calls = await self._live_transition_cycle(optimizer, ha, 0, MODE_CMD_DISCHARGE_PV, 12.0)
             self._assert_live_transition_restrictive(optimizer, result, calls, msc=False)
             # Accepted Force commands receive no subsequent physical EMS report.
+            observe_owner(1, cfg.full_import_option)
             result, calls = await self._live_transition_cycle(
                 optimizer, ha, 1, MODE_CMD_DISCHARGE_PV, 12.0, mode=cfg.full_import_option,
             )
@@ -1476,27 +1596,86 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         asyncio.run(run())
 
     def test_later_exact_msc_after_observed_close_reopens_normal_ceiling(self) -> None:
-        ha = RecordingHA(settle_numbers=False, settle_selects=False)
+        moment = [self.FIXED_AFTERNOON.replace(tzinfo=timezone.utc)]
+
+        class ObservedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return moment[0].astimezone(tz) if tz else moment[0].replace(tzinfo=None)
+
+        class ReopeningObservationHA(RecordingHA):
+            def __init__(self):
+                super().__init__(settle_numbers=False, settle_selects=False)
+                self.msc_requests = []
+                self.authority_reads = []
+                self.reassert_reported_at = None
+
+            def _record_state_value(self, entity_id, value):
+                reported = moment[0].isoformat()
+                self.state_values[entity_id] = value
+                self._state_value_metadata[entity_id] = {
+                    "last_updated": reported, "last_reported": reported,
+                }
+
+            async def select_option(self, entity_id, value):
+                if (entity_id, value) == (cfg.ems_mode_select, MODE_MAX_SELF):
+                    self.msc_requests.append(moment[0].timestamp())
+                return await super().select_option(entity_id, value)
+
+            async def bulk_states(self, entity_ids):
+                if {cfg.sigenergy_mode_select, cfg.ha_control_switch}.issubset(entity_ids):
+                    self.authority_reads.append((len(self.calls), moment[0].timestamp()))
+                if (
+                    cfg.ems_mode_select in entity_ids and len(self.msc_requests) == 2
+                    and self.reassert_reported_at is None
+                ):
+                    # Explicit unchanged-MSC telemetry arrives on a later read
+                    # after the reopening reassertion, never from service success.
+                    moment[0] += timedelta(milliseconds=1)
+                    self._record_state_value(cfg.ems_mode_select, MODE_MAX_SELF)
+                    self.reassert_reported_at = moment[0].timestamp()
+                return await super().bulk_states(entity_ids)
+
+        ha = ReopeningObservationHA()
         optimizer = self.optimizer(ha)
+        cfg = optimizer.cfg
+        self._supply_current_authority(optimizer, ha, moment[0])
+
+        def apply(state, decision):
+            with patch("app.optimizer.datetime", ObservedDateTime):
+                return asyncio.run(optimizer._apply(state, decision))
+
         ha.state_values = {
             optimizer.cfg.ems_mode_select: MODE_CMD_DISCHARGE_PV,
-            optimizer.cfg.grid_export_limit: 0.01,
+            optimizer.cfg.grid_export_limit: 12.0,
         }
         first_state = self._ordinary_state(
             95.7,
             current_ems_mode=MODE_CMD_DISCHARGE_PV,
             ems_mode_observed=True,
-            current_export_limit=0.01,
+            current_export_limit=12.0,
         )
         first = self.decide(optimizer, first_state, self.FIXED_AFTERNOON)
-        # Model a later report deterministically, even on coarse host clocks.
-        with self.optimizer_time(datetime.now() - timedelta(seconds=1)):
-            asyncio.run(optimizer._apply(first_state, first))
+        apply(first_state, first)
+        close_requested_at = optimizer._msc_transition.close_requested_at
+
+        # A separate cycle observes the requested closure before requesting MSC.
+        moment[0] += timedelta(seconds=1)
+        ha._record_state_value(cfg.grid_export_limit, 0.01)
+        closure_reported_at = moment[0].timestamp()
+        closed_state = self._ordinary_state(
+            95.7, current_ems_mode=MODE_CMD_DISCHARGE_PV,
+            ems_mode_observed=True, current_export_limit=0.01,
+        )
+        closed = self.decide(optimizer, closed_state, self.FIXED_AFTERNOON)
+        apply(closed_state, closed)
         first_cycle_calls = list(ha.calls)
         optimizer._last_state = first_state
         optimizer._last_decision = first
 
+        moment[0] += timedelta(seconds=1)
         ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+        msc_reported_at = moment[0].timestamp()
         ha._record_state_value(optimizer.cfg.grid_export_limit, 0.01)
         verified = self._ordinary_state(
             95.7,
@@ -1511,7 +1690,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             export_ceiling=25.0,
         )
         second_cycle_start = len(ha.calls)
-        asyncio.run(optimizer._apply(verified, second))
+        apply(verified, second)
         second_cycle_calls = ha.calls[second_cycle_start:]
 
         high_export_call = (
@@ -1530,10 +1709,36 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                 for index, call in enumerate(second_cycle_calls)
             )
         )
+        close_call = ("set_number", cfg.grid_export_limit, 0.01)
+        msc_call = ("select_option", cfg.ems_mode_select, MODE_MAX_SELF)
+        self.assertLess(ha.calls.index(close_call), ha.calls.index(msc_call))
+        self.assertGreater(closure_reported_at, close_requested_at)
+        self.assertGreaterEqual(ha.msc_requests[0], closure_reported_at)
+        self.assertGreater(msc_reported_at, ha.msc_requests[0])
+        self.assertGreater(ha.reassert_reported_at, ha.msc_requests[1])
+        self.assertIn(
+            (second_cycle_start + high_export_index, ha.reassert_reported_at),
+            ha.authority_reads,
+        )
 
     def test_deliberate_export_target_settles_before_discharge_mode(self) -> None:
-        ha = ScriptedReadbackHA({})
+        moment = [self.FIXED_AFTERNOON.replace(tzinfo=timezone.utc)]
+
+        class ObservedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return moment[0].astimezone(tz) if tz else moment[0].replace(tzinfo=None)
+
+        class LaterReadbackHA(ScriptedReadbackHA):
+            def _record_state_value(self, entity_id, value):
+                # The existing scripted target is observed on a later read,
+                # using the request's clock rather than Windows clock precision.
+                moment[0] += timedelta(milliseconds=1)
+                ClockedRecordingHA._record_state_value(self, entity_id, value)
+
+        ha = LaterReadbackHA({})
         optimizer = self.optimizer(ha)
+        self._supply_current_authority(optimizer, ha, moment[0])
         ha._readbacks[optimizer.cfg.grid_export_limit] = [12.0]
         ha.state_values = {
             optimizer.cfg.ems_mode_select: MODE_MAX_SELF,
@@ -1564,7 +1769,8 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             "high_price",
             decision.trace_values.get("battery_export_owner"),
         )
-        asyncio.run(optimizer._apply(state, decision))
+        with patch("app.optimizer.datetime", ObservedDateTime):
+            asyncio.run(optimizer._apply(state, decision))
 
         export_call = ("set_number", optimizer.cfg.grid_export_limit, 12.0)
         mode_call = (

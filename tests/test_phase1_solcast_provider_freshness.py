@@ -10,6 +10,7 @@ from haos49_characterization_helpers import Haos49CharacterizationCase, Recordin
 from test_msc_baseline_overlay_contract import (
     ClockedRecordingHA,
     establish_observed_msc_baseline,
+    later_msc_report_clock,
 )
 import test_phase1_solar_dynamic_charge_ceiling_characterization as charge_fixture
 import test_phase1_forecast_solar_clock_telemetry_trust_characterization as forecast_fixture
@@ -477,7 +478,7 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
                 with self.subTest(discontinuity=discontinuity):
                     opt = self._optimizer(ess_max_charging_limit="number.test_charge")
                     ha = ClockedRecordingHA()
-                    await establish_observed_msc_baseline(self, opt, ha, self.WHEN)
+                    await establish_observed_msc_baseline(self, opt, ha, self.WHEN - timedelta(seconds=1))
                     state, d = self.valid(opt)
                     state.current_export_limit = d.export_limit
                     state.current_import_limit = 1.0
@@ -492,7 +493,7 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
                         return await original_set_number(entity, value)
                     # Cross an async actuator step preceding the charge write.
                     ha.set_number = pending_import
-                    with self.optimizer_time(self.WHEN):
+                    with later_msc_report_clock(ha, self.WHEN):
                         result = await opt._apply(state, d)
                     self.assertTrue(result.succeeded, result.error)
                     writes = [value for action, entity, value in ha.calls if action == "set_number" and entity == "number.test_charge"]
@@ -517,7 +518,7 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
         async def check():
             opt = self._optimizer(ess_max_charging_limit="number.test_charge")
             ha = ClockedRecordingHA()
-            await establish_observed_msc_baseline(self, opt, ha, self.WHEN)
+            await establish_observed_msc_baseline(self, opt, ha, self.WHEN - timedelta(seconds=1))
             state, d = self.valid(opt)
             state.current_export_limit = d.export_limit
             state.current_import_limit = d.import_limit
@@ -528,7 +529,7 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
                     opt._solar_provider_deadline = self.WHEN.timestamp()
                 return result
             ha.set_number = cross_deadline
-            with self.optimizer_time(self.WHEN):
+            with later_msc_report_clock(ha, self.WHEN):
                 result = await opt._apply(state, d)
             self.assertTrue(result.succeeded, result.error)
             writes = [value for action, entity, value in ha.calls if action == "set_number" and entity == "number.test_charge"]
@@ -543,7 +544,7 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
                 ess_max_discharging_limit="number.test_discharge",
             )
             ha = ClockedRecordingHA()
-            await establish_observed_msc_baseline(self, opt, ha, self.WHEN)
+            await establish_observed_msc_baseline(self, opt, ha, self.WHEN - timedelta(seconds=1))
             state, decision = self.valid(opt)
             state.current_export_limit = decision.export_limit
             state.current_import_limit = decision.import_limit
@@ -572,6 +573,8 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
                         self.assertNotEqual("VALID", opt._solar_provider_state)
                         self.assertEqual(self.NORMAL_CHARGE_KW, value)
                     writes.append(value)
+                if entity == opt.cfg.grid_export_limit:
+                    report_clock[0] += timedelta(milliseconds=1)
                 result = await original(entity, value)
                 if entity == "number.test_discharge" and invalidated_at is None:
                     self.assertEqual([decision.ess_charge_limit], writes)
@@ -590,6 +593,13 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
                     opt._running = False
 
             ha.set_number = set_number
+            class ApplicationDateTime(datetime):
+                @classmethod
+                def now(cls, tz=None):
+                    # Preserve datetime.now() local-time semantics while sharing
+                    # the advancing UTC actuator-report clock.
+                    return cls.fromtimestamp(report_clock[0].timestamp(), tz)
+
             # Keep run_forever/_safe_tick/_tick/_decide/_apply real. Bound HA
             # reads and unrelated publication/history side effects only.
             with (
@@ -602,7 +612,8 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
                 patch.object(opt, "_accumulate_history", new=Mock()),
                 patch.object(opt, "_record_price_tracking", new=Mock()),
                 patch("app.optimizer._HEARTBEAT_INTERVAL", 60),
-                self.optimizer_time(self.WHEN),
+                later_msc_report_clock(ha, self.WHEN) as report_clock,
+                patch("app.optimizer.datetime", ApplicationDateTime),
             ):
                 self.assertTrue(opt.trigger_queue.empty())
                 self.assertFalse(opt._solar_provider_urgent)

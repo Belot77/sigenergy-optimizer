@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from app.models import BATTERY_EXPORT, EXPORT_BLOCKED, MSC_SURPLUS_CEILING, Decision
 from app.optimizer import MODE_CMD_DISCHARGE_PV, MODE_MAX_SELF
 from haos49_characterization_helpers import Haos49CharacterizationCase, RecordingHA
+import haos49_characterization_helpers as characterization_helpers
 
 
 class _MetadataHA(RecordingHA):
@@ -416,9 +418,44 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
                 self.assertFalse(state.current_export_limit_observed)
                 self.assertFalse(state.current_import_limit_observed)
 
+    @staticmethod
+    def _supply_application_authority(optimizer, ha) -> None:
+        # Grid-limit tests must reach application checks under independently
+        # supplied current ownership, rather than rely on the decision snapshot.
+        for entity, value in (
+            (optimizer.cfg.sigenergy_mode_select, optimizer.cfg.automated_option),
+            (optimizer.cfg.ha_control_switch, "on"),
+        ):
+            ha._record_state_value(entity, value)
+
+    @staticmethod
+    @contextmanager
+    def _later_number_report_clock(ha):
+        # Windows can return equal wall-clock instants for a request and this
+        # synchronous double's report. These positive fixtures explicitly model
+        # later reports on the same clock; production must still reject equality.
+        moment = [datetime.now(timezone.utc)]
+
+        class ObservedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return moment[0].astimezone(tz) if tz else moment[0].replace(tzinfo=None)
+
+        original_set_number = ha.set_number
+
+        async def set_with_later_report(entity, value):
+            moment[0] += timedelta(milliseconds=1)
+            return await original_set_number(entity, value)
+
+        with patch("app.optimizer.datetime", ObservedDateTime), patch.object(
+            characterization_helpers, "datetime", ObservedDateTime,
+        ), patch.object(ha, "set_number", set_with_later_report):
+            yield
+
     def test_untrusted_ownerless_export_opening_closes_instead_of_opening(self) -> None:
         ha = RecordingHA()
         optimizer = self.optimizer(ha)
+        self._supply_application_authority(optimizer, ha)
         state = self.state(
             self.FIXED_AFTERNOON,
             current_export_limit=0.01,
@@ -450,6 +487,7 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
     def test_untrusted_high_export_and_import_readbacks_cannot_suppress_safety_closes(self) -> None:
         ha = RecordingHA()
         optimizer = self.optimizer(ha)
+        self._supply_application_authority(optimizer, ha)
         state = self.state(
             self.FIXED_AFTERNOON,
             current_export_limit=25.0,
@@ -458,7 +496,8 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
             current_import_limit_observed=False,
         )
 
-        result = asyncio.run(optimizer._apply(state, self._closed_decision()))
+        with self._later_number_report_clock(ha):
+            result = asyncio.run(optimizer._apply(state, self._closed_decision()))
 
         self.assertIn(
             ("set_number", optimizer.cfg.grid_export_limit, 0.01),
@@ -473,6 +512,7 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
     def test_untrusted_import_readback_withholds_permissive_opening(self) -> None:
         ha = RecordingHA()
         optimizer = self.optimizer(ha)
+        self._supply_application_authority(optimizer, ha)
         state = self.state(
             self.FIXED_AFTERNOON,
             current_import_limit=0.01,
@@ -496,6 +536,7 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
     def test_untrusted_export_readback_cannot_prove_safety_close_settled(self) -> None:
         ha = RecordingHA(settle_numbers=False)
         optimizer = self.optimizer(ha)
+        self._supply_application_authority(optimizer, ha)
         state = self.state(
             self.FIXED_AFTERNOON,
             current_export_limit=0.01,
@@ -510,6 +551,7 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
     def test_negative_export_readback_cannot_prove_safety_close_settled(self) -> None:
         ha = RecordingHA(settle_numbers=False)
         optimizer = self.optimizer(ha)
+        self._supply_application_authority(optimizer, ha)
         cfg = optimizer.cfg
         ha._record_state_value(cfg.grid_export_limit, -1.0)
         state = self.state(
@@ -530,6 +572,7 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
     def test_negative_import_readback_cannot_authorize_permissive_opening(self) -> None:
         ha = RecordingHA()
         optimizer = self.optimizer(ha)
+        self._supply_application_authority(optimizer, ha)
         cfg = optimizer.cfg
         state = self.state(
             self.FIXED_AFTERNOON,
@@ -548,6 +591,7 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
     def test_deliberate_export_with_unknown_prior_position_settles_before_discharge(self) -> None:
         ha = RecordingHA()
         optimizer = self.optimizer(ha)
+        self._supply_application_authority(optimizer, ha)
         state = self.state(
             self.FIXED_AFTERNOON,
             current_ems_mode=MODE_MAX_SELF,
@@ -564,7 +608,8 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
             export_intent=BATTERY_EXPORT,
         )
 
-        result = asyncio.run(optimizer._apply(state, decision))
+        with self._later_number_report_clock(ha):
+            result = asyncio.run(optimizer._apply(state, decision))
         export_index = ha.calls.index(
             ("set_number", optimizer.cfg.grid_export_limit, 5.0)
         )
@@ -579,6 +624,20 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
         ha = RecordingHA(settle_numbers=False)
         optimizer = self.optimizer(ha)
         optimizer._wait_for_number_at_most = AsyncMock(return_value=False)
+        observed_at = datetime.fromtimestamp(
+            self.FIXED_AFTERNOON.timestamp(), timezone.utc,
+        ).isoformat()
+        # This test owns its authority evidence; shared doubles stay unchanged.
+        for entity_id, value in (
+            (optimizer.cfg.sigenergy_mode_select, optimizer.cfg.automated_option),
+            (optimizer.cfg.ha_control_switch, "on"),
+        ):
+            ha.states[entity_id] = {
+                "state": value,
+                "attributes": {},
+                "last_updated": observed_at,
+                "last_reported": observed_at,
+            }
         state = self.state(
             self.FIXED_AFTERNOON,
             current_ems_mode=MODE_MAX_SELF,
@@ -595,13 +654,20 @@ class Phase1D7LivenessCharacterizationTests(Haos49CharacterizationCase):
             export_intent=BATTERY_EXPORT,
         )
 
-        result = asyncio.run(optimizer._apply(state, decision))
+        with self.optimizer_time(self.FIXED_AFTERNOON):
+            result = asyncio.run(optimizer._apply(state, decision))
 
         self.assertFalse(result.succeeded)
         self.assertNotIn(
             ("select_option", optimizer.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV),
             ha.calls,
         )
+        self.assertIn(("set_number", optimizer.cfg.grid_export_limit, 5.0), ha.calls)
+        optimizer._wait_for_number_at_most.assert_any_await(
+            optimizer.cfg.grid_export_limit, 5.0, timeout_s=3.0,
+        )
+        self.assertTrue(result.fallback_attempted)
+        self.assertIn("export limit did not settle at or below 5.00kW", result.error)
 
     def test_none_grid_provenance_is_not_legacy_permissive_proof(self) -> None:
         ha = RecordingHA()

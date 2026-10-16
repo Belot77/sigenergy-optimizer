@@ -291,6 +291,15 @@ class Phase1ChatterReopenCharacterizationTests(Haos49CharacterizationCase):
             morning_slow=True,
         )
 
+        # Current control permission is independent of actuator settlement.
+        # Accepted closes deliberately leave the observed export ceiling open.
+        for entity, value in (
+            (optimizer.cfg.sigenergy_mode_select, optimizer.cfg.automated_option),
+            (optimizer.cfg.ha_control_switch, "on"),
+            (optimizer.cfg.grid_export_limit, 25.0),
+        ):
+            ha._record_state_value(entity, value)
+
         application_result = asyncio.run(
             optimizer._apply(closing_state, closing_decision)
         )
@@ -309,6 +318,12 @@ class Phase1ChatterReopenCharacterizationTests(Haos49CharacterizationCase):
 
         self.assertFalse(application_result.succeeded)
         self.assertIn("observed readback remains open", application_result.error)
+        self.assertIn(("set_number", optimizer.cfg.grid_export_limit, 0.01), ha.calls)
+        self.assertEqual(25.0, ha.state_values[optimizer.cfg.grid_export_limit])
+        self.assertNotIn(
+            ("set_number", optimizer.cfg.grid_export_limit, optimizer.cfg.export_limit_high),
+            ha.calls,
+        )
         self.assertEqual(optimizer.cfg.export_limit_high, reopening_decision.export_limit)
         self.assertEqual(MSC_SURPLUS_CEILING, reopening_decision.export_intent)
 
