@@ -1,22 +1,26 @@
 # Current State
 
-Last consolidated: 2026-10-18
+Last consolidated: 2026-10-19
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
-## 2.3.61-haos72 local release candidate and remaining gates
+## Published .72 and local source-pinning follow-up - 19 October 2026
 
-PR #21 was merged at `5275e9cd3803ba991351c790be6b7187c3941981` (parents `9f3f02a5c1c82786c85026a3848574cca3cf891f` and `38f59fb9ad9b88652996be27a72dabbd1f8cc424`; tree `74cfe88df238653e262ff258d3e059abc67b05ff`). The latest published release remains **2.3.60-haos71**, tag `v2.3.60-haos71` at `9f3f02a5c1c82786c85026a3848574cca3cf891f`. Proposed **2.3.61-haos72** is local-only on `release/2.3.61-haos72`, based on the merge commit. It is not committed, pushed, tagged, built or published. The two release consistency tests passed and `compileall app tests` passed with an isolated temporary cache. Final checks passed: exactly 12 modified files (five release-marker files and seven documents), marker-only source deltas, unchanged protected code/tests/contract, and `git diff --check`. No installation or live acceptance is established.
+Latest published release: **2.3.61-haos72**, tag `v2.3.61-haos72`, source commit `3afefcd113d2c6f3eadd5aadd52fbda1a8b35f28`. PR #22 merge is on `main`; the release is the latest GitHub Release. Build run `39167632752` succeeded on attempt 1 and published amd64/arm64 images; verified OCI index `sha256:0c4d2340f1ca0b6ba80a7c7655fbd0e2aabc135a70b6b60fbeddd881c2738312`. The `.71` tag/image remain unchanged. See the release-preparation workspace receipt for full evidence. Publication does not establish HA installation or physical acceptance.
 
-The merged code retains four bounded corrections: selected/protected Solar Override floors while preserving separately qualified PV-only MSC; qualified Morning Dump discharge with explicit MSC when active Dump blocks export; application outcome/pending/exception/fallback trace metadata with recorder isolation; and positive sub-1¢ FIT reason precision. Existing thresholds and settings are unchanged; only the five established version markers are updated for `.72`. Retained offline validation passed **1,073 tests / 1,134 subtests, zero failures**, with 206 warnings in 170.97 seconds. It was not rerun for this metadata/documentation preparation and does not prove physical settlement. No GitHub CI pass or new external review is claimed.
+A local, unreleased add-on source-pinning fix is in `C:\Projects\sigenergy_optimizer-source-pinning`, branch `fix/addon-source-pinning`, starting at the `.72` merge commit. A full `SOURCE_REF` SHA is compared exactly with `HEAD`; alternatively, `BUILD_VERSION` selects `refs/tags/v<version>`. Both paths fetch the selected ref, check out detached and record the full resolved SHA. This removes the local-build fallback to moving `main`. Published `.72` does not contain the fix; optimizer control behavior and version markers are unchanged. Focused validation passed 14 source-pinning tests in 10.59 seconds, two release/version checks in 0.10 seconds, and the isolated full-SHA reader compatibility check. Independent final review reported GO for local implementation readiness; the full control suite and container/HA tests were not run. No commit or further publication is claimed.
+
+O1-O9 remain open with their existing evidence, operator-policy and live-proof gates. The operator's short physical Demand Window import-spike deferral remains separate from O7 exact-full PV-only acceptance.
 
 ## Live identity and rollback
-- Latest published release: **2.3.60-haos71**; its tag remains at `9f3f02a5c1c82786c85026a3848574cca3cf891f`. `main` now includes PR #21 merge `5275e9cd3803ba991351c790be6b7187c3941981`. Publication and merge do not establish installation or live acceptance.
-- Last **operator-reported** live release: **2.3.59-haos70**, source `08f4daf53941bd850a4fe392b458c42b1df68b47`; not freshly HA-verified. A supplied external review says later discussion identified .71 as installed, but no HA About/startup/source-build evidence was supplied or accessed. Current installation remains unverified.
-- Protected known-good rollback: **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Do not alter the protected rollback or designate another build as known-good without supervised live acceptance.
-- Morning Dump physically activated on 15 October; minimum SoC deliberately set to 15%, and timing option set to 1.0 hour before sunrise (existing implementation runs from sunrise through one hour afterward). Morning Slow was observed near 2 kW and physical export near 15 kW. Evening Boost disabled. Approximate 15 October PV forecast: 130 kWh. These are reported observations/settings, not renewed authority verification.
-- Phase 1 remains open, including exact-full Demand Window PV-only physical proof, Evening Boost reserve/transition stability and Solar threshold-switching disposition. Phase 2 retains only scoped .68 acceptance; a 13-second observation gap and broader cases remain unproven. Four-tier and .70 physical acceptance remain outstanding.
-- Preserve .65 rollback readiness before any later supervised live testing. Passing tests and successful service calls do not prove inverter settlement.
+
+- Current HA installed version/source remains unknown. The last direct operator report is `.70`; a supplied external report says `.71`. The operator confirmed auto-update is off but supplied no exact About/startup/source-build values or rollback method, so that reassurance does not prove identity or rollback readiness.
+- Protected rollback reference: `.65 / 2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`. Its public amd64/arm64 GHCR index is `sha256:dd7efe0fd9b192ae1fd996137c312e5f2aab12e01a285f6e75fb5a58dc8fe88c`; no GitHub Release record exists. Public source/image existence does not prove the HA restore/reinstall path selects that artifact. The published config lacks a prebuilt `image:` selection; the unreleased source-pinning follow-up addresses build source ambiguity but is not yet in `.72`.
+- Do not designate another build as known-good or perform installation/rollback without separately approved supervised verification of exact source/build, effective settings/current authority, saved configuration and explicit stop/rollback conditions.
+
+
+The following section and all dated sections below it preserve historical checkpoints and evidence; current publication and worktree status is given above, superseding older moving-main and release-preparation statements.
+
 ## Published Stage B baseline and validation
 
 - Stage B checkpoint **`ae4a974692aae1300c97845fcc32d4cfa6c2bdea`** (`ae4a974692aa`) is historical; PR #20 was merged. The published tag `v2.3.60-haos71` remains at `9f3f02a5c1c82786c85026a3848574cca3cf891f`; `main` now includes PR #21 merge `5275e9cd3803ba991351c790be6b7187c3941981`.
@@ -115,7 +119,9 @@ The `.68` sequence remains mandatory: close export -> fresh trusted observed clo
 - Previously reported `solar_surplus_fill_deadline_margin_minutes=120` and Morning Slow physical export headroom 0.0 remain historical reports, not rechecked effective settings. Do not infer other effective settings from source defaults or change defaults to match site tuning.
 - The physical inverter grid-export maximum is reportedly configured to **15 kW**, not freshly verified here. Legacy Force targets remain unchanged, including **25 kW**. Physical grid-export enforcement and ESS limits are separate controls; do not infer live enforcement from software targets or tests.
 - No HA settings or inverter controls are written by this checkpoint.
-## Current 2.3.61-haos72 release preparation and remaining gates
+## Historical .72 release-preparation snapshot (18 October; superseded by current status above)
+
+This section records the 18 October pre-publication preparation state and is retained for history. Its candidate-unpublished and no-tag/no-build statements describe that checkpoint only; current publication and source-pinning status is stated at the top of this document.
 
 Current release-preparation worktree: `C:\Projects\sigenergy_optimizer-release-haos72`, branch `release/2.3.61-haos72`, based on merge `5275e9cd3803ba991351c790be6b7187c3941981`. The four merged changes are: Solar Override deliberate battery-backed export requires SoC strictly above selected and protected floors while preserving separate qualified PV-only MSC; early Morning Dump discharge EMS requires qualified `BATTERY_EXPORT` intent and positive bounded target, with explicit MSC fallback for blocked active Dump while preserving priority; application outcomes/exceptions are recorded without changing outcomes or actuator ordering; and positive FiT below 1¢ is described as below-minimum with precision near 1¢. Existing settings, thresholds and unrelated policies remain unchanged; this local preparation updates only the five established version markers and authorized documentation. Original component worktrees are preserved. [PR #21](https://github.com/Belot77/sigenergy-optimizer/pull/21) merged reviewed PR head `38f59fb9ad9b88652996be27a72dabbd1f8cc424` into `main` at merge `5275e9cd3803ba991351c790be6b7187c3941981`; code commit `4e4b17c2d3bb362716d6b4e5ddb60659faf7beec` is unchanged.
 

@@ -1,15 +1,18 @@
 # Changelog
 
-## 2.3.61-haos72 - local release candidate - 2026-10-18
+## Unreleased - add-on source pinning
 
-Prepared locally on `release/2.3.61-haos72` from merged code checkpoint `5275e9cd3803ba991351c790be6b7187c3941981` (PR #21; reviewed PR head `38f59fb9ad9b88652996be27a72dabbd1f8cc424`). This candidate follows published `2.3.60-haos71`; it is not committed, pushed, tagged, built, published, installed or live-accepted. The two release consistency tests passed and `compileall app tests` passed with an isolated temporary cache. Final checks passed: exactly 12 modified files (five release-marker files and seven documents), marker-only source deltas, unchanged protected code/tests/contract, and `git diff --check`.
+- Prevent add-on image builds from silently cloning moving `main`. A full `SOURCE_REF` SHA is compared exactly with `HEAD`; alternatively, `BUILD_VERSION` selects `refs/tags/v<version>`. Both paths fetch the selected ref, check out detached, and record the full resolved source SHA. Missing or invalid inputs fail rather than falling back to `main`.
+- This local follow-up changes build source selection only; optimizer control behavior and published version markers are unchanged. Published `.72` does not contain this fix. Focused validation passed 14 source-pinning tests in 10.59 seconds, two release/version checks in 0.10 seconds, and the isolated full-SHA reader compatibility check. Independent final review reported GO for local implementation readiness; the full control suite and container/HA tests were not run.
 
-- Solar Override now respects both the selected battery-export tier floor and independent protected SoC floor, while separately qualified PV-only MSC remains subject to trusted flow and authority evidence.
+## 2.3.61-haos72 - published release - 2026-10-19
+
+Published from merged source commit `3afefcd113d2c6f3eadd5aadd52fbda1a8b35f28` as the latest GitHub Release. Tag-triggered workflow run `39167632752` succeeded on attempt 1. The multi-architecture OCI index is `sha256:0c4d2340f1ca0b6ba80a7c7655fbd0e2aabc135a70b6b60fbeddd881c2738312`; amd64 and arm64 configs report the same source and `.72` version. No Home Assistant installation or live acceptance is claimed. The historical integrated control and diagnostics review remains below; it records the pre-release code checkpoint, not current publication status.
+
+- Solar Override respects the selected battery-export tier floor and independent protected SoC floor, while separately qualified PV-only MSC remains subject to trusted-flow and authority evidence.
 - Morning Dump selects discharge EMS only for qualified `BATTERY_EXPORT` intent with a bounded target above 0.01 kW. When active Dump blocks export it explicitly selects MSC, preventing lower-priority negative-price grid charging; qualified Dump retains priority, while inactive-Dump charging remains independent.
 - Decision traces record application outcomes, pending transitions, ordinary application exceptions and fallback status with recorder-failure isolation. A helper's reported success is not physical settlement.
 - Positive FIT below 1¢ is described as below-minimum with added precision near 1¢; tariff gates and zero/negative-price priority are unchanged.
-
-The existing release helper preserves the old suffix and updates only three markers, so it was not used; the five established markers were updated directly. Candidate tag `v2.3.61-haos72` was absent at preflight. GHCR namespace conflict remains unverified; the earlier package query lacked `read:packages`. Recheck permissions and conflicts before separately authorized publication. No GitHub CI pass or new external review is claimed. Retained offline code validation: 1,073 tests / 1,134 subtests passed, zero failures, 206 warnings in 170.97 seconds; compileall passed. These results predate this version-metadata/documentation preparation and are not installation or physical-settlement evidence. Short physical Demand Window import spikes remain deferred; O7 exact-full PV-only proof and O1-O9 live/evidence gates remain open.
 
 ## Integrated control and diagnostics review - historical pre-release checkpoint - 2026-10-18
 
