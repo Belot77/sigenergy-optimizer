@@ -19,6 +19,11 @@ from app.decision_trace_store import (
 )
 from app.routers import api
 
+APPLICATION_OUTCOME = {
+    "status": "pending", "succeeded": False, "transition_phase": "close",
+    "fallback_attempted": False, "fallback_succeeded": None,
+}
+
 
 class DecisionTraceDownloadTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -47,9 +52,12 @@ class DecisionTraceDownloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await asyncio.to_thread(self.store._closed.wait, 5))
         self.tmp.cleanup()
 
-    def persist(self, timestamps, payload="example", now=None):
+    def persist(self, timestamps, payload="example", now=None, application=None):
         rows = [{"ts": at.isoformat(), "summary": {}, "state": {}, "gates": {},
                  "values": {"payload": payload}} for at in timestamps]
+        if application is not None:
+            for row in rows:
+                row["application"] = dict(application)
         optimizer = SimpleNamespace(decision_trace=lambda limit: list(reversed(rows)))
         at = now or self.now
         self.store._clock_now.return_value = (at - self.now).total_seconds() + 7200
@@ -60,7 +68,7 @@ class DecisionTraceDownloadTests(unittest.IsolatedAsyncioTestCase):
         return await self.client.post("/api/decision_trace/24h/download-ticket", headers={"x-api-key": "test-only-key"})
 
     async def test_ticket_issue_read_auth_single_use_and_download_headers(self):
-        self.persist([self.now])
+        self.persist([self.now], application=APPLICATION_OUTCOME)
         unauthorized = await self.client.post("/api/decision_trace/24h/download-ticket")
         self.assertEqual(unauthorized.status_code, 401)
         issued = await self.ticket()
@@ -74,7 +82,9 @@ class DecisionTraceDownloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(download.headers["cache-control"], "no-store")
         self.assertRegex(download.headers["content-disposition"], r'attachment; filename="sigenergy_decision_trace_24h_\d{8}T\d{6}Z.jsonl"')
         self.assertEqual(download.headers["referrer-policy"], "no-referrer")
-        self.assertIn("_trace", json.loads(download.content))
+        downloaded = json.loads(download.content)
+        self.assertIn("_trace", downloaded)
+        self.assertEqual(downloaded["application"], APPLICATION_OUTCOME)
         self.assertEqual((await self.client.get("/" + url)).status_code, 401)
         self.assertEqual(self.store._pins, {})
 

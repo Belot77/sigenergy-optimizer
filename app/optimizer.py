@@ -433,6 +433,7 @@ class _ActuatorApplicationResult:
     error: str = ""
     fallback_attempted: bool = False
     fallback_succeeded: Optional[bool] = None
+    transition_pending: bool = False
 
 
 @dataclass
@@ -1395,7 +1396,12 @@ class SigEnergyOptimizer:
                 effective_mode = self._manual_mode_override or state.sigenergy_mode
                 if effective_mode not in {self.cfg.automated_option, ""}:
                     self._freeze_decision_to_live_mode(state, decision, effective_mode)
-                application_result = await self._apply(state, decision)
+                try:
+                    application_result = await self._apply(state, decision)
+                except Exception:
+                    self._record_application_trace(state, decision, application_raised=True)
+                    raise
+                self._record_application_trace(state, decision, application_result)
                 if (
                     isinstance(application_result, _ActuatorApplicationResult)
                     and not application_result.succeeded
@@ -1413,7 +1419,6 @@ class SigEnergyOptimizer:
                 )
                 await self._publish_hvac_solar_permission(permission)
                 self._record_automation_audit(state, decision, prev_decision)
-                self._record_decision_trace(state, decision)
                 await self._handle_notifications(state, decision, prev_decision, prev_state)
                 await self._handle_daily_summaries(state, decision)
                 self._accumulate_history(state, decision)
@@ -1876,7 +1881,44 @@ class SigEnergyOptimizer:
         n = max(1, min(int(limit), 2000))
         return list(self._decision_trace)[:n]
 
-    def _record_decision_trace(self, s: SolarState, d: Decision) -> None:
+    def _record_application_trace(
+        self, s: SolarState, d: Decision,
+        result: Optional[_ActuatorApplicationResult] = None,
+        *, application_raised: bool = False,
+    ) -> None:
+        """Record an application outcome without changing control/error handling."""
+        try:
+            application = {
+                "status": "exception" if application_raised else "unreported",
+                "succeeded": None,
+                "transition_phase": None,
+                "fallback_attempted": None,
+                "fallback_succeeded": None,
+            }
+            if isinstance(result, _ActuatorApplicationResult):
+                application.update(
+                    status=(
+                        "succeeded" if result.succeeded else
+                        "pending" if result.transition_pending else "failed"
+                    ),
+                    succeeded=result.succeeded,
+                    fallback_attempted=result.fallback_attempted,
+                    fallback_succeeded=result.fallback_succeeded,
+                )
+                if result.transition_pending:
+                    phase = d.trace_values.get("msc_transition_phase")
+                    application["transition_phase"] = (
+                        phase if phase in ("close", "msc") else "unknown"
+                    )
+            self._record_decision_trace(s, d, application=application)
+        except Exception:
+            # Diagnostic failures must not mask application failures or stop control.
+            logger.warning("Decision trace recording failed")
+
+    def _record_decision_trace(
+        self, s: SolarState, d: Decision,
+        *, application: Optional[dict[str, Any]] = None,
+    ) -> None:
         gates = d.trace_gates if isinstance(d.trace_gates, dict) else {}
         values = d.trace_values if isinstance(d.trace_values, dict) else {}
         self._decision_trace.appendleft(
@@ -1905,6 +1947,7 @@ class SigEnergyOptimizer:
                 },
                 "gates": gates,
                 "values": values,
+                **({"application": dict(application)} if application is not None else {}),
             }
         )
 
@@ -4067,6 +4110,13 @@ class SigEnergyOptimizer:
         battery_export_protected_soc_floor = export_min_soc
         battery_export_control_soc_floor = max(
             battery_export_selected_soc_floor, battery_export_protected_soc_floor
+        )
+        # Legacy Solar Override may not bypass the selected tier or reserve floor.
+        # Refine its shared flag so independently qualified MSC/PV-only paths
+        # remain available when deliberate battery export is below its floor.
+        export_solar_override = bool(
+            export_solar_override
+            and s.battery_soc > battery_export_control_soc_floor
         )
         battery_export_candidate_kw = 0.0
         battery_export_candidate_source = "closed_battery_tier"
@@ -6891,6 +6941,7 @@ class SigEnergyOptimizer:
             return _ActuatorApplicationResult(
                 succeeded=False,
                 error=f"MSC transition awaiting later trusted {transition.phase} observation",
+                transition_pending=True,
             )
 
         ownership, remote = await self._read_control_authority()
@@ -9465,7 +9516,13 @@ class SigEnergyOptimizer:
             return MODE_CMD_CHARGE_PV
 
         if morning_dump:
-            return MODE_CMD_DISCHARGE_PV
+            # Active Dump keeps import closed; blocked export must not fall
+            # through to a lower-priority charging mode.
+            return (
+                MODE_CMD_DISCHARGE_PV
+                if export_intent == BATTERY_EXPORT and desired_export > 0.01
+                else MODE_MAX_SELF
+            )
         if demand_window_import_blocked:
             return (
                 MODE_CMD_DISCHARGE_PV
@@ -9681,8 +9738,13 @@ class SigEnergyOptimizer:
 
         if s.price_is_negative:
             return f"Export blocked, price is negative ({c_d}¢{est})"
-        if s.feedin_price_cents < 1:
+        if s.feedin_price_cents <= 0:
             return f"Export blocked, FIT zero/negative ({fit_d}¢{est})"
+        if s.feedin_price_cents < 1:
+            fit_min_d = f"{s.feedin_price_cents:.5g}"
+            if fit_min_d == "1":
+                fit_min_d = str(s.feedin_price_cents)
+            return f"Export blocked, FIT below 1¢ minimum ({fit_min_d}¢{est})"
         if (
             safeguard
             and not morning_slow_charge

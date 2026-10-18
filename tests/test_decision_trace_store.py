@@ -15,6 +15,10 @@ from unittest.mock import Mock, patch
 from app.decision_trace_store import DecisionTraceStore, RETENTION, STATUS_FILE
 
 NOW = datetime(2026, 10, 3, 12, 30, tzinfo=timezone.utc)
+APPLICATION_OUTCOME = {
+    "status": "pending", "succeeded": False, "transition_phase": "close",
+    "fallback_attempted": False, "fallback_succeeded": None,
+}
 
 
 def row(at: datetime = NOW, value: float = 1.0) -> dict:
@@ -84,18 +88,27 @@ class DecisionTraceStoreTests(unittest.TestCase):
         self.assertEqual(len(self.records()), 3)
 
     def test_copies_and_nonfinite_normalization_leave_deque_unchanged(self):
-        original = row(value=math.inf)
+        at = datetime.now(timezone.utc).replace(microsecond=0)
+        original = row(at=at, value=math.inf)
         original["values"]["nested"] = [math.nan, {"negative": -math.inf}]
+        original["application"] = {**APPLICATION_OUTCOME, "details": {"attempt": 1}}
         self.rows.appendleft(original)
         snapshot = self.store.capture(self.optimizer)
         snapshot[0]["summary"]["export_limit_kw"] = 3
-        self.store.flush(snapshot, NOW)
+        snapshot[0]["application"]["details"]["attempt"] = 2
+        self.store.flush(snapshot, at)
         self.assertTrue(math.isinf(original["summary"]["export_limit_kw"]))
+        self.assertEqual(original["application"]["details"]["attempt"], 1)
         self.assertNotIn("_trace", original)
         self.assertEqual(self.rows.maxlen, 1000)
         persisted = self.records()[0]
         self.assertIsNone(persisted["state"]["pv_kw"])
         self.assertEqual(persisted["values"]["nested"], [None, {"negative": None}])
+        self.assertEqual(persisted["application"], {**APPLICATION_OUTCOME, "details": {"attempt": 2}})
+        restarted = self.restart()
+        self.assertTrue(restarted.flush([], at))
+        self.assertEqual(len(restarted._committed), 1)
+        self.assertEqual(self.records()[0]["application"], persisted["application"])
         self.assertNotIn(b"Infinity", next(self.store.directory.glob("*.jsonl")).read_bytes())
 
     def test_partial_append_retry_recovers_complete_rows_without_duplicates(self):

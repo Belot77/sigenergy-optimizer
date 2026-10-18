@@ -20,6 +20,11 @@ from app import main
 from app.decision_trace_store import DecisionTraceStore, MAX_PENDING_WORK
 from app.routers.api import get_decision_trace
 
+APPLICATION_OUTCOME = {
+    "status": "pending", "succeeded": False, "transition_phase": "close",
+    "fallback_attempted": False, "fallback_succeeded": None,
+}
+
 
 def trace_row():
     return {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -73,6 +78,7 @@ class DecisionTraceLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_existing_api_preserves_newest_first_order_and_schema(self):
         second = trace_row()
         second["values"]["pv_kw"] = 4.0
+        second["application"] = dict(APPLICATION_OUTCOME)
         self.rows.appendleft(second)
         captured = self.store.capture(self.optimizer)
         await asyncio.to_thread(self.store.flush, captured)
