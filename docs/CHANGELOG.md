@@ -1,6 +1,15 @@
 # Changelog
 
-## 2.3.60-haos71 - Stage B release candidate preparation - 2026-10-16
+Current status: **2.3.60-haos71** was published 16 October 2026 at 16:45:11 Australia/Sydney; `main` and tag were verified at `9f3f02a5c1c82786c85026a3848574cca3cf891f` on 17 October. Installation/live acceptance are not established. The Stage B preparation statements below are historical.
+
+## 2026-10-18 - integrated local review patch (unreleased)
+
+- Approved correction for the reproduced Morning Dump negative-import fall-through: blocked active Dump returns MSC before lower-priority EMS branches; qualified Dump keeps discharge priority. Focused checks passed 11 tests / 26 subtests and independent protections passed 13 tests / 15 subtests. Independent safety/test review reports GO for this narrow delta. Final combined offline validation passed **1,073 tests / 1,134 subtests, zero failures**, with 206 warnings in 170.97 seconds. No commit or live action is authorized. See `MORNING_DUMP_CORRECTION_REVIEW_2026-10-18.md`.
+
+- Combines the Solar Override floor guard, Morning Dump intent guard, application-outcome trace metadata, and positive sub-1¢ FIT reason wording. The four changes are local to `test/local-fix-integration`; original component worktrees remain preserved.
+- The earlier 1,070-test / 1,124-subtest combined pass predates the reproduced defect and is historical. After the approved correction, focused decision/floor checks passed 11 tests / 26 subtests (202 warnings, 1.16 seconds); independent Demand Window, Manual/Force, settlement and fallback checks passed 13 tests / 15 subtests (202 warnings, 4.79 seconds). Final combined offline validation passed **1,073 tests / 1,134 subtests, zero failures**, with 206 warnings in 170.97 seconds. Current `compileall app tests` passed using an isolated temporary cache. Pytest used `-q -p no:cacheprovider --disable-warnings --tb=short` with `PYTHONDONTWRITEBYTECODE=1` and `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`. These are offline results, not installation or physical-settlement proof.
+
+## 2.3.60-haos71 - Stage B release candidate preparation (historical; superseded 2026-10-17)
 
 - Completed candidate authority/actuator safety correction: refresh Automated ownership and observed Remote EMS ON at dispatch, reject conflicting actuator observations, and require request-specific post-dispatch settlement of the intended export target before deliberate discharge.
 - Keep independently owned ESS charge/discharge restrictions through successful fallback, alongside Demand Window import and restrictive PV protections; recovery releases only fallback-owned restrictions.

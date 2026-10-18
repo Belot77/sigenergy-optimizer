@@ -271,15 +271,13 @@ Uninstall:
 
 ## Version
 
-2.3.56-haos67 (locally prepared, unreleased candidate)
+Latest published release: [**2.3.60-haos71**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.60-haos71), published 16 October 2026 at 16:45:11 Australia/Sydney; `main` and the tag were verified at `9f3f02a5c1c82786c85026a3848574cca3cf891f` on 17 October. Publication does not prove installation or live acceptance. Last operator-reported live remains `.70 / 2.3.59-haos70` at `08f4daf53941bd850a4fe392b458c42b1df68b47`, not freshly HA-verified; protected rollback remains `.65 / 2.3.54-haos65` at `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`.
 
-The independently accepted Phase 1 source checkpoint is `e2eba5431ee1fcfd36f9632c21f10e53f81c592d` on `fix/phase1-audit-remediation`. Release metadata is prepared locally but uncommitted, unpushed and unbuilt. Future tag: `v2.3.56-haos67`; future image: `ghcr.io/belot77/sigenergy-optimizer:2.3.56-haos67`. Neither has been created/published; .67 is not deployed or live-proven.
+The supplied external review says later discussion identified .71 as installed. No HA About/startup/source-build evidence was supplied or accessed here, so current installation remains unverified; .70 is retained only as the last directly recorded operator report, not a claim that it is still installed.
 
-Current live release remains `.66 / 2.3.55-haos66`, source `d01db472019ad19d721e400e61ae8d5238fe6856`. Known-good rollback remains `.65 / 2.3.54-haos65`, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`.
+Local unreleased review branch `test/local-fix-integration` combines the Solar Override floor guard, Morning Dump intent guard with explicit MSC fallback, application-outcome trace metadata, and positive sub-1¢ FIT reason wording. The approved Morning Dump correction passes its regression and preservation checks; independent focused review reports GO for the narrow delta. Final combined offline validation passed **1,073 tests / 1,134 subtests, zero failures**, with 206 warnings in 170.97 seconds. See [the correction review](docs/MORNING_DUMP_CORRECTION_REVIEW_2026-10-18.md), `docs/CONTROL_CONTRACT.md` and `docs/CURRENT_STATE.md`. Installation and live acceptance remain unverified; no commit, publication or live action is authorized.
 
-The .67 candidate targets Solar battery fill at sunset minus 60 minutes by default; zero retains sunset timing. It also adds Solar-only physical-export saturation relief, bounded by the normal safe charge request, using the explicitly approved 0.4 kW probe policy and trusted post-command feedback. Timestamp regression is checked before pre-command waiting and resets active relief to the current Solar baseline and clears dependent feedback state. Legitimate monotonic pre-command observations still wait without confirming a probe.
-
-The physical export-limit software default remains `0.0` (disabled), with no universal 15 kW default; the confirmed 15 kW live site setting remains unwritten. MSC, normal PV MAX/export permission, battery-export safety, provider freshness, Manual/Force, Morning Slow and Demand Window ownership remain protected. This preparation changes only release identities and documentation. See both changelogs for validation evidence; release/deployment and .67 live acceptance require separate authorization. Phase 2 remains frozen, including its two known settlement failures and separate Evening Boost dependency.
+Original Solar Override and Morning Dump worktrees remain preserved; their reviewed patches are included in this local integration branch. The physical export-limit software default remains `0.0` (disabled), with no universal 15 kW default. Release, deployment and live-control actions require separate approval.
 
 ## Maintainer Release Flow
 

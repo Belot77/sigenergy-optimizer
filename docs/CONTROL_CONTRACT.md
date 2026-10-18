@@ -2,6 +2,10 @@
 
 This document defines durable approved control semantics, not current implementation status. Current commits, test counts, and immediate work belong in `CURRENT_STATE.md`.
 
+## Application outcome trace metadata
+
+Application-outcome metadata is diagnostic only. `application.status` is `succeeded`, `pending`, `failed`, `exception`, or `unreported`; `application.succeeded` is true/false/null. `transition_phase` is `close`, `msc`, or `unknown` only while pending, and null otherwise. `fallback_attempted` and `fallback_succeeded` describe fallback activity. These fields record the application helper's returned result or an ordinary raised application exception; they do not establish whole-cycle success, actuator readback, or physical settlement. A `succeeded` outcome means only that the helper returned success, including a no-op or manual pause. The internal `_ActuatorApplicationResult.transition_pending` flag marks only an intentional wait returned without restriction-write errors; it is not a separate JSON field and it does not redefine existing `succeeded=False` or control-exception behavior. Pending/failed application attempts do not replace the committed decision. Missing metadata on historical rows means unknown. Trace recording failure must not stop control, and `result.error` or exception text is not retained.
+
 Update this contract whenever an approved control-ownership rule, invariant, or transition contract changes. Do not change it merely to match accidental current code behavior; report the mismatch and obtain an approved semantic decision first.
 
 ## Automated baseline
@@ -201,6 +205,8 @@ Policies that genuinely own deliberate battery sale remain distinguishable. Thes
 
 Each owner remains subject to its own eligibility and all independent safety guards. Generic ordinary MSC economic eligibility is never a deliberate battery-export owner.
 
+Solar Override may retain a deliberate battery-backed export only when trusted SoC is strictly above both the selected battery-export tier floor and the independent protected floor, and every existing qualification, authority, forecast, actual-import-cost, capability and settlement guard passes. At or below either floor, that override must not create a battery-export owner or discharge EMS. This floor check does not suppress a separately qualified genuine PV-only MSC surplus ceiling: it may remain only when the existing observed Automated/exact-MSC and trusted-flow evidence proves no meaningful battery-backed export. Never infer PV-only permission from the rejected override or its numeric target. This rule applies to Solar Override only; Morning Dump, Evening Boost and operator-owned Manual/Force keep their own policies and floors.
+
 ### Four independent battery-export tiers
 
 | Selected tier | SoC configuration key | Software default |
@@ -243,6 +249,10 @@ Available-energy trust, refill feasibility, actual import-cost protection, forec
 ## Morning Dump
 
 Morning Dump is deliberate stored-battery export. While its existing time window, configurable floor, forecast feasibility, and safety rules remain valid, it may own `BATTERY_EXPORT` and use `Command Discharging (PV First)`.
+
+Selecting discharge EMS requires a qualified `BATTERY_EXPORT` intent and a positive bounded requested export target. Early Morning Dump eligibility alone, a missing intent, or a zero/non-positive target must not select discharge EMS. This is an eligibility gate only: downstream authority, safety, and observed-settlement requirements remain mandatory. This rule does not change Morning Dump's configured floor, hysteresis, timing, or priority position.
+
+While Morning Dump remains active and therefore keeps import permission closed, its early EMS branch must return explicitly: qualified deliberate battery export with a bounded target above 0.01 kW uses discharge EMS; otherwise it uses Maximum Self Consumption. Blocked active Dump must not fall through to negative-price grid charging or another lower-priority EMS branch. Qualified negative-import-price Dump retains discharge priority. Inactive Dump leaves independent charging policies unchanged. This fallback adds no export permission and does not bypass operator authority, independent restrictions or observed settlement.
 
 Eligibility requires trusted timed refill feasibility. The model must not assume that a future Morning Slow relief condition will rescue refill feasibility; missing, untrusted, gapped, or insufficient evidence fails closed. The current operator floor remains 15%, recorded as operator configuration rather than a software default.
 
