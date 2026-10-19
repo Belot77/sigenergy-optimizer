@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased - add-on source pinning
+## Unreleased - local 2.3.62-haos73 preparation
 
-- Prevent add-on image builds from silently cloning moving `main`. A full `SOURCE_REF` SHA is compared exactly with `HEAD`; alternatively, `BUILD_VERSION` selects `refs/tags/v<version>`. Both paths fetch the selected ref, check out detached, and record the full resolved source SHA. Missing or invalid inputs fail rather than falling back to `main`.
-- This local follow-up changes build source selection only; optimizer control behavior and published version markers are unchanged. Published `.72` does not contain this fix. Focused validation passed 14 source-pinning tests in 10.59 seconds, two release/version checks in 0.10 seconds, and the isolated full-SHA reader compatibility check. Independent final review reported GO for local implementation readiness; the full control suite and container/HA tests were not run.
+- PR #23 merged source-pinning implementation `1042ee95c94c56eb64ff0a5ae123ca863c49cd25` into `main` at `c07eb724a693fdcbd81959f2380cbc5d603bbba2` (tree `6615cd049378a34e0216b9fadd8d47a6a3b82661`). The reviewed Dockerfile change requires either a full `SOURCE_REF` SHA matching `HEAD` or a `BUILD_VERSION` release tag, then fetches and checks out the selected source detached while recording the resolved full SHA. It changes build-source selection only; optimizer control behavior is unchanged.
+- The frozen `.72` tag and image remain at source `3afefcd113d2c6f3eadd5aadd52fbda1a8b35f28` and do not contain the new Dockerfile. The current public `main` recipe can use `.72` application source for fresh/manual builds by resolving its configured `BUILD_VERSION` to the existing `.72` release tag; this does not change the already-published `.72` artifact or prove HA restore/reinstall selection.
+- Local candidate `2.3.62-haos73` is prepared locally from merged `main` in `release/2.3.62-haos73`. This is not a public release announcement: local validation passed as recorded in `docs/CURRENT_STATE.md`, and independent final review reported GO for local commit review. There is no `.73` commit, source tag, build or GitHub Release; no installation or live acceptance is claimed. After separate approval, freeze and review the release commit, push the exact source tag before advertising `.73` on `main`, verify the tag build and both architectures/source labels, then separately merge the same reviewed tree to `main`; publish the GitHub Release later. No HA or control action is authorized.
 
 ## 2.3.61-haos72 - published release - 2026-10-19
 
