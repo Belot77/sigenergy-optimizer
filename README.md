@@ -271,17 +271,23 @@ Uninstall:
 
 ## Version
 
-Latest published release: [**2.3.60-haos71**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.60-haos71), with tag `v2.3.60-haos71` at published baseline `9f3f02a5c1c82786c85026a3848574cca3cf891f`. PR #21 merged the reviewed code checkpoint into `main` at `5275e9cd3803ba991351c790be6b7187c3941981`; this merge does not establish installation or live acceptance. Last operator-reported live remains `.70 / 2.3.59-haos70` at `08f4daf53941bd850a4fe392b458c42b1df68b47`, not freshly HA-verified. An external report says .71 was installed, but no HA About/startup/source-build evidence was supplied; installed identity remains unresolved. Protected rollback remains `.65 / 2.3.54-haos65` at `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`.
+Latest published release: [**2.3.61-haos72**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.61-haos72), published 19 October 2026. Its tag points to source commit `3afefcd113d2c6f3eadd5aadd52fbda1a8b35f28`; the successful tag-triggered build published verified `linux/amd64` and `linux/arm64` images. The multi-architecture index is `sha256:0c4d2340f1ca0b6ba80a7c7655fbd0e2aabc135a70b6b60fbeddd881c2738312`. Publication does not establish installation or live acceptance.
 
-Local release candidate: **2.3.61-haos72**, branch `release/2.3.61-haos72`, based on merge `5275e9cd3803ba991351c790be6b7187c3941981`. Version/documentation preparation remains uncommitted and unpushed; preflight found candidate tag `v2.3.61-haos72` absent; GHCR namespace conflict was not verified and remains a publication-gate check. No candidate build, publication, installation or live acceptance is claimed. The two release consistency tests passed and `compileall app tests` passed with an isolated temporary cache. Final checks passed: exactly 12 modified files (five release-marker files and seven documents), marker-only source deltas, unchanged protected code/tests/contract, and `git diff --check`. Retained combined offline validation is 1,073 tests / 1,134 subtests, zero failures, 206 warnings in 170.97 seconds; those results predate release preparation and are not physical-settlement evidence.
+Current HA installation identity remains unknown. `.70` is the last direct operator-reported version; an external report says `.71` was installed, but no exact About/startup/source-build evidence was provided. The operator confirmed auto-update is off, but gave no exact installed version/source or rollback method; that reassurance is not identity or rollback proof.
 
-The merged code includes the Solar Override selected/protected floor guard with separately qualified PV-only MSC preservation; Morning Dump qualified-intent discharge and explicit blocked-Dump MSC fallback; application-outcome trace metadata with recorder isolation; and precise positive sub-1¢ FIT reasons. Thresholds and settings are unchanged. Short physical Demand Window import spikes remain deferred separately from O7 exact-full PV-only proof; O1-O9 live/evidence gates remain open.
+Protected rollback reference: **2.3.54-haos65**, tag/source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`, with public multi-architecture GHCR index `sha256:dd7efe0fd9b192ae1fd996137c312e5f2aab12e01a285f6e75fb5a58dc8fe88c`. No GitHub Release exists for `.65`. The published add-on config does not select a prebuilt `image`; its build Dockerfile defaults source selection to `main`. Public image availability therefore does not prove that Supervisor backup restore or reinstall will select the protected `.65` image or source.
+
+A local, unreleased source-pinning follow-up is being prepared on `fix/addon-source-pinning`. Its Dockerfile removes the implicit `main` fallback: builds must provide a full source commit SHA or a valid `BUILD_VERSION` resolved as `refs/tags/v<version>`, then checkout detached and verify the resolved commit. This fix is not part of published `.72`; focused validation, review, commit, publication and HA installation remain separate gates. It changes build source identity only, not optimizer control behavior or release version markers.
+
+The published `.72` code includes the Solar Override selected/protected floor guard with separately qualified PV-only MSC preservation; Morning Dump qualified-intent discharge and explicit blocked-Dump MSC fallback; application-outcome trace metadata with recorder isolation; and precise positive sub-1¢ FIT reasons. Thresholds and settings are unchanged. Short physical Demand Window import spikes remain deferred separately from O7 exact-full PV-only proof; O1-O9 live/evidence gates remain open. The `.65` reference and physical acceptance gates must be verified before any supervised installation or live-control approval.
 
 Original Solar Override and Morning Dump worktrees remain preserved. The physical export-limit software default remains `0.0` (disabled), with no universal 15 kW default. Release, deployment and live-control actions require separate approval.
 
-## Maintainer Release Flow
+## Historical Maintainer Release Flow (not current instructions)
 
-Use the helper script at repository root to bump version, tag, push, and wait for the publish workflow:
+The helper examples below are historical. `release.sh` preserves an existing `haos` suffix and updates only three of the five established version markers. Do not use it for a future release until this behavior has a separate fix and review. For future catalog or publication work, create and verify the matching source tag before advertising the version or relying on a version-tag build; publication requires separate authorization.
+
+Historical helper usage (do not use for current releases without separate review):
 
 ```bash
 ./release.sh patch
@@ -291,6 +297,6 @@ Use the helper script at repository root to bump version, tag, push, and wait fo
 ```
 
 Notes:
-- The script updates `sigenergy_optimizer_addon/config.yaml` `version`.
-- It creates and pushes `vX.Y.Z` tag to trigger `.github/workflows/build.yml`.
-- If `GITHUB_TOKEN` is set, it polls GitHub Actions and reports success/failure.
+- Historical behavior: the script updates only three of the five version markers and preserves an existing `haos` suffix.
+- Historically it created and pushed `vX.Y.Z` to trigger `.github/workflows/build.yml`; do not treat these examples as current release instructions.
+- If `GITHUB_TOKEN` is set, the helper polls GitHub Actions and reports success/failure.
