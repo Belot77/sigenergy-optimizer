@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-20 - Solar low-surplus continuation (unreleased local candidate)
+
+- Preserve existing Solar MSC export permission strictly before 15 seconds after the older fresh, coherent PV/load report proving more than 0.5 kW measured surplus, following successful final Solar application. Both source timestamps must advance to renew proof; held/cached evidence, 0.2–0.5 kW continuation and forecasts cannot renew it.
+- Trust, coherent-flow, authority or application failure invalidates proof immediately. Expiry requests conservative closure under current control authority; failed applications retain deadline re-evaluation with three-second bounded retries. Existing manual/unknown authority, independent limits, tariffs, forecast guards and physical settlement requirements remain in force.
+- In sanitized deterministic tests, baseline produced seven 25-to-zero kW closures and the candidate retained permission through those short dips with new strong measured reports. This is not a full trace replay or physical inverter proof; the initial PV collapse remains unexplained. Candidate is unreleased, undeployed and not live-verified.
+- Final offline validation: 1,106 tests / 1,235 subtests passed, zero failures, 206 warnings in 206.22 seconds. Focused checks passed 115 tests / 191 subtests. Independent targeted safety review found no remaining blockers. This development checkpoint does not publish a release or change the live installation.
+
 ## 2026-10-20 - HAOS .73 publication and live-evidence checkpoint
 
 - Published release `2.3.62-haos73` on 19 October 2026 at 07:02 UTC (GitHub Release, not draft), targeting source `46d36358d38137231dff081176a372c3aa1f4cee`; PR #24 merged as `d8d7832`. This is the current release. The `.73` version-preparation commit changes version markers and documentation relative to its PR #23 parent; the full `.73` release includes source pinning and has no optimizer-control delta over `.72`.

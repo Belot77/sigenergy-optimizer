@@ -10,6 +10,16 @@ Latest GitHub Release: **2.3.62-haos73**, tag v2.3.62-haos73, source commit 46d3
 
 The operator supplied 20 October startup evidence reporting runtime .73, source 46d36358d38137231dff081176a372c3aa1f4cee, local Supervisor build .71 to .73 with BUILD_VERSION=2.3.62-haos73, and final start at 06:53:23 Sydney. This supports current installed identity but was not independently queried by the reviewer.
 
+### Unreleased local Solar stability candidate - 20 October 2026
+
+The authorized local candidate on `fix/solar-export-stability` at main base `e460173` bridges brief Solar dips strictly before 15 seconds after the older fresh, coherent PV/load report proving measured surplus above 0.5 kW, following successful final Solar application. Both source reports must advance to renew proof; held/cached evidence, 0.2–0.5 kW continuation and forecasts cannot renew it. Hard-gate or application failure invalidates proof immediately. Expiry requests closure under current authority; failed application retains deadline re-evaluation with bounded three-second retries. Independent limits and physical settlement requirements remain in force.
+
+The sanitized deterministic characterization produced seven 25-to-zero kW closures at baseline; candidate ticks retain permission through those short dips with new strong measured reports. Mocked application and real ticks do not constitute a full trace replay or physical inverter proof; separate fake-actuator tests cover expiry fallback. The initial PV collapse remains unexplained. Reported installed baseline remains .73 at source 46d36358d38137231dff081176a372c3aa1f4cee. Candidate is local, unreleased, undeployed and not live-verified.
+
+Final offline validation passed 1,106 tests / 1,235 subtests with zero failures and 206 warnings in 206.22 seconds; focused checks passed 115 tests / 191 subtests. Independent targeted safety review found no remaining blockers after correction of awaited-expiry and refreshed-export-readback races. This isolated branch is the reviewed development checkpoint for integration; no release publication or live action is included. Prior protected work is preserved. Release preparation and supervised physical proof remain outstanding.
+
+### Retained publication and live-proof evidence
+
 The supplied live trace has 371 rows from 08:25:04 to 09:01:26 Sydney: 356 helper-success, 8 failed and 7 pending. Seven failed attempts show fallback -> pending -> success after 9–10 seconds. The last row reports Automated/MSC, PV export, battery charging and trusted status; eight early success rows lacked trust. These are limited application/telemetry observations, not proof of every physical limit or settlement requirement.
 
 The 20 October archive review found an export at 08:54:07 whose tail was 19 October 07:58:42 (age 24h55m25); all 16,245 returned rows were outside the nominal 24-hour window. Fresh successful trace rows at 08:54:03 and 08:54:08 bracketed that download. The earlier 07:39 export ended at 19 October 04:20; 2,654 older rows returned byte-identically at 08:54. The observed ~44-minute cutoff offset alone is insufficient to establish clock-guard cause. Archive writer status, cause and recovery remain unproven; no archive deletion or restore is assumed.

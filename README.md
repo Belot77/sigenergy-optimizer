@@ -210,7 +210,7 @@ cannot start or continue at or below `MORNING_DUMP_MIN_SOC`, which defaults to
 
 After changing add-on config, restart the add-on.
 
-## Solcast provider-aware Solar charge freshness (unreleased candidate)
+## Solcast provider-aware Solar charge freshness
 
 Dynamic Solar charge-ceiling ownership uses provider refresh evidence separately
 from Forecast Today's HA observation age. Map `forecast_today_sensor` and
@@ -234,8 +234,29 @@ Solar provider freshness is schedule/provider-aware and is not extended by it.
 
 Before live acceptance, inspect provider state, poll/high-water/verified times,
 retained/advertised deadlines, source/epoch and rejection reasons in Decision
-Trace. Local tests do not prove inverter behavior. Live `.65` remains unchanged;
-this candidate has not been released or deployed.
+Trace. Operator-supplied startup evidence reports `.73` at source
+`46d36358d38137231dff081176a372c3aa1f4cee`; this is not direct reviewer HA
+access. The local Solar low-surplus continuation candidate described below has
+not been released, deployed or live-verified.
+
+### Solar low-surplus continuation (local candidate, 20 October 2026)
+
+After successful final Solar application, existing MSC export permission may
+bridge a brief dip strictly before 15 seconds after the older fresh, coherent
+PV/load report proving measured surplus above 0.5 kW.
+Only a newly advancing PV and load report pair can renew the hold. Held or
+cached reports, surplus from 0.2 to 0.5 kW, and forecast evidence cannot renew
+it. Trust, coherent-flow, authority or application failure invalidates proof
+immediately. Expiry requests conservative closure under current control
+authority; failed applications retain deadline re-evaluation with bounded
+three-second retries. Physical closure still requires actuator settlement.
+
+A sanitized deterministic characterization reproduces seven 25-to-zero kW
+closures at baseline; the candidate retains permission through those short
+dips with renewed strong measured reports. Its
+mocked application and real-tick timing do not constitute a full trace replay
+or physical inverter proof; the physical cause remains unproven. This candidate
+has not been released or deployed.
 
 ## Common Issues
 

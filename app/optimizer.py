@@ -66,6 +66,10 @@ _HEARTBEAT_INTERVAL = 60  # seconds
 # Fixed window for coalescing rapid event bursts before a decision cycle.
 _DEBOUNCE_SECONDS = 3.0
 
+# Five event-coalescing windows to bridge a brief measured-surplus dip. Only
+# newly reported strong measured surplus may renew this process-local proof.
+_SOLAR_SURPLUS_DIP_HOLD_SECONDS = 15.0
+
 # Remote EMS switch service-call protection. State is still checked every cycle,
 # but unavailable targets are never called and valid-off retries are bounded.
 _HA_CONTROL_ENABLE_RETRY_SECONDS = 60.0
@@ -532,6 +536,10 @@ class SigEnergyOptimizer:
         self._solar_provider_baselined = False
         self._solar_provider_urgent = False
         self._solar_relief = _SolarPhysicalReliefState()
+        self._solar_dip_proof: Optional[tuple[float, float]] = None
+        self._solar_dip_high_water: Optional[tuple[float, float]] = None
+        self._solar_dip_last_clock: Optional[float] = None
+        self._solar_dip_recheck_at: Optional[float] = None
         self._msc_transition: Optional[_MscTransition] = None
         self._msc_baseline_established = False
 
@@ -1249,11 +1257,13 @@ class SigEnergyOptimizer:
         return self._watch_entities
 
     def on_ws_connect(self) -> None:
+        self._solar_dip_proof = None
         self._ws_connected = True
         self._invalidate_solar_provider("ha_websocket_connected_new_epoch")
         logger.info("WebSocket connected — event-driven mode active")
 
     def on_ws_disconnect(self) -> None:
+        self._solar_dip_proof = None
         self._ws_connected = False
         self._invalidate_solar_provider("ha_websocket_disconnected")
         logger.warning("WebSocket disconnected — heartbeat fallback active")
@@ -1300,6 +1310,9 @@ class SigEnergyOptimizer:
             provider_wait = self._solar_provider_wait_seconds(now)
             if provider_wait is not None:
                 wait_max = min(wait_max, provider_wait)
+            dip_wait = self._solar_dip_wait_seconds(now)
+            if dip_wait is not None:
+                wait_max = min(wait_max, dip_wait)
             if getattr(self, "_solar_provider_urgent", False) or wait_max <= 0:
                 self._solar_provider_urgent = False
                 await self._safe_tick()
@@ -1355,6 +1368,9 @@ class SigEnergyOptimizer:
             provider_wait = self._solar_provider_wait_seconds(datetime.now().timestamp())
             if provider_wait is not None:
                 remaining = min(remaining, provider_wait)
+            dip_wait = self._solar_dip_wait_seconds(datetime.now().timestamp())
+            if dip_wait is not None:
+                remaining = min(remaining, dip_wait)
             if remaining <= 0:
                 break
             try:
@@ -1396,6 +1412,8 @@ class SigEnergyOptimizer:
                 effective_mode = self._manual_mode_override or state.sigenergy_mode
                 if effective_mode not in {self.cfg.automated_option, ""}:
                     self._freeze_decision_to_live_mode(state, decision, effective_mode)
+                if decision.trace_gates.get("solar_surplus_dip_hold_active"):
+                    self._solar_dip_recheck_at = decision.trace_values["solar_surplus_dip_hold_deadline_ts"]
                 try:
                     application_result = await self._apply(state, decision)
                 except Exception:
@@ -1410,6 +1428,9 @@ class SigEnergyOptimizer:
                         application_result.error or "Actuator application failed"
                     )
                 self._last_decision = decision
+                self._commit_solar_dip_proof(state, decision, application_result)
+                if not decision.trace_gates.get("solar_surplus_dip_hold_active"):
+                    self._solar_dip_recheck_at = None
                 application_committed = True
                 permission = self._evaluate_hvac_solar_permission(
                     state,
@@ -1425,10 +1446,17 @@ class SigEnergyOptimizer:
                 self._record_price_tracking(state, decision)
             except asyncio.CancelledError:
                 self._clear_solar_physical_relief()
+                self._solar_dip_proof = None
                 raise
             except Exception:
                 if not application_committed:
                     self._clear_solar_physical_relief()
+                    self._solar_dip_proof = None
+                    if (
+                        self._solar_dip_recheck_at is not None
+                        and self._solar_dip_recheck_at <= datetime.now().timestamp()
+                    ):
+                        self._solar_dip_recheck_at = datetime.now().timestamp() + _DEBOUNCE_SECONDS
                     self._last_state = prev_state
                     self._last_decision = prev_decision
                 await self._publish_hvac_solar_permission(
@@ -2360,6 +2388,7 @@ class SigEnergyOptimizer:
             cfg.ems_mode_select,
             cfg.demand_window_sensor,
             cfg.sigenergy_mode_select,
+            cfg.ha_control_switch,
         ))))
         bulk = await self._enrich_state_report_metadata(bulk, report_entity_ids)
 
@@ -2452,6 +2481,10 @@ class SigEnergyOptimizer:
                 available=True,
                 fresh=current_when_present
                 or _metadata_is_fresh(obj, max_age_seconds),
+                observed_at_ts=(
+                    timestamp.timestamp()
+                    if (timestamp := _metadata_timestamp(obj)) is not None else None
+                ),
             )
 
         def _positive_power_kw(value: float) -> float:
@@ -2585,6 +2618,10 @@ class SigEnergyOptimizer:
             observed_ems_mode=_observed_text(
                 cfg.ems_mode_select,
                 current_when_present=True,
+                max_age_seconds=live_max_age,
+            ),
+            remote_ems_control=_observed_text(
+                cfg.ha_control_switch,
                 max_age_seconds=live_max_age,
             ),
             observed_export_limit=_observed_number(
@@ -3944,6 +3981,35 @@ class SigEnergyOptimizer:
         solar_measured_surplus_gate = bool(
             solar_measured_surplus_kw > solar_surplus_threshold_kw
         )
+        # A decision or cached high reading cannot create a new hold. Proof is
+        # committed only after a successful application and expires from the
+        # older source report, not from decision/application completion time.
+        dip_evidence = self._solar_dip_evidence(s, now_ts)
+        solar_dip_clock_regressed = bool(
+            self._solar_dip_last_clock is not None and now_ts < self._solar_dip_last_clock
+        )
+        if self._solar_dip_proof is not None and (
+            dip_evidence is None
+            or now_ts >= min(self._solar_dip_proof) + _SOLAR_SURPLUS_DIP_HOLD_SECONDS
+            or any(new < old for new, old in zip(dip_evidence, self._solar_dip_proof))
+            or solar_dip_clock_regressed
+        ):
+            self._solar_dip_proof = None
+        self._solar_dip_last_clock = now_ts
+        solar_dip_hold = bool(
+            cfg.solar_surplus_bypass_enabled
+            and not morning_slow_charge_active
+            and not morning_dump_active
+            and not evening_export_boost_active
+            and previous_cycle_solar_surplus_policy_owned
+            and not solar_measured_surplus_gate
+            and self._solar_dip_proof is not None
+            and dip_evidence is not None
+            and s.current_export_limit_observed
+            and s.hvac_solar_inputs.observed_export_limit.available
+            and s.hvac_solar_inputs.observed_export_limit.fresh
+            and self._solar_dip_ceiling_observed(s)
+        )
         solar_energy_budget_passed = bool(
             solar_energy_budget is not None
             and solar_energy_budget["budget_passed"]
@@ -3985,7 +4051,7 @@ class SigEnergyOptimizer:
             solar_surplus_fail_reason = f"timing_budget_invalid: {solar_timing_error}"
         elif not solar_timing_passed:
             solar_surplus_fail_reason = "timed_charge_opportunity_insufficient"
-        elif not solar_measured_surplus_gate:
+        elif not solar_measured_surplus_gate and not solar_dip_hold:
             solar_surplus_fail_reason = "measured_pv_surplus_below_hysteresis_threshold"
         else:
             solar_surplus_fail_reason = "eligible_pending_final_arbitration"
@@ -3995,13 +4061,13 @@ class SigEnergyOptimizer:
             and solar_energy_evidence_trusted
             and solar_energy_budget_passed
             and solar_timing_passed
-            and self._solar_surplus_bypass(
+            and (solar_dip_hold or self._solar_surplus_bypass(
                 s,
                 morning_slow_charge_active,
                 cap,
                 solar_measured_surplus_kw,
                 previously_active=previous_cycle_solar_surplus_policy_owned,
-            )
+            ))
         )
         d.solar_surplus_bypass = solar_surplus_bypass
 
@@ -4285,6 +4351,7 @@ class SigEnergyOptimizer:
                 independent_policy_only=bool(
                     surplus_bypass_for_policy or evening_export_boost_active
                 ),
+                solar_dip_hold=bool(solar_dip_hold and surplus_bypass_for_policy),
             )
             raw_source = getattr(raw_choice, "source", "")
             if raw_source == "high_price_or_spike" or (
@@ -5483,7 +5550,10 @@ class SigEnergyOptimizer:
             and desired_ems_mode == MODE_MAX_SELF
         )
         if d.solar_surplus_policy_active:
-            solar_surplus_fail_reason = "active_final_solar_surplus_owner"
+            solar_surplus_fail_reason = (
+                "active_final_solar_surplus_owner_dip_hold" if solar_dip_hold
+                else "active_final_solar_surplus_owner"
+            )
         elif solar_surplus_bypass:
             if pv_only_branch_battery_safety_blocked:
                 solar_surplus_fail_reason = "battery_flow_protection_rejected_solar"
@@ -5936,6 +6006,9 @@ class SigEnergyOptimizer:
             "solar_detailed_forecast_coverage": solar_detailed_forecast_coverage,
             "solar_timing_passed": solar_timing_passed,
             "solar_measured_surplus_gate": solar_measured_surplus_gate,
+            "solar_surplus_dip_hold_active": bool(solar_dip_hold and d.solar_surplus_policy_active),
+            "solar_surplus_strong_measured_proof": solar_measured_surplus_kw > 0.5,
+            "solar_surplus_dip_clock_regressed": solar_dip_clock_regressed,
             "solar_surplus_policy_active": d.solar_surplus_policy_active,
             "solar_charge_ceiling_evidence_trusted": solar_charge_ceiling_evidence_trusted,
             "solar_charge_ceiling_owned": solar_charge_ceiling_owned,
@@ -6075,6 +6148,10 @@ class SigEnergyOptimizer:
             "control_measured_pv_surplus_kw": control_measured_pv_surplus_kw,
             "solar_measured_pv_surplus_kw": solar_measured_surplus_kw,
             "solar_surplus_threshold_kw": solar_surplus_threshold_kw,
+            "solar_surplus_dip_hold_deadline_ts": (
+                min(self._solar_dip_proof) + _SOLAR_SURPLUS_DIP_HOLD_SECONDS
+                if self._solar_dip_proof is not None else None
+            ),
             "solar_remaining_forecast_kwh": s.forecast_remaining_kwh,
             "solar_expected_remaining_load_kwh": (
                 solar_energy_budget["remaining_load_kwh"]
@@ -6644,6 +6721,38 @@ class SigEnergyOptimizer:
                 evidence[cfg.grid_export_limit] = {}
             if not await _authority_permits(restrictive=restrictive, evidence=evidence):
                 return False
+            if (
+                not restrictive and recovery is None
+                and d.trace_gates.get("solar_surplus_dip_hold_active")
+                and not self._solar_dip_dispatch_current(s)
+            ):
+                self._solar_dip_proof = None
+                d.trace_gates["solar_surplus_dip_dispatch_rejected"] = True
+                return False
+            if (
+                not restrictive and recovery is None and entity == cfg.grid_export_limit
+                and value > 0.011 and d.trace_gates.get("solar_surplus_dip_hold_active")
+            ):
+                # The existing joint authority read may reveal an independent
+                # close/reduction that happened after the decision snapshot.
+                # Holding permission can lower a live ceiling, never reopen it.
+                current = evidence.get(cfg.grid_export_limit, {})
+                reported = self._state_metadata_timestamp(current)
+                try:
+                    current_kw = float(current.get("state"))
+                except (TypeError, ValueError, OverflowError):
+                    current_kw = math.nan
+                if not (
+                    math.isfinite(current_kw) and current_kw > 0.011
+                    and current_kw >= value - 0.001
+                    and not current.get("_control_mode_metadata_conflict")
+                    and reported is not None
+                    and 0.0 <= datetime.now(timezone.utc).timestamp() - reported.timestamp()
+                    <= cfg.hvac_solar_data_max_age_seconds
+                ):
+                    self._solar_dip_proof = None
+                    d.trace_gates["solar_surplus_dip_dispatch_rejected"] = True
+                    return False
             if recovery is not None:
                 if not (
                     _msc_matches(evidence[cfg.ems_mode_select], recovery[1])
@@ -7339,6 +7448,9 @@ class SigEnergyOptimizer:
         if not await _authority_permits():
             await _independent_restrictions()
             return _authority_paused()
+        if d.trace_gates.get("solar_surplus_dip_hold_active") and not self._solar_dip_dispatch_current(s):
+            self._solar_dip_proof = None
+            return await _safe_fallback("Solar measured-surplus hold expired before ESS application")
         self._recheck_solar_charge_authority(s, d, datetime.now(timezone.utc).timestamp())
         charge_cap_kw, discharge_cap_kw = self.get_power_caps_kw(s)
         charge_limit = self._bound_ess_request_kw(
@@ -7368,6 +7480,9 @@ class SigEnergyOptimizer:
                 if not await _authority_permits():
                     await _independent_restrictions()
                     return _authority_paused()
+                if d.trace_gates.get("solar_surplus_dip_hold_active") and not self._solar_dip_dispatch_current(s):
+                    self._solar_dip_proof = None
+                    return await _safe_fallback("Solar measured-surplus hold expired during ESS application")
                 self._recheck_solar_charge_authority(s, d, datetime.now(timezone.utc).timestamp())
                 if not d.trace_gates.get("solar_charge_ceiling_owned") or d.ess_charge_limit != charge_limit:
                     restored_charge = self._bound_ess_request_kw(d.ess_charge_limit, charge_cap_kw)
@@ -7408,6 +7523,9 @@ class SigEnergyOptimizer:
         await ha.set_input_number(cfg.min_soc_to_sunrise_helper, min(d.min_soc_to_sunrise, 100.0))
 
         if application_failures:
+            if d.trace_gates.get("solar_surplus_dip_hold_active"):
+                self._solar_dip_proof = None
+                return await _safe_fallback("Solar held application failed: " + "; ".join(application_failures))
             if self._msc_transition is not None:
                 self._msc_transition = _MscTransition()
             self._msc_baseline_established = False
@@ -7426,6 +7544,9 @@ class SigEnergyOptimizer:
             d.ems_mode, d.export_limit, d.import_limit, d.pv_max_power_limit,
             d.outcome_reason[:80]
         )
+        if d.trace_gates.get("solar_surplus_dip_hold_active") and not self._solar_dip_dispatch_current(s):
+            self._solar_dip_proof = None
+            return await _safe_fallback("Solar measured-surplus hold expired during application")
         if ems_mode_to_apply == MODE_MAX_SELF and self._msc_exact_observed(s):
             self._msc_baseline_established = True
             self._msc_transition = None
@@ -7551,6 +7672,9 @@ class SigEnergyOptimizer:
 
     def _freeze_decision_to_live_mode(self, state: SolarState, decision: Decision, mode_label: str) -> None:
         if mode_label != self.cfg.automated_option:
+            self._solar_dip_proof = None
+            self._solar_dip_recheck_at = None
+            decision.trace_gates["solar_surplus_dip_hold_active"] = False
             self._clear_solar_physical_relief(decision, "operator_owned")
             decision.export_intent = EXPORT_BLOCKED
             decision.requires_verified_msc_before_export = False
@@ -7757,6 +7881,8 @@ class SigEnergyOptimizer:
                 self._manual_ess_discharge_override_kw = None
             else:
                 self._manual_mode_override = mode_label
+                self._solar_dip_proof = None
+                self._solar_dip_recheck_at = None
                 self._manual_mode_requested_at = requested_at
                 if mode_label in {
                     cfg.block_flow_option,
@@ -9084,6 +9210,112 @@ class SigEnergyOptimizer:
         threshold_kw = 0.2 if previously_active else 0.5
         return pv_surplus > threshold_kw
 
+    def _solar_dip_evidence(self, s: SolarState, now_ts: float) -> Optional[tuple[float, float]]:
+        """Strict live evidence for a continuation-only PV permission hold."""
+        inputs = s.hvac_solar_inputs
+        if (
+            not inputs.live_snapshot or self._manual_mode_override
+            or self._msc_transition is not None
+            or not s.sigenergy_mode_observed
+            or s.sigenergy_mode != self.cfg.automated_option
+            or not s.ems_mode_observed or s.current_ems_mode != MODE_MAX_SELF
+            or not s.ha_control_enabled or not s.ha_control_switch_available
+            or s.ha_control_switch_state != "on"
+        ):
+            return None
+        for observation, expected in (
+            (inputs.control_mode, self.cfg.automated_option),
+            (inputs.observed_ems_mode, MODE_MAX_SELF),
+            (inputs.remote_ems_control, "on"),
+        ):
+            try:
+                stamp = _solar_surplus_finite_number("report", observation.observed_at_ts)
+            except ValueError:
+                return None
+            if not (
+                observation.available and observation.fresh and observation.value == expected
+                and 0.0 <= now_ts - stamp <= self.cfg.hvac_solar_data_max_age_seconds
+            ):
+                return None
+        observations = (
+            inputs.pv_power, inputs.load_power, inputs.battery_power,
+            inputs.grid_import_power, inputs.grid_export_power,
+        )
+        try:
+            values = tuple(_solar_surplus_finite_number("flow", item.value) for item in observations)
+            stamps = tuple(_solar_surplus_finite_number("report", item.observed_at_ts) for item in observations)
+        except ValueError:
+            return None
+        if not (
+            all(item.available and item.fresh for item in observations)
+            and all(0.0 <= now_ts - stamp < _SOLAR_SURPLUS_DIP_HOLD_SECONDS for stamp in stamps)
+            and max(stamps) - min(stamps) <= _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS
+            and all(values[index] >= 0.0 for index in (0, 1, 3, 4))
+            and values[2] >= -0.1 and values[3] <= 0.1
+        ):
+            return None
+        return stamps[0], stamps[1]
+
+    def _solar_dip_ceiling_observed(self, s: SolarState) -> bool:
+        """A hold cannot reopen a closed or independently reduced ceiling."""
+        if self._last_decision is None:
+            return False
+        try:
+            observed = _solar_surplus_finite_number("export", s.current_export_limit)
+            report = s.hvac_solar_inputs.observed_export_limit
+            reported = _solar_surplus_finite_number("export report", report.value)
+            stamp = _solar_surplus_finite_number("export report time", report.observed_at_ts)
+        except ValueError:
+            return False
+        return bool(
+            self._last_decision.export_limit > 0.01
+            and observed > 0.01 and reported > 0.01
+            and min(observed, reported) >= self._last_decision.export_limit - 0.01
+            and 0.0 <= datetime.now().timestamp() - stamp <= self.cfg.hvac_solar_data_max_age_seconds
+        )
+
+    def _commit_solar_dip_proof(self, s: SolarState, d: Decision, result: object) -> None:
+        """Renew only from advancing measured evidence after real apply success."""
+        now_ts = datetime.now().timestamp()
+        evidence = self._solar_dip_evidence(s, now_ts)
+        if not (
+            isinstance(result, _ActuatorApplicationResult) and result.succeeded
+            and d.solar_surplus_policy_active and evidence is not None
+            and not d.trace_gates.get("solar_surplus_dip_clock_regressed")
+        ):
+            self._solar_dip_proof = None
+            return
+        if d.trace_gates.get("solar_surplus_strong_measured_proof"):
+            if self._solar_dip_high_water is None or all(
+                new > old for new, old in zip(evidence, self._solar_dip_high_water)
+            ):
+                self._solar_dip_proof = evidence
+                self._solar_dip_high_water = evidence
+
+    def _solar_dip_wait_seconds(self, now_ts: float) -> Optional[float]:
+        deadline = getattr(self, "_solar_dip_recheck_at", None)
+        if deadline is None:
+            return None
+        remaining = deadline - now_ts
+        if remaining <= 0.0:
+            # A failed/raised apply may have cleared proof and restored the old
+            # decision while its actuator ceiling remains open. Re-evaluate at
+            # expiry, then at bounded intervals until a successful non-held tick
+            # or an operator takeover clears this obligation. Never busy-spin.
+            self._solar_dip_recheck_at = now_ts + _DEBOUNCE_SECONDS
+            return 0.0
+        return remaining
+
+    def _solar_dip_dispatch_current(self, s: SolarState) -> bool:
+        now_ts = datetime.now().timestamp()
+        return bool(
+            self._solar_dip_proof is not None
+            and min(self._solar_dip_proof) <= now_ts
+            < min(self._solar_dip_proof) + _SOLAR_SURPLUS_DIP_HOLD_SECONDS
+            and self._solar_dip_evidence(s, now_ts) is not None
+            and self._solar_dip_ceiling_observed(s)
+        )
+
     def _battery_full_safeguard_block(
         self,
         s: SolarState,
@@ -9258,7 +9490,8 @@ class SigEnergyOptimizer:
                                measured_pv_surplus: float | None = None, *,
                                forecast_tomorrow_trusted: bool,
                                battery_soc_floor: float | None = None,
-                               independent_policy_only: bool = False) -> float:
+                               independent_policy_only: bool = False,
+                               solar_dip_hold: bool = False) -> float:
         cfg = self.cfg
         fit_cents = s.feedin_price_cents
         bsoc = s.battery_soc
@@ -9308,6 +9541,7 @@ class SigEnergyOptimizer:
             and not high_price
             and not spike
             and not evening_boost
+            and not (surplus_bypass and solar_dip_hold)
         ):
             return choice(0.0, "closed_no_daytime_pv")
 
@@ -9391,6 +9625,8 @@ class SigEnergyOptimizer:
         # check above.  Do not reuse ordinary tier thresholds for this PV-only policy.
         if surplus_bypass:
             ceiling, _authoritative_cap_kw = self._bounded_pv_only_high_ceiling(s)
+            if solar_dip_hold and self._last_decision is not None:
+                ceiling = min(ceiling, self._last_decision.export_limit, s.current_export_limit)
             if ceiling <= 0.01:
                 return choice(0.0, "solar_surplus_pv_closed")
             return choice(ceiling, "solar_surplus_pv_high")
