@@ -236,10 +236,10 @@ Before live acceptance, inspect provider state, poll/high-water/verified times,
 retained/advertised deadlines, source/epoch and rejection reasons in Decision
 Trace. Operator-supplied startup evidence reports `.73` at source
 `46d36358d38137231dff081176a372c3aa1f4cee`; this is not direct reviewer HA
-access. The local Solar low-surplus continuation candidate described below has
-not been released, deployed or live-verified.
+access. The Solar low-surplus continuation change below is merged in main and
+prepared for candidate `.74`; it has not been released, deployed or live-verified.
 
-### Solar low-surplus continuation (local candidate, 20 October 2026)
+### Solar low-surplus continuation (.74 candidate, 20 October 2026)
 
 After successful final Solar application, existing MSC export permission may
 bridge a brief dip strictly before 15 seconds after the older fresh, coherent
@@ -257,6 +257,10 @@ dips with renewed strong measured reports. Its
 mocked application and real-tick timing do not constitute a full trace replay
 or physical inverter proof; the physical cause remains unproven. This candidate
 has not been released or deployed.
+
+Candidate `2.3.63-haos74` aligns all five release markers and retains the reviewed
+control behavior from PR #26. Publication and installation remain separate from
+candidate preparation. See [the .74 release and supervised proof plan](docs/HAOS74_RELEASE_CANDIDATE.md).
 
 ## Common Issues
 
