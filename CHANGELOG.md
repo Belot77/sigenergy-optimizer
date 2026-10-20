@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.63-haos74 - release candidate prepared - 2026-10-20 (unpublished)
+
+- Prepared from merged PR #26, main `550c8eeee8239dfb3515d3a6c4b174f35e58f139`, containing the reviewed Solar stability change below. This release-preparation delta changes five version markers and documentation only; it adds no control behavior.
+- The 15-second measured-proof hold preserves existing MSC permission through brief dips. Expiry, trust/authority/flow failure and independently reduced export limits retain their conservative protections. The original physical PV-collapse cause remains unproven.
+- Latest published and operator-reported installed baseline remains `.73` / `2.3.62-haos73`, source `46d36358d38137231dff081176a372c3aa1f4cee`. Preparation creates no `.74` tag, publication, image build or deployment. See [release candidate and live-proof plan](docs/HAOS74_RELEASE_CANDIDATE.md).
+- Candidate checks passed 16 release-marker/source-pinning tests in 9.05 seconds. Exact scope verification confirms five version replacements plus release documentation only; independent release review found no blockers. The full control-suite result below is retained, not rerun for version markers. Docker is unavailable locally, so no container build is claimed.
+
 ## 2026-10-20 - Solar low-surplus continuation (unreleased local candidate)
 
 - Preserve existing Solar MSC export permission strictly before 15 seconds after the older fresh, coherent PV/load report proving more than 0.5 kW measured surplus, following successful final Solar application. Both source timestamps must advance to renew proof; held/cached evidence, 0.2–0.5 kW continuation and forecasts cannot renew it.
