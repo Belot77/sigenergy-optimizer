@@ -79,7 +79,7 @@ Its energy order is PV to current house load, preserve enough opportunity to fil
 - FiT at least `1 cent/kWh`;
 - trusted finite PV and load values with coherent observations;
 - measured PV-load surplus strictly above `0.5 kW` for entry;
-- for genuinely owned continuation only, measured surplus strictly above `0.2 kW`;
+- for genuinely owned continuation only, measured surplus strictly above `0.2 kW`, or the bounded measured-proof dip hold below;
 - trusted Remaining Today aggregate forecast;
 - trusted battery SoC and rated battery capacity;
 - trusted same-day future sunset while the sun is above the horizon;
@@ -87,7 +87,21 @@ Its energy order is PV to current house load, preserve enough opportunity to fil
 - a passing aggregate energy budget;
 - when battery fill remains, passing trusted detailed timing evidence using trusted effective charge capability.
 
-At or below the continuation threshold Solar stops. After stopping, full entry strictly above `0.5 kW` is required again. Missing, stale, malformed, incoherent, or otherwise unsafe evidence fails Solar closed.
+At or below the continuation threshold Solar stops unless the bounded dip hold qualifies. After stopping, full entry strictly above `0.5 kW` is required again. Missing, stale, malformed, incoherent, or otherwise unsafe evidence fails Solar closed.
+
+### Brief measured-surplus dip hold (unreleased)
+
+An already active Solar MSC permission may bridge a short measured-surplus dip until **strictly before 15 seconds after the older PV/load source report** that proved measured surplus strictly above `0.5 kW` and produced a successfully applied final Solar decision. This is five existing three-second coalescing windows; it bounds continuation without delaying startup or ordinary measured-surplus decisions. It applies at any otherwise eligible SoC and does not change the separate exact-100% branch.
+
+Both PV and load report timestamps must advance before new strong measured evidence renews that permission. A held decision, cached report, ordinary `0.2-0.5 kW` continuation, forecast potential or elapsed time cannot renew it. Proof is process-local, begins absent after restart, and cannot be granted by decision calculation alone or a successful application completed after the source evidence expires.
+
+Every normal non-surplus Solar eligibility gate remains mandatory. In addition, the hold requires current provenance-bearing Automated, exact MSC and Remote EMS ON observations, no pending MSC transition, directly observed battery discharge at most `0.1 kW`, grid import at most `0.1 kW`, and finite fresh measured PV/load/battery/import/export reports within five seconds of each other and younger than 15 seconds. Missing or future timestamps, regressions, ownership loss, unsafe flow, failed/pending/cancelled application and Manual/Force invalidate proof. Advancing physical evidence and successful final Solar application are required to rearm it.
+
+The observed export ceiling must already be positive and at least the prior successful Solar request within `0.01 kW`. Held permission is bounded by that previous request, the current observed ceiling and current authoritative capability. Immediately before any positive held export write, the existing joint authority read must also prove a fresh finite positive actual export limit at least that requested write, within `0.001 kW` command tolerance. It cannot reopen a closed or independently reduced actuator, raise its previous ceiling, select discharge EMS or manufacture battery-export ownership. The daytime zero-surplus exception is scoped only to this qualified hold. Existing import, PV, ESS, competing-owner, dispatch and settlement restrictions retain authority.
+
+The serialized event loop bounds quiet waits and event coalescing by the proof deadline; it does not rely on the 60-second heartbeat to notice expiry. Failed held applications retain a separate re-evaluation obligation even when proof is cleared and the previous decision is restored. An unsuccessful expiry-triggered attempt retries through the same serialized loop after three seconds, without busy-spinning, until a successful non-held cycle or operator takeover clears the obligation. Permissive application checks expiry after authority awaits and before completion; expiry during application requests the existing conservative fallback. These bounds govern decision/dispatch authority, not a guarantee that physical equipment settles by the deadline. Dynamic ESS charge ownership still requires its independent provider/fill evidence; an unverified provider retains the normal safe charge request.
+
+Offline checks use synthetic live-report provenance and simulated application outcomes, plus fake-actuator expiry tests. They do not establish why PV collapsed in the supplied incident or prove inverter behavior. For later verification: monitor-only and dry-run observations must show the proof deadline and immediate hard-gate rejection without control writes; separately approved supervised live proof must compare source timestamps, held permission, actual flows and requested/observed ceilings, and confirm persistent low surplus expires. Stop and return to the operator's chosen safe mode on unsafe discharge/export, lost trust/authority, repeated failures or renewed flapping. Local rollback is to withhold this uncommitted candidate; no live rollback or settings change is performed here.
 
 ### Aggregate energy budget
 
@@ -193,6 +207,8 @@ This distinction creates only `MSC_SURPLUS_CEILING`. It never creates `BATTERY_E
 
 `solar_surplus_policy_active` identifies final Solar policy ownership after arbitration. Operator diagnostics also expose the fail reason, aggregate budget evidence, detailed timing evidence, measured surplus and active threshold, and Solar safety factor. Policy-active status and an open ceiling do not prove physical inverter or grid export settlement.
 
+Dip diagnostics add `solar_surplus_dip_hold_active`, `solar_surplus_strong_measured_proof`, `solar_surplus_dip_clock_regressed` and `solar_surplus_dip_hold_deadline_ts`. Held final ownership reports `active_final_solar_surplus_owner_dip_hold`; application expiry rejection adds `solar_surplus_dip_dispatch_rejected`. A deadline in a decision trace describes the existing proof at decision time, not physical settlement or successful renewal.
+
 Charge diagnostics expose gates `solar_charge_ceiling_evidence_trusted` and `solar_charge_ceiling_owned`, plus values `ess_charge_limit_owner`, `solar_charge_ceiling_requested_kw`, `solar_charge_ceiling_protected_fill_need_kwh`, `solar_charge_ceiling_future_opportunity_kwh`, `solar_charge_ceiling_required_now_kwh`, `solar_charge_ceiling_current_window_hours`, and `solar_charge_ceiling_reason`. When owned, the charge owner is `solar_surplus`; current charging needed for the fill trajectory reports `present_charging_required_for_fill_trajectory`. Charge ownership is distinct from policy eligibility and observed actuator settlement.
 
 Fill/relief diagnostics add `solar_charge_ceiling_fill_deadline_ts` (Unix timestamp), `solar_charge_ceiling_fill_deadline_margin_minutes`, `solar_charge_ceiling_baseline_kw`, gates `solar_physical_relief_active` / `solar_physical_relief_flow_trusted`, and values `solar_physical_relief_kw`, `solar_physical_relief_reason`, `solar_physical_relief_export_kw`, `solar_physical_relief_limit_kw` and `solar_physical_relief_confirmations`. `solar_charge_ceiling_requested_kw` remains the final requested ceiling after relief. The API copies these trace values without recalculating control and suppresses stale relief-active status when final Solar ownership is absent.
@@ -279,7 +295,7 @@ Morning Slow's optional physical-relief settings remain `grid_connection_export_
 
 Relevant Home Assistant state and watched-attribute changes trigger event-driven optimizer cycles through a fixed 3-second pre-decision coalescing window. The deadline does not slide when more events arrive, allowing related telemetry bursts to produce one coherent decision without restoring the earlier zero-delay behavior.
 
-There is no immediate first-event tick and no immediate catch-up tick. Events arriving during or after a cycle remain eligible for the next bounded cycle. Startup remains immediate, the 60-second heartbeat remains, metadata-only changes do not trigger, and actuator/readback settlement protections remain unchanged. No arbitrary 60-second Solar stabilization is part of this contract.
+There is no immediate first-event tick and no immediate catch-up tick. Events arriving during or after a cycle remain eligible for the next bounded cycle. Startup remains immediate, the 60-second heartbeat remains, metadata-only changes do not trigger, and actuator/readback settlement protections remain unchanged. The measured-proof dip deadline above may shorten an existing wait; no arbitrary 60-second Solar stabilization is part of this contract.
 
 ## Demand Window
 

@@ -31,6 +31,7 @@ class HVACSolarInputContext:
     sun_above_horizon: HVACObservedValue = field(default_factory=HVACObservedValue)
     control_mode: HVACObservedValue = field(default_factory=HVACObservedValue)
     observed_ems_mode: HVACObservedValue = field(default_factory=HVACObservedValue)
+    remote_ems_control: HVACObservedValue = field(default_factory=HVACObservedValue)
     observed_export_limit: HVACObservedValue = field(default_factory=HVACObservedValue)
     # True only for evidence populated by the live HA bulk-state reader. Hand-built
     # unit states retain the legacy raw-field fallback used by decision tests.
