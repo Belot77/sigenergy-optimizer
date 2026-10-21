@@ -31,6 +31,11 @@ class EveningBoostFitDecouplingCharacterizationTests(Haos49CharacterizationCase)
             **overrides,
         )
         optimizer._evening_export_boost_active = lambda *args, **kwargs: True
+        # This file isolates fit, ownership and downstream policy gates;
+        # delayed reentry is exercised by its dedicated integration tests.
+        optimizer._evening_boost_reentry_allowed = (
+            lambda state, *, candidate, now_ts: candidate
+        )
         return optimizer
 
     def _state(self, optimizer, fit: float, **overrides: object):

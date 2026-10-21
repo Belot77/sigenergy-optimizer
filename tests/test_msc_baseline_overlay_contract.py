@@ -2205,6 +2205,10 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         )
         for name, optimizer, state, when, owner in cases:
             with self.subTest(name=name):
+                if name == "evening_boost":
+                    optimizer._evening_boost_reentry_allowed = (
+                        lambda state, *, candidate, now_ts: candidate
+                    )
                 decision = self.decide(optimizer, state, when)
 
                 self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)

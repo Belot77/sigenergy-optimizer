@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.config import Settings
 from app.ha_ws_client import HAWebSocketClient
-from app.optimizer import SigEnergyOptimizer, _TRIGGER_ENTITY_ATTRS
+from app.optimizer import SigEnergyOptimizer, _EveningBoostReentry, _TRIGGER_ENTITY_ATTRS
 
 
 class OptimizerEventLoopResponsivenessTests(unittest.IsolatedAsyncioTestCase):
@@ -16,6 +16,7 @@ class OptimizerEventLoopResponsivenessTests(unittest.IsolatedAsyncioTestCase):
         optimizer.trigger_queue = asyncio.Queue(maxsize=64)
         optimizer._running = False
         optimizer._ws_connected = True
+        optimizer._evening_boost_reentry = _EveningBoostReentry()
         optimizer._tick = AsyncMock()
         optimizer._safe_tick = AsyncMock()
         return optimizer

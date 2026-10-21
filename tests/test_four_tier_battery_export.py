@@ -376,6 +376,11 @@ class FourTierDecisionTests(Haos49CharacterizationCase):
                             battery_export_min_soc_high=80 if rejected else 20,
                             battery_export_min_soc_spike=80 if rejected else 10,
                         )
+                        # Isolate priority among otherwise qualified owners;
+                        # real reentry timing is covered by dedicated tests.
+                        optimizer._evening_boost_reentry_allowed = (
+                            lambda state, *, candidate, now_ts: candidate
+                        )
                         optimizer._tz = timezone.utc
                         # The shared state helper builds naive local sun times;
                         # align them with this fixture's explicit UTC forecasts.

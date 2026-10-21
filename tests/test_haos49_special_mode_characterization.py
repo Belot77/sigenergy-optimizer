@@ -231,6 +231,9 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
         when = datetime(2026, 1, 15, 17, 30)
         optimizer = self.optimizer(evening_boost_enabled=True)
         optimizer._evening_export_boost_active = lambda *args, **kwargs: True
+        optimizer._evening_boost_reentry_allowed = (
+            lambda state, *, candidate, now_ts: candidate
+        )
         state = self.state(
             when,
             battery_soc=80.0,
@@ -380,6 +383,11 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
         optimizer = self.optimizer(
             evening_boost_enabled=True,
             evening_boost_min_tomorrow_forecast_kwh=100.0,
+        )
+        # Keep this forecast-gate characterization independent of the separate
+        # delayed reentry state, which has dedicated real-timer coverage.
+        optimizer._evening_boost_reentry_allowed = (
+            lambda state, *, candidate, now_ts: candidate
         )
         detailed = [
             {

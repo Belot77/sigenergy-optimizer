@@ -234,12 +234,13 @@ Solar provider freshness is schedule/provider-aware and is not extended by it.
 
 Before live acceptance, inspect provider state, poll/high-water/verified times,
 retained/advertised deadlines, source/epoch and rejection reasons in Decision
-Trace. Operator-supplied startup evidence reports `.73` at source
-`46d36358d38137231dff081176a372c3aa1f4cee`; this is not direct reviewer HA
-access. The Solar low-surplus continuation change below is merged in main and
-prepared for candidate `.74`; it has not been released, deployed or live-verified.
+Trace. The latest published add-on release is `2.3.63-haos74`, source
+`31ff4872877722d6c0adcae70b445c56cc209d48`; the published source was verified.
+Operator-supplied startup evidence still reports `.73` at source
+`46d36358d38137231dff081176a372c3aa1f4cee`. .74 installation and live behavior
+are not verified here.
 
-### Solar low-surplus continuation (.74 candidate, 20 October 2026)
+### Solar low-surplus continuation (published .74; historical characterization, 20 October 2026)
 
 After successful final Solar application, existing MSC export permission may
 bridge a brief dip strictly before 15 seconds after the older fresh, coherent
@@ -251,16 +252,19 @@ immediately. Expiry requests conservative closure under current control
 authority; failed applications retain deadline re-evaluation with bounded
 three-second retries. Physical closure still requires actuator settlement.
 
-A sanitized deterministic characterization reproduces seven 25-to-zero kW
-closures at baseline; the candidate retains permission through those short
-dips with renewed strong measured reports. Its
-mocked application and real-tick timing do not constitute a full trace replay
-or physical inverter proof; the physical cause remains unproven. This candidate
-has not been released or deployed.
+A sanitized deterministic candidate characterization reproduced seven
+25-to-zero kW closures at baseline; the candidate retained permission through
+those short dips with renewed strong measured reports. Its mocked application
+and real-tick timing do not constitute a full trace replay or physical inverter
+proof; the physical cause remains unproven. This change is included in published
+.74; this characterization does not establish installation or live behavior.
 
-Candidate `2.3.63-haos74` aligns all five release markers and retains the reviewed
-control behavior from PR #26. Publication and installation remain separate from
-candidate preparation. See [the .74 release and supervised proof plan](docs/HAOS74_RELEASE_CANDIDATE.md).
+The release includes the reviewed control behavior from PR #26. See [the .74
+release and supervised proof plan](docs/HAOS74_RELEASE_CANDIDATE.md).
+
+## Local Evening Boost candidate (unreleased)
+
+The local candidate requires trusted load and sunrise inputs for the overnight reserve calculation. Before initial Boost admission or after startup, restart, or return from manual ownership, fresh load reports must span at least 120 seconds and local monotonic time must also advance at least 120 seconds. These are minimums, not a promised start time. Cached reports do not qualify. A load-report gap or processing interval over 60 seconds without an advancing report resets qualification; report cadence and latency may delay admission indefinitely. Existing failure closures remain immediate. The user authorized completing release and supervised acceptance work on 21 October, subject to actual HA access, rollback readiness and other gates. The candidate remains uncommitted and .74 remains latest published. Keep Evening Boost disabled until release, installation and supervised live proof are complete; installation readiness is unverified. See [the control contract](docs/CONTROL_CONTRACT.md) and [current validation and status](docs/CURRENT_STATE.md).
 
 ## Common Issues
 
@@ -296,9 +300,9 @@ Uninstall:
 
 ## Version
 
-Latest published release: [**2.3.62-haos73**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.62-haos73), published 19 October 2026. Tag/source `46d36358d38137231dff081176a372c3aa1f4cee`; verified amd64/arm64 OCI index `sha256:a2313bed130c77d7fa4139b03adf67c4282f7a59c1ed116d8d64083e9cfc6f59`. PR #24 merged the reviewed tree at `d8d78320c43096bbae30210bf8bcaa60ec3313d0`.
+Latest published release: [**2.3.63-haos74**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.63-haos74), published 20 October 2026. Tag/source `31ff4872877722d6c0adcae70b445c56cc209d48`; PR #27 merged at `4b7c8b2b6e8a22ee01db9c44942b7c8e8ed40b28`. Verified amd64/arm64 OCI index `sha256:3f3d46ce2cef41a8246cc63db2ef794c0e1907cf2a2518acf751cdc2646399ee`.
 
-Supplied 20 October startup logs identify runtime `.73` and that exact source. Supervisor reports a local `.71` to `.73` build with matching `BUILD_VERSION`. This establishes supplied installed-build identity, not comprehensive physical or long-term acceptance.
+On 21 October the operator reported `.74` installed, Evening Boost off and add-on auto-update off. A rollback method was not supplied, so rollback readiness is unverified. The last supplied 20 October startup evidence identifies runtime `.73` at source `46d36358d38137231dff081176a372c3aa1f4cee`; Supervisor reports a local `.71` to `.73` build with matching `BUILD_VERSION`. The `.74` installation report is not verified against exact runtime source, and live acceptance remains unverified.
 
 `.73` includes version/source-pinned builds and resolved full-SHA recording, while carrying `.72` optimizer control behavior unchanged. The `.72` corrections cover Solar Override selected/protected floors, Morning Dump discharge intent and blocked-Dump MSC fallback, application-outcome trace recording, and precise positive sub-1-cent FiT explanations. The frozen `.72` tag/image exclude the Dockerfile source-pinning fix.
 
@@ -306,7 +310,7 @@ Current live-memory recording is demonstrated, including pending/error outcomes 
 
 Protected rollback reference: **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`, public OCI index `sha256:dd7efe0fd9b192ae1fd996137c312e5f2aab12e01a285f6e75fb5a58dc8fe88c`. There is no GitHub Release for `.65`; an actual usable Supervisor restore/reinstall method and saved effective settings remain unverified. Artifact availability alone is not rollback proof.
 
-Existing unfinished worktrees and the separate local archive-characterization tests remain preserved. The physical-export software default remains `0.0` (disabled); the reported site limit is not a universal default. This documentation checkpoint changes no application behavior, thresholds, settings or permanent instructions. The historical `release.sh` remains unsuitable: it preserves the haos suffix, updates only three of five markers, stages all changes and can commit/tag/push. Do not use it without a separate repair/review. Future releases, deployments and deliberately provoked live tests require their own scoped approval.
+Existing unfinished worktrees and the separate local archive-characterization tests remain preserved. The physical-export software default remains `0.0` (disabled); the reported site limit is not a universal default. The earlier README publication-status update changed no application behavior, thresholds, settings or permanent instructions; the local Evening Boost candidate above is a separate, unreleased work item. The historical `release.sh` remains unsuitable: it preserves the haos suffix, updates only three of five markers, stages all changes and can commit/tag/push. Do not use it without a separate repair/review. Future releases, deployments and deliberately provoked live tests require their own scoped approval.
 
 ## Historical Maintainer Release Flow (not current instructions)
 
