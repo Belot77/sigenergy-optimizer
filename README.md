@@ -236,9 +236,10 @@ Before live acceptance, inspect provider state, poll/high-water/verified times,
 retained/advertised deadlines, source/epoch and rejection reasons in Decision
 Trace. The latest published add-on release is `2.3.63-haos74`, source
 `31ff4872877722d6c0adcae70b445c56cc209d48`; the published source was verified.
-Operator-supplied startup evidence still reports `.73` at source
-`46d36358d38137231dff081176a372c3aa1f4cee`. .74 installation and live behavior
-are not verified here.
+The operator reported `.74` installed, Evening Boost off, and add-on auto-update
+off on 21 October 2026. The last supplied startup/source evidence remains `.73`
+at `46d36358d38137231dff081176a372c3aa1f4cee`; exact `.74` runtime source and
+live acceptance remain unverified. No rollback method was supplied.
 
 ### Solar low-surplus continuation (published .74; historical characterization, 20 October 2026)
 
@@ -262,9 +263,9 @@ proof; the physical cause remains unproven. This change is included in published
 The release includes the reviewed control behavior from PR #26. See [the .74
 release and supervised proof plan](docs/HAOS74_RELEASE_CANDIDATE.md).
 
-## Local Evening Boost candidate (unreleased)
+## Evening Boost changes in .75 release preparation
 
-The local candidate requires trusted load and sunrise inputs for the overnight reserve calculation. Before initial Boost admission or after startup, restart, or return from manual ownership, fresh load reports must span at least 120 seconds and local monotonic time must also advance at least 120 seconds. These are minimums, not a promised start time. Cached reports do not qualify. A load-report gap or processing interval over 60 seconds without an advancing report resets qualification; report cadence and latency may delay admission indefinitely. Existing failure closures remain immediate. The user authorized completing release and supervised acceptance work on 21 October, subject to actual HA access, rollback readiness and other gates. The candidate remains uncommitted and .74 remains latest published. Keep Evening Boost disabled until release, installation and supervised live proof are complete; installation readiness is unverified. See [the control contract](docs/CONTROL_CONTRACT.md) and [current validation and status](docs/CURRENT_STATE.md).
+The .75 candidate requires trusted load and sunrise inputs for the overnight reserve calculation. Before initial Boost admission or after startup, restart, or return from manual ownership, fresh load reports must span at least 120 seconds and local monotonic time must also advance at least 120 seconds. These are minimums, not a promised start time. Cached reports do not qualify. A load-report gap or more than 60 seconds without an advancing report resets qualification; report cadence and latency may delay admission indefinitely. Existing failure closures remain immediate. The candidate passed full local offline validation, but .75 is not yet published or installed. Keep Evening Boost disabled until release, installation and supervised live proof are complete. See the [release candidate plan](docs/HAOS75_RELEASE_CANDIDATE.md), [control contract](docs/CONTROL_CONTRACT.md), and [current status](docs/CURRENT_STATE.md).
 
 ## Common Issues
 

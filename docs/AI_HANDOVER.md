@@ -10,7 +10,13 @@ Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STAT
 
 On 21 October the operator reported `.74` installed, Evening Boost off, and add-on auto-update off. The operator did not supply a rollback method; rollback readiness is unverified. The last supplied startup/source evidence remains `.73`: runtime .73, source `46d36358d38137231dff081176a372c3aa1f4cee`, Supervisor local build 71 to 73 with `BUILD_VERSION=2.3.62-haos73`, final start at 06:53:23 Sydney on 20 October. Thus the `.74` installation report is not verified against exact runtime source, and no `.74` live acceptance is established here.
 
-### Local Evening Boost reserve-trust and re-entry candidates - 21 October 2026
+### Current .75 release preparation - 21 October 2026
+
+Current workspace: `C:\Projects\sigenergy_optimizer-release-haos75`, branch `release/2.3.64-haos75`, based on merged PR #28 at `2ea64b4aaa4da1cb61627e74e53761662df41e5e`. PR #28 merged the approved code fix commit `3494cb2d15585107721a63871a2d3f78ebeaa81d`. Release metadata targets `2.3.64-haos75`; `.74` remains the latest published release. Combined local source validation passed 1,142 tests / 1,287 subtests (zero failures, 206 warnings, 209.04 seconds), focused validation passed 90 / 103 (202 warnings, 4.73 seconds), and release-specific checks passed 16 tests in 9.89 seconds. Normalized verification confirmed exactly five marker replacements. No `.75` tag, image, GitHub Release or installation is claimed. Follow [the .75 candidate plan](HAOS75_RELEASE_CANDIDATE.md) for tag/build/image verification before merging release metadata and publication.
+
+Operator report on 21 October: `.74` installed, Evening Boost off, auto-update off. Exact installed source and live acceptance remain unverified; last supplied startup/source evidence is `.73` at `46d36358d38137231dff081176a372c3aa1f4cee`. No rollback method was supplied. Keep Boost disabled until publication, installation and separately supervised live acceptance; O4 live stability and O5 policy remain open.
+
+### Historical local Evening Boost reserve-trust and re-entry checkpoint - 21 October 2026
 
 Current workspace: `C:\Projects\sigenergy_optimizer-boost-reentry-stability`, branch `fix/evening-boost-reentry-stability`, based on `.74` merge `4b7c8b2b6e8a22ee01db9c44942b7c8e8ed40b28`. It carries reviewed O12 reserve-trust changes plus newly approved O4 re-entry qualification. Neither is in published .74; the last supplied live proof remains .73. O12 requires existing `load_power_trusted` and `sunrise_observation_trusted` evidence for Boost eligibility and uses both observations in reserve calculation. Its previous independent checkpoint passed focused tests (41 / 55 subtests, 202 warnings, 2.12 seconds) and the full suite (1,112 / 1,247 subtests, zero failures, 206 warnings, 208.46 seconds). Do not treat those as validation of the combined source in this worktree.
 
