@@ -10,7 +10,13 @@ Latest GitHub Release: **2.3.63-haos74**, tag `v2.3.63-haos74`, source commit `3
 
 On 21 October the operator reported `.74` installed, Evening Boost off and add-on auto-update off. A rollback method was not supplied; rollback readiness remains unverified. The last supplied HA startup/source evidence is still runtime .73 at `46d36358d38137231dff081176a372c3aa1f4cee`, with Supervisor reporting local build .71 to .73 and `BUILD_VERSION=2.3.62-haos73` on 20 October. The `.74` installation report has not been verified against exact runtime source; live acceptance is unverified.
 
-### Local Evening Boost reserve-trust and re-entry candidates - 21 October 2026
+### .75 release preparation - 21 October 2026
+
+Current workspace: `C:\Projects\sigenergy_optimizer-release-haos75`, branch `release/2.3.64-haos75`, based on merged PR #28 at `2ea64b4aaa4da1cb61627e74e53761662df41e5e`. The approved code fix was merged as PR #28 from `3494cb2d15585107721a63871a2d3f78ebeaa81d`. The `.75` release documentation and five version markers are being prepared here; `.74` remains latest published. Full local source validation passed 1,142 tests / 1,287 subtests (zero failures, 206 warnings, 209.04 seconds); focused validation passed 90 / 103 (202 warnings, 4.73 seconds). Release-specific checks passed 16 tests in 9.89 seconds, with normalized verification confirming exactly five marker replacements. No `.75` tag, image build, publication or installation is claimed. See [HAOS75 release candidate and supervised acceptance plan](HAOS75_RELEASE_CANDIDATE.md).
+
+The operator reported `.74` installed, Evening Boost off and auto-update off; exact installed source remains unverified because the last supplied startup proof is `.73` at `46d36358d38137231dff081176a372c3aa1f4cee`. No rollback method was supplied, and live acceptance is unverified. Keep Boost disabled until `.75` is published, installed and supervised acceptance is complete. O4 live stability and O5 reserve policy remain open.
+
+### Historical local Evening Boost reserve-trust and re-entry checkpoint - 21 October 2026
 
 This worktree carries the reviewed O12 reserve-trust correction from `fix/evening-boost-reserve-trust` and stages the newly approved O4 re-entry qualification. The latest published .74 does not contain O12 or the re-entry candidate; the last supplied live runtime evidence is .73. The O12 correction requires existing `load_power_trusted` and `sunrise_observation_trusted` for Boost eligibility and uses both observations in reserve calculation. Prior checkpoint evidence remains: valid tests-only red/green reproduction, final focused 41 tests / 55 subtests (202 warnings, 2.12 seconds), and full suite 1,112 tests / 1,247 subtests with zero failures (206 warnings, 208.46 seconds). Those results predate this combined worktree and do not validate its combined source.
 
