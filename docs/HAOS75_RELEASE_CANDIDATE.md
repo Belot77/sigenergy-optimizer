@@ -1,6 +1,24 @@
-# HAOS .75 release candidate and supervised acceptance plan
+# HAOS .75 publication receipt and supervised acceptance plan
 
-Prepared 21 October 2026. Status: release metadata/documentation preparation is in progress; `.75` is not yet published or installed. The latest published release remains `.74` / `2.3.63-haos74`.
+Prepared 21 October 2026. `.75` is published and operator-supplied startup evidence now identifies the installed runtime as the exact release source. This receipt supersedes the dated preparation status and sequence below, which are retained as historical records. Supervised acceptance and physical settlement are not established.
+
+## Published .75 receipt
+
+GitHub Release [v2.3.64-haos75](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.64-haos75) was published 21 October 2026 at 02:24:59 UTC (13:24:59 Sydney), with no draft or prerelease flag; it is confirmed latest. Tag `v2.3.64-haos75` points to source commit `413e1691bb58e0b942098ab43f44e873df157a2b`. PR #29 normally merged at 02:24:38 UTC to commit `b88ac1f36811a253fc8602a781103a255ec932fd`; its tree `07b2ab78766358c6838377796cce352a2f3ca69e` exactly matches the tag tree. The tag-triggered Actions run [39532351637](https://github.com/Belot77/sigenergy-optimizer/actions/runs/39532351637) succeeded; build job ended at 02:21:21 UTC.
+
+The OCI index and `latest` resolve to `sha256:ed2a984b457bfddb2b74050d437f98337944076e9144a8d1a19f577d8e82d898`. The amd64 manifest is `sha256:a242af5c9a0b40bdbdf62bc9b44e3d13c44e080d85ed11ad9661cf404835ef07` (config `ac05e78f688be34def3a769f052364a19b5cc55fc32b594ae9632e3941b71e0b`); arm64 is `sha256:38e22d54b4356f613c4ab75f80b5f7fa44e8f17c5b6de7b75c515870ed271a72` (config `8689a4a54f341979218af073107018d12801afb248f6a06f765f90bb16bff4b2`). Both platform labels and embedded source identity match version `2.3.64-haos75` and tag source `413e1691bb58e0b942098ab43f44e873df157a2b`; embedded `.source_commit` and application file bytes were checked against Git blobs. The `.74` OCI index remains unchanged at `sha256:3f3d46ce2cef41a8246cc63db2ef794c0e1907cf2a2518acf751cdc2646399ee`.
+
+The release-specific 16 checks passed in 9.89 seconds. The previously completed full source validation remains 1,142 tests / 1,287 subtests (zero failures, 206 warnings, 209.04 seconds); focused validation remains 90 / 103 (202 warnings, 4.73 seconds). These suite counts were not rerun for this version-only release. The published code includes the O12 reserve-trust correction and O4 re-entry stability qualification. O4 still lacks supervised live acceptance; O5 policy is unchanged and open.
+
+The operator initially reported `.74` installed, Evening Boost off and add-on auto-update off. Later supplied startup evidence at 13:28:25 Sydney identifies runtime signature `2.3.64-haos75` and container source commit `413e1691bb58e0b942098ab43f44e873df157a2b`, matching the published tag exactly. The excerpt reports authenticated WebSocket/event-loop startup, pending-close and then pending-MSC states from 13:28:26 through 13:28:29, and HTTP 200 service/reads continuing through 13:28:50. This supports the `.75` installed identity and shows the pending states in that startup window; it does not prove MSC settlement or later recovery. This is the latest supplied full startup/source proof; retain the earlier `.73` proof as historical. The operator reported Boost and auto-update off. No rollback method was supplied. Browser/Node launcher attempts fail while enumerating `Z:\` (Windows error 1326), blocking direct tool access; no agent live changes or security changes were made.
+
+The later supplied log tail `sigenergy_logs_20261021T023228Z.log` contains exactly 500 INFO HTTP 200 lines from 13:31:03 to 13:32:28 Sydney (85 seconds), with no warning/error records. It contains no observed EMS/limit or physical-flow values, so it does not prove settlement, reserve adequacy or Boost readiness. No raw log was copied into the repository. SHA-256: `d84e033fe5879a41a3037fd3e316e0b3b4fd4aad3a4b4b3db57b68193d3bf091`.
+
+Keep Boost off through installation checks and initial verification of exact runtime identity, effective settings, report cadence, and reserve/limit assumptions. Once those facts are verified, enable Boost only as part of the already-authorized supervised acceptance trial. Switch it off and retain manual ownership immediately on a safety failure, unexpected ownership, failed settlement, or renewed flapping. Unattended use follows only after the supervised acceptance succeeds. O4 still needs supervised stability/settlement proof; O5 policy is unchanged and open.
+
+## Historical preparation snapshot (before publication)
+
+The following preparation content records the pre-tag review and intended release sequence. Status statements that `.75` is pending publication are historical; the receipt above is current.
 
 ## Source and scope
 
@@ -27,7 +45,7 @@ The O12 reserve-trust correction requires both existing `load_power_trusted` and
 
 Final local offline validation of the combined source passed 1,142 tests / 1,287 subtests with zero failures, 206 warnings, in 209.04 seconds. The final focused suite passed 90 tests / 103 subtests with 202 warnings in 4.73 seconds. Release-specific checks passed all 16 tests in 9.89 seconds; exact normalized verification confirmed five synchronized marker replacements. Coverage includes fake-HA decisions, awaited-settlement races and simulated verified-MSC-pending outcomes; these do not prove physical operation or settlement. Independent review was GO for the local candidate with no High/Medium blockers; this is not a live GO. The pre-release `app/optimizer.py` file SHA-256 was `bd4a7a8debae41e134cb9082e3240a3dedbd742ea119a64626bc9f45e4303ce0`; the release version marker changes that file, so this is not the candidate Git revision.
 
-## Publication sequence
+## Publication sequence (historical, completed)
 
 The approved sequence avoids advertising an image version before that image exists:
 

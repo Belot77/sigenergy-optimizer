@@ -234,12 +234,16 @@ Solar provider freshness is schedule/provider-aware and is not extended by it.
 
 Before live acceptance, inspect provider state, poll/high-water/verified times,
 retained/advertised deadlines, source/epoch and rejection reasons in Decision
-Trace. The latest published add-on release is `2.3.63-haos74`, source
-`31ff4872877722d6c0adcae70b445c56cc209d48`; the published source was verified.
-The operator reported `.74` installed, Evening Boost off, and add-on auto-update
-off on 21 October 2026. The last supplied startup/source evidence remains `.73`
-at `46d36358d38137231dff081176a372c3aa1f4cee`; exact `.74` runtime source and
-live acceptance remain unverified. No rollback method was supplied.
+Trace. The latest published add-on release is `2.3.64-haos75`, tag/source
+`413e1691bb58e0b942098ab43f44e873df157a2b`; the source and both architecture
+images were verified. The operator reported `.74` installed, Evening Boost off
+and add-on auto-update off. Startup evidence at 13:28:25 Sydney identifies
+runtime `2.3.64-haos75` and source
+`413e1691bb58e0b942098ab43f44e873df157a2b`, matching the release. Pending-close
+then pending-MSC states appeared through 13:28:29; HTTP 200 service/reads
+continued through 13:28:50. This does not prove physical settlement or later
+recovery. It is the latest full startup/source proof; the prior `.73` proof is
+historical. Rollback method remains unprovided.
 
 ### Solar low-surplus continuation (published .74; historical characterization, 20 October 2026)
 
@@ -263,9 +267,9 @@ proof; the physical cause remains unproven. This change is included in published
 The release includes the reviewed control behavior from PR #26. See [the .74
 release and supervised proof plan](docs/HAOS74_RELEASE_CANDIDATE.md).
 
-## Evening Boost changes in .75 release preparation
+## Evening Boost changes in published .75
 
-The .75 candidate requires trusted load and sunrise inputs for the overnight reserve calculation. Before initial Boost admission or after startup, restart, or return from manual ownership, fresh load reports must span at least 120 seconds and local monotonic time must also advance at least 120 seconds. These are minimums, not a promised start time. Cached reports do not qualify. A load-report gap or more than 60 seconds without an advancing report resets qualification; report cadence and latency may delay admission indefinitely. Existing failure closures remain immediate. The candidate passed full local offline validation, but .75 is not yet published or installed. Keep Evening Boost disabled until release, installation and supervised live proof are complete. See the [release candidate plan](docs/HAOS75_RELEASE_CANDIDATE.md), [control contract](docs/CONTROL_CONTRACT.md), and [current status](docs/CURRENT_STATE.md).
+The published .75 code requires trusted load and sunrise inputs for the overnight reserve calculation. Before initial Boost admission or after startup, restart, or return from manual ownership, fresh load reports must span at least 120 seconds and local monotonic time must also advance at least 120 seconds. These are minimums, not a promised start time. Cached reports do not qualify. A load-report gap or more than 60 seconds without an advancing report resets qualification; report cadence and latency may delay admission indefinitely. Existing failure closures remain immediate. Offline tests do not prove physical operation or settlement. Keep Boost off during initial verification of runtime identity, effective settings, report cadence, and reserve/limit assumptions; then enable it only as part of the already-authorized supervised acceptance trial. Switch off and retain manual ownership immediately on a safety failure, unexpected ownership, failed settlement, or renewed flapping. Unattended use follows only after acceptance succeeds. See the [published release and acceptance receipt](docs/HAOS75_RELEASE_CANDIDATE.md), [control contract](docs/CONTROL_CONTRACT.md), and [current status](docs/CURRENT_STATE.md).
 
 ## Common Issues
 
@@ -301,9 +305,9 @@ Uninstall:
 
 ## Version
 
-Latest published release: [**2.3.63-haos74**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.63-haos74), published 20 October 2026. Tag/source `31ff4872877722d6c0adcae70b445c56cc209d48`; PR #27 merged at `4b7c8b2b6e8a22ee01db9c44942b7c8e8ed40b28`. Verified amd64/arm64 OCI index `sha256:3f3d46ce2cef41a8246cc63db2ef794c0e1907cf2a2518acf751cdc2646399ee`.
+Latest published release: [**2.3.64-haos75**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.64-haos75), published 21 October 2026. Tag/source `413e1691bb58e0b942098ab43f44e873df157a2b`; PR #29 merged at `b88ac1f36811a253fc8602a781103a255ec932fd`. Verified OCI index `sha256:ed2a984b457bfddb2b74050d437f98337944076e9144a8d1a19f577d8e82d898`, with amd64 and arm64 images matching the tagged source. The prior .74 OCI index remains `sha256:3f3d46ce2cef41a8246cc63db2ef794c0e1907cf2a2518acf751cdc2646399ee`.
 
-On 21 October the operator reported `.74` installed, Evening Boost off and add-on auto-update off. A rollback method was not supplied, so rollback readiness is unverified. The last supplied 20 October startup evidence identifies runtime `.73` at source `46d36358d38137231dff081176a372c3aa1f4cee`; Supervisor reports a local `.71` to `.73` build with matching `BUILD_VERSION`. The `.74` installation report is not verified against exact runtime source, and live acceptance remains unverified.
+The operator initially reported `.74` installed, Evening Boost off and add-on auto-update off. Later startup evidence at 13:28:25 Sydney identifies runtime signature `.75` and exact source `413e1691bb58e0b942098ab43f44e873df157a2b`. The excerpt shows pending-close then pending-MSC states through 13:28:29 and HTTP 200 service/reads through 13:28:50; it does not prove physical settlement or later recovery. This is the latest full startup/source proof; the earlier `.73` evidence is historical. No rollback method was supplied; supervised acceptance remains unverified.
 
 `.73` includes version/source-pinned builds and resolved full-SHA recording, while carrying `.72` optimizer control behavior unchanged. The `.72` corrections cover Solar Override selected/protected floors, Morning Dump discharge intent and blocked-Dump MSC fallback, application-outcome trace recording, and precise positive sub-1-cent FiT explanations. The frozen `.72` tag/image exclude the Dockerfile source-pinning fix.
 
@@ -311,7 +315,7 @@ Current live-memory recording is demonstrated, including pending/error outcomes 
 
 Protected rollback reference: **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`, public OCI index `sha256:dd7efe0fd9b192ae1fd996137c312e5f2aab12e01a285f6e75fb5a58dc8fe88c`. There is no GitHub Release for `.65`; an actual usable Supervisor restore/reinstall method and saved effective settings remain unverified. Artifact availability alone is not rollback proof.
 
-Existing unfinished worktrees and the separate local archive-characterization tests remain preserved. The physical-export software default remains `0.0` (disabled); the reported site limit is not a universal default. The earlier README publication-status update changed no application behavior, thresholds, settings or permanent instructions; the local Evening Boost candidate above is a separate, unreleased work item. The historical `release.sh` remains unsuitable: it preserves the haos suffix, updates only three of five markers, stages all changes and can commit/tag/push. Do not use it without a separate repair/review. Future releases, deployments and deliberately provoked live tests require their own scoped approval.
+Existing unfinished worktrees and the separate local archive-characterization tests remain preserved. The physical-export software default remains `0.0` (disabled); the reported site limit is not a universal default. The earlier README publication-status update changed no application behavior, thresholds, settings or permanent instructions; the Evening Boost behavior described above is included in published .75, while installation and live acceptance remain unverified. The historical `release.sh` remains unsuitable: it preserves the haos suffix, updates only three of five markers, stages all changes and can commit/tag/push. Do not use it without a separate repair/review.
 
 ## Historical Maintainer Release Flow (not current instructions)
 
