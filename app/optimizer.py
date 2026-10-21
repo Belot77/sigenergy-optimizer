@@ -20,6 +20,7 @@ from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 import logging
 import math
 import os
+from time import monotonic
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -69,6 +70,11 @@ _DEBOUNCE_SECONDS = 3.0
 # Five event-coalescing windows to bridge a brief measured-surplus dip. Only
 # newly reported strong measured surplus may renew this process-local proof.
 _SOLAR_SURPLUS_DIP_HOLD_SECONDS = 15.0
+
+# Boost acquisition requires two minutes of sampled eligibility. These are
+# independent of event debounce and telemetry freshness, and never delay exit.
+_EVENING_BOOST_REENTRY_SECONDS = 120.0
+_EVENING_BOOST_MAX_REPORT_GAP_SECONDS = 60.0
 
 # Remote EMS switch service-call protection. State is still checked every cycle,
 # but unavailable targets are never called and valid-off retries are bounded.
@@ -438,6 +444,26 @@ class _ActuatorApplicationResult:
     fallback_attempted: bool = False
     fallback_succeeded: Optional[bool] = None
     transition_pending: bool = False
+    # Generic success also describes Manual/Remote-EMS pauses. Only the real
+    # automatic application path may retain Boost qualification or admission.
+    automatic_application_completed: bool = False
+    automatic_transition_pending: bool = False
+
+
+@dataclass
+class _EveningBoostReentry:
+    """Process-local admission evidence, never a claim of physical activation."""
+
+    phase: str = "closed"
+    reason: str = "startup_requires_qualification"
+    generation: int = 0
+    first_report_ts: Optional[float] = None
+    last_report_ts: Optional[float] = None
+    started_monotonic: Optional[float] = None
+    last_report_monotonic: Optional[float] = None
+    last_evaluated_monotonic: Optional[float] = None
+    last_wall_ts: Optional[float] = None
+    context: Optional[tuple] = None
 
 
 @dataclass
@@ -457,6 +483,9 @@ class SigEnergyOptimizer:
         self.cfg = cfg
         self._last_state: Optional[SolarState] = None
         self._last_decision: Optional[Decision] = None
+        self._evening_boost_reentry = _EveningBoostReentry()
+        self._evening_boost_report_high_water: Optional[float] = None
+        self._evening_boost_last_clock: Optional[tuple[float, float]] = None
         self._last_daily_summary_date: Optional[datetime] = None
         self._last_morning_summary_date: Optional[datetime] = None
         self._running = False
@@ -1285,6 +1314,7 @@ class SigEnergyOptimizer:
         Falls back gracefully to pure heartbeat polling when the WebSocket
         is disconnected — no separate code path needed.
         """
+        self._reset_evening_boost_reentry("optimizer_start_requires_qualification")
         self._running = True
         last_tick_ts = 0.0
         last_heartbeat_ts = 0.0
@@ -1403,6 +1433,7 @@ class SigEnergyOptimizer:
     async def _tick(self) -> None:
         async with self._control_lock:
             application_committed = False
+            verified_evening_pending = False
             try:
                 prev_decision = self._last_decision
                 prev_state = self._last_state
@@ -1419,6 +1450,9 @@ class SigEnergyOptimizer:
                 except Exception:
                     self._record_application_trace(state, decision, application_raised=True)
                     raise
+                verified_evening_pending = self._finish_evening_boost_reentry_application(
+                    state, decision, application_result,
+                )
                 self._record_application_trace(state, decision, application_result)
                 if (
                     isinstance(application_result, _ActuatorApplicationResult)
@@ -1447,9 +1481,12 @@ class SigEnergyOptimizer:
             except asyncio.CancelledError:
                 self._clear_solar_physical_relief()
                 self._solar_dip_proof = None
+                self._reset_evening_boost_reentry("cycle_cancelled")
                 raise
             except Exception:
                 if not application_committed:
+                    if not verified_evening_pending:
+                        self._reset_evening_boost_reentry("application_or_cycle_failed")
                     self._clear_solar_physical_relief()
                     self._solar_dip_proof = None
                     if (
@@ -3723,6 +3760,8 @@ class SigEnergyOptimizer:
             battery_soc_trusted
             and battery_capacity_trusted
             and available_discharge_energy_trusted
+            and load_power_trusted
+            and sunrise_observation_trusted
             and forecast_tomorrow_observation_trusted
             and solcast_detailed_source_trusted
             and evening_boost_detailed_coverage
@@ -5527,6 +5566,39 @@ class SigEnergyOptimizer:
             desired_ems_mode = MODE_MAX_SELF
         if actual_import_cost_guard_blocking and desired_ems_mode in DISCHARGE_MODES:
             desired_ems_mode = MODE_MAX_SELF
+        # Evaluate admission only after arbitration, economic vetoes and charging
+        # ownership. A waiting Boost cannot displace another selected policy.
+        evening_reentry_selected = bool(
+            evening_export_boost_active
+            and battery_export_owner == "evening_export_boost"
+            and desired_export_limit > 0.01
+            and d.export_intent == BATTERY_EXPORT
+        )
+        evening_reentry_candidate = bool(
+            evening_reentry_selected
+            and desired_ems_mode in DISCHARGE_MODES
+            and desired_import_limit <= 0.0
+        )
+        evening_reentry_allowed = self._evening_boost_reentry_allowed(
+            s, candidate=evening_reentry_candidate, now_ts=now_ts,
+        )
+        evening_reentry_waiting = bool(
+            evening_reentry_candidate and not evening_reentry_allowed
+        )
+        evening_reentry_suppressed = bool(
+            evening_reentry_selected and not evening_reentry_allowed
+        )
+        if evening_reentry_suppressed:
+            desired_export_limit = 0.0
+            d.export_limit = 0.0
+            requested_export_intent = EXPORT_BLOCKED
+            d.export_intent = EXPORT_BLOCKED
+            d.requires_verified_msc_before_export = False
+            explicit_battery_export_owner_active = False
+            deliberate_battery_export_requested = False
+            if evening_reentry_candidate:
+                desired_ems_mode = MODE_MAX_SELF
+        evening_reentry_values = self._evening_boost_reentry_diagnostics()
         d.ems_mode = desired_ems_mode
         msc_transition_pending = bool(
             observed_automated_control_mode
@@ -5816,7 +5888,14 @@ class SigEnergyOptimizer:
             battery_full_safeguard_effective_export_block,
             desired_export_limit, positive_fit_override,
         )
-        if actual_import_cost_guard_blocking:
+        if evening_reentry_waiting:
+            d.export_reason = (
+                "Evening Boost waiting for 120 seconds of qualifying fresh load "
+                "reports with gaps no greater than 60 seconds; export closed."
+            )
+        elif evening_reentry_suppressed:
+            d.export_reason = "Evening Boost export withheld while another control policy owns charging."
+        elif actual_import_cost_guard_blocking:
             d.export_reason = "Export vetoed by actual import-cost guard; export limit forced to 0.0 kW"
         elif export_value_gate_vetoed:
             d.export_reason = "Export vetoed by value gate enforcement; export limit forced to 0.0 kW"
@@ -5986,6 +6065,11 @@ class SigEnergyOptimizer:
             "price_forecast_source_trusted": price_forecast_source_trusted,
             "battery_can_reach_from_pv": battery_can_reach_from_pv,
             "evening_export_boost_active": evening_export_boost_active,
+            "evening_boost_reentry_candidate": evening_reentry_candidate,
+            "evening_boost_reentry_selected": evening_reentry_selected,
+            "evening_boost_reentry_suppressed": evening_reentry_suppressed,
+            "evening_boost_reentry_allowed": evening_reentry_allowed,
+            "evening_boost_reentry_waiting": evening_reentry_waiting,
             "export_spike_active": export_spike_active,
             "positive_fit_override": positive_fit_override,
             "positive_fit_battery_export_authorized": positive_fit_battery_export_authorized,
@@ -6266,6 +6350,7 @@ class SigEnergyOptimizer:
             "available_discharge_energy_raw_kwh": available_energy_raw_kwh,
             "available_discharge_energy_control_kwh": control_available_energy_kwh,
             "available_discharge_energy_trust_reason": available_energy_trust_reason,
+            **evening_reentry_values,
             "bat_fill_need_kwh": bat_fill_need_kwh,
             "soc_required": soc_required,
             "sunrise_soc_target": sunrise_soc_target,
@@ -6665,6 +6750,7 @@ class SigEnergyOptimizer:
             )
             if not automated or remote != "on":
                 authority_revoked = True
+                self._reset_evening_boost_reentry("dispatch_authority_lost")
             if automated and remote == "on" and not authority_revoked:
                 had_automated_authority = True
                 return True
@@ -6720,6 +6806,15 @@ class SigEnergyOptimizer:
             if battery_discharge_capability:
                 evidence[cfg.grid_export_limit] = {}
             if not await _authority_permits(restrictive=restrictive, evidence=evidence):
+                return False
+            if (
+                recovery is None and not restrictive
+                and d.trace_gates.get("evening_boost_reentry_allowed")
+                and (entity == cfg.grid_export_limit or battery_discharge_capability)
+                and value > 0.011
+                and not self._evening_boost_reentry_dispatch_current(s, d)
+            ):
+                self._reset_evening_boost_reentry("admission_expired_during_dispatch")
                 return False
             if (
                 not restrictive and recovery is None
@@ -6784,6 +6879,13 @@ class SigEnergyOptimizer:
             nonlocal last_mode_requested_at
             evidence = {cfg.grid_export_limit: {}} if mode in DISCHARGE_MODES else {}
             if not await _authority_permits(restrictive=restrictive, evidence=evidence):
+                return False
+            if (
+                mode in DISCHARGE_MODES
+                and d.trace_gates.get("evening_boost_reentry_allowed")
+                and not self._evening_boost_reentry_dispatch_current(s, d)
+            ):
+                self._reset_evening_boost_reentry("admission_expired_before_discharge")
                 return False
             if evidence:
                 request = self._number_settlement_requests.get(cfg.grid_export_limit)
@@ -7051,6 +7153,7 @@ class SigEnergyOptimizer:
                 succeeded=False,
                 error=f"MSC transition awaiting later trusted {transition.phase} observation",
                 transition_pending=True,
+                automatic_transition_pending=not authority_revoked and had_automated_authority,
             )
 
         ownership, remote = await self._read_control_authority()
@@ -7550,7 +7653,19 @@ class SigEnergyOptimizer:
         if ems_mode_to_apply == MODE_MAX_SELF and self._msc_exact_observed(s):
             self._msc_baseline_established = True
             self._msc_transition = None
-        return _ActuatorApplicationResult(succeeded=True)
+        if d.trace_gates.get("evening_boost_reentry_candidate"):
+            if not await _authority_permits():
+                await _independent_restrictions()
+                return _authority_paused()
+            if (
+                d.trace_gates.get("evening_boost_reentry_allowed")
+                and not self._evening_boost_reentry_dispatch_current(s, d)
+            ):
+                self._reset_evening_boost_reentry("admission_expired_during_application")
+                return await _safe_fallback("Evening Boost admission expired during application")
+        return _ActuatorApplicationResult(
+            succeeded=True, automatic_application_completed=True,
+        )
 
     def _legacy_manual_power_caps_kw(
         self,
@@ -7867,6 +7982,7 @@ class SigEnergyOptimizer:
         ha = self.ha
 
         async with self._control_lock:
+            self._reset_evening_boost_reentry("operator_mode_request")
             # Update the input_select in HA
             requested_at = datetime.now(timezone.utc).timestamp()
             ok_mode_select = await ha.select_option(cfg.sigenergy_mode_select, mode_label)
@@ -9146,6 +9262,213 @@ class SigEnergyOptimizer:
         load_need = hours_left * cfg.morning_slow_charge_base_load_kw
         required_kwh = (bat_fill_need + load_need) * cfg.forecast_safety_charging
         return s.forecast_remaining_kwh >= required_kwh
+
+    def _reset_evening_boost_reentry(self, reason: str) -> None:
+        previous = self._evening_boost_reentry
+        self._evening_boost_reentry = _EveningBoostReentry(
+            reason=reason, generation=previous.generation + 1,
+        )
+
+    def _evening_boost_reentry_context(self, s: SolarState, now_ts: float) -> tuple:
+        # A new day, sunrise horizon, capacity or policy configuration cannot
+        # inherit qualification obtained under its predecessor.
+        names = (
+            "evening_boost_enabled", "evening_boost_min_feedin_price",
+            "evening_aggressive_floor", "evening_boost_forecast_safety",
+            "evening_boost_min_tomorrow_forecast_kwh", "sunrise_reserve_soc",
+            "sunrise_safety_factor", "sunrise_buffer_percent",
+            "sunrise_export_relax_percent", "min_soc_floor",
+            "min_export_target_soc", "export_threshold_low",
+            "export_threshold_medium", "export_threshold_high",
+            "export_limit_low", "export_limit_medium", "export_limit_high",
+            "export_discharge_window_hours", "min_grid_transfer_kw",
+            "consumed_power_sensor", "sun_entity", "sigenergy_mode_select",
+            "ha_control_switch", "battery_soc_sensor", "rated_capacity_sensor",
+            "available_discharge_sensor", "forecast_remaining_sensor",
+            "forecast_today_sensor", "forecast_tomorrow_sensor",
+            "solcast_api_last_polled_sensor", "solar_power_now_sensor",
+            "feedin_sensor", "feedin_forecast_sensor", "price_sensor",
+            "price_forecast_sensor", "demand_window_sensor",
+        )
+        return (
+            datetime.fromtimestamp(now_ts, tz=self._tz).date(),
+            s.next_sunrise_ts, s.next_sunset_ts, s.sun_above_horizon,
+            s.battery_capacity_kwh,
+            *(getattr(self.cfg, name) for name in names),
+        )
+
+    def _evening_boost_reentry_evidence(self, s: SolarState, now_ts: float) -> Optional[float]:
+        inputs = s.hvac_solar_inputs
+        if (
+            not inputs.live_snapshot or self._manual_mode_override
+            or not s.sigenergy_mode_observed
+            or s.sigenergy_mode != self.cfg.automated_option
+            or not s.ha_control_enabled or not s.ha_control_switch_available
+            or s.ha_control_switch_state != "on"
+            or s.load_power_trusted is not True
+            or s.sunrise_observation_trusted is not True
+        ):
+            return None
+        for observation, expected in (
+            (inputs.control_mode, self.cfg.automated_option),
+            (inputs.remote_ems_control, "on"),
+        ):
+            stamp = observation.observed_at_ts
+            if not (
+                observation.available and observation.fresh
+                and observation.value == expected
+                and isinstance(stamp, (int, float)) and math.isfinite(stamp)
+                and 0.0 <= now_ts - stamp <= self.cfg.hvac_solar_data_max_age_seconds
+            ):
+                return None
+        observation = inputs.load_power
+        try:
+            stamp = float(observation.observed_at_ts)
+            value = float(observation.value)
+            sunrise = float(s.next_sunrise_ts)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if not (
+            observation.available and observation.fresh
+            and math.isfinite(stamp) and math.isfinite(value) and value >= 0.0
+            and math.isfinite(sunrise) and sunrise > now_ts
+            and math.isclose(value, s.load_kw, rel_tol=1e-9, abs_tol=1e-9)
+            and 0.0 <= now_ts - stamp <= _EVENING_BOOST_MAX_REPORT_GAP_SECONDS
+        ):
+            return None
+        return stamp
+
+    def _evening_boost_reentry_allowed(
+        self, s: SolarState, *, candidate: bool, now_ts: float,
+    ) -> bool:
+        """Withhold acquisition only; no failed eligibility may retain permission."""
+        now_mono = monotonic()
+        if not math.isfinite(now_mono):
+            self._reset_evening_boost_reentry("untrusted_reentry_evidence")
+            return False
+        previous_clock = self._evening_boost_last_clock
+        self._evening_boost_last_clock = (now_ts, now_mono)
+        if previous_clock is not None and (
+            now_ts < previous_clock[0] or now_mono < previous_clock[1]
+        ):
+            # A proved local clock correction invalidates the old timestamp
+            # epoch. Do not seed a replacement on this tick; the next good
+            # observation must begin a full, new qualification interval.
+            self._reset_evening_boost_reentry("clock_regressed")
+            self._evening_boost_report_high_water = None
+            return False
+        if not candidate:
+            self._reset_evening_boost_reentry("boost_not_selected_or_safety_gate_failed")
+            return False
+        stamp = self._evening_boost_reentry_evidence(s, now_ts)
+        if stamp is None:
+            self._reset_evening_boost_reentry("untrusted_reentry_evidence")
+            return False
+        if (
+            self._evening_boost_report_high_water is not None
+            and stamp < self._evening_boost_report_high_water
+        ):
+            self._reset_evening_boost_reentry("load_report_regressed")
+            return False
+        self._evening_boost_report_high_water = stamp
+        context = self._evening_boost_reentry_context(s, now_ts)
+        admission = self._evening_boost_reentry
+        if admission.phase != "closed":
+            if (
+                context != admission.context
+                or stamp - admission.last_report_ts > _EVENING_BOOST_MAX_REPORT_GAP_SECONDS
+                or now_mono - admission.last_report_monotonic > _EVENING_BOOST_MAX_REPORT_GAP_SECONDS
+            ):
+                self._reset_evening_boost_reentry("context_changed_or_report_gap")
+                admission = self._evening_boost_reentry
+        if admission.phase == "closed":
+            admission.phase = "qualifying"
+            admission.reason = "qualifying_fresh_reports"
+            admission.first_report_ts = admission.last_report_ts = stamp
+            admission.started_monotonic = admission.last_report_monotonic = now_mono
+            admission.last_evaluated_monotonic = now_mono
+            admission.last_wall_ts = now_ts
+            admission.context = context
+            return False
+        advancing = stamp > admission.last_report_ts
+        if advancing:
+            admission.last_report_ts = stamp
+            admission.last_report_monotonic = now_mono
+        admission.last_evaluated_monotonic = now_mono
+        admission.last_wall_ts = now_ts
+        if admission.phase == "admitted":
+            return True
+        if (
+            advancing
+            and now_mono - admission.started_monotonic >= _EVENING_BOOST_REENTRY_SECONDS
+            and stamp - admission.first_report_ts >= _EVENING_BOOST_REENTRY_SECONDS
+        ):
+            if self._msc_transition is not None and not self._msc_transition_observed(s):
+                admission.reason = "awaiting_existing_msc_settlement"
+                return False
+            admission.phase = "admitted"
+            admission.reason = "qualified_admission_not_physical_settlement"
+            return True
+        admission.reason = "qualifying_fresh_reports" if advancing else "waiting_for_new_load_report"
+        return False
+
+    def _evening_boost_reentry_diagnostics(self) -> dict[str, Any]:
+        admission = self._evening_boost_reentry
+        return {
+            "evening_boost_reentry_state": admission.phase,
+            "evening_boost_reentry_reason": admission.reason,
+            "evening_boost_reentry_generation": admission.generation,
+            "evening_boost_reentry_elapsed_seconds": (
+                admission.last_evaluated_monotonic - admission.started_monotonic
+                if admission.started_monotonic is not None else 0.0
+            ),
+            "evening_boost_reentry_report_span_seconds": (
+                admission.last_report_ts - admission.first_report_ts
+                if admission.first_report_ts is not None else 0.0
+            ),
+        }
+
+    def _evening_boost_reentry_dispatch_current(self, s: SolarState, d: Decision) -> bool:
+        admission = self._evening_boost_reentry
+        now_ts, now_mono = datetime.now().timestamp(), monotonic()
+        stamp = self._evening_boost_reentry_evidence(s, now_ts)
+        return bool(
+            admission.phase == "admitted"
+            and d.trace_gates.get("evening_boost_reentry_allowed")
+            and d.trace_values.get("evening_boost_reentry_generation") == admission.generation
+            and stamp is not None and stamp == admission.last_report_ts
+            and self._evening_boost_reentry_context(s, now_ts) == admission.context
+            and math.isfinite(now_mono)
+            and now_ts >= admission.last_wall_ts
+            and now_mono >= admission.last_evaluated_monotonic
+            and 0.0 <= now_mono - admission.last_report_monotonic <= _EVENING_BOOST_MAX_REPORT_GAP_SECONDS
+        )
+
+    def _finish_evening_boost_reentry_application(
+        self, s: SolarState, d: Decision, result: object,
+    ) -> bool:
+        """Retain admission only through real automatic completion/pending closure."""
+        verified_pending = bool(
+            isinstance(result, _ActuatorApplicationResult)
+            and result.transition_pending and result.automatic_transition_pending
+            and not result.fallback_attempted
+        )
+        verified_completion = bool(
+            isinstance(result, _ActuatorApplicationResult) and result.succeeded
+            and result.automatic_application_completed and not result.fallback_attempted
+        )
+        if not (
+            (verified_completion or verified_pending)
+            and d.trace_gates.get("evening_boost_reentry_candidate")
+            and self._evening_boost_reentry_evidence(s, datetime.now().timestamp()) is not None
+        ):
+            self._reset_evening_boost_reentry("application_not_verified_or_owner_changed")
+            d.trace_gates["evening_boost_reentry_application_retained"] = False
+            d.trace_values["evening_boost_reentry_after_application_state"] = "closed"
+            return False
+        d.trace_gates["evening_boost_reentry_application_retained"] = True
+        d.trace_values["evening_boost_reentry_after_application_state"] = self._evening_boost_reentry.phase
+        return verified_pending
 
     def _evening_export_boost_active(self, s: SolarState, now_ts: float,
                                       productive_solar_end_ts, sunrise_soc_target, bat_fill_need_kwh) -> bool:

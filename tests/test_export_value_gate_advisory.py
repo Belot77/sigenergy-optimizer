@@ -3411,6 +3411,9 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                 optimizer._is_evening_or_night = lambda _now: False
                 if name == "evening_boost":
                     optimizer._evening_export_boost_active = lambda *args, **kwargs: True
+                    optimizer._evening_boost_reentry_allowed = (
+                        lambda state, *, candidate, now_ts: candidate
+                    )
                 state = self._qualifying_solar_bypass_state(
                     optimizer,
                     now_ts,
