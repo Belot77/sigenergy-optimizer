@@ -4,7 +4,17 @@ Last consolidated: 2026-10-23
 
 Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STATE.md` and relevant `CONTROL_CONTRACT.md` sections. Inspect only minimum relevant files. Git records repository identity; HA and operator evidence establish live state.
 
-## Approved local multi-fix candidate - 23 October 2026
+## Local .76 release preparation - 23 October 2026
+
+Workspace: `C:\Projects\sigenergy_optimizer-release-haos76`, branch `release/2.3.65-haos76`, based on verified main/PR #31 normal merge `632a42081d9ff93b270ffcca048604031ec4fed1`. Its tree `b051e77dda3b3cfb38dfa1df1f0696c6bce027b3` exactly matches reviewed fix commit `bcfdb75b33c8ae1db3c7f534cb8952f144d9c3cd`. PR #31 merged on 23 October at 08:54:29 Sydney. Candidate version is `2.3.65-haos76`; planned tag `v2.3.65-haos76`. Preparation changes only the five synchronized version markers and release/status documentation. No control logic, tests, defaults, permanent instructions or workflow changes are included.
+
+The merged code fixes O13 import ownership for Standby Holdoff and active Morning Dump before fallback settlement waits and through recovery, plus the two settings-surface corrections. Combined control validation passed 1,149 tests / 1,287 subtests, zero failures, 206 existing warnings, in 211.18 seconds; seven focused owner regressions passed, as did six settings-UI checks. Independent code review found no High/Medium blocker. These results apply to the merged source and are retained for version-only preparation; they are not physical acceptance. All 16 release-consistency/source-pinning checks passed in 9.43 seconds. Two independent normalized comparisons proved exactly one version substitution per marker file and no other production drift. Independent release-metadata review was GO for the local candidate with no blocker; this is not publication or live acceptance.
+
+Latest published release remains .75 / `2.3.64-haos75` at source `413e1691bb58e0b942098ab43f44e873df157a2b`; its supplied 21 October startup identity remains the latest full installed proof. No .76 commit, tag, image build, release or installation is claimed. See [the .76 release candidate and publication plan](HAOS76_RELEASE_CANDIDATE.md) before any separately approved publication. Image verification must precede advertising .76 through main's version metadata. The workflow updates `latest` image aliases on a tag build, so publication is a separate authorization from this local preparation.
+
+Live acceptance, actual rollback readiness, Boost stability and O5 reserve policy remain open. Archive/MSC follow-up stays parked; failing HDD causation is unproven. The 23 October stale archive and the separate 21 October live-memory observations below do not establish current .75 behavior or .76 readiness for installation. Existing worktrees and unfinished changes remain protected.
+
+## Historical multi-fix validation checkpoint - 23 October 2026 (before PR #31 merge)
 
 Workspace: `C:\Projects\sigenergy_optimizer-fallback-standby-import`, branch `fix/fallback-standby-import-ownership`, based on verified main `3811d6a02069e850086fab2c1e042f7b9da40bff`. Main and published .75 tag/source `413e1691bb58e0b942098ab43f44e873df157a2b` were rechecked on 23 October. The operator approved this local branch after the offline preparatory ownership audit; this does not accept Phase 1/2 or authorize a new publication/live change.
 

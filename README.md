@@ -304,9 +304,11 @@ Uninstall:
 - Hardware limit clamping uses live ESS caps, then cached last-known-good caps, then fallback.
 - The retained `poll_interval_seconds` setting controls daily/morning summary timing tolerance and status/health stale-data thresholds, not decision-loop frequency.
 
-Local unreleased correction: Standby Holdoff and active Morning Dump keep their grid-import close through actuator fallback and settlement recovery. Ordinary economic-zero recovery retains its existing behavior. See [current candidate validation and supervised verification requirements](docs/CURRENT_STATE.md); published .75 does not yet include this correction.
+Local .76 candidate: PR #31 merged the Standby Holdoff and active Morning Dump fallback import-blocking correction. Ordinary economic-zero recovery retains its existing behavior. See [candidate validation and supervised verification requirements](docs/CURRENT_STATE.md); published .75 does not yet include this correction.
 
 ## Version
+
+Local candidate: **2.3.65-haos76**, prepared from PR #31 merge `632a42081d9ff93b270ffcca048604031ec4fed1`; not yet tagged, published or installed. See [the release plan](docs/HAOS76_RELEASE_CANDIDATE.md).
 
 Latest published release: [**2.3.64-haos75**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.64-haos75), published 21 October 2026. Tag/source `413e1691bb58e0b942098ab43f44e873df157a2b`; PR #29 merged at `b88ac1f36811a253fc8602a781103a255ec932fd`. Verified OCI index `sha256:ed2a984b457bfddb2b74050d437f98337944076e9144a8d1a19f577d8e82d898`, with amd64 and arm64 images matching the tagged source. The prior .74 OCI index remains `sha256:3f3d46ce2cef41a8246cc63db2ef794c0e1907cf2a2518acf751cdc2646399ee`.
 
