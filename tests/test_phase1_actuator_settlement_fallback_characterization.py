@@ -532,6 +532,166 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         self.assertFalse(result.succeeded)
         self.assertTrue(result.fallback_succeeded)
 
+    def _run_import_owner_fallback(
+        self, *, standby: bool, demand_observed: bool, msc_settles: bool,
+        morning_dump: bool = False,
+    ):
+        ha = _ScriptedActuatorHA(settle_selects=msc_settles)
+        optimizer = self.optimizer(
+            ha, cap_total_import=13.25,
+            standby_holdoff_enabled=standby,
+            morning_dump_enabled=morning_dump,
+            standby_holdoff_end_time="23:59",
+            pv_forecast_holdoff_kwh=120.0,
+        )
+        optimizer._tz = timezone.utc
+        cfg = optimizer.cfg
+        when = datetime(2026, 1, 15, 6, 0) if morning_dump else self.FIXED_AFTERNOON
+        state = self.state(
+            when, sun_above_horizon=not morning_dump,
+            battery_soc=80.0,
+            available_discharge_energy_kwh=24.0,
+            current_export_limit=25.0,
+            current_import_limit=13.25,
+            demand_window_active=False,
+            demand_window_observed=demand_observed,
+            current_price=0.30,
+            current_price_cents=30.0,
+            price_is_negative=False,
+            feedin_price=0.0,
+            feedin_price_cents=0.0,
+            forecast_today_kwh=150.0,
+            forecast_remaining_kwh=150.0,
+            price_forecast_source_trusted=True,
+            price_forecast_entries=[{
+                "start_time": when.timestamp() + 1800,
+                "per_kwh": -0.10,
+            }],
+            solcast_detailed=[{
+                "period_start": (when + timedelta(hours=hours)).isoformat(),
+                "pv_estimate": 10.0,
+            } for hours in (3, 5, 7, 9, 11)] if morning_dump else [],
+        )
+        decision = self.decide(optimizer, state, when)
+        self.assertEqual(standby, decision.standby_holdoff_active)
+        self.assertEqual(morning_dump, decision.morning_dump_active)
+        if morning_dump:
+            self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+            self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+            self.assertEqual(0.0, decision.export_limit)
+        self.assertEqual(0.0, decision.import_limit)
+        ha._record_state_value(cfg.grid_import_limit, 13.25)
+        ha.outcomes[("set_number", cfg.grid_export_limit)] = [False, True]
+        import_writes_before_wait = []
+        real_export_wait = optimizer._wait_for_number_at_most
+        real_msc_wait = optimizer._wait_for_exact_entity_state
+
+        def record_import_writes():
+            import_writes_before_wait.append([
+                value for method, entity, value in ha.calls
+                if method == "set_number" and entity == cfg.grid_import_limit
+            ])
+
+        async def observe_export_wait(*args, **kwargs):
+            record_import_writes()
+            return await real_export_wait(*args, **kwargs)
+
+        async def observe_msc_wait(*args, **kwargs):
+            record_import_writes()
+            return await real_msc_wait(*args, **kwargs)
+
+        optimizer._wait_for_number_at_most = observe_export_wait
+        optimizer._wait_for_exact_entity_state = observe_msc_wait
+        # This fixture supplies independent post-dispatch export closure and
+        # exact MSC reports. With settle_selects=False the latter stays absent.
+        with self._automated_fallback_clock(optimizer, ha, when):
+            result = asyncio.run(optimizer._apply(state, decision))
+        self.assertFalse(result.succeeded)
+        self.assertTrue(result.fallback_attempted)
+        self.assertEqual(msc_settles, result.fallback_succeeded, result.error)
+        self.assertEqual(2, len(import_writes_before_wait), "must reach both real settlement waiters")
+        return cfg, ha, decision, import_writes_before_wait
+
+    def test_standby_fallback_closes_import_before_settlement_and_never_reopens(self) -> None:
+        cfg, ha, decision, before_wait = self._run_import_owner_fallback(
+            standby=True, demand_observed=True, msc_settles=True,
+        )
+        self.assertEqual([[0.01], [0.01]], before_wait)
+        self.assertEqual([0.01], [
+            value for method, entity, value in ha.calls
+            if method == "set_number" and entity == cfg.grid_import_limit
+        ])
+        self.assertEqual(0.01, ha.state_values[cfg.grid_import_limit])
+        self.assertEqual(decision.pv_max_power_limit, ha.state_values[cfg.pv_max_power_limit])
+        self.assertEqual(0.01, ha.state_values[cfg.grid_export_limit])
+
+    def test_standby_unsettled_fallback_closes_previously_open_import(self) -> None:
+        cfg, ha, _decision, before_wait = self._run_import_owner_fallback(
+            standby=True, demand_observed=True, msc_settles=False,
+        )
+        self.assertEqual([[0.01], [0.01]], before_wait)
+        self.assertEqual([0.01], [
+            value for method, entity, value in ha.calls
+            if method == "set_number" and entity == cfg.grid_import_limit
+        ])
+        self.assertEqual(0.01, ha.state_values[cfg.grid_import_limit])
+
+    def test_unknown_demand_fallback_retains_its_independent_import_close(self) -> None:
+        cfg, ha, _decision, before_wait = self._run_import_owner_fallback(
+            standby=False, demand_observed=False, msc_settles=True,
+        )
+        self.assertEqual([[0.01], [0.01]], before_wait)
+        self.assertEqual([0.01], [
+            value for method, entity, value in ha.calls
+            if method == "set_number" and entity == cfg.grid_import_limit
+        ])
+        self.assertEqual(0.01, ha.state_values[cfg.grid_import_limit])
+
+    def test_economic_zero_import_without_standby_retains_normal_fallback_recovery(self) -> None:
+        cfg, ha, _decision, before_wait = self._run_import_owner_fallback(
+            standby=False, demand_observed=True, msc_settles=True,
+        )
+        self.assertEqual([[], []], before_wait)
+        self.assertEqual([13.25], [
+            value for method, entity, value in ha.calls
+            if method == "set_number" and entity == cfg.grid_import_limit
+        ])
+        self.assertEqual(13.25, ha.state_values[cfg.grid_import_limit])
+
+    def test_morning_dump_fallback_closes_import_before_settlement_and_never_reopens(self) -> None:
+        cfg, ha, _decision, before_wait = self._run_import_owner_fallback(
+            standby=False, demand_observed=True, msc_settles=True, morning_dump=True,
+        )
+        self.assertEqual([[0.01], [0.01]], before_wait)
+        self.assertEqual([0.01], [
+            value for method, entity, value in ha.calls
+            if method == "set_number" and entity == cfg.grid_import_limit
+        ])
+        self.assertEqual(0.01, ha.state_values[cfg.grid_import_limit])
+        self.assertEqual(0.01, ha.state_values[cfg.grid_export_limit])
+
+    def test_morning_dump_unsettled_fallback_closes_previously_open_import(self) -> None:
+        cfg, ha, _decision, before_wait = self._run_import_owner_fallback(
+            standby=False, demand_observed=True, msc_settles=False, morning_dump=True,
+        )
+        self.assertEqual([[0.01], [0.01]], before_wait)
+        self.assertEqual([0.01], [
+            value for method, entity, value in ha.calls
+            if method == "set_number" and entity == cfg.grid_import_limit
+        ])
+        self.assertEqual(0.01, ha.state_values[cfg.grid_import_limit])
+
+    def test_morning_dump_with_unknown_demand_keeps_import_closed_in_fallback(self) -> None:
+        cfg, ha, _decision, before_wait = self._run_import_owner_fallback(
+            standby=False, demand_observed=False, msc_settles=True, morning_dump=True,
+        )
+        self.assertEqual([[0.01], [0.01]], before_wait)
+        self.assertEqual([0.01], [
+            value for method, entity, value in ha.calls
+            if method == "set_number" and entity == cfg.grid_import_limit
+        ])
+        self.assertEqual(0.01, ha.state_values[cfg.grid_import_limit])
+
     def test_unsettled_fallback_export_close_withholds_permissive_recovery(
         self,
     ) -> None:

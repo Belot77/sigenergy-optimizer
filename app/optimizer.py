@@ -6974,12 +6974,14 @@ class SigEnergyOptimizer:
                 lambda: _automatic_mode(MODE_MAX_SELF, restrictive=True),
             )
             msc_requested_at = last_mode_requested_at
-            demand_window_import_blocked = bool(
+            independent_import_blocked = bool(
                 s.demand_window_active or not s.demand_window_observed
+                or d.standby_holdoff_active
+                or d.morning_dump_active
             )
-            if demand_window_import_blocked:
+            if independent_import_blocked:
                 await _attempt(
-                    "Demand Window grid import safety close",
+                    "independent grid import safety close",
                     lambda: _automatic_number(cfg.grid_import_limit, 0.01, restrictive=True),
                 )
             if (
@@ -7038,7 +7040,7 @@ class SigEnergyOptimizer:
             if safe_recovery_observed:
                 # Settlement permits recovery only within limits still owned
                 # independently of this fallback's temporary safety clamp.
-                if not demand_window_import_blocked:
+                if not independent_import_blocked:
                     await _attempt(
                         "normal Automated grid import capability",
                         lambda: _recovery_number(

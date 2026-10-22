@@ -1,8 +1,22 @@
 # Current State
 
-Last consolidated: 2026-10-21
+Last consolidated: 2026-10-23
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
+
+## Local fallback import-ownership and settings candidate - 23 October 2026
+
+Approved local branch `fix/fallback-standby-import-ownership` in `C:\Projects\sigenergy_optimizer-fallback-standby-import`, based on verified main `3811d6a02069e850086fab2c1e042f7b9da40bff`. Published .75 and its exact operator-supplied installed source remain unchanged. The completed local-validation checkpoint was unreleased and uncommitted; the operator subsequently authorized one commit, this branch push and a review PR. Git and the PR establish source-control identity; merge, publication and live changes remain separate.
+
+O13 (Medium): when Standby Holdoff or active Morning Dump owned zero import and Demand Window was trusted OFF, fallback either left an existing import ceiling open during unproven settlement or restored normal import capability after successful settlement. Existing fake-HA fixtures and real post-dispatch settlement waiters reproduced a 13.25 kW permission. No physical import is established. The correction requests the 0.01 kW import close before settlement waits and retains it while either explicit owner remains active. Morning Dump is reproduced in its supported blocked-export MSC branch. Genuine High/Spike preemption clears Morning Dump ownership and keeps its existing behavior. Demand ON/unknown behavior and non-Standby economic-zero recovery are preserved; PV/ESS restrictions, authority and request-specific settlement remain independent. Two UI descriptions/labels clarify positive-FiT Low permission and summary-notification timing and status/health stale-data thresholds without changing settings or loop cadence.
+
+Validation: tests-first runs reproduced two Standby failures and two Morning Dump failures before their respective corrections. All seven focused import-owner regressions passed (202 existing warnings, 6.97 seconds). Final combined validation passed 1,149 tests / 1,287 subtests with zero failures and 206 existing warnings in 211.18 seconds. The six settings-UI checks also passed independently. Independent combined source/test review found no High/Medium blocker. These local results do not establish physical, release or live acceptance; historical .75 results below remain separate.
+
+Monitor-only/dry-run verification uses isolated fake-HA decision inspection to confirm active Standby or Morning Dump ownership and zero requested import, and checks the settings labels without dispatching live controls. The Value Gate dry-run flag is advisory and does not disable actuator application. Offline regression checks inject service failure and delayed/unproven observations only in fake HA. Simulation output is not actuator settlement. Any later separately supervised live verification must confirm exact installed source, effective settings, current Automated/Remote EMS authority, trusted Demand state and active Standby/Morning Dump ownership, then compare requested/observed import, export, PV MAX and ESS limits. Stop on lost authority or unexpected permission/settlement and retain operator ownership. Passing this candidate does not enable or accept unattended Boost operation.
+
+The latest supplied archive (23 October 08:16:10 Sydney filename time) is stale: 9,325 valid records from 18 October 19:59:12 to 19 October 07:58:42 Sydney, all bytes matching the ending portion of the earlier 21 October archive; final-record age 96h17m28s. SHA-256 `72f77e9b3b7d4fa8a3559237f735f1399f7dd7f4a78f8aa51a50bacc463cc8de`. The operator reports a failing HDD, but this does not prove archive causation or current optimizer behavior.
+
+The separate 21 October live-memory sample (267 rows, 13:28:26–13:53:10 Sydney) contains 254 helper-success, eight pending and five failed applications with unsuccessful fallback. Four failures later recovered; the last has no subsequent evidence. Zero export in a successful 13:53:00 MSC cycle balances against battery charging consuming the PV surplus, with Solcast provider UNVERIFIED. This is not a diagnosis of the failure cause or proof of current behavior. O10/O11 remain parked; Phase 1/2, Boost acceptance and O5 policy gates remain open.
 
 ## Published .75, publication proof and HA status - 21 October 2026
 
@@ -96,7 +110,7 @@ Current Automated ownership and observed Remote EMS ON remain required at applic
 
 ## Outstanding operational bug register
 
-The register distinguishes narrow software defects corrected in published code, the newly reproduced O12 reserve-trust code defect, and remaining operational, physical-evidence and policy gates. O1, O3 and O6 have specific code corrections in .71/.72; their rows remain open for the listed live acceptance or adjacent behavior. O10 is a confirmed archive-staleness symptom with cause/recovery unproven. O11 records parked intermittent MSC observations; cause is unproven.
+The register distinguishes corrections in published code (including O12 in .75), the local unreleased O13 candidate, and remaining operational, physical-evidence and policy gates. O1, O3 and O6 have specific code corrections in .71/.72; their rows remain open for the listed live acceptance or adjacent behavior. O10 is a confirmed archive-staleness symptom with cause/recovery unproven. O11 records parked intermittent MSC observations; cause is unproven.
 
 | ID | Issue | Classification and outstanding disposition |
 | --- | --- | --- |
@@ -112,6 +126,7 @@ The register distinguishes narrow software defects corrected in published code, 
 | O10 | 20 October trace archive stale tail | Confirmed stale/inconsistent downloads: the 08:54 export ended 24h55m before download despite fresh rows bracketing it; 2,654 older rows absent from the 07:39 export reappeared byte-identically. The same UTC hour contributed 275 versus 817 rows, with 542 later same-hour rows absent before. Actual archive/index identity at the two requests is unverified; clock-window filtering alone cannot explain the different row sets if a complete identical snapshot is assumed. Cause, archive-task status and safe recovery remain unproven; operator parked investigation. |
 | O11 | Intermittent MSC observations | Operator parked follow-up and paused the reminder. Supplied observations do not establish whether HA, hardware, application or evidence timing caused the behavior; no fix or physical acceptance is claimed. |
 | O12 | Evening Boost reserve-trust provenance | Code defect corrected in published .75: Boost now requires existing trusted load and sunrise observations before using them in the overnight reserve calculation. The standalone regression checkpoint passed 41 tests / 55 subtests and 1,112 full-suite tests / 1,247 subtests. The combined .75 control checkpoint passed 1,142 tests / 1,287 subtests; 16 release/source-pinning checks also passed. Operator-supplied startup at 13:28:25 Sydney identifies .75 at exact tag source 413e1691bb58e0b942098ab43f44e873df157a2b. Publication and installed identity are established; physical acceptance remains unverified. O12 itself changes no prices, SoC/power thresholds or durations; O4 adds the separate qualification timing, and O5 reserve policy remains open. |
+| O13 | Standby/Morning Dump fallback grid-import ownership | Reproduced in .75 with trusted Demand OFF: fallback omitted either active owner's import close before settlement and could restore normal import capability afterward. The approved local multi-fix candidate covers Standby plus Morning Dump's blocked-export MSC case; seven focused regressions and the full 1,149-test / 1,287-subtest suite pass, with no High/Medium blocker in independent review. Unreleased and not physically verified. Ordinary economic-zero recovery and genuine Morning preemption are preserved. |
 
 ### Supplied 20 October startup and trace/archive evidence
 

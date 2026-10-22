@@ -302,6 +302,9 @@ Uninstall:
 - Decision loop is event-driven with a 60-second heartbeat fallback.
 - State inputs include battery, PV, load, and price signals.
 - Hardware limit clamping uses live ESS caps, then cached last-known-good caps, then fallback.
+- The retained `poll_interval_seconds` setting controls daily/morning summary timing tolerance and status/health stale-data thresholds, not decision-loop frequency.
+
+Local unreleased correction: Standby Holdoff and active Morning Dump keep their grid-import close through actuator fallback and settlement recovery. Ordinary economic-zero recovery retains its existing behavior. See [current candidate validation and supervised verification requirements](docs/CURRENT_STATE.md); published .75 does not yet include this correction.
 
 ## Version
 
@@ -315,7 +318,7 @@ Current live-memory recording is demonstrated, including pending/error outcomes 
 
 Protected rollback reference: **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`, public OCI index `sha256:dd7efe0fd9b192ae1fd996137c312e5f2aab12e01a285f6e75fb5a58dc8fe88c`. There is no GitHub Release for `.65`; an actual usable Supervisor restore/reinstall method and saved effective settings remain unverified. Artifact availability alone is not rollback proof.
 
-Existing unfinished worktrees and the separate local archive-characterization tests remain preserved. The physical-export software default remains `0.0` (disabled); the reported site limit is not a universal default. The earlier README publication-status update changed no application behavior, thresholds, settings or permanent instructions; the Evening Boost behavior described above is included in published .75, while installation and live acceptance remain unverified. The historical `release.sh` remains unsuitable: it preserves the haos suffix, updates only three of five markers, stages all changes and can commit/tag/push. Do not use it without a separate repair/review.
+Existing unfinished worktrees and the separate local archive-characterization tests remain preserved. The physical-export software default remains `0.0` (disabled); the reported site limit is not a universal default. The earlier README publication-status update changed no application behavior, thresholds, settings or permanent instructions; the Evening Boost behavior described above is included in published .75, with exact installed startup identity supplied and physical acceptance still unverified. The historical `release.sh` remains unsuitable: it preserves the haos suffix, updates only three of five markers, stages all changes and can commit/tag/push. Do not use it without a separate repair/review.
 
 ## Historical Maintainer Release Flow (not current instructions)
 

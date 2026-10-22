@@ -1,8 +1,20 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-10-21
+Last consolidated: 2026-10-23
 
 Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STATE.md` and relevant `CONTROL_CONTRACT.md` sections. Inspect only minimum relevant files. Git records repository identity; HA and operator evidence establish live state.
+
+## Approved local multi-fix candidate - 23 October 2026
+
+Workspace: `C:\Projects\sigenergy_optimizer-fallback-standby-import`, branch `fix/fallback-standby-import-ownership`, based on verified main `3811d6a02069e850086fab2c1e042f7b9da40bff`. Main and published .75 tag/source `413e1691bb58e0b942098ab43f44e873df157a2b` were rechecked on 23 October. The operator approved this local branch after the offline preparatory ownership audit; this does not accept Phase 1/2 or authorize a new publication/live change.
+
+New Medium finding O13: Standby Holdoff and active Morning Dump require import blocked, but .75 fallback retains only Demand Window import ownership. With trusted Demand OFF, the Standby real decision/fake-HA characterization requested zero import and 1 kW PV MAX; settled fallback reopened a synthetic 13.25 kW import capability, while unproven settlement omitted the import close. The 1 kW PV restriction belongs to that Standby case, not Morning Dump. This establishes permission behavior, not physical import. The local correction retains both explicit owners before settlement waits and through recovery, preserving ordinary economic-zero recovery and independent PV/ESS, Demand and Manual/Force safeguards. The separately reproduced Morning Dump case uses its supported blocked-export MSC branch, not a failed discharge proposal being treated as ownership. High/Spike preemption already clears Morning Dump ownership; that boundary is unchanged. Two settings-label/help corrections are included without changing configuration behavior. Tests-first characterization reproduced two Standby failures and, before the additional owner correction, two Morning Dump failures; controls retained ordinary economic-zero recovery and Demand uncertainty blocking. All seven focused owner regressions then passed (202 existing warnings, 6.97 seconds). Final combined validation passed 1,149 tests / 1,287 subtests, zero failures, 206 existing warnings, in 211.18 seconds. The six settings-UI checks passed separately. Independent combined source/test review found no High/Medium blocker. These are local validation results, not physical acceptance; see CURRENT_STATE.md for remaining gates.
+
+The 23 October download `sigenergy_decision_trace_24h_20261022T211610Z.jsonl` has 9,325 valid records covering 18 October 19:59:12 to 19 October 07:58:42 Sydney. It is a byte-identical suffix of the earlier 21 October archive (SHA-256 `72f77e9b3b7d4fa8a3559237f735f1399f7dd7f4a78f8aa51a50bacc463cc8de`), ending 96h17m28s before its filename timestamp. No current .75 proof can be obtained from it; HDD causation remains unproven, and the operator's archive/MSC investigation remains parked.
+
+A separate supplied live-memory sample from 21 October 13:28:26 to 13:53:10 Sydney has 267 records: 254 helper-success, eight pending and five failed with unsuccessful fallback. The first four failures subsequently recovered; the final recovery is unknown. At 13:53:00 a successful MSC cycle observed a 25 kW export ceiling, PV 16.506 kW, load 1.227 kW, battery charging 15.309 kW and zero export. Provider state remained UNVERIFIED, retaining normal charging pending a newer successful provider poll. These facts do not identify the application errors or establish O13 as their cause. No raw trace/log was copied into the repository.
+
+Published .75 and supplied installed identity remain as recorded below. Boost live stability, reserve policy O5, other outstanding live gates and actual rollback readiness remain open. Existing unfinished worktrees are preserved. On 23 October the operator authorized one commit of this reviewed nine-file batch, a push of this fix branch and a review PR. Git and the PR establish the resulting source-control identity; this approval does not authorize merge, publication or live changes. Before commit the candidate can be withheld; any later rollback must be a separately reviewed scoped revert.
 
 ## Current published release and supplied HA evidence - 21 October 2026
 
