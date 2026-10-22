@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Current release: 2.3.65-haos76
+
+Published 23 October 2026 at 09:12:46 Sydney from tag/source `e70d9ff016a546615367b6d69f4ac4602da7b23c` ([GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.65-haos76)). The verified multi-architecture OCI index is `sha256:b7df9f21fce7ef14e7b4f602235486e17b35b710907656dd0b43e796889a6e9a`; embedded source and application files were verified against the tag. This confirms publication, not installation or physical acceptance. The latest supplied installed proof remains `.75` on 21 October; Boost remains subject to its existing supervised gate. See [publication receipt and remaining gates](docs/HAOS76_RELEASE_CANDIDATE.md).
+
 This guide is for Home Assistant OS users running the SigEnergy Optimizer as a Home Assistant Add-on.
 
 ## Scope and Safety
@@ -234,15 +238,11 @@ Solar provider freshness is schedule/provider-aware and is not extended by it.
 
 Before live acceptance, inspect provider state, poll/high-water/verified times,
 retained/advertised deadlines, source/epoch and rejection reasons in Decision
-Trace. The latest published add-on release is `2.3.64-haos75`, tag/source
-`413e1691bb58e0b942098ab43f44e873df157a2b`; the source and both architecture
-images were verified. The operator reported `.74` installed, Evening Boost off
-and add-on auto-update off. Startup evidence at 13:28:25 Sydney identifies
-runtime `2.3.64-haos75` and source
-`413e1691bb58e0b942098ab43f44e873df157a2b`, matching the release. Pending-close
-then pending-MSC states appeared through 13:28:29; HTTP 200 service/reads
-continued through 13:28:50. This does not prove physical settlement or later
-recovery. It is the latest full startup/source proof; the prior `.73` proof is
+Trace. The latest supplied installed startup/source proof remains
+`2.3.64-haos75` / `413e1691bb58e0b942098ab43f44e873df157a2b` from 21 October;
+it is not evidence that published `.76` is installed. The excerpt's
+pending-close then pending-MSC states and subsequent HTTP 200 reads do not
+prove physical settlement or later recovery. The prior `.73` proof is
 historical. Rollback method remains unprovided.
 
 ### Solar low-surplus continuation (published .74; historical characterization, 20 October 2026)
@@ -304,13 +304,15 @@ Uninstall:
 - Hardware limit clamping uses live ESS caps, then cached last-known-good caps, then fallback.
 - The retained `poll_interval_seconds` setting controls daily/morning summary timing tolerance and status/health stale-data thresholds, not decision-loop frequency.
 
-Local .76 candidate: PR #31 merged the Standby Holdoff and active Morning Dump fallback import-blocking correction. Ordinary economic-zero recovery retains its existing behavior. See [candidate validation and supervised verification requirements](docs/CURRENT_STATE.md); published .75 does not yet include this correction.
+Published .76 includes the PR #31 Standby Holdoff and active Morning Dump fallback import-blocking correction. Ordinary economic-zero recovery retains its existing behavior. O13 code is published, but physical behavior remains unverified. See [current status and remaining gates](docs/CURRENT_STATE.md).
 
 ## Version
 
-Local candidate: **2.3.65-haos76**, prepared from PR #31 merge `632a42081d9ff93b270ffcca048604031ec4fed1`; not yet tagged, published or installed. See [the release plan](docs/HAOS76_RELEASE_CANDIDATE.md).
+Current release: [**2.3.65-haos76**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.65-haos76), published 23 October 2026. Tag/source `e70d9ff016a546615367b6d69f4ac4602da7b23c`; PR #32 merged at `c226c98703263e3a0c5cd5ca811a2d39554ea315`.
 
-Latest published release: [**2.3.64-haos75**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.64-haos75), published 21 October 2026. Tag/source `413e1691bb58e0b942098ab43f44e873df157a2b`; PR #29 merged at `b88ac1f36811a253fc8602a781103a255ec932fd`. Verified OCI index `sha256:ed2a984b457bfddb2b74050d437f98337944076e9144a8d1a19f577d8e82d898`, with amd64 and arm64 images matching the tagged source. The prior .74 OCI index remains `sha256:3f3d46ce2cef41a8246cc63db2ef794c0e1907cf2a2518acf751cdc2646399ee`.
+Verified OCI index: `sha256:b7df9f21fce7ef14e7b4f602235486e17b35b710907656dd0b43e796889a6e9a`; amd64 manifest `sha256:153257933183c42fa99afdd21a8ab0d48837eb64623e136d7d0a07b3db17269e`, arm64 manifest `sha256:8288d84e1bd41858d022caff8b91d11adab998b21f99ee7d1a92985c9be4b161`. The `.75` version-specific index remains unchanged at `sha256:ed2a984b457bfddb2b74050d437f98337944076e9144a8d1a19f577d8e82d898`.
+
+The latest supplied installed startup/source proof remains `.75` / `413e1691bb58e0b942098ab43f44e873df157a2b` on 21 October. No `.76` installation, settings change, Boost enablement or physical acceptance is claimed; actual rollback remains unverified. O13 code is published but physical behavior remains unverified. O4/O5/O10/O11 and applicable Phase 1/2 live gates remain open.
 
 The operator initially reported `.74` installed, Evening Boost off and add-on auto-update off. Later startup evidence at 13:28:25 Sydney identifies runtime signature `.75` and exact source `413e1691bb58e0b942098ab43f44e873df157a2b`. The excerpt shows pending-close then pending-MSC states through 13:28:29 and HTTP 200 service/reads through 13:28:50; it does not prove physical settlement or later recovery. This is the latest full startup/source proof; the earlier `.73` evidence is historical. No rollback method was supplied; supervised acceptance remains unverified.
 

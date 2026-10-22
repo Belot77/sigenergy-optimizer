@@ -2,11 +2,11 @@
 
 This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
 
-## Current checkpoint - 2026-10-23
+## Current checkpoint - 2026-10-23 (published .76)
 
-Latest verified release is .75 / 2.3.64-haos75 at tag/source `413e1691bb58e0b942098ab43f44e873df157a2b`; verified main is PR #31 normal merge `632a42081d9ff93b270ffcca048604031ec4fed1`. The 21 October startup/source evidence matches the published release. O12 reserve-trust and O4 re-entry corrections are published, but startup identity and automated tests do not establish physical acceptance. See CURRENT_STATE.md for retained release/image verification and the current local candidate.
+Latest release is .76 / `2.3.65-haos76`, published from tag/source `e70d9ff016a546615367b6d69f4ac4602da7b23c`; PR #32 normally merged at `c226c98703263e3a0c5cd5ca811a2d39554ea315` with an identical tree. The version/latest OCI index and both platform images are verified; see CURRENT_STATE.md for digests and proof boundaries. Latest supplied installed proof remains .75 on 21 October. Publication, source identity and tests do not establish .76 installation or physical acceptance.
 
-O13 now retains Standby and active Morning Dump import blocking through fallback, with two settings-surface clarifications, in merged PR #31. Local release candidate `2.3.65-haos76` is being prepared on `release/2.3.65-haos76` with five version markers and release docs only. It is not published or installed. This bounded work does not complete the ownership-audit phase, authorize publication/live actions or accept Phase 1/2. Retained control validation and candidate checks are recorded in CURRENT_STATE.md.
+Published .76 includes O13: Standby and active Morning Dump import blocking is retained through fallback. Code is published, but physical behavior remains unverified. O4 Boost acceptance, O5 reserve policy, O10/O11 and applicable Phase 1/2 live-proof gates remain open. This release does not complete the ownership-audit phase or accept Phase 1/2. Retained validation and publication evidence are recorded in CURRENT_STATE.md.
 
 The 23 October archive download repeats old records ending 19 October 07:58:42 Sydney. Archive/MSC follow-up remains parked and HDD causation unproven. The separate 21 October live-memory sample contains unresolved application failures and does not complete Boost or physical settlement acceptance. Short physical Demand Window import spikes remain operator-deferred and separate from O7 exact-full PV-only proof.
 
