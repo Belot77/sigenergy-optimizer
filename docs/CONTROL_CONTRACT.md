@@ -89,7 +89,7 @@ Its energy order is PV to current house load, preserve enough opportunity to fil
 
 At or below the continuation threshold Solar stops unless the bounded dip hold qualifies. After stopping, full entry strictly above `0.5 kW` is required again. Missing, stale, malformed, incoherent, or otherwise unsafe evidence fails Solar closed.
 
-### Brief measured-surplus dip hold (unreleased)
+### Brief measured-surplus dip hold (published .74)
 
 An already active Solar MSC permission may bridge a short measured-surplus dip until **strictly before 15 seconds after the older PV/load source report** that proved measured surplus strictly above `0.5 kW` and produced a successfully applied final Solar decision. This is five existing three-second coalescing windows; it bounds continuation without delaying startup or ordinary measured-surplus decisions. It applies at any otherwise eligible SoC and does not change the separate exact-100% branch.
 
@@ -369,7 +369,7 @@ Safe fallback closes export first, requests Maximum Self Consumption, and clamps
 
 Fallback exact-MSC recovery proof must be fresh, provenance-backed and strictly later than the MSC request boundary, correlated to the observed EMS state. Stale, missing, unavailable, untrusted, pre-request or equal-timestamp reports cannot restore normal import or ESS capabilities. A genuinely later report of unchanged exact MSC may qualify; a cached string or accepted command cannot. Successful fallback recovery does not itself grant automatic export-reopening authority.
 
-An independently owned restrictive Standby or negative-price PV MAX request remains effective during pending transition, transition completion, actuator failure and every fallback path, including successful settlement. A lower valid restriction must not be raised by normal PV recovery. Required independent restrictive PV, import and ESS safety writes must not wait for transition settlement; unrelated permissive writes remain deferred. Demand Window retains import blocking during fallback recovery, and Manual/Force retain their own authority and settlement requirements.
+An independently owned restrictive Standby or negative-price PV MAX request remains effective during pending transition, transition completion, actuator failure and every fallback path, including successful settlement. A lower valid restriction must not be raised by normal PV recovery. Required independent restrictive PV, import and ESS safety writes must not wait for transition settlement; unrelated permissive writes remain deferred. Demand Window retains import blocking during fallback recovery. Independently active Standby Holdoff and Morning Dump also retain their grid-import close: fallback requests the 0.01 kW closed sentinel before waiting for settlement and cannot restore normal import permission while either owner remains active, whether settlement is proven or not. This includes active Morning Dump using MSC because its export is blocked; genuine preemption that clears Morning Dump ownership retains its existing behavior. A zero import target caused only by ordinary economic policy does not acquire Standby ownership; its established settled-fallback recovery remains unchanged. Manual/Force retain their own authority and settlement requirements.
 
 Export start/stop notifications are classified from trusted measured grid export. A changed export ceiling alone is not proof that physical export started or stopped.
 

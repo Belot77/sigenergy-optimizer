@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased - 2026-10-23
+
+- Preserve independent Standby Holdoff and active Morning Dump grid-import blocking during actuator fallback. Previously, with Demand Window observed OFF, fallback omitted their import close while settlement was unresolved and restored normal import permission after settlement. This includes active Morning Dump in its blocked-export MSC branch. The local correction requests the 0.01 kW close before settlement waits and withholds normal import recovery while either owner remains active. Ordinary economic-zero fallback recovery and existing Demand Window, authority, PV and ESS protections retain their behavior.
+- Clarify two settings surfaces: Low positive-FiT permission remains PV-surplus-only, with independently qualified battery-export policies kept separate; the retained `poll_interval_seconds` key describes summary-notification timing and status/health stale-data thresholds. No configuration values or control cadence change.
+- Record the 23 October repeated stale archive and the limited 21 October live-memory evidence. HDD causation, current application-failure causes and physical acceptance remain unproven. Reconcile the roadmap release checkpoint and published Solar-hold heading without advancing phase gates.
+- Validation of this local candidate is in `docs/CURRENT_STATE.md`. No new version, release or live change is claimed.
+
 ## Current status - 2026-10-21
 
 The latest published release is **2.3.64-haos75**, published 21 October 2026 at 02:24:59 UTC (13:24:59 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.64-haos75). Tag/source `413e1691bb58e0b942098ab43f44e873df157a2b`; PR #29 merged at `b88ac1f36811a253fc8602a781103a255ec932fd`, tree `07b2ab78766358c6838377796cce352a2f3ca69e` exactly matching the tag. Actions run `39532351637` succeeded. OCI index/latest `sha256:ed2a984b457bfddb2b74050d437f98337944076e9144a8d1a19f577d8e82d898`; amd64 manifest `sha256:a242af5c9a0b40bdbdf62bc9b44e3d13c44e080d85ed11ad9661cf404835ef07`, arm64 manifest `sha256:38e22d54b4356f613c4ab75f80b5f7fa44e8f17c5b6de7b75c515870ed271a72`. Both labels and embedded source/application bytes match the tag; the `.74` OCI index remains unchanged at `sha256:3f3d46ce2cef41a8246cc63db2ef794c0e1907cf2a2518acf751cdc2646399ee`.
