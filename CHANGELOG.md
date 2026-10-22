@@ -1,11 +1,13 @@
 # Changelog
 
-## Unreleased - 2026-10-23
+## 2.3.65-haos76 - local release candidate, unpublished - 2026-10-23
+
+Based on PR #31 normal merge `632a42081d9ff93b270ffcca048604031ec4fed1`, preserving the tested fix tree. Only five version markers and release docs change in this preparation; `.75` remains the latest published release.
 
 - Preserve independent Standby Holdoff and active Morning Dump grid-import blocking during actuator fallback. Previously, with Demand Window observed OFF, fallback omitted their import close while settlement was unresolved and restored normal import permission after settlement. This includes active Morning Dump in its blocked-export MSC branch. The local correction requests the 0.01 kW close before settlement waits and withholds normal import recovery while either owner remains active. Ordinary economic-zero fallback recovery and existing Demand Window, authority, PV and ESS protections retain their behavior.
 - Clarify two settings surfaces: Low positive-FiT permission remains PV-surplus-only, with independently qualified battery-export policies kept separate; the retained `poll_interval_seconds` key describes summary-notification timing and status/health stale-data thresholds. No configuration values or control cadence change.
 - Record the 23 October repeated stale archive and the limited 21 October live-memory evidence. HDD causation, current application-failure causes and physical acceptance remain unproven. Reconcile the roadmap release checkpoint and published Solar-hold heading without advancing phase gates.
-- Validation of this local candidate is in `docs/CURRENT_STATE.md`. No new version, release or live change is claimed.
+- Retained control validation: 1,149 tests / 1,287 subtests passed; release-specific validation is in `docs/CURRENT_STATE.md`. Candidate version markers do not establish a published tag, image, release or installation.
 
 ## Current status - 2026-10-21
 
