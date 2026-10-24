@@ -47,6 +47,7 @@ from .models import (
     SolarState,
 )
 from .state_store import StateStore
+from .storage_worker import StorageWorker, StorageUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -496,7 +497,7 @@ class _MscTransition:
 
 
 class SigEnergyOptimizer:
-    def __init__(self, ha: HAClient, cfg: Settings) -> None:
+    def __init__(self, ha: HAClient, cfg: Settings, *, storage_worker: StorageWorker | None = None) -> None:
         self.ha = ha
         self.cfg = cfg
         self._last_state: Optional[SolarState] = None
@@ -561,11 +562,15 @@ class SigEnergyOptimizer:
         self._last_tracked_import_price: Optional[float] = None
         self._last_tracked_feedin_price: Optional[float] = None
         db_path = os.environ.get("STATE_DB_PATH", "/data/optimizer_state.db")
-        self._state_store = StateStore(db_path)
+        self._storage_worker = storage_worker
+        self._ledger_job = None
+        self._price_job = None
+        self._state_store = StateStore(db_path) if storage_worker is None else None
         self._import_topup_ledger = ImportTopupLedger(
             self._state_store, started_at=datetime.now(self._tz), source=self._import_topup_source(),
+            deferred=storage_worker is not None,
         )
-        self._earnings = EarningsService(self.ha, self.cfg, self._state_store, self._tz)
+        self._earnings = EarningsService(self.ha, self.cfg, storage_worker or self._state_store, self._tz)
         self._decision_trace: deque[dict[str, Any]] = deque(maxlen=1000)
         # Serialize cycle apply and manual mode writes to avoid race-driven reverts.
         self._control_lock = asyncio.Lock()
@@ -1542,6 +1547,7 @@ class SigEnergyOptimizer:
                     if not self._import_topup_ledger.snapshot_retained:
                         self._import_topup_ledger.invalidate(datetime.now(self._tz), "observation_capture_failed")
                     logger.warning("Import-cost interval pending; incomplete history remains unknown")
+                await self._reconcile_import_storage()
                 decision = self._decide(state)
                 effective_mode = self._manual_mode_override or state.sigenergy_mode
                 if effective_mode not in {self.cfg.automated_option, ""}:
@@ -1954,6 +1960,8 @@ class SigEnergyOptimizer:
         return True
 
     def _record_price_tracking(self, s: SolarState, d: Decision | None = None) -> None:
+        if self._price_job is not None:
+            return
         now = datetime.now(self._tz)
         now_block = int(now.timestamp()) // 300
         import_kw = max(0.0, float(s.grid_import_power_kw or 0.0))
@@ -1974,7 +1982,7 @@ class SigEnergyOptimizer:
         if not should_record:
             return
         block_start = datetime.fromtimestamp(now_block * 300, tz=self._tz).replace(second=0, microsecond=0)
-        self._state_store.record_price_event(
+        payload = dict(
             ts=now.isoformat(timespec="seconds"),
             block_ts=block_start.isoformat(timespec="seconds"),
             grid_import_kw=import_kw,
@@ -1983,13 +1991,84 @@ class SigEnergyOptimizer:
             feedin_price=feedin_price,
             battery_soc=float(s.battery_soc),
         )
-        self._last_tracked_block = now_block
-        self._last_tracked_import_kw = import_kw
-        self._last_tracked_export_kw = export_kw
-        self._last_tracked_import_price = import_price
-        self._last_tracked_feedin_price = feedin_price
-        if now.hour == 0 and now.minute < 10:
-            self._state_store.purge_old_price_tracking(retain_days=60)
+        def acknowledged():
+            self._price_job = None
+            self._last_tracked_block = now_block
+            self._last_tracked_import_kw = import_kw
+            self._last_tracked_export_kw = export_kw
+            self._last_tracked_import_price = import_price
+            self._last_tracked_feedin_price = feedin_price
+            if now.hour == 0 and now.minute < 10:
+                self._enqueue_storage("purge_old_price_tracking", retain_days=60)
+        if self._storage_worker is None:
+            self._state_store.record_price_event(**payload)
+            acknowledged()
+        else:
+            self._price_job = self._enqueue_storage(
+                "record_price_event", on_success=acknowledged,
+                on_failure=lambda: setattr(self, "_price_job", None), **payload,
+            )
+
+    def _enqueue_storage(self, operation, *, on_success=None, on_failure=None, **payload):
+        if self._storage_worker is None:
+            result = getattr(self._state_store, operation)(**payload)
+            if on_success is not None:
+                on_success()
+            return result
+        try:
+            future = self._storage_worker.submit(operation, **payload)
+        except StorageUnavailable:
+            logger.warning("Best-effort storage admission unavailable: %s", operation)
+            return None
+        wrapped = asyncio.wrap_future(future)
+        def completed(done):
+            try:
+                done.result()
+            except (Exception, asyncio.CancelledError):
+                logger.warning("Best-effort storage outcome unavailable: %s", operation)
+                if on_failure is not None:
+                    on_failure()
+            else:
+                if on_success is not None:
+                    on_success()
+        wrapped.add_done_callback(completed)
+        return wrapped
+
+    async def storage_call(self, operation, *args, **kwargs):
+        if self._storage_worker is None:
+            return getattr(self._state_store, operation)(*args, **kwargs)
+        return await self._storage_worker.call(operation, *args, **kwargs)
+
+    async def _reconcile_import_storage(self) -> None:
+        if self._storage_worker is None:
+            return
+        if self._ledger_job is None:
+            now = datetime.now(self._tz)
+            day = now.date().isoformat()
+            key, payloads, checkpoint_needed = self._import_topup_ledger.reconciliation_snapshot(
+                day, self._import_topup_source(),
+            )
+            try:
+                future = self._storage_worker.submit(
+                    "ledger_snapshot", payloads, day, checkpoint_needed, accounting=True,
+                )
+            except StorageUnavailable:
+                return  # Immutable pending head remains unacknowledged.
+            self._ledger_job = asyncio.wrap_future(future)
+            def completed(done):
+                self._ledger_job = None
+                try:
+                    self._import_topup_ledger.accept_reconciliation(key, done.result())
+                except (Exception, asyncio.CancelledError):
+                    logger.warning("Import accounting storage unavailable; history remains unknown")
+            self._ledger_job.add_done_callback(completed)
+        try:
+            # One total storage wait per cycle, including an older outstanding
+            # call. Shield preserves the real job and its eventual exact ack.
+            await asyncio.wait_for(asyncio.shield(self._ledger_job), 0.05)
+        except (Exception, asyncio.CancelledError) as exc:
+            if isinstance(exc, asyncio.CancelledError):
+                raise
 
     def _import_topup_source(self) -> str:
         return "|".join((self.cfg.daily_import_energy, self.cfg.grid_import_power_sensor, str(self._tz)))
@@ -2043,7 +2122,7 @@ class SigEnergyOptimizer:
         new_value: Any = None,
         details: Any = None,
     ) -> None:
-        self._state_store.record_audit_event(
+        self._enqueue_storage("record_audit_event",
             action=action,
             source=source,
             actor=actor,

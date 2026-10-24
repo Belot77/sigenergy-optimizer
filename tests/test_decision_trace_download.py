@@ -102,7 +102,9 @@ class DecisionTraceDownloadTests(unittest.IsolatedAsyncioTestCase):
                                     base_url="http://test") as loopback:
             self.assertEqual((await loopback.post("/api/decision_trace/24h/download-ticket")).status_code, 200)
         self.settings.require_api_key_for_all_mutations = False
-        self.assertEqual((await self.client.post("/api/decision_trace/24h/download-ticket",
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app, client=("172.30.32.2", 1)),
+                                    base_url="http://test") as ingress:
+            self.assertEqual((await ingress.post("/api/decision_trace/24h/download-ticket",
                                                 headers={"x-ingress-path": "/ingress/test"})).status_code, 200)
 
     async def test_expiry_and_bounded_outstanding_tickets(self):

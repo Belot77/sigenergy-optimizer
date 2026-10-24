@@ -18,6 +18,41 @@ Preserve authenticated Manual/Force requests and explicit ESS overrides, indepen
 
 Changing an unrelated policy value or saving an unchanged identity does not retire identity-bound proof. HA HTTP/WebSocket connections keep their existing startup-bound settings; this contract introduces no client reconstruction, automatic restart, new policy priority or permission to alter live settings.
 
+## State-store execution and accounting evidence
+
+Production database initialization, lock acquisition, queries, commits and close
+execute on one lifecycle-owned storage worker, with bounded admission and async
+waiting. StateStore schema and atomic interval/checkpoint/coverage transactions
+retain their existing semantics. Standalone offline construction keeps its
+synchronous API; production lifespan explicitly injects the worker.
+
+Mutable import-ledger observation, permission, invalidation and pending-event
+state stays on the event loop. Worker jobs contain immutable captured intervals
+and detached query arguments. Only matching committed event identities can
+retire a pending prefix. A summary is usable only for the current observation
+generation, unknown revision, day, source and sequence, with existing pending
+interval, measurement-tail and coverage guards applied. A late result cannot
+restore trust after configuration A-to-B-to-A or direct-control invalidation.
+
+One finite pre-decision wait cannot become an unbounded wait under the control
+lock. Busy, failed or unconfirmed accounting retains unknown-cost protections;
+it does not fabricate known-empty history. Existing independently qualified
+PV-only and Manual/Force policies remain separate. Authority, settlement,
+independent restrictions and economic thresholds retain their existing rules.
+
+A timeout or cancelled waiter does not prove that a running mutation was rolled
+back. Keep its execution slot and reconcile its eventual result; do not create a
+replacement worker. Storage APIs distinguish rejected admission from an accepted
+operation with an unconfirmed outcome. Audit failure stays visible where audit
+recording remains best effort, and price-tracking markers advance only after
+successful persistence acknowledgement.
+
+Shutdown stops admission and producers, cancels undispatched jobs and bounds
+asynchronous drain. A connection closes only on its worker after the active
+operation finishes. A Python thread cannot forcibly interrupt wedged operating-
+system I/O or establish a hard process-exit deadline. See
+[storage execution details](STORAGE_EXECUTION_ISOLATION.md).
+
 ## Passive trace archive clock recovery
 
 Trace persistence is diagnostic only and must never delay control on the event loop or modify system/control clocks. A different or unknown OS boot cannot prove UTC by pairing an old UTC anchor with a new monotonic sample, even within the normal continuity tolerance. Healthy same-boot monotonic continuity remains sufficient without network access.

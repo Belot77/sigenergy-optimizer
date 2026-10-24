@@ -17,4 +17,4 @@ USER appuser
 
 EXPOSE 7123
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7123", "--workers", "1"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7123", "--workers", "1", "--no-proxy-headers"]

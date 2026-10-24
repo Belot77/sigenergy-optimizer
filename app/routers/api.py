@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import ipaddress
 import time
 import logging
 import math
@@ -15,6 +16,7 @@ from pydantic import BaseModel
 from ..config import settings
 from ..forecast_utils import forecast_entry_time, forecast_entry_value
 from ..decision_trace_store import TICKET_SECONDS, TraceDownload
+from ..storage_worker import StorageUnavailable
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -66,6 +68,23 @@ def _opt(request: Request):
 
 def _ha(request: Request):
     return request.app.state.ha
+
+
+def _storage_error(exc: StorageUnavailable) -> HTTPException:
+    return HTTPException(status_code=503, detail={
+        "message": "Storage unavailable; retry later",
+        "outcome": "UNCONFIRMED" if exc.unconfirmed else "NOT_ACCEPTED",
+    })
+
+
+async def _storage_call(request: Request, operation: str, fallback: str, *args, **kwargs):
+    opt = _opt(request)
+    try:
+        if hasattr(opt, "storage_call"):
+            return await opt.storage_call(operation, *args, **kwargs)
+        return getattr(opt, fallback)(*args, **kwargs)
+    except StorageUnavailable as exc:
+        raise _storage_error(exc) from exc
 
 
 def _actor_from_request(request: Request) -> str:
@@ -330,13 +349,21 @@ def _has_forwarded_client_headers(request: Request) -> bool:
 
 
 def _is_ha_ingress_request(request: Request) -> bool:
-    # Home Assistant ingress proxied requests include ingress-specific headers.
-    # Treat these as trusted local UI traffic unless strict API-key mode is enabled.
-    return bool(
-        request.headers.get("x-ingress-path")
-        or request.headers.get("x-hassio")
-        or request.headers.get("x-home-assistant")
-    )
+    # HA authenticates ingress before Supervisor forwards it from this peer.
+    # Supported Uvicorn launchers disable proxy headers so request.client is the
+    # transport peer, never a client-supplied X-Forwarded-For/X-Real-IP value.
+    if not request.client or not request.headers.get("x-ingress-path"):
+        return False
+    host = request.client.host
+    if not isinstance(host, str):
+        return False
+    try:
+        peer = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    if isinstance(peer, ipaddress.IPv6Address):
+        peer = peer.ipv4_mapped
+    return peer == ipaddress.IPv4Address("172.30.32.2")
 
 
 def _require_mutation_auth(request: Request) -> None:
@@ -1130,20 +1157,26 @@ async def health(request: Request) -> JSONResponse:
 async def price_tracking(request: Request, date: Optional[str] = None, limit: int = 2000) -> dict[str, Any]:
     _require_config_read_auth(request)
     limit = max(1, min(limit, 20000))
-    rows = _opt(request).price_tracking_events(date=date, limit=limit)
+    rows = await _storage_call(request, "get_price_events", "price_tracking_events", date=date, limit=limit)
     return {"rows": rows}
 
 
 @router.get("/daily_earnings")
 async def daily_earnings(request: Request, date: Optional[str] = None) -> dict[str, Any]:
     _require_config_read_auth(request)
-    return await _opt(request).daily_earnings_summary(date=date)
+    try:
+        return await _opt(request).daily_earnings_summary(date=date)
+    except StorageUnavailable as exc:
+        raise _storage_error(exc) from exc
 
 
 @router.get("/earnings_history")
 async def earnings_history(request: Request, days: int = 7) -> dict[str, Any]:
     _require_config_read_auth(request)
-    return await _opt(request).earnings_history(days=days)
+    try:
+        return await _opt(request).earnings_history(days=days)
+    except StorageUnavailable as exc:
+        raise _storage_error(exc) from exc
 
 
 @router.post("/run_cycle")
@@ -1572,14 +1605,14 @@ class ThresholdPresetRequest(BaseModel):
 @router.get("/audit")
 async def audit_events(request: Request, limit: int = 200) -> dict[str, Any]:
     _require_config_read_auth(request)
-    rows = _opt(request).audit_events(limit=limit)
+    rows = await _storage_call(request, "get_audit_events", "audit_events", limit=limit)
     return {"rows": rows}
 
 
 @router.get("/presets")
 async def list_presets(request: Request) -> dict[str, Any]:
     _require_config_read_auth(request)
-    return {"presets": _opt(request).list_threshold_presets()}
+    return {"presets": await _storage_call(request, "list_threshold_presets", "list_threshold_presets")}
 
 
 @router.post("/presets")
@@ -1589,7 +1622,7 @@ async def save_preset(request: Request, body: ThresholdPresetRequest) -> dict[st
         payload = _sanitize_preset_payload(body.payload)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    _opt(request).save_threshold_preset(body.name, payload)
+    await _storage_call(request, "save_threshold_preset", "save_threshold_preset", body.name, payload)
     _record_audit(
         request,
         action="save_preset",
@@ -1603,7 +1636,7 @@ async def save_preset(request: Request, body: ThresholdPresetRequest) -> dict[st
 @router.get("/presets/{name}")
 async def get_preset(request: Request, name: str) -> dict[str, Any]:
     _require_config_read_auth(request)
-    preset = _opt(request).get_threshold_preset(name)
+    preset = await _storage_call(request, "get_threshold_preset", "get_threshold_preset", name)
     if not preset:
         raise HTTPException(status_code=404, detail="Preset not found")
     return {"preset": preset}
@@ -1612,7 +1645,7 @@ async def get_preset(request: Request, name: str) -> dict[str, Any]:
 @router.delete("/presets/{name}")
 async def delete_preset(request: Request, name: str) -> dict[str, Any]:
     _require_mutation_auth(request)
-    deleted = _opt(request).delete_threshold_preset(name)
+    deleted = await _storage_call(request, "delete_threshold_preset", "delete_threshold_preset", name)
     _record_audit(
         request,
         action="delete_preset",

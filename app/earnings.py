@@ -7,6 +7,7 @@ from typing import Any
 from .config import Settings
 from .ha_client import HAClient, UNAVAILABLE
 from .state_store import StateStore
+from .storage_worker import StorageWorker
 
 
 @dataclass(frozen=True)
@@ -330,6 +331,11 @@ class EarningsService:
         self._state_store = state_store
         self._tz = tzinfo
 
+    async def _estimated_summary(self, day: str) -> dict[str, Any]:
+        if isinstance(self._state_store, StorageWorker):
+            return await self._state_store.call("daily_earnings_summary", day)
+        return self._state_store.daily_earnings_summary(day)
+
     def _estimated_source(self) -> EarningsSource:
         return EarningsSource(
             key="estimated",
@@ -566,7 +572,7 @@ class EarningsService:
                 summary = self._summarize_cached(source, day, history_cache)
             if _is_acceptable_summary(summary):
                 return summary
-        estimated = self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
+        estimated = self._annotate_estimated(await self._estimated_summary(day), day)
         if _is_acceptable_summary(estimated):
             return estimated
         fallback = await self._best_relaxed_ha_fallback(
@@ -618,7 +624,7 @@ class EarningsService:
                 if _is_acceptable_summary(summary):
                     break
             if not _is_acceptable_summary(summary):
-                estimated = self._annotate_estimated(self._state_store.daily_earnings_summary(day), day)
+                estimated = self._annotate_estimated(await self._estimated_summary(day), day)
                 if _is_acceptable_summary(estimated):
                     summary = estimated
                 else:

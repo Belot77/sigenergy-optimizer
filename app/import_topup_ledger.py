@@ -1,4 +1,4 @@
-"""Loss-aware import-cost interval capture; storage execution remains synchronous."""
+"""Loss-aware import-cost capture with event-loop-owned reconciliation state."""
 from __future__ import annotations
 
 from collections import deque
@@ -34,7 +34,7 @@ class ImportTopupLedger:
     """Separate observed measurement progress from acknowledged durable progress."""
 
     def __init__(self, store: StateStore, *, started_at: datetime, source: str,
-                 pending_limit: int = 256) -> None:
+                 pending_limit: int = 256, deferred: bool = False) -> None:
         if started_at.utcoffset() is None:
             raise ValueError("Import ledger needs an aware local time")
         if pending_limit < 1:
@@ -53,6 +53,9 @@ class ImportTopupLedger:
         self._queued_unknown_revision = 0
         self._checkpoint_loaded = False
         self._snapshot_retained = False
+        self._deferred = deferred
+        self._observation_generation = 0
+        self._summary_cache = None
 
     @staticmethod
     def _finite(value: Any) -> float | None:
@@ -68,7 +71,7 @@ class ImportTopupLedger:
             self._unknown_revision += 1
 
     def _load_checkpoint(self, day: str) -> None:
-        if self._checkpoint_loaded:
+        if self._checkpoint_loaded or self._deferred:
             return
         try:
             previous = self.store.get_optimizer_import_checkpoint()
@@ -89,6 +92,8 @@ class ImportTopupLedger:
                 self._mark_unknown(self._last.now.date().isoformat(), "measurement_source_changed")
 
     def begin_capture(self) -> None:
+        self._observation_generation += 1
+        self._summary_cache = None
         self._snapshot_retained = False
 
     @property
@@ -207,6 +212,8 @@ class ImportTopupLedger:
         return bool(self._last is not None and self._last.permission_known)
 
     def invalidate(self, now: datetime, reason: str, *, permission_unknown: bool = False) -> None:
+        self._observation_generation += 1
+        self._summary_cache = None
         if (permission_unknown or reason == "application_not_confirmed") and self._last is not None:
             self._last = replace(self._last, permission_known=False)
         self._mark_unknown(now.date().isoformat(), reason)
@@ -272,6 +279,8 @@ class ImportTopupLedger:
         if len(self._pending) >= self._pending_limit:
             try:
                 self.flush()
+                if len(self._pending) >= self._pending_limit:
+                    raise RuntimeError("Import interval queue full")
             except Exception:
                 # The current snapshot cannot be retained within the bound.
                 # Its day stays unknown even if every older pending write clears.
@@ -283,11 +292,52 @@ class ImportTopupLedger:
         self.flush()
 
     def flush(self) -> None:
+        if self._deferred:
+            return
         while self._pending:
             pending = self._pending[0]
             self.store.record_optimizer_import_interval(pending.payload())
             # A raised/lost acknowledgement leaves the identical event queued.
             self._pending.popleft()
+
+    def reconciliation_snapshot(self, day: str, source: str):
+        """Only immutable values cross to the DB worker; never this ledger."""
+        key = self._cache_key(day, source)
+        return (key, tuple(item.payload_json for item in list(self._pending)[:16]),
+                not self._checkpoint_loaded)
+
+    def _cache_key(self, day: str, source: str):
+        return (self._observation_generation, self._unknown_revision, day, source, self._sequence)
+
+    def accept_reconciliation(self, key, result) -> None:
+        acknowledged, checkpoint, checkpoint_read, summary, successful = result
+        if not successful:
+            self._summary_cache = None
+        for event_id in acknowledged:
+            if not self._pending or self._pending[0].payload()["event_id"] != event_id:
+                break
+            self._pending.popleft()
+        if checkpoint_read and not self._checkpoint_loaded:
+            if checkpoint is not None:
+                previous_day = str(checkpoint["date"])
+                datetime.fromisoformat(previous_day)
+                self._mark_unknown(previous_day, "restart_gap")
+            self._checkpoint_loaded = True
+        # A late acknowledgement may retire an exact head, but cannot restore
+        # trust after any intervening capture/permission/identity transition.
+        if (successful and not self._pending and not self._import_tail_pending
+                and key == self._cache_key(key[2], key[3])):
+            self._summary_cache = (key, dict(summary))
+
+    @staticmethod
+    def _unknown_summary(day: str) -> dict[str, Any]:
+        return {
+            "date": day, "today_import_topup_kwh": 0.0,
+            "today_highest_actual_import_price": None,
+            "import_cost_export_floor": None, "import_cost_floor_trusted": False,
+            "import_cost_floor_unknown": True, "import_history_complete": False,
+            "import_history_reason": "history_unavailable",
+        }
 
     def summary(self, day: str, *, source: str,
                 observed_at: datetime | None = None) -> dict[str, Any]:
@@ -304,15 +354,14 @@ class ImportTopupLedger:
         self._load_checkpoint(day)
         self._check_source(source, day)
         try:
-            result = dict(self.store.optimizer_import_topup_summary(day))
+            if self._deferred:
+                if self._summary_cache is None or self._summary_cache[0] != self._cache_key(day, source):
+                    return self._unknown_summary(day)
+                result = dict(self._summary_cache[1])
+            else:
+                result = dict(self.store.optimizer_import_topup_summary(day))
         except Exception:
-            return {
-                "date": day, "today_import_topup_kwh": 0.0,
-                "today_highest_actual_import_price": None,
-                "import_cost_export_floor": None, "import_cost_floor_trusted": False,
-                "import_cost_floor_unknown": True, "import_history_complete": False,
-                "import_history_reason": "history_unavailable",
-            }
+            return self._unknown_summary(day)
         pending = any(item.payload()["date"] == day for item in self._pending)
         reason = self._unknown_days.get(day)
         if reason is None and pending:
