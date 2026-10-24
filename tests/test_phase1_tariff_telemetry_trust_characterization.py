@@ -12,6 +12,7 @@ from app.optimizer import (
     MODE_CMD_DISCHARGE_PV,
     MODE_MAX_SELF,
 )
+from import_topup_coverage_helpers import seed_complete_import_history
 from haos49_characterization_helpers import Haos49CharacterizationCase, RecordingHA
 
 
@@ -342,23 +343,23 @@ class Phase1TariffTelemetryTrustCharacterizationTests(Haos49CharacterizationCase
             current_price=price,
             price_is_actual=True,
             daily_import_kwh=1.0,
+            daily_import_meter_value=1.0,
         )
         decision = Decision(import_limit=2.0)
-        optimizer._last_optimizer_import_daily_kwh = 0.0
-        optimizer._last_optimizer_import_track_at = now - timedelta(minutes=5)
+        seed_complete_import_history(optimizer, now - timedelta(minutes=5))
 
         with patch.object(
             optimizer._state_store,
-            "record_optimizer_import_topup",
-            wraps=optimizer._state_store.record_optimizer_import_topup,
+            "record_optimizer_import_interval",
+            wraps=optimizer._state_store.record_optimizer_import_interval,
         ) as record:
             optimizer._record_optimizer_import_topup(state, decision, now)
 
         self.assertEqual(
             (False, None),
             (
-                record.call_args.kwargs["price_trusted"],
-                record.call_args.kwargs["import_price"],
+                record.call_args.args[0]["price_trusted"],
+                record.call_args.args[0]["import_price"],
             ),
         )
 
@@ -539,10 +540,10 @@ class Phase1TariffTelemetryTrustCharacterizationTests(Haos49CharacterizationCase
             current_price=0.16,
             price_is_actual=True,
             daily_import_kwh=1.0,
+            daily_import_meter_value=1.0,
         )
         decision = Decision(import_limit=2.0)
-        optimizer._last_optimizer_import_daily_kwh = 0.0
-        optimizer._last_optimizer_import_track_at = now - timedelta(minutes=5)
+        seed_complete_import_history(optimizer, now - timedelta(minutes=5))
 
         optimizer._record_optimizer_import_topup(state, decision, now)
         summary = optimizer._state_store.optimizer_import_topup_summary("2026-01-15")

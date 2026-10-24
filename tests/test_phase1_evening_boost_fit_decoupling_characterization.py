@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,7 +15,10 @@ from app.optimizer import (
     MODE_MAX_SELF,
 )
 from app.routers.api import _coerce_config_value, _validate_config_value
-from haos49_characterization_helpers import Haos49CharacterizationCase
+from haos49_characterization_helpers import (
+    Haos49CharacterizationCase,
+    seed_complete_import_history,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +33,8 @@ class EveningBoostFitDecouplingCharacterizationTests(Haos49CharacterizationCase)
             evening_boost_min_feedin_price=minimum_fit,
             **overrides,
         )
+        optimizer._tz = timezone(self.EVENING.astimezone().utcoffset() or timedelta())
+        seed_complete_import_history(optimizer, self.EVENING)
         optimizer._evening_export_boost_active = lambda *args, **kwargs: True
         # This file isolates fit, ownership and downstream policy gates;
         # delayed reentry is exercised by its dedicated integration tests.

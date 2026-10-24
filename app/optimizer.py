@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 import logging
@@ -22,7 +23,7 @@ import math
 import os
 from time import monotonic
 from datetime import datetime, time, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings
@@ -34,6 +35,7 @@ from .forecast_utils import (
     forecast_entry_value,
 )
 from .ha_client import HAClient
+from .import_topup_ledger import ImportTopupLedger
 from .models import (
     BATTERY_EXPORT,
     Decision,
@@ -119,6 +121,22 @@ _TRIGGER_ENTITY_ATTRS = [
     "price_spike_sensor",
     "sigenergy_mode_select",
 ]
+
+# Identity-bearing settings whose old reports/request proof cannot cross activation.
+_CONFIG_OWNER_IDENTITY_ATTRS = (
+    "sigenergy_mode_select", "automated_option", "manual_option",
+    "full_export_option", "full_import_option", "full_import_pv_option",
+    "block_flow_option",
+)
+_CONFIG_IMPORT_ACCOUNTING_ATTRS = (
+    *_CONFIG_OWNER_IDENTITY_ATTRS, "daily_import_energy", "grid_import_power_sensor",
+    "price_sensor", "ha_control_switch", "ems_mode_select", "grid_import_limit",
+    "ha_url", "ha_token",
+)
+_CONFIG_EVIDENCE_IDENTITY_ATTRS = (
+    *_TRIGGER_ENTITY_ATTRS, *_CONFIG_IMPORT_ACCOUNTING_ATTRS,
+    "battery_power_sensor_invert",
+)
 
 _POWER_LIMIT_MAX_KW = 100.0
 # The four values used to derive instantaneous battery flow must describe the
@@ -517,6 +535,8 @@ class SigEnergyOptimizer:
         self._manual_mode_override: Optional[str] = None
         self._manual_mode_requested_at: Optional[float] = None
         self._last_observed_control_mode: Optional[str] = None
+        self._control_identity_activated_at: Optional[float] = None
+        self._configuration_holdoff_continuity = False
         # Recorded immediately before dispatch, after authority refresh. These
         # process-local boundaries are never substitutes for later HA reports.
         self._number_settlement_requests: dict[str, tuple[float, float, bool]] = {}
@@ -540,10 +560,11 @@ class SigEnergyOptimizer:
         self._last_tracked_export_kw: float = -999.0
         self._last_tracked_import_price: Optional[float] = None
         self._last_tracked_feedin_price: Optional[float] = None
-        self._last_optimizer_import_daily_kwh: Optional[float] = None
-        self._last_optimizer_import_track_at: Optional[datetime] = None
         db_path = os.environ.get("STATE_DB_PATH", "/data/optimizer_state.db")
         self._state_store = StateStore(db_path)
+        self._import_topup_ledger = ImportTopupLedger(
+            self._state_store, started_at=datetime.now(self._tz), source=self._import_topup_source(),
+        )
         self._earnings = EarningsService(self.ha, self.cfg, self._state_store, self._tz)
         self._decision_trace: deque[dict[str, Any]] = deque(maxlen=1000)
         # Serialize cycle apply and manual mode writes to avoid race-driven reverts.
@@ -611,6 +632,79 @@ class SigEnergyOptimizer:
     def refresh_config_time_warnings(self) -> None:
         self._config_time_warnings = self._validate_time_config()
         self._refresh_solar_provider_source()
+
+    @asynccontextmanager
+    async def configuration_transaction(self) -> AsyncIterator[None]:
+        """Activate settings only between complete automatic/manual transactions."""
+        async with self._control_lock:
+            before = {
+                name: getattr(self.cfg, name)
+                for name in _CONFIG_EVIDENCE_IDENTITY_ATTRS
+            }
+            try:
+                yield
+            finally:
+                changed = {
+                    name for name, value in before.items()
+                    if getattr(self.cfg, name) != value
+                }
+                if changed:
+                    self._invalidate_configuration_evidence(changed)
+
+    def invalidate_import_accounting(self, reason: str) -> None:
+        """Retire accounting proof at a control/source boundary, never control intent."""
+        self._import_topup_ledger.invalidate(
+            datetime.now(self._tz), reason, permission_unknown=True,
+        )
+
+    def _invalidate_configuration_evidence(self, changed: set[str]) -> None:
+        """Retire identity-bound proof without discarding operator/safety intent."""
+        if changed.intersection(_CONFIG_IMPORT_ACCOUNTING_ATTRS):
+            self.invalidate_import_accounting("configuration_import_identity_changed")
+        if changed.intersection(_CONFIG_OWNER_IDENTITY_ATTRS):
+            self._control_identity_activated_at = datetime.now(timezone.utc).timestamp()
+        self._number_settlement_requests.clear()
+        self._msc_baseline_established = False
+        if self._msc_transition is not None:
+            # Keep the pending close/MSC barrier; its old request proof is invalid.
+            self._msc_transition = _MscTransition()
+        self._last_observed_control_mode = None
+        if self._last_decision is not None:
+            self._configuration_holdoff_continuity = bool(
+                self._last_decision.standby_holdoff_active
+            )
+        # A later manual request must not inherit old entity bounds or telemetry.
+        self._last_state = None
+        self._last_decision = None
+        self._last_published_hvac_solar_permission_result = None
+        self._clear_solar_physical_relief()
+        self._solar_dip_proof = None
+        self._solar_dip_high_water = None
+        self._solar_dip_last_clock = None
+        self._solar_dip_recheck_at = None
+        self._reset_evening_boost_reentry("configuration_identity_changed")
+        if "consumed_power_sensor" in changed:
+            self._evening_boost_report_high_water = None
+            self._evening_boost_last_clock = None
+        if "ess_rated_charge_power_sensor" in changed:
+            self._last_hw_charge_cap_kw = None
+        if "ess_rated_discharge_power_sensor" in changed:
+            self._last_hw_discharge_cap_kw = None
+        if changed.intersection({"ess_rated_charge_power_sensor", "ess_max_charging_limit"}):
+            self._last_legacy_manual_charge_cap_kw = None
+        if changed.intersection({"ess_rated_discharge_power_sensor", "ess_max_discharging_limit"}):
+            self._last_legacy_manual_discharge_cap_kw = None
+        if "ha_control_switch" in changed:
+            self._last_ha_control_enable_attempt_at = None
+            self._last_ha_control_switch_warning_at = None
+            self._last_ha_control_switch_warning_key = None
+        # Keep this set object shared with the existing WebSocket client.
+        self._watch_entities.clear()
+        self.get_watch_entities()
+        try:
+            self.trigger_queue.put_nowait("__configuration_identity__")
+        except asyncio.QueueFull:
+            pass  # Existing queued work will read the newly activated settings.
 
     def _configured_solar_provider_source(self) -> tuple[str, str]:
         return (self.cfg.forecast_today_sensor, self.cfg.solcast_api_last_polled_sensor)
@@ -1433,12 +1527,21 @@ class SigEnergyOptimizer:
     async def _tick(self) -> None:
         async with self._control_lock:
             application_committed = False
+            application_attempted = False
             verified_evening_pending = False
             try:
                 prev_decision = self._last_decision
                 prev_state = self._last_state
                 state = await self._read_state()
                 self._last_state = state
+                # Price the measured interval under its prior applied permission
+                # before this cycle can authorize a new battery-export decision.
+                try:
+                    self._record_optimizer_import_topup(state, None, datetime.now(self._tz))
+                except Exception:
+                    if not self._import_topup_ledger.snapshot_retained:
+                        self._import_topup_ledger.invalidate(datetime.now(self._tz), "observation_capture_failed")
+                    logger.warning("Import-cost interval pending; incomplete history remains unknown")
                 decision = self._decide(state)
                 effective_mode = self._manual_mode_override or state.sigenergy_mode
                 if effective_mode not in {self.cfg.automated_option, ""}:
@@ -1446,6 +1549,7 @@ class SigEnergyOptimizer:
                 if decision.trace_gates.get("solar_surplus_dip_hold_active"):
                     self._solar_dip_recheck_at = decision.trace_values["solar_surplus_dip_hold_deadline_ts"]
                 try:
+                    application_attempted = True
                     application_result = await self._apply(state, decision)
                 except Exception:
                     self._record_application_trace(state, decision, application_raised=True)
@@ -1466,6 +1570,38 @@ class SigEnergyOptimizer:
                 if not decision.trace_gates.get("solar_surplus_dip_hold_active"):
                     self._solar_dip_recheck_at = None
                 application_committed = True
+                self._import_topup_ledger.begin_capture()
+                try:
+                    automatic_completed = bool(
+                        isinstance(application_result, _ActuatorApplicationResult)
+                        and application_result.automatic_application_completed
+                        and not application_result.fallback_attempted
+                    )
+                    manual_observed = bool(
+                        effective_mode in {
+                            self.cfg.manual_option, self.cfg.full_export_option,
+                            self.cfg.full_import_option, self.cfg.full_import_pv_option,
+                            self.cfg.block_flow_option,
+                        }
+                        and state.sigenergy_mode_observed and state.sigenergy_mode == effective_mode
+                        and self._observed_import_permission(state) is not None
+                    )
+                    if automatic_completed or manual_observed:
+                        # Manual imports retain their existing cost accounting;
+                        # this observes permission and never controls Manual.
+                        active = (decision.import_limit > 0.011 if automatic_completed
+                                  else bool(self._observed_import_permission(state)))
+                        self._import_topup_ledger.set_permission(
+                            now=datetime.now(self._tz), source=self._import_topup_source(),
+                            import_active=active,
+                        )
+                    else:
+                        # Generic success may only mean an OFF/authority pause.
+                        self._import_topup_ledger.invalidate(datetime.now(self._tz), "application_not_confirmed")
+                except Exception:
+                    if not self._import_topup_ledger.snapshot_retained:
+                        self._import_topup_ledger.invalidate(datetime.now(self._tz), "permission_accounting_unavailable")
+                    logger.warning("Import permission checkpoint pending; incomplete history remains unknown")
                 permission = self._evaluate_hvac_solar_permission(
                     state,
                     decision,
@@ -1479,12 +1615,16 @@ class SigEnergyOptimizer:
                 self._accumulate_history(state, decision)
                 self._record_price_tracking(state, decision)
             except asyncio.CancelledError:
+                if application_attempted and not application_committed:
+                    self._import_topup_ledger.invalidate(datetime.now(self._tz), "application_not_confirmed")
                 self._clear_solar_physical_relief()
                 self._solar_dip_proof = None
                 self._reset_evening_boost_reentry("cycle_cancelled")
                 raise
             except Exception:
                 if not application_committed:
+                    if application_attempted:
+                        self._import_topup_ledger.invalidate(datetime.now(self._tz), "application_not_confirmed")
                     if not verified_evening_pending:
                         self._reset_evening_boost_reentry("application_or_cycle_failed")
                     self._clear_solar_physical_relief()
@@ -1815,8 +1955,6 @@ class SigEnergyOptimizer:
 
     def _record_price_tracking(self, s: SolarState, d: Decision | None = None) -> None:
         now = datetime.now(self._tz)
-        if d is not None:
-            self._record_optimizer_import_topup(s, d, now)
         now_block = int(now.timestamp()) // 300
         import_kw = max(0.0, float(s.grid_import_power_kw or 0.0))
         export_kw = max(0.0, float(s.grid_export_power_kw or 0.0))
@@ -1853,45 +1991,31 @@ class SigEnergyOptimizer:
         if now.hour == 0 and now.minute < 10:
             self._state_store.purge_old_price_tracking(retain_days=60)
 
-    def _record_optimizer_import_topup(self, s: SolarState, d: Decision, now: datetime) -> None:
-        near_zero = 0.011
-        current_daily_import_kwh = max(0.0, float(s.daily_import_kwh or 0.0))
-        import_active = d.import_limit > near_zero
+    def _import_topup_source(self) -> str:
+        return "|".join((self.cfg.daily_import_energy, self.cfg.grid_import_power_sensor, str(self._tz)))
 
-        if not import_active:
-            self._last_optimizer_import_daily_kwh = current_daily_import_kwh
-            self._last_optimizer_import_track_at = now
-            return
-
-        previous_daily_import_kwh = self._last_optimizer_import_daily_kwh
-        previous_track_at = self._last_optimizer_import_track_at
-        import_kwh = 0.0
-
-        if previous_daily_import_kwh is not None:
-            import_kwh = max(0.0, current_daily_import_kwh - previous_daily_import_kwh)
-        if import_kwh <= 0.0 and previous_track_at is not None and s.grid_import_power_kw is not None:
-            elapsed_h = max(0.0, min((now - previous_track_at).total_seconds(), 300.0)) / 3600.0
-            import_kwh = max(0.0, float(s.grid_import_power_kw or 0.0)) * elapsed_h
-
-        self._last_optimizer_import_daily_kwh = current_daily_import_kwh
-        self._last_optimizer_import_track_at = now
-
+    @staticmethod
+    def _observed_import_permission(s: SolarState) -> Optional[bool]:
+        if not (s.sigenergy_mode_observed and s.current_import_limit_observed):
+            return None
         try:
-            import_price_candidate = float(s.current_price)
+            limit = float(s.current_import_limit)
         except (TypeError, ValueError, OverflowError):
-            import_price_candidate = None
-        price_trusted = bool(
-            s.price_is_actual
-            and import_price_candidate is not None
-            and math.isfinite(import_price_candidate)
-        )
-        import_price = import_price_candidate if price_trusted else None
-        self._state_store.record_optimizer_import_topup(
-            date=now.date().isoformat(),
-            ts=now.isoformat(timespec="seconds"),
-            import_kwh=import_kwh,
-            import_price=import_price,
-            price_trusted=price_trusted,
+            return None
+        return limit > 0.011 if math.isfinite(limit) and limit >= 0 else None
+
+    def _record_optimizer_import_topup(self, s: SolarState, d: Decision | None, now: datetime) -> None:
+        self._import_topup_ledger.begin_capture()
+        if now.utcoffset() is None:
+            now = datetime.fromtimestamp(now.timestamp(), tz=self._tz)
+        observed_import_active = self._observed_import_permission(s) is True
+        self._import_topup_ledger.record(
+            now=now, source=self._import_topup_source(), daily_import_kwh=s.daily_import_meter_value,
+            grid_import_kw=s.grid_import_power_kw, import_price=s.current_price,
+            price_trusted=s.price_is_actual,
+            import_active=((self._import_topup_ledger.import_active or observed_import_active)
+                           if d is None else d.import_limit > 0.011),
+            permission_known=(self._import_topup_ledger.permission_known if d is None else True),
         )
 
     def price_tracking_events(self, date: str | None = None, limit: int = 2000) -> list[dict[str, Any]]:
@@ -2314,7 +2438,10 @@ class SigEnergyOptimizer:
                 if not (
                     changed is not None and updated is not None
                     and observation.observed_at_ts is not None
-                    and self._manual_mode_requested_at < changed.timestamp()
+                    and max(
+                        self._manual_mode_requested_at,
+                        self._control_identity_activated_at or self._manual_mode_requested_at,
+                    ) < changed.timestamp()
                     <= updated.timestamp() <= observation.observed_at_ts
                 ):
                     return
@@ -3240,6 +3367,7 @@ class SigEnergyOptimizer:
         # ---- Daily totals / session tracking --------------------------
         s.daily_export_kwh = _fv(cfg.daily_export_energy)
         s.daily_import_kwh = _fv(cfg.daily_import_energy)
+        s.daily_import_meter_value = _fv(cfg.daily_import_energy, None)
         s.daily_load_kwh = _fv(cfg.daily_load_energy)
         s.daily_pv_kwh = _fv(cfg.daily_pv_energy)
         s.daily_battery_charge_kwh = _fv(cfg.daily_battery_charge_energy)
@@ -3720,7 +3848,11 @@ class SigEnergyOptimizer:
         d.standby_holdoff_active = standby_holdoff_active
         
         # Store holdoff floor at entry to prevent drift from forecast updates mid-holdoff
-        prev_holdoff = self._last_decision and self._last_decision.standby_holdoff_active
+        prev_holdoff = (
+            self._last_decision.standby_holdoff_active
+            if self._last_decision is not None
+            else self._configuration_holdoff_continuity
+        )
         if standby_holdoff_active and not prev_holdoff:
             # Holdoff just became active — snapshot the SoC floor
             soc_required = self._battery_soc_required_to_sunrise(s)
@@ -3729,6 +3861,7 @@ class SigEnergyOptimizer:
         elif not standby_holdoff_active:
             # Holdoff expired — clear the stored floor
             self._holdoff_entry_floor = None
+            self._configuration_holdoff_continuity = False
 
         # ---- Evening boost ------------------------------------------
         now_local_day = datetime.fromtimestamp(now_ts, tz=self._tz).date()
@@ -7982,8 +8115,14 @@ class SigEnergyOptimizer:
         """Push EMS settings for a manual mode selection."""
         cfg = self.cfg
         ha = self.ha
+        requested_identity = tuple(getattr(cfg, name) for name in _CONFIG_OWNER_IDENTITY_ATTRS)
 
         async with self._control_lock:
+            if requested_identity != tuple(getattr(cfg, name) for name in _CONFIG_OWNER_IDENTITY_ATTRS):
+                # Renamed or swapped labels must never reinterpret a queued choice.
+                raise RuntimeError("Mode configuration changed while request was waiting; retry the selection")
+            # Direct requests can open and close import entirely between ticks.
+            self.invalidate_import_accounting("direct_operator_mode_boundary")
             self._reset_evening_boost_reentry("operator_mode_request")
             # Update the input_select in HA
             requested_at = datetime.now(timezone.utc).timestamp()
@@ -8553,8 +8692,9 @@ class SigEnergyOptimizer:
         return grid_export_kw, "raw_grid_export_field"
 
     def _optimizer_import_topup_summary_today(self) -> dict[str, Any]:
-        return self._state_store.optimizer_import_topup_summary(
-            datetime.now(self._tz).date().isoformat()
+        now = datetime.now(self._tz)
+        return self._import_topup_ledger.summary(
+            now.date().isoformat(), source=self._import_topup_source(), observed_at=now,
         )
 
     def _export_value_gate_advisory(

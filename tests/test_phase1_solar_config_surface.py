@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -38,8 +39,16 @@ class SolarFillDeadlineConfigTests(unittest.TestCase):
 
     @staticmethod
     def request(cfg: Settings) -> SimpleNamespace:
+        control_lock = asyncio.Lock()
+
+        @asynccontextmanager
+        async def configuration_transaction():
+            async with control_lock:
+                yield
+
         optimizer = SimpleNamespace(
             cfg=cfg,
+            configuration_transaction=configuration_transaction,
             record_audit_event=lambda **event: None,
             refresh_config_time_warnings=lambda: None,
         )

@@ -206,6 +206,8 @@ class SolarState:
     # Session tracking
     daily_export_kwh: float = 0.0
     daily_import_kwh: float = 0.0
+    # Ledger input keeps unavailable data distinct from the UI zero default.
+    daily_import_meter_value: Optional[float] = None
     daily_load_kwh: float = 0.0
     daily_pv_kwh: float = 0.0
     daily_battery_charge_kwh: float = 0.0

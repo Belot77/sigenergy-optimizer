@@ -52,6 +52,40 @@ class StateStore:
             )
             self._conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS optimizer_import_interval (
+                  event_id TEXT PRIMARY KEY,
+                  date TEXT NOT NULL,
+                  ts TEXT NOT NULL,
+                  import_kwh REAL NOT NULL,
+                  import_price REAL,
+                  price_trusted INTEGER NOT NULL,
+                  payload_json TEXT NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_oii_date ON optimizer_import_interval(date)"
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS optimizer_import_checkpoint (
+                  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                  event_id TEXT NOT NULL,
+                  checkpoint_json TEXT NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS optimizer_import_coverage (
+                  date TEXT PRIMARY KEY,
+                  unknown INTEGER NOT NULL,
+                  reason TEXT NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS audit_log (
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   ts TEXT NOT NULL,
@@ -179,33 +213,131 @@ class StateStore:
         stored_price_trusted = bool(price_trusted and stored_import_price is not None)
 
         with self._lock:
-            self._conn.execute(
-                """
-                INSERT INTO optimizer_import_topup
-                  (date, ts, import_kwh, import_price, price_trusted)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    date,
-                    ts,
-                    max(0.0, float(import_kwh or 0.0)),
-                    stored_import_price,
-                    1 if stored_price_trusted else 0,
-                ),
-            )
-            self._conn.commit()
+            try:
+                self._conn.execute(
+                    """
+                    INSERT INTO optimizer_import_topup
+                      (date, ts, import_kwh, import_price, price_trusted)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        date,
+                        ts,
+                        max(0.0, float(import_kwh or 0.0)),
+                        stored_import_price,
+                        1 if stored_price_trusted else 0,
+                    ),
+                )
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
+
+    def record_optimizer_import_interval(self, event: dict[str, Any]) -> None:
+        """Atomically append one immutable interval and advance its coverage/checkpoint."""
+        # Freeze the caller's payload before acquiring the lock. Reject non-finite
+        # JSON numbers rather than silently changing a retried interval's evidence.
+        payload_json = json.dumps(event, separators=(",", ":"), sort_keys=True, allow_nan=False)
+        payload = json.loads(payload_json)
+        event_id = payload["event_id"]
+        import_kwh = payload["import_kwh"]
+        import_price = payload["import_price"]
+        if not isinstance(event_id, str) or not event_id:
+            raise ValueError("Interval event_id must be a nonempty string")
+        if isinstance(import_kwh, bool) or not isinstance(import_kwh, (int, float)) or import_kwh < 0:
+            raise ValueError("Interval import_kwh must be finite and nonnegative")
+        if import_price is not None and (
+            isinstance(import_price, bool) or not isinstance(import_price, (int, float))
+        ):
+            raise ValueError("Interval import_price must be finite or None")
+        if not isinstance(payload["price_trusted"], bool):
+            raise ValueError("Interval price_trusted must be boolean")
+        if payload["price_trusted"] and import_price is None:
+            raise ValueError("Trusted interval requires an import price")
+        checkpoint_json = json.dumps(
+            payload["checkpoint"], separators=(",", ":"), sort_keys=True, allow_nan=False,
+        )
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN")
+                existing = self._conn.execute(
+                    "SELECT payload_json FROM optimizer_import_interval WHERE event_id = ?",
+                    (event_id,),
+                ).fetchone()
+                if existing is not None:
+                    if existing[0] != payload_json:
+                        raise ValueError("Interval event_id was reused with a different payload")
+                    # An acknowledged replay must not rewind a later checkpoint.
+                    self._conn.rollback()
+                    return
+                self._conn.execute(
+                    """INSERT INTO optimizer_import_interval
+                       (event_id, date, ts, import_kwh, import_price, price_trusted, payload_json)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (event_id, payload["date"], payload["ts"], import_kwh,
+                     import_price, int(payload["price_trusted"]), payload_json),
+                )
+                self._conn.execute(
+                    """INSERT INTO optimizer_import_checkpoint (singleton, event_id, checkpoint_json)
+                       VALUES (1, ?, ?)
+                       ON CONFLICT(singleton) DO UPDATE SET
+                         event_id = excluded.event_id, checkpoint_json = excluded.checkpoint_json""",
+                    (event_id, checkpoint_json),
+                )
+                for day, reason in payload["unknown_days"].items():
+                    self._conn.execute(
+                        """INSERT INTO optimizer_import_coverage (date, unknown, reason)
+                           VALUES (?, 1, ?)
+                           ON CONFLICT(date) DO UPDATE SET unknown = 1,
+                             reason = CASE WHEN optimizer_import_coverage.unknown = 1
+                               THEN optimizer_import_coverage.reason ELSE excluded.reason END""",
+                        (day, reason),
+                    )
+                for day in payload["complete_days"]:
+                    self._conn.execute(
+                        """INSERT OR IGNORE INTO optimizer_import_coverage (date, unknown, reason)
+                           VALUES (?, 0, 'continuous_coverage')""",
+                        (day,),
+                    )
+                if payload["date"] not in payload["complete_days"]:
+                    self._conn.execute(
+                        """INSERT OR IGNORE INTO optimizer_import_coverage (date, unknown, reason)
+                           VALUES (?, 1, 'coverage_not_proven')""",
+                        (payload["date"],),
+                    )
+                self._conn.commit()
+            except BaseException:
+                # A commit that succeeded before raising is reconciled by the
+                # stable event ID on retry; rollback also removes precommit rows.
+                self._conn.rollback()
+                raise
+
+    def get_optimizer_import_checkpoint(self) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT event_id, checkpoint_json FROM optimizer_import_checkpoint WHERE singleton = 1"
+            ).fetchone()
+        if row is None:
+            return None
+        checkpoint = json.loads(row[1])
+        return {**checkpoint, "event_id": row[0]}
 
     def optimizer_import_topup_summary(self, date: str) -> dict[str, Any]:
         with self._lock:
             rows = self._conn.execute(
                 """
                 SELECT import_kwh, import_price, price_trusted
-                FROM optimizer_import_topup
-                WHERE date = ?
-                ORDER BY ts ASC
+                FROM optimizer_import_topup WHERE date = ?
+                UNION ALL
+                SELECT import_kwh, import_price, price_trusted
+                FROM optimizer_import_interval WHERE date = ?
                 """,
-                (date,),
+                (date, date),
             ).fetchall()
+            coverage = self._conn.execute(
+                "SELECT unknown, reason FROM optimizer_import_coverage WHERE date = ?",
+                (date,),
+            ).fetchone()
 
         total_import_kwh = 0.0
         highest_actual_import_price: float | None = None
@@ -236,7 +368,10 @@ class StateStore:
             if highest_actual_import_price is None or import_price > highest_actual_import_price:
                 highest_actual_import_price = import_price
 
-        import_cost_floor_unknown = bool(has_untrusted_import)
+        import_history_complete = bool(coverage is not None and not coverage[0])
+        import_cost_floor_unknown = bool(
+            has_untrusted_import or (coverage is not None and coverage[0])
+        )
         import_cost_floor_trusted = not import_cost_floor_unknown
         return {
             "date": date,
@@ -245,6 +380,8 @@ class StateStore:
             "import_cost_export_floor": highest_actual_import_price,
             "import_cost_floor_trusted": import_cost_floor_trusted,
             "import_cost_floor_unknown": import_cost_floor_unknown,
+            "import_history_complete": import_history_complete,
+            "import_history_reason": coverage[1] if coverage is not None else "coverage_not_recorded",
         }
 
     def daily_earnings_summary(self, date: str) -> dict[str, Any]:
