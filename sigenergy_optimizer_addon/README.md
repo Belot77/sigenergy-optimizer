@@ -20,15 +20,17 @@ This folder contains a Home Assistant OS Add-on package for SigEnergy Optimizer.
 - `ui_api_key`: Optional dashboard/API key
 - `extra_env`: Optional extra env lines (`KEY=value`), one per line
 
-The reviewed O15/O17 source candidate includes this O17 ingress behavior:
+The local .78 release candidate includes this merged O17 ingress behavior:
 normal ingress retains HA authentication without another login or mandatory UI
 key. The API-key exemption requires Supervisor transport peer `172.30.32.2` and
 `X-Ingress-Path`; the launcher disables proxy-header rewriting. Custom proxies and
 direct API clients use the existing API-key path. Public status/WebSocket and
 optional-read policies are unchanged, so this does not secure an independently
 exposed listener. Combined validation passed 1,355 tests / 1,305 subtests; independent source/test/documentation
-review is GO, with no High/Medium blocker. This is a pre-commit
-source checkpoint, not a release or installation. See
+review is GO, with no High/Medium blocker. PR #37 merged this source; .78
+publication approval remains pending and .77 remains latest published. Installation
+and physical acceptance remain unverified. See
+[the .78 candidate plan](../docs/HAOS78_RELEASE_CANDIDATE.md) and
 [the ingress trust component record](../docs/INGRESS_TRUST_BOUNDARY.md).
 
 The add-on keeps runtime config in `/data/.env` inside Home Assistant add-on storage.

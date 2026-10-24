@@ -1,8 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Reviewed O15/O17 source candidate
+## Local .78 release candidate (not published)
 
-`fix/storage-ingress-integration` combines bounded runtime database execution
+The .78 candidate packages the O15/O17 source merged by [PR #37](https://github.com/Belot77/sigenergy-optimizer/pull/37).
+It combines bounded runtime database execution
 with transport-peer-bound HA ingress authentication. Storage failures retain
 unknown-cost protections; existing PV-only and Manual/Force rules remain separate.
 Normal HA ingress keeps its HA login without another key requirement. The ingress
@@ -11,10 +12,17 @@ launchers disable proxy-header rewriting. Public read/status policies remain
 unchanged, and custom proxies use the existing API-key route.
 
 The on-disk combined suite passed **1,355 tests / 1,305 subtests**, zero failures;
-focused checks passed 126 / 8. Independent source/test/documentation review is GO, with no High/Medium blocker. This is the recorded pre-commit verification checkpoint. One
-commit, branch push and draft PR are approved after final GO; Git/PR record the
-resulting identity. This source is not published or installed, and physical
-acceptance remains unverified. A timed-out accepted write may still complete;
+focused checks passed 126 / 8. Independent source/test/documentation review is GO,
+with no High/Medium blocker. PR #37 merged reviewed head
+`6deb930da9cfc8e03724405a1bb42f95937f3f25` into main at
+`e12da76d9c11e6d92286ecaf9c98a7c3497e0872` with exactly the tested tree.
+Local release branch `release/2.3.67-haos78` changes only five version markers
+and release/status documentation. Publication approval remains pending; .77 is
+still the latest published release. All 16 release/source-pinning checks passed
+in 9.58 seconds; normalized source comparison confirmed exactly five marker changes.
+Installation and physical acceptance remain unverified.
+See [the .78 candidate plan](docs/HAOS78_RELEASE_CANDIDATE.md).
+A timed-out accepted write may still complete;
 refresh its state before retrying. Threads cannot interrupt wedged OS I/O.
 See [storage boundaries](docs/STORAGE_EXECUTION_ISOLATION.md) and
 [ingress boundaries](docs/INGRESS_TRUST_BOUNDARY.md).

@@ -4,7 +4,51 @@ Last consolidated: 2026-10-24
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
-## Verified O15/O17 integration source checkpoint - 24 October 2026
+## Local .78 release preparation and merged O15/O17 source - 24 October 2026
+
+[PR #37](https://github.com/Belot77/sigenergy-optimizer/pull/37) normally merged
+reviewed head `6deb930da9cfc8e03724405a1bb42f95937f3f25` into main at
+`e12da76d9c11e6d92286ecaf9c98a7c3497e0872` on 24 October at 07:40:46 UTC
+(18:40:46 Sydney). Both source trees are
+`5a63925bc07dc6ccf93a3b9d5f4f5b2e57d0b2b7`, exactly the tested combined tree.
+
+The isolated workspace `C:\Projects\sigenergy_optimizer-release-haos78`,
+branch `release/2.3.67-haos78`, starts from that merge. The local
+`2.3.67-haos78` candidate changes only the five established version markers
+and release/status documentation. No new control, storage, authentication or
+trace logic is introduced during release preparation. All 16 release-marker/source-pinning
+checks passed in 9.58 seconds. Normalized comparison confirms exactly five single-marker
+substitutions and seven targeted documents, with no other source/test/workflow drift.
+Independent release-metadata review is **GO**, with no High/Medium blocker;
+the reviewer did not rerun tests or access HA.
+
+Retained source validation: **1,355 tests / 1,305 subtests passed**, zero failures,
+206 existing warnings, 232.02 seconds; focused checks passed 126 / 8
+(202 warnings, 13.54 seconds). Independent combined source/test/documentation
+review was GO with no High/Medium blocker. These are the existing merged-source
+results, not a new full-suite run or physical acceptance.
+
+The source merge was separately approved and completed. Local release preparation
+is now authorized; commit, push, tag, image publication, metadata merge and GitHub
+Release remain pending separate publication approval. Published .77 remains
+current. No installation, live HA access, settings change or Boost enablement is
+part of this preparation. Original unfinished worktrees remain preserved.
+
+O15 keeps slow/failed/unconfirmed accounting evidence unknown, with bounded worker
+admission and immutable retries. Accepted mutations may finish after timeout;
+threads cannot interrupt wedged OS I/O. O17 trusts the actual Supervisor peer
+`172.30.32.2` plus `X-Ingress-Path` with proxy rewriting disabled.
+Normal HA login and existing key/read/status policies retain their boundaries;
+custom proxies use the existing API-key route. Ordinary runtime Logs availability
+and HDD/MSC causation are not established as fixed by these changes.
+
+The operator reported .76 installed after replacement-SSD restoration on 24 October;
+last full supplied startup/source proof remains .75. The fresh trace sample is
+partial persistence evidence without runtime identity or another-restart proof.
+O5 policy, O11 parked follow-up and applicable physical acceptance gates remain open.
+See [the .78 candidate, publication order and acceptance plan](HAOS78_RELEASE_CANDIDATE.md).
+
+## Historical O15/O17 pre-commit verification checkpoint - 24 October 2026
 
 Workspace `C:\Projects\sigenergy_optimizer-storage-ingress`, branch
 `fix/storage-ingress-integration`, based on `df5c64c04dac67885270bfa15be89db6a6dc2d0d`.
