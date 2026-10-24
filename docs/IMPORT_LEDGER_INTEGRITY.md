@@ -1,10 +1,10 @@
 # O16 import-cost ledger integrity
 
-Status: O16 candidate integrated into the approved combined .77 workspace, `C:\Projects\sigenergy_optimizer-release-haos77`, branch `fix/combined-safety-trace-recovery`, based on `e387010b83f7b017460870b1b456025f49f7e0a5`. This document retains the separately reviewed O16 behavior and production hashes. The combined candidate is not yet committed, published or installed; installation remains the operator's later action. No live settings action is included.
+Status: published in **2.3.66-haos77**, tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`. O14/O16 integration and all 15 accounting-boundary regressions are complete; combined full validation passed 1,275 tests / 1,305 subtests. Installation remains the operator action. See [publication/source evidence](HAOS77_RELEASE_CANDIDATE.md).
 
 ## Problem and resulting behavior
 
-The combined O14/O16 review found that configuration identity changes can hide ForceImport→BlockFlow→Automated or ESS 4→0 boundaries, and an A→B→A cycle between accounting captures could otherwise preserve stale permission. The combined candidate adds accounting-only invalidation at actual relevant identity activation and accepted validated direct Manual/ESS boundaries under the existing lock; permission can remain known-invalid across midnight. The resulting safety tradeoff is that source, owner or direct-control changes can pause applicable automatic battery sales for the affected day until a new known-inactive covered day. Operator targets and Manual export exemption remain unchanged. Boundary tests and final review are still in progress.
+The combined O14/O16 review found that configuration identity changes can hide ForceImport→BlockFlow→Automated or ESS 4→0 boundaries, and an A→B→A cycle between accounting captures could otherwise preserve stale permission. The combined candidate adds accounting-only invalidation at actual relevant identity activation and accepted validated direct Manual/ESS boundaries under the existing lock; permission evidence remains unproven across midnight. The resulting safety tradeoff is that source, owner or direct-control changes can pause applicable automatic battery sales for the affected day until a new known-inactive covered day. Operator targets and Manual export exemption remain unchanged. All 15 boundary tests and final independent review passed; no operator targets were changed.
 
 A failed legacy insert advanced the in-memory measurement checkpoint. Later capture could omit the failed interval or assign its energy a later tariff. A commit whose acknowledgement was lost could be duplicated by a blind retry. Synthetic 1 kWh at 40¢ plus 1 kWh at 5¢ should retain a 40¢ floor; the failed-insert baseline instead retained only 5¢ and allowed a 3.5 kW battery-export decision at 30¢. This demonstrates an offline evidence/control defect, not physical export, actual financial loss or HDD causation.
 
@@ -48,11 +48,11 @@ Before any separately authorized installation, verify source identity and an app
 2. Offline dry-run: retain deterministic fault/retry and decision regressions. Do not inject faults, delete rows or fabricate complete coverage on a live system.
 3. Separately authorized supervised live acceptance: compare fresh meter/tariff evidence, coverage, policy ownership and observed application/settlement. Check that an unknown history prevents applicable automatic battery sales and that independently qualified PV-only/manual behavior remains separate. Check a natural inactive midnight boundary when available; do not alter settings to manufacture one.
 
-The original stale-archive/MSC investigation remains parked and its cause, including HDD causation, is unproven; O10 clock-recovery engineering is reopened in the approved .77 candidate. O11, O5 reserve-policy decisions and existing Phase 1/2 physical-evidence gates remain unchanged. Latest published release remains `.76`. The operator reports .76 installed on 24 October, while the latest supplied full installed proof remains `.75`. Local tests do not establish installation identity, physical operation or unattended Boost readiness.
+The original stale-archive/MSC investigation remains parked and its cause, including HDD causation, is unproven; O10 clock recovery is corrected in published .77; physical archive recovery remains unverified. O11, O5 reserve-policy decisions and existing Phase 1/2 physical-evidence gates remain unchanged. Latest published release is `.77`. The operator reports .76 installed on 24 October, while the latest supplied full installed proof remains `.75`. Local tests do not establish installation identity, physical operation or unattended Boost readiness.
 
-## Reviewed production identity
+## Historical standalone O16 reviewed identity
 
-Independent source/test/documentation review found no High/Medium blocker. The reviewer inspected source and tests but did not execute them. These SHA-256 values identify the reviewed local production bytes; they are not commit IDs or release/image identities.
+These hashes identify the original standalone O16 candidate; O14 integration, boundary hardening and release metadata changed some combined files. Current release bytes are verified in HAOS77_RELEASE_CANDIDATE.md. Independent source/test/documentation review found no High/Medium blocker. The reviewer inspected source and tests but did not execute them. These SHA-256 values identify the reviewed local production bytes; they are not commit IDs or release/image identities.
 
 | File | SHA-256 |
 | --- | --- |
