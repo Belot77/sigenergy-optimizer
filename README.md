@@ -1,10 +1,12 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Current published release: 2.3.65-haos76
+## Current published release: 2.3.66-haos77
 
-Published 23 October 2026 at 09:12:46 Sydney from tag/source `e70d9ff016a546615367b6d69f4ac4602da7b23c` ([GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.65-haos76)). The verified multi-architecture OCI index is `sha256:b7df9f21fce7ef14e7b4f602235486e17b35b710907656dd0b43e796889a6e9a`; embedded source and application files were verified against the tag. This confirms publication, not physical acceptance. The operator reported .76 installed on 24 October; the latest full startup/source proof remains .75 on 21 October. Boost remains subject to its existing supervised gate. See [publication receipt and remaining gates](docs/HAOS76_RELEASE_CANDIDATE.md).
+Published **2.3.66-haos77** on 24 October 2026 at 01:54:00 UTC (12:54:00 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.66-haos77). Tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`, tree `33d9b94399f87d27baf787a59403861988182ce9`. Source PR #34 merged at `b4377de9f38d1c305c23a0b1dca9cb509afc1a9f`; metadata PR #35 merged at `81c2752c4e031bb9786ec0d00f1dca4e22c59de9` with exactly the tagged tree.
 
-Next candidate: the user approved completion of a combined O14 configuration-activation, O16 import-ledger, and O10 clock-recovery release, planned as `2.3.66-haos77`. Final combined verification passed 1,275 tests / 1,305 subtests; independent review found no High/Medium blocker. Trace recovery corroborates UTC and preserves historical bytes before resuming persistence. See [recovery requirements and retained-history limits](docs/TRACE_CLOCK_RECOVERY.md). Reviewed source merged through [PR #34](https://github.com/Belot77/sigenergy-optimizer/pull/34); .77 metadata is in preparation. No .77 tag, build or release exists yet, and installation is left to the operator. See [the candidate plan and safety gates](docs/HAOS77_RELEASE_CANDIDATE.md). O16 unknown history may pause applicable automatic battery sales; read its [behavior and rollback limits](docs/IMPORT_LEDGER_INTEGRITY.md) before any later installation.
+Includes configuration transaction safety, import-cost ledger integrity and trace clock recovery. Both architecture images and exact source bytes are verified; 1,275 tests / 1,305 subtests and all 16 release checks passed. [Publication receipt, upgrade and rollback notes](docs/HAOS77_RELEASE_CANDIDATE.md).
+
+Install through the normal Home Assistant update flow using your backup/restore precautions. Trace recovery can take a normal 15-minute persistence interval when its HTTPS time checks pass. Unknown import-cost history may pause applicable automatic battery sales; independently qualified PV-only and Manual/Force behavior remain separate. Installation and physical acceptance remain operator actions.
 
 This guide is for Home Assistant OS users running the SigEnergy Optimizer as a Home Assistant Add-on.
 

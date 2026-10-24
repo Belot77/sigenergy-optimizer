@@ -1,6 +1,6 @@
 # Decision trace clock recovery
 
-Local candidate on `fix/trace-clock-recovery`, based on `e387010b83f7b017460870b1b456025f49f7e0a5`. This changes passive diagnostics only. It does not change optimizer decisions, HA services, settlement clocks, settings, or the system clock. Publication, installation and live acceptance require their separate evidence.
+Published in **2.3.66-haos77**, tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`; developed and reviewed on `fix/trace-clock-recovery` from `e387010b83f7b017460870b1b456025f49f7e0a5`. Passive diagnostics only: no optimizer decisions, HA services, settlement/system clocks or live settings changed. Installation and physical acceptance remain operator actions. See [the publication receipt](HAOS77_RELEASE_CANDIDATE.md).
 
 ## Failure and safe recovery
 
