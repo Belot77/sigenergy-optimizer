@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased - approved combined .77 safety and clock-recovery candidate - 2026-10-24
+## 2.3.66-haos77 - release candidate - 2026-10-24
 
 - Combine O14 configuration activation under one authority/control transaction with O16 import-ledger integrity: preserve captured tariff/trust evidence through exact retries, atomically persist intervals/checkpoints/coverage, and fail closed when history remains unknown. Existing Manual/Force and independently qualified PV-only semantics remain separate.
 - Repair O10 trace clock recovery: corroborate re-anchoring with two fixed HTTPS time sources through a worker-only, hard-bounded subprocess (including DNS); preserve old trace segments and prior status in an immutable atomic snapshot before allowing normal active 24-hour pruning. No optimizer control rule changes. If the snapshot cannot complete within the disk budget, retain the old evidence and keep the clock guard closed; do not delete it automatically.
