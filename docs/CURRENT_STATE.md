@@ -4,7 +4,49 @@ Last consolidated: 2026-10-24
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
-## Local .78 release preparation and merged O15/O17 source - 24 October 2026
+## Current .78 publication and verification - 24 October 2026
+
+Published **2.3.67-haos78** on 24 October at 07:57:03 UTC (18:57:03 Sydney):
+[GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.67-haos78).
+Tag/container source `3ccf99cc69a4586715aadcbdd2f1282aeea77bf0`;
+tree `2542e3600ef3280f1dd166953804f708f8b1137d`.
+[Metadata PR #38](https://github.com/Belot77/sigenergy-optimizer/pull/38) normally
+merged at `5b84d7f976e9d9db07fbeefd98aa90089a2f40be` with exactly the tag tree.
+It packages O15/O17 source PR #37, merged at `e12da76d9c11e6d92286ecaf9c98a7c3497e0872`.
+
+[Actions run 40075754355](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40075754355)
+succeeded for the exact tag. Version/latest OCI index:
+`sha256:35292feb279a4b33e4c86f5482d690a9704c91d7178038b115c3bc434ead991a`.
+Both amd64/arm64 labels, all 22 compressed layers and uncompressed diff IDs,
+the source pin and twelve application/launcher files match exact tag bytes.
+The thirteen-file fingerprint (sorted absolute image path + NUL + bytes + NUL) is
+`sha256:b84b39d53f7a6e9581d49d4a77d3b2a9643b1bf704f1edb825ef1e734a5fc9a1`.
+The immutable .77 version index remains
+`sha256:0a743b4f32c0df7cd87d387f8870435d71ee5330f11c77999305cd665dd9e883`.
+Corrected complete image proof passed; independent helper review was GO.
+
+Retained merged-source suite: **1,355 tests / 1,305 subtests passed**, zero failures,
+206 warnings, 232.02 seconds; focused 126 / 8. All 16 release/source-pinning
+checks passed in 9.58 seconds. Independent source and metadata review were GO.
+No full-suite repeat was run for marker/docs-only preparation.
+
+O15 isolates production SQLite work while retaining bounded admission, immutable
+accounting retries and unknown-cost protections. O17 binds the ingress exemption
+to the actual Supervisor peer plus `X-Ingress-Path`, with proxy rewriting
+disabled. Existing HA login, API-key/read/status policy, MSC settlement, limits
+and Manual/Force boundaries remain intact. Accepted writes may finish after
+timeout; worker threads cannot interrupt wedged OS I/O. Custom proxies use the
+existing key path. No ordinary runtime Logs repair or HDD/MSC cause is established.
+
+Publication and receipt documentation are authorized; installation and live
+settings changes remain separate operator actions. The operator reported .76
+installed after SSD restoration on 24 October; latest full supplied startup/source
+proof remains .75. Fresh trace evidence is partial persistence proof only.
+O5 policy, O11 parked follow-up and applicable live/Boost acceptance gates remain
+open. Original unfinished worktrees and protected data remain preserved.
+See [the complete .78 receipt and acceptance notes](HAOS78_RELEASE_CANDIDATE.md).
+
+## Historical .78 preparation checkpoint - superseded by publication
 
 [PR #37](https://github.com/Belot77/sigenergy-optimizer/pull/37) normally merged
 reviewed head `6deb930da9cfc8e03724405a1bb42f95937f3f25` into main at
@@ -86,7 +128,7 @@ partial fresh persistent records, not installed source, preservation-manifest
 proof or behavior across another restart. Existing acceptance and O5 policy
 gates remain open; historical HDD/trace/MSC causation is unproven.
 
-## Current published release and verification - 24 October 2026
+## Historical .77 publication and verification - superseded by .78
 
 Published **2.3.66-haos77** on 24 October 2026 at 01:54:00 UTC (12:54:00 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.66-haos77). Tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`, tree `33d9b94399f87d27baf787a59403861988182ce9`. Source PR #34 merged at `b4377de9f38d1c305c23a0b1dca9cb509afc1a9f`; metadata PR #35 merged at `81c2752c4e031bb9786ec0d00f1dca4e22c59de9` with exactly the tagged tree.
 
@@ -258,7 +300,7 @@ Current Automated ownership and observed Remote EMS ON remain required at applic
 
 ## Outstanding operational bug register
 
-The register distinguishes published code corrections from remaining engineering, operator-policy and physical-evidence gates. O14, O16 and O10 clock recovery shipped in .77; their original worktrees remain preserved. O15 and O17 are components of the current uncommitted integration candidate, with combined validation passed and independent source/test/documentation review GO. Their standalone results and evidence limits are recorded separately below. Neither component is published or installed. O1, O3 and O6 retain the listed live acceptance or adjacent-behavior questions despite their earlier narrow corrections. O11 remains parked; historical HDD, archive and MSC causation is not established.
+The register distinguishes published code corrections from remaining engineering, operator-policy and physical-evidence gates. O14, O16 and O10 clock recovery shipped in .77; their original worktrees remain preserved. O15 and O17 shipped in .78 after combined validation and independent source/test/documentation review GO. Their standalone results and evidence limits remain recorded separately below. Publication and image/source identity are verified; installation, exposure and physical acceptance remain unverified. O1, O3 and O6 retain the listed live acceptance or adjacent-behavior questions despite their earlier narrow corrections. O11 remains parked; historical HDD, archive and MSC causation is not established.
 
 | ID | Issue | Classification and outstanding disposition |
 | --- | --- | --- |
@@ -276,9 +318,9 @@ The register distinguishes published code corrections from remaining engineering
 | O12 | Evening Boost reserve-trust provenance | Code defect corrected in published .75: Boost now requires existing trusted load and sunrise observations before using them in the overnight reserve calculation. The standalone regression checkpoint passed 41 tests / 55 subtests and 1,112 full-suite tests / 1,247 subtests. The combined .75 control checkpoint passed 1,142 tests / 1,287 subtests; 16 release/source-pinning checks also passed. Operator-supplied startup at 13:28:25 Sydney identifies .75 at exact tag source 413e1691bb58e0b942098ab43f44e873df157a2b. Publication and installed identity are established; physical acceptance remains unverified. O12 itself changes no prices, SoC/power thresholds or durations; O4 adds the separate qualification timing, and O5 reserve policy remains open. |
 | O13 | Standby/Morning Dump fallback grid-import ownership | Reproduced in .75 with trusted Demand OFF: fallback omitted either active owner's import close before settlement and could restore normal import capability afterward. Corrected in fix commit `bcfdb75b33c8ae1db3c7f534cb8952f144d9c3cd`, normally merged by PR #31 at `632a42081d9ff93b270ffcca048604031ec4fed1` and published in .76 source `e70d9ff016a546615367b6d69f4ac4602da7b23c`. Seven focused regressions and the full 1,149-test / 1,287-subtest suite pass, with no High/Medium blocker in independent review. Code is published; physical behavior remains unverified. Ordinary economic-zero recovery and genuine Morning preemption are preserved. |
 | O14 | Configuration activation across awaited control operations | Medium; reproduced offline on unchanged .76 source. The correction is published in .77 from reviewed PR #34 and uses the existing lock, rechecks queued authority, and retires identity-bound evidence. O14/O16 integration hardening also covers configuration A→B→A activation and direct-control boundaries that can otherwise lose accounting ownership; all 15 boundary tests and the 1,275-test / 1,305-subtest combined suite pass, with independent review GO. No physical behavior or historical-incident cause is established. |
-| O15 | Synchronous storage on async control/API paths | Medium; reproduced offline with synthetic lock contention. The combined `fix/storage-ingress-integration` candidate isolates runtime database execution on one bounded worker while retaining event-loop-owned accounting, exact retries and unknown-cost safeguards. On-disk combined validation passed 1,355 tests / 1,305 subtests; focused checks passed 126 / 8. Independent source/test/documentation review is GO, with no High/Medium blocker. No publication, installation or historical HDD/trace/MSC cause is established. See STORAGE_EXECUTION_ISOLATION.md. |
-| O16 | Import-top-up ledger completeness and retry integrity | Medium; reproduced with synthetic store failures, without proof of physical dispatch or financial loss. The O16 correction is published in .77 from reviewed PR #34, preserving original interval evidence and exact retry while retaining unknown-coverage safeguards. Integration review added targeted accounting-only invalidation at relevant identity activation and validated direct Manual/ESS boundaries, including permission invalidation across midnight. Fifteen new boundary tests passed; a bounded 114-test / 101-subtest run passed before the last two midnight tests were added. Final .77 validation passed 1,275 tests / 1,305 subtests, zero failures, 206 existing warnings, 226.40 seconds; independent review was GO. O15's new storage execution isolation is a separate component candidate; HDD causation is unproven. |
-| O17 | Ingress trust and optional API-key bypass | Conditional authentication defect reproduced offline. The combined candidate requires actual Supervisor peer 172.30.32.2 plus X-Ingress-Path and disables proxy rewriting in both supported launchers. Combined validation passed 1,355 tests / 1,305 subtests; independent source/test/documentation review is GO, with no High/Medium blocker. Normal HA login, existing flags and public read-only/status policies remain separate. Actual installed exposure is unverified; no exploit or physical acceptance is claimed. See INGRESS_TRUST_BOUNDARY.md. |
+| O15 | Synchronous storage on async control/API paths | Medium; reproduced offline with synthetic lock contention. The O15 correction is published in .78 from source PR #37 and isolates runtime database execution on one bounded worker while retaining event-loop-owned accounting, exact retries and unknown-cost safeguards. On-disk combined validation passed 1,355 tests / 1,305 subtests; focused checks passed 126 / 8. Independent source/test/documentation review is GO, with no High/Medium blocker. Publication and exact image/source identity are verified; installation, physical acceptance and historical HDD/trace/MSC causation remain unverified. See STORAGE_EXECUTION_ISOLATION.md. |
+| O16 | Import-top-up ledger completeness and retry integrity | Medium; reproduced with synthetic store failures, without proof of physical dispatch or financial loss. The O16 correction is published in .77 from reviewed PR #34, preserving original interval evidence and exact retry while retaining unknown-coverage safeguards. Integration review added targeted accounting-only invalidation at relevant identity activation and validated direct Manual/ESS boundaries, including permission invalidation across midnight. Fifteen new boundary tests passed; a bounded 114-test / 101-subtest run passed before the last two midnight tests were added. Final .77 validation passed 1,275 tests / 1,305 subtests, zero failures, 206 existing warnings, 226.40 seconds; independent review was GO. O15 storage execution isolation is now integrated and published in .78; it retains the O16 accounting safeguards. HDD causation and physical acceptance remain unproven. |
+| O17 | Ingress trust and optional API-key bypass | Conditional authentication defect reproduced offline. The O17 correction is published in .78 from source PR #37 and requires actual Supervisor peer 172.30.32.2 plus X-Ingress-Path and disables proxy rewriting in both supported launchers. Combined validation passed 1,355 tests / 1,305 subtests; independent source/test/documentation review is GO, with no High/Medium blocker. Normal HA login, existing flags and public read-only/status policies remain separate. Actual installed exposure is unverified; no exploit or physical acceptance is claimed. See INGRESS_TRUST_BOUNDARY.md. |
 
 ### Historical O14 tests-only baseline characterization - 24 October 2026
 

@@ -1,33 +1,31 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Local .78 release candidate (not published)
+## Current published release: 2.3.67-haos78
 
-The .78 candidate packages the O15/O17 source merged by [PR #37](https://github.com/Belot77/sigenergy-optimizer/pull/37).
-It combines bounded runtime database execution
-with transport-peer-bound HA ingress authentication. Storage failures retain
-unknown-cost protections; existing PV-only and Manual/Force rules remain separate.
-Normal HA ingress keeps its HA login without another key requirement. The ingress
-exemption requires the actual Supervisor peer plus `X-Ingress-Path`; supported
-launchers disable proxy-header rewriting. Public read/status policies remain
-unchanged, and custom proxies use the existing API-key route.
+Published 24 October 2026 at 07:57:03 UTC (18:57:03 Sydney):
+[GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.67-haos78).
+Tag/container source: `3ccf99cc69a4586715aadcbdd2f1282aeea77bf0`.
+[PR #38](https://github.com/Belot77/sigenergy-optimizer/pull/38) normally merged
+with the exact tag tree after both architecture images were verified.
 
-The on-disk combined suite passed **1,355 tests / 1,305 subtests**, zero failures;
-focused checks passed 126 / 8. Independent source/test/documentation review is GO,
-with no High/Medium blocker. PR #37 merged reviewed head
-`6deb930da9cfc8e03724405a1bb42f95937f3f25` into main at
-`e12da76d9c11e6d92286ecaf9c98a7c3497e0872` with exactly the tested tree.
-Local release branch `release/2.3.67-haos78` changes only five version markers
-and release/status documentation. Publication approval remains pending; .77 is
-still the latest published release. All 16 release/source-pinning checks passed
-in 9.58 seconds; normalized source comparison confirmed exactly five marker changes.
-Installation and physical acceptance remain unverified.
-See [the .78 candidate plan](docs/HAOS78_RELEASE_CANDIDATE.md).
-A timed-out accepted write may still complete;
-refresh its state before retrying. Threads cannot interrupt wedged OS I/O.
-See [storage boundaries](docs/STORAGE_EXECUTION_ISOLATION.md) and
-[ingress boundaries](docs/INGRESS_TRUST_BOUNDARY.md).
+Includes O15 bounded runtime database execution and O17 transport-peer-bound HA
+ingress authentication, atop .77 transaction, ledger and trace-recovery fixes.
+Slow or unconfirmed storage retains unknown-cost protections. Normal HA ingress
+keeps its HA login; custom proxies use the existing API-key path. Public
+read/status policies remain unchanged. Accepted writes can complete after
+timeout: refresh state before retrying. Threads cannot interrupt wedged OS I/O.
 
-## Current published release: 2.3.66-haos77
+Merged-source validation passed **1,355 tests / 1,305 subtests**; focused 126 / 8.
+All 16 release/source-pinning checks passed in 9.58 seconds. Independent source
+and metadata reviews were GO. Both platform images, all 22 layers and thirteen
+source/launcher files per platform match exact tag bytes.
+
+[Publication receipt, upgrade and rollback notes](docs/HAOS78_RELEASE_CANDIDATE.md).
+Installation and physical acceptance remain operator actions; existing reserve,
+MSC settlement, independent limits and Manual/Force safeguards remain in place.
+Ordinary runtime Logs availability and historical HDD/MSC causation remain unproven.
+
+## Previous published release: 2.3.66-haos77
 
 Published **2.3.66-haos77** on 24 October 2026 at 01:54:00 UTC (12:54:00 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.66-haos77). Tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`, tree `33d9b94399f87d27baf787a59403861988182ce9`. Source PR #34 merged at `b4377de9f38d1c305c23a0b1dca9cb509afc1a9f`; metadata PR #35 merged at `81c2752c4e031bb9786ec0d00f1dca4e22c59de9` with exactly the tagged tree.
 
