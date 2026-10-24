@@ -1,81 +1,97 @@
-# HAOS .78 local release candidate
+# HAOS .78 published release and verification receipt
 
-Prepared 24 October 2026. Candidate: **2.3.67-haos78**. Published release remains
-**2.3.66-haos77**. This document records a local preparation checkpoint; no .78
-commit, push, tag, image build, metadata merge, release or installation is claimed.
+Published **2.3.67-haos78** on 24 October 2026 at 07:57:03 UTC (18:57:03 Sydney):
+[GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.67-haos78).
+Tag/container source `3ccf99cc69a4586715aadcbdd2f1282aeea77bf0`;
+tree `2542e3600ef3280f1dd166953804f708f8b1137d`.
+This establishes publication and image/source identity, not installation or physical acceptance.
 
-## Baseline and scope
+## Source and release sequence
 
-- Workspace: `C:\Projects\sigenergy_optimizer-release-haos78`.
-- Branch: `release/2.3.67-haos78`.
-- Verified base/main: `e12da76d9c11e6d92286ecaf9c98a7c3497e0872`.
-- Reviewed O15/O17 source: `6deb930da9cfc8e03724405a1bb42f95937f3f25`,
-  normally merged by [PR #37](https://github.com/Belot77/sigenergy-optimizer/pull/37)
-  on 24 October at 07:40:46 UTC (18:40:46 Sydney).
-- Exact tested source/merge tree: `5a63925bc07dc6ccf93a3b9d5f4f5b2e57d0b2b7`.
-- Preparation changes only `sigenergy_optimizer_addon/config.yaml`,
-  `build.yaml`, `buildstamp.txt`, the runtime signature in
-  `app/optimizer.py`, the API version in `app/main.py`, and release/status docs.
-  Control logic, authentication predicates, worker implementation, tests,
-  dependencies, permanent instructions and build workflow remain unchanged.
-- All original unfinished worktrees remain preserved.
+- O15/O17 reviewed source `6deb930da9cfc8e03724405a1bb42f95937f3f25`:
+  [PR #37](https://github.com/Belot77/sigenergy-optimizer/pull/37), normal merge
+  `e12da76d9c11e6d92286ecaf9c98a7c3497e0872`, exact tested tree
+  `5a63925bc07dc6ccf93a3b9d5f4f5b2e57d0b2b7`.
+- Release branch `release/2.3.67-haos78` in
+  `C:\Projects\sigenergy_optimizer-release-haos78` starts from that merge.
+  Release commit/tag source changes exactly five synchronized version markers and
+  seven release/status documents; no other production/test/workflow drift.
+- [Actions run 40075754355](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40075754355)
+  succeeded for the exact tag. Build job: 07:51:05–07:53:08 UTC
+  (18:51:05–18:53:08 Sydney); build/push step: 1 minute 30 seconds.
+- Images were verified before [metadata PR #38](https://github.com/Belot77/sigenergy-optimizer/pull/38)
+  normally merged at `5b84d7f976e9d9db07fbeefd98aa90089a2f40be` on
+  24 October at 07:56:24 UTC (18:56:24 Sydney). Merge tree equals the exact tag.
+  GitHub release publication followed at 07:57:03 UTC.
+- Publication and final receipt documentation were explicitly approved.
+  Installation and live settings changes remain separate operator actions.
+  All original unfinished worktrees remain preserved.
 
-## Resulting behavior and limits
+## Image proof
 
-O15 moves production SQLite work to one bounded worker while the event loop owns
-ledger observations and exact acknowledgements. Busy, failed or unconfirmed
-storage retains unknown-cost protections. API responses distinguish rejected
-admission from accepted mutations with an unconfirmed outcome; an accepted write
-can finish after timeout, so refresh state before retrying. Threads cannot kill
-wedged OS I/O, and the API's wait limit applies per database wait, not per endpoint.
+- Version and `latest` OCI index:
+  `sha256:35292feb279a4b33e4c86f5482d690a9704c91d7178038b115c3bc434ead991a`.
+- amd64 manifest/config:
+  `sha256:a277a41e9f080e1e5e1d4f3455e8abfebba77e21a2aec2ac3922316862b824b5` /
+  `sha256:bb04b71cc3eb67ff92d6a5e65a9e1127ac0efc20a02a7dd2154a5cc583829fc3`.
+- arm64 manifest/config:
+  `sha256:e18dad21e678b40be6faea16a2211d9819791ec3b12a00c9255701c205ec1fb9` /
+  `sha256:717a56ca69b22d037c61630fa4abbbc002bfd59fa2973230cdc6a306716864b1`.
+- Both platforms identify version `2.3.67-haos78` and exact source
+  `3ccf99cc69a4586715aadcbdd2f1282aeea77bf0`. All 22 compressed layer
+  hashes/sizes and uncompressed diff IDs match their manifests/configs.
+- Thirteen-file fingerprint (SHA-256 of sorted absolute image path + NUL +
+  file bytes + NUL):
+  `sha256:b84b39d53f7a6e9581d49d4a77d3b2a9643b1bf704f1edb825ef1e734a5fc9a1`.
+- Immutable .77 version index remains
+  `sha256:0a743b4f32c0df7cd87d387f8870435d71ee5330f11c77999305cd665dd9e883`.
 
-O17 requires actual Supervisor transport peer `172.30.32.2` and nonempty
-`X-Ingress-Path` for the existing ingress API-key exemption. Both supported
-launchers disable Uvicorn proxy-header rewriting. Normal HA login and existing
-strict/key/read/status policies keep their boundaries. Custom proxies use the
-existing API-key path. This does not secure an independently exposed listener,
-establish installed exposure/flags, or authorize broader proxy trust.
+Verified files per platform: `/app/.source_commit`, `/run.sh`,
+`/app/templates/index.html`, and ten files under `/app/app/`:
+`main.py`, `optimizer.py`, `models.py`, `routers/api.py`,
+`state_store.py`, `import_topup_ledger.py`, `storage_worker.py`,
+`earnings.py`, `decision_trace_store.py` and `trace_clock.py`.
+The pin is the full SHA plus LF; all other bytes match exact Git blobs.
+Image command is `["/run.sh"]` with no entrypoint override; the executable
+launcher contains `--no-proxy-headers`. The root Dockerfile's separate
+Uvicorn command has the same flag; no root-image build is claimed.
 
-The .77 configuration transaction, immutable ledger and trace clock-recovery
-protections are retained. Unknown history can pause applicable automatic battery
-sales beyond the current day; separately qualified PV-only and Manual/Force
-semantics remain distinct. No threshold, export limit, MSC settlement, control
-authority, inverter setting or Boost policy is changed. Ordinary runtime Logs
-availability and historical HDD/trace/MSC causation are not established as fixed.
+Read-only verification replayed layers with whiteout/override handling without
+filesystem extraction. Independent helper review required rejecting every
+non-directory ancestor of a target. That correction was independently reviewed
+GO and the complete corrected proof passed; the preliminary proof is superseded.
+Version/latest and immutable .77 indexes were rechecked at completion.
+Two non-runtime attestation descriptors were excluded from platform counts.
+Normal TLS validation was retained; anonymous registry tokens stayed in memory.
 
-## Verification checkpoint
+## Validation and resulting behavior
 
-Retained merged-source results: **1,355 tests / 1,305 subtests passed**, zero
-failures, 206 existing warnings, 232.02 seconds. Five focused modules passed
-126 / 8 (202 warnings, 13.54 seconds). Independent combined source/test/docs review
-was GO with no High/Medium blocker; the reviewer did not rerun tests or access HA.
+The exact merged-source suite passed **1,355 tests / 1,305 subtests**, zero failures,
+206 existing warnings, 232.02 seconds; focused checks passed 126 / 8
+(202 warnings, 13.54 seconds). All 16 release/source-pinning checks passed in
+9.58 seconds. Independent source/test/docs and release-metadata reviews were GO
+with no High/Medium blocker. Reviewers did not rerun tests or access HA.
+No full-suite repeat was run for marker/documentation-only preparation.
 
-All **16 release-marker/source-pinning checks passed in 9.58 seconds**.
-Normalized comparison confirmed exactly one version replacement per marker file:
-five substitutions plus seven targeted release/status documents, twelve files
-total, with no other source/test/workflow drift. Independent release-metadata
-review is **GO**, with no High/Medium blocker. The reviewer checked source/doc scope
-without rerunning tests or accessing HA. The full source suite was not rerun for this marker/documentation-only
-preparation; its existing result above remains separately attributed.
+O15 isolates production SQLite work on one bounded worker while the event loop
+owns ledger observations and exact acknowledgements. Busy, failed or unconfirmed
+storage retains unknown-cost protections. API outcomes distinguish rejected
+admission from accepted mutations with unconfirmed outcomes; accepted writes
+can complete after timeout. The API wait bound is per database wait, not per
+endpoint. Threads cannot interrupt wedged OS I/O.
 
-## Publication sequence requiring separate approval
+O17 requires actual Supervisor peer `172.30.32.2` and nonempty
+`X-Ingress-Path` for the existing ingress key exemption. Supported launchers
+disable proxy-header rewriting. Normal HA login and existing strict/key/read/status
+policies retain their boundaries; custom proxies use the existing key path.
+Installed exposure/flags and independently exposed listeners remain unverified.
 
-1. Freeze the reviewed metadata tree, commit and push only this release branch,
-   then create a release-metadata PR. Do not use `release.sh`.
-2. Tag `v2.3.67-haos78` at that approved exact source commit and push that
-   exact tag only. The tag-triggered workflow publishes version and `latest` images.
-3. Verify Actions source/status, version and latest OCI indexes, both amd64/arm64
-   manifests and labels, compressed layers/diff IDs, `/app/.source_commit`
-   and the changed application/launcher bytes against the exact tagged source.
-4. Only after image verification, normally merge the release-metadata PR and
-   verify its tree equals the tag. This advertises the available HA update.
-   Publish the GitHub Release and record the full receipt.
-5. Installation and live settings changes remain separate operator actions.
-
-No tag/image/release is claimed before these actions complete. Do not replace an
-existing tag or image identity. Preserve immutable .77 version index
-`sha256:0a743b4f32c0df7cd87d387f8870435d71ee5330f11c77999305cd665dd9e883`;
-its source is `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`.
+The .77 transaction, immutable ledger and trace clock-recovery protections remain
+intact. Unknown history can pause applicable automatic battery sales beyond the
+current day; independent PV-only and Manual/Force semantics remain separate.
+No price/reserve threshold, export limit, MSC settlement or control authority
+policy changed. Ordinary runtime Logs availability and historical HDD/trace/MSC
+causation are not established as fixed.
 
 ## Operator acceptance and rollback
 
@@ -83,9 +99,9 @@ The operator reported .76 installed after replacement-SSD restoration on 24 Octo
 Last full supplied startup/source proof remains .75. The fresh 24 October archive
 shows partial persistence only, without runtime identity or another-restart proof.
 
-After separately authorized publication, install through normal HA procedures
+Install the published release through normal HA procedures
 with a usable backup/restore method. Verify runtime `2.3.67-haos78` and
-the full container source commit against the final tag before acceptance.
+container source `3ccf99cc69a4586715aadcbdd2f1282aeea77bf0` against the tag before acceptance.
 Keep Boost off during initial identity, configuration and cadence checks.
 Monitor-only/dry-run checks should verify ordinary HA ingress access, denied
 spoofed-header requests using synthetic authorized clients, bounded storage
@@ -96,9 +112,10 @@ Any supervised control acceptance must retain current authority, independent
 limits, Manual/Force priority, observed MSC settlement and explicit stop conditions.
 O5 reserve policy, O11 parked follow-up and applicable live gates remain open.
 
-Before commit, withhold this candidate to retain the published baseline. After
-commit, use only a separately reviewed scoped revert. Preserve the complete
-database, O16 interval/coverage data, trace segments and protected clock epochs.
+Withhold installation until the operator is ready to verify the published build.
+Any source rollback requires a separately reviewed scoped revert; preserve the
+published tags and image identities. Preserve the complete database, O16
+interval/coverage data, trace segments and protected clock epochs.
 Do not delete, truncate, reprice or fabricate coverage. An older binary is not
 automatically ledger-safe; any installed downgrade needs a binary- and data-aware
 restore/reinstall plan. No live installation or downgrade is performed here.

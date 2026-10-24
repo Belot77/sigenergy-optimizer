@@ -2,27 +2,26 @@
 
 This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
 
-## Current checkpoint - 2026-10-24 (published .77; local .78 candidate)
+## Current checkpoint - 2026-10-24 (published .78)
 
-Latest published release remains .77 / `2.3.66-haos77`, tag/source
-`7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`. Both platform images and the
-version/latest OCI index are verified; see CURRENT_STATE.md and
-HAOS77_RELEASE_CANDIDATE.md for the receipt. The operator reported .76 installed
-after SSD restoration on 24 October; the latest supplied full startup/source proof
-remains .75. Publication does not establish installation or physical acceptance.
+Latest published release is **.78 / `2.3.67-haos78`**, published 24 October
+at 07:57:03 UTC (18:57:03 Sydney). Tag/container source:
+`3ccf99cc69a4586715aadcbdd2f1282aeea77bf0`. Metadata PR #38 normally merged
+at `5b84d7f976e9d9db07fbeefd98aa90089a2f40be` with the exact tag tree.
+Both architecture images and version/latest OCI index were verified; immutable
+.77 remains available. See [the .78 receipt](HAOS78_RELEASE_CANDIDATE.md).
 
-The `fix/storage-ingress-integration` source combines O15 bounded database
-execution with O17 ingress trust. Its on-disk combined suite passed 1,355 tests /
-1,305 subtests, zero failures, 206 warnings, 232.02 seconds; focused checks passed
-126 / 8. Independent source/test/documentation review is GO, with no High/Medium blocker.
-[PR #37](https://github.com/Belot77/sigenergy-optimizer/pull/37) normally merged
-reviewed head `6deb930da9cfc8e03724405a1bb42f95937f3f25` into main at
-`e12da76d9c11e6d92286ecaf9c98a7c3497e0872` with exactly the tested tree.
-The local `2.3.67-haos78` release candidate changes five version markers and
-release/status docs only. All 16 release/source-pinning checks passed in
-9.58 seconds, with exactly five marker substitutions and no other source drift.
-Independent metadata review is GO with no High/Medium blocker; publication approval remains pending. No installation or live settings changes are included. Standalone O15/O17
-results remain separately attributed. See [the .78 plan](HAOS78_RELEASE_CANDIDATE.md).
+O15 bounded database execution and O17 ingress trust are now published atop
+.77's O14/O16/O10 fixes. The merged source passed 1,355 tests / 1,305 subtests,
+zero failures, 206 warnings, 232.02 seconds; focused 126 / 8. All 16 release checks
+passed in 9.58 seconds. Independent source and metadata review were GO.
+No full-suite repeat was run for marker/docs-only release preparation.
+
+Publication is not installation or physical acceptance. The operator reported
+.76 installed after SSD restoration; latest full supplied startup/source proof
+remains .75. No HA installation, live settings or Boost enablement was performed.
+Unknown import-cost evidence retains its safeguards. Ordinary runtime Logs
+availability and historical HDD/MSC causation are not established as fixed.
 
 The supplied 24 October archive contains 152 records from 17:07:41 to 17:22:40
 Sydney, with sequence continuity and a maximum ten-second interval. This is partial

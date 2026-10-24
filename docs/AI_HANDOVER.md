@@ -4,7 +4,49 @@ Last consolidated: 2026-10-24
 
 Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STATE.md` and relevant `CONTROL_CONTRACT.md` sections. Inspect only minimum relevant files. Git records repository identity; HA and operator evidence establish live state.
 
-## Local .78 release preparation and merged O15/O17 source - 24 October 2026
+## Current .78 publication and verification - 24 October 2026
+
+Published **2.3.67-haos78** on 24 October at 07:57:03 UTC (18:57:03 Sydney):
+[GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.67-haos78).
+Tag/container source `3ccf99cc69a4586715aadcbdd2f1282aeea77bf0`;
+tree `2542e3600ef3280f1dd166953804f708f8b1137d`.
+[Metadata PR #38](https://github.com/Belot77/sigenergy-optimizer/pull/38) normally
+merged at `5b84d7f976e9d9db07fbeefd98aa90089a2f40be` with exactly the tag tree.
+It packages O15/O17 source PR #37, merged at `e12da76d9c11e6d92286ecaf9c98a7c3497e0872`.
+
+[Actions run 40075754355](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40075754355)
+succeeded for the exact tag. Version/latest OCI index:
+`sha256:35292feb279a4b33e4c86f5482d690a9704c91d7178038b115c3bc434ead991a`.
+Both amd64/arm64 labels, all 22 compressed layers and uncompressed diff IDs,
+the source pin and twelve application/launcher files match exact tag bytes.
+The thirteen-file fingerprint (sorted absolute image path + NUL + bytes + NUL) is
+`sha256:b84b39d53f7a6e9581d49d4a77d3b2a9643b1bf704f1edb825ef1e734a5fc9a1`.
+The immutable .77 version index remains
+`sha256:0a743b4f32c0df7cd87d387f8870435d71ee5330f11c77999305cd665dd9e883`.
+Corrected complete image proof passed; independent helper review was GO.
+
+Retained merged-source suite: **1,355 tests / 1,305 subtests passed**, zero failures,
+206 warnings, 232.02 seconds; focused 126 / 8. All 16 release/source-pinning
+checks passed in 9.58 seconds. Independent source and metadata review were GO.
+No full-suite repeat was run for marker/docs-only preparation.
+
+O15 isolates production SQLite work while retaining bounded admission, immutable
+accounting retries and unknown-cost protections. O17 binds the ingress exemption
+to the actual Supervisor peer plus `X-Ingress-Path`, with proxy rewriting
+disabled. Existing HA login, API-key/read/status policy, MSC settlement, limits
+and Manual/Force boundaries remain intact. Accepted writes may finish after
+timeout; worker threads cannot interrupt wedged OS I/O. Custom proxies use the
+existing key path. No ordinary runtime Logs repair or HDD/MSC cause is established.
+
+Publication and receipt documentation are authorized; installation and live
+settings changes remain separate operator actions. The operator reported .76
+installed after SSD restoration on 24 October; latest full supplied startup/source
+proof remains .75. Fresh trace evidence is partial persistence proof only.
+O5 policy, O11 parked follow-up and applicable live/Boost acceptance gates remain
+open. Original unfinished worktrees and protected data remain preserved.
+See [the complete .78 receipt and acceptance notes](HAOS78_RELEASE_CANDIDATE.md).
+
+## Historical .78 preparation checkpoint - superseded by publication
 
 [PR #37](https://github.com/Belot77/sigenergy-optimizer/pull/37) normally merged
 reviewed head `6deb930da9cfc8e03724405a1bb42f95937f3f25` into main at
@@ -86,7 +128,7 @@ partial fresh persistent records, not installed source, preservation-manifest
 proof or behavior across another restart. Existing acceptance and O5 policy
 gates remain open; historical HDD/trace/MSC causation is unproven.
 
-## Current published release and verification - 24 October 2026
+## Historical .77 publication and verification - superseded by .78
 
 Published **2.3.66-haos77** on 24 October 2026 at 01:54:00 UTC (12:54:00 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.66-haos77). Tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`, tree `33d9b94399f87d27baf787a59403861988182ce9`. Source PR #34 merged at `b4377de9f38d1c305c23a0b1dca9cb509afc1a9f`; metadata PR #35 merged at `81c2752c4e031bb9786ec0d00f1dca4e22c59de9` with exactly the tagged tree.
 
