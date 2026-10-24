@@ -2,15 +2,39 @@
 
 This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
 
-## Current checkpoint - 2026-10-23 (published .76)
+## Current checkpoint - 2026-10-24 (published .77; reviewed O15/O17 source)
 
-Latest release is .76 / `2.3.65-haos76`, published from tag/source `e70d9ff016a546615367b6d69f4ac4602da7b23c`; PR #32 normally merged at `c226c98703263e3a0c5cd5ca811a2d39554ea315` with an identical tree. The version/latest OCI index and both platform images are verified; see CURRENT_STATE.md for digests and proof boundaries. Latest supplied installed proof remains .75 on 21 October. Publication, source identity and tests do not establish .76 installation or physical acceptance.
+Latest published release remains .77 / `2.3.66-haos77`, tag/source
+`7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`. Both platform images and the
+version/latest OCI index are verified; see CURRENT_STATE.md and
+HAOS77_RELEASE_CANDIDATE.md for the receipt. The operator reported .76 installed
+after SSD restoration on 24 October; the latest supplied full startup/source proof
+remains .75. Publication does not establish installation or physical acceptance.
 
-Published .76 includes O13: Standby and active Morning Dump import blocking is retained through fallback. Code is published, but physical behavior remains unverified. O4 Boost acceptance, O5 reserve policy, O10/O11 and applicable Phase 1/2 live-proof gates remain open. This release does not complete the ownership-audit phase or accept Phase 1/2. Retained validation and publication evidence are recorded in CURRENT_STATE.md.
+The `fix/storage-ingress-integration` source combines O15 bounded database
+execution with O17 ingress trust. Its on-disk combined suite passed 1,355 tests /
+1,305 subtests, zero failures, 206 warnings, 232.02 seconds; focused checks passed
+126 / 8. Independent source/test/documentation review is GO, with no High/Medium blocker.
+This records the pre-commit verification checkpoint: one commit, branch push and
+draft PR are approved after final GO. Git/PR establish resulting identity; no
+merge, release, installation or live action is included. Standalone O15 and O17
+results and the earlier limited in-memory check remain in their component records.
 
-The 23 October archive download repeats old records ending 19 October 07:58:42 Sydney. Archive/MSC follow-up remains parked and HDD causation unproven. The separate 21 October live-memory sample contains unresolved application failures and does not complete Boost or physical settlement acceptance. Short physical Demand Window import spikes remain operator-deferred and separate from O7 exact-full PV-only proof.
+The supplied 24 October archive contains 152 records from 17:07:41 to 17:22:40
+Sydney, with sequence continuity and a maximum ten-second interval. This is partial
+fresh-disk evidence, not runtime-version identity, preservation-manifest proof, or
+behavior across another restart. One failed application at 17:14:18 is followed by
+pending recovery and helper success at 17:14:28; its cause and physical settlement
+remain unproven. The old archive/MSC investigation and O11 remain parked. O5
+reserve policy is unchanged. Short physical Demand Window import spikes remain
+deferred and separate from O7 exact-full PV-only acceptance.
 
-Sections 1–4 retain their original dated phase records and historical live-version snapshots. Preserve the dependency order: complete applicable Phase 1 and Phase 2 live proof, then complete the ownership/configuration audit (O9), architecture, project cleanup, full GUI/UX and Climate Manager integration. Publication, startup identity and code tests do not bypass those gates. The protected .65 source/image remain available, but the actual restore/reinstall path remains unproven.
+Sections 1–4 retain their dated phase records and historical live-version snapshots.
+Preserve the dependency order: complete applicable Phase 1 and Phase 2 live proof,
+then complete the ownership/configuration audit (O9), architecture, project cleanup,
+full GUI/UX and Climate Manager integration. The integration candidate does not
+bypass those gates. The protected .65 source/image remain available, but the actual
+restore/reinstall path remains unproven.
 
 ## 1. Phase 1 code validation
 

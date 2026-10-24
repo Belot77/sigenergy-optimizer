@@ -11,6 +11,7 @@ Starts three background tasks:
 """
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -23,6 +24,8 @@ from .ha_client import HAClient
 from .ha_ws_client import HAWebSocketClient
 from .optimizer import SigEnergyOptimizer
 from .decision_trace_store import DecisionTraceStore
+from .state_store import StateStore
+from .storage_worker import StorageWorker
 from .routers.ui import ui
 from .routers.api import router as api_router
 
@@ -53,7 +56,24 @@ async def lifespan(app: FastAPI):
     logger.info("Container source commit=%s", _read_source_commit())
 
     ha = HAClient(settings.ha_url, settings.ha_token)
-    optimizer = SigEnergyOptimizer(ha, settings)
+    storage = None
+    try:
+        storage = await StorageWorker.open(
+            lambda: StateStore(os.environ.get("STATE_DB_PATH", "/data/optimizer_state.db")),
+        )
+        async with _optimizer_lifespan(app, ha, storage):
+            yield
+    finally:
+        try:
+            if storage is not None:
+                await storage.close()
+        finally:
+            await ha.close()
+
+
+@asynccontextmanager
+async def _optimizer_lifespan(app: FastAPI, ha: HAClient, storage: StorageWorker):
+    optimizer = SigEnergyOptimizer(ha, settings, storage_worker=storage)
     logger.info(
         "Runtime signature=%s morning_slow_charge_runtime_disabled=%s",
         getattr(optimizer, "runtime_signature", "unknown"),
@@ -124,17 +144,17 @@ async def lifespan(app: FastAPI):
             except Exception:
                 logger.exception("Decision trace task failed during shutdown")
 
-    # Shutdown: cancel both tasks
-    logger.info("Shutting down background tasks")
-    for task in (ws_task, optimizer_task):
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-
-    await ha.close()
-    logger.info("Shutdown complete")
+        # Stop producers before the outer lifecycle stops storage admission.
+        logger.info("Shutting down background tasks")
+        for task in (ws_task, optimizer_task):
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.warning("Background task failed during shutdown")
+        logger.info("Shutdown complete")
 
 
 def create_app() -> FastAPI:

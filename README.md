@@ -1,5 +1,24 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Reviewed O15/O17 source candidate
+
+`fix/storage-ingress-integration` combines bounded runtime database execution
+with transport-peer-bound HA ingress authentication. Storage failures retain
+unknown-cost protections; existing PV-only and Manual/Force rules remain separate.
+Normal HA ingress keeps its HA login without another key requirement. The ingress
+exemption requires the actual Supervisor peer plus `X-Ingress-Path`; supported
+launchers disable proxy-header rewriting. Public read/status policies remain
+unchanged, and custom proxies use the existing API-key route.
+
+The on-disk combined suite passed **1,355 tests / 1,305 subtests**, zero failures;
+focused checks passed 126 / 8. Independent source/test/documentation review is GO, with no High/Medium blocker. This is the recorded pre-commit verification checkpoint. One
+commit, branch push and draft PR are approved after final GO; Git/PR record the
+resulting identity. This source is not published or installed, and physical
+acceptance remains unverified. A timed-out accepted write may still complete;
+refresh its state before retrying. Threads cannot interrupt wedged OS I/O.
+See [storage boundaries](docs/STORAGE_EXECUTION_ISOLATION.md) and
+[ingress boundaries](docs/INGRESS_TRUST_BOUNDARY.md).
+
 ## Current published release: 2.3.66-haos77
 
 Published **2.3.66-haos77** on 24 October 2026 at 01:54:00 UTC (12:54:00 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.66-haos77). Tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`, tree `33d9b94399f87d27baf787a59403861988182ce9`. Source PR #34 merged at `b4377de9f38d1c305c23a0b1dca9cb509afc1a9f`; metadata PR #35 merged at `81c2752c4e031bb9786ec0d00f1dca4e22c59de9` with exactly the tagged tree.
@@ -312,17 +331,17 @@ Published .76 includes the PR #31 Standby Holdoff and active Morning Dump fallba
 
 ## Version
 
-Current release: [**2.3.65-haos76**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.65-haos76), published 23 October 2026. Tag/source `e70d9ff016a546615367b6d69f4ac4602da7b23c`; PR #32 merged at `c226c98703263e3a0c5cd5ca811a2d39554ea315`.
+Current published release: [**2.3.66-haos77**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.66-haos77), published 24 October 2026. Tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`; metadata PR #35 merged at `81c2752c4e031bb9786ec0d00f1dca4e22c59de9` with the tagged tree. O15/O17 are source changes in this integration candidate, not part of .77. See [the verified .77 receipt](docs/HAOS77_RELEASE_CANDIDATE.md) and [current development state](docs/CURRENT_STATE.md).
 
-Verified OCI index: `sha256:b7df9f21fce7ef14e7b4f602235486e17b35b710907656dd0b43e796889a6e9a`; amd64 manifest `sha256:153257933183c42fa99afdd21a8ab0d48837eb64623e136d7d0a07b3db17269e`, arm64 manifest `sha256:8288d84e1bd41858d022caff8b91d11adab998b21f99ee7d1a92985c9be4b161`. The `.75` version-specific index remains unchanged at `sha256:ed2a984b457bfddb2b74050d437f98337944076e9144a8d1a19f577d8e82d898`.
+Historical .76 image verification, superseded as the current release by .77: OCI index: `sha256:b7df9f21fce7ef14e7b4f602235486e17b35b710907656dd0b43e796889a6e9a`; amd64 manifest `sha256:153257933183c42fa99afdd21a8ab0d48837eb64623e136d7d0a07b3db17269e`, arm64 manifest `sha256:8288d84e1bd41858d022caff8b91d11adab998b21f99ee7d1a92985c9be4b161`. The `.75` version-specific index remains unchanged at `sha256:ed2a984b457bfddb2b74050d437f98337944076e9144a8d1a19f577d8e82d898`.
 
-The latest supplied installed startup/source proof remains `.75` / `413e1691bb58e0b942098ab43f44e873df157a2b` on 21 October. No `.76` installation, settings change, Boost enablement or physical acceptance is claimed; actual rollback remains unverified. O13 code is published but physical behavior remains unverified. O4/O5/O10/O11 and applicable Phase 1/2 live gates remain open.
+The latest supplied full installed startup/source proof remains `.75` / `413e1691bb58e0b942098ab43f44e873df157a2b` on 21 October. The operator reported .76 installed after replacement-SSD restoration on 24 October; neither the .77 release receipt nor the fresh trace establishes a newer exact runtime identity. No live settings change, Boost enablement or physical acceptance is claimed here; actual rollback remains unverified. O4/O5, the parked O11 investigation and applicable Phase 1/2 live gates remain open.
 
 The operator initially reported `.74` installed, Evening Boost off and add-on auto-update off. Later startup evidence at 13:28:25 Sydney identifies runtime signature `.75` and exact source `413e1691bb58e0b942098ab43f44e873df157a2b`. The excerpt shows pending-close then pending-MSC states through 13:28:29 and HTTP 200 service/reads through 13:28:50; it does not prove physical settlement or later recovery. This is the latest full startup/source proof; the earlier `.73` evidence is historical. No rollback method was supplied; supervised acceptance remains unverified.
 
 `.73` includes version/source-pinned builds and resolved full-SHA recording, while carrying `.72` optimizer control behavior unchanged. The `.72` corrections cover Solar Override selected/protected floors, Morning Dump discharge intent and blocked-Dump MSC fallback, application-outcome trace recording, and precise positive sub-1-cent FiT explanations. The frozen `.72` tag/image exclude the Dockerfile source-pinning fix.
 
-Current live-memory recording is demonstrated, including pending/error outcomes and later successful Automated/MSC applications. Persistent 24-hour download freshness and intermittent MSC settlement remain **parked, unresolved** by operator choice; HA/hardware cause is unproven. Short physical Demand Window import spikes remain separately deferred. See [current issues, past-week fixes and the .73 live-proof checklist](docs/HAOS73_STATUS_AND_LIVE_PROOF.md).
+Clock recovery code is published in .77. The supplied 24 October archive contains 152 current persisted records from 17:07:41 to 17:22:40 Sydney with intact sequence continuity and a maximum ten-second interval. This is partial freshness evidence, not proof of runtime source, the preservation manifest, missing historical cycles or behavior across another restart. The original archive/MSC incident investigation remains parked and HA/hardware causation unproven. Short physical Demand Window import spikes remain separately deferred. See [current state and evidence limits](docs/CURRENT_STATE.md).
 
 Protected rollback reference: **2.3.54-haos65**, source `9965e79133f38d5b9943dcf5a9b04ed6fdab1239`, public OCI index `sha256:dd7efe0fd9b192ae1fd996137c312e5f2aab12e01a285f6e75fb5a58dc8fe88c`. There is no GitHub Release for `.65`; an actual usable Supervisor restore/reinstall method and saved effective settings remain unverified. Artifact availability alone is not rollback proof.
 

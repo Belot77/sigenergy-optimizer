@@ -74,4 +74,4 @@ PY
 
 ln -sf "${ENV_FILE}" "${APP_DIR}/.env"
 
-exec uvicorn app.main:app --host 0.0.0.0 --port 7123 --workers 1
+exec uvicorn app.main:app --host 0.0.0.0 --port 7123 --workers 1 --no-proxy-headers

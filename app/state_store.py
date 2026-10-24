@@ -16,6 +16,13 @@ class StateStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
         self._lock = threading.Lock()
+        try:
+            self._initialize()
+        except BaseException:
+            self._conn.close()
+            raise
+
+    def _initialize(self) -> None:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute(

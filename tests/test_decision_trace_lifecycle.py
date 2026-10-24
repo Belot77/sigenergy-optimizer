@@ -33,6 +33,10 @@ def trace_row():
 
 class DecisionTraceLifecycleTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        # Lifespan now owns a real storage worker even with a fake optimizer.
+        state_db = patch.dict("os.environ", {"STATE_DB_PATH": ":memory:"})
+        state_db.start()
+        self.addCleanup(state_db.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.store = DecisionTraceStore(Path(self.tmp.name) / "trace")
         self.rows = deque([trace_row()], maxlen=1000)

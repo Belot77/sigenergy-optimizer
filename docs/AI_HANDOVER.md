@@ -4,6 +4,44 @@ Last consolidated: 2026-10-24
 
 Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STATE.md` and relevant `CONTROL_CONTRACT.md` sections. Inspect only minimum relevant files. Git records repository identity; HA and operator evidence establish live state.
 
+## Verified O15/O17 integration source checkpoint - 24 October 2026
+
+Workspace `C:\Projects\sigenergy_optimizer-storage-ingress`, branch
+`fix/storage-ingress-integration`, based on `df5c64c04dac67885270bfa15be89db6a6dc2d0d`.
+The complete on-disk combined suite passed **1,355 tests / 1,305 subtests**, zero
+failures, 206 existing warnings, in 232.02 seconds. Five focused modules passed
+126 tests / 8 subtests (202 warnings, 13.54 seconds). Independent combined source/test/documentation review is **GO**, with no
+High/Medium blocker. The reviewer inspected source and assertions without rerunning tests
+or accessing HA.
+
+This is the recorded pre-commit verification checkpoint. The user approved one
+combined commit, branch push and draft PR after final independent GO. Git and the
+draft PR establish the resulting source identity. This scope does not authorize
+merge, release, installation or live settings changes. No physical acceptance is
+claimed. The source and tests are the reviewed components combined without new
+control logic; only the ingress predicate/import overlap in the API file.
+
+Preserved standalone evidence: O15 passed 1,307 tests / 1,305 subtests and focused
+221 / 191; O17 passed 295 / 89 broader and 70 / 6 focused. Each component had its
+own independent source/test/documentation GO. The earlier 102 / 6 in-memory
+cross-candidate check remains limited compatibility evidence; the new 1,355 /
+1,305 result above is the full on-disk integration run. Both original worktrees
+remain unchanged. See [O15](STORAGE_EXECUTION_ISOLATION.md) and
+[O17](INGRESS_TRUST_BOUNDARY.md) for reproduction, design and limitations.
+
+Slow or unconfirmed storage retains unknown-cost protections and mutable ledger
+state remains on the event loop. Accepted writes can complete after timeout;
+threads cannot kill wedged OS I/O. O17 binds trust to the actual Supervisor peer
+plus `X-Ingress-Path`, with proxy rewriting disabled in supported launchers.
+Normal HA login, optional public read/status policies and control safeguards
+retain their boundaries. Custom proxies use the existing API-key route; actual
+installed exposure/flags and physical behavior remain unverified.
+
+Published .77 remains the current release. The supplied 24 October archive shows
+partial fresh persistent records, not installed source, preservation-manifest
+proof or behavior across another restart. Existing acceptance and O5 policy
+gates remain open; historical HDD/trace/MSC causation is unproven.
+
 ## Current published release and verification - 24 October 2026
 
 Published **2.3.66-haos77** on 24 October 2026 at 01:54:00 UTC (12:54:00 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.66-haos77). Tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`, tree `33d9b94399f87d27baf787a59403861988182ce9`. Source PR #34 merged at `b4377de9f38d1c305c23a0b1dca9cb509afc1a9f`; metadata PR #35 merged at `81c2752c4e031bb9786ec0d00f1dca4e22c59de9` with exactly the tagged tree.
@@ -14,7 +52,7 @@ Combined offline validation: **1,275 tests / 1,305 subtests passed**, zero failu
 
 This release includes O14 configuration-activation transactions, O16 immutable import-cost accounting with direct-control/identity-boundary invalidation, and O10 trace clock recovery. Trace recovery corroborates UTC through two fixed HTTPS origins, durably preserves historical record bytes before active retention resumes, and retains gap evidence. It can take a normal 15-minute persistence interval after successful checks. Missing decisions cannot be reconstructed. Unknown accounting can pause applicable automatic battery sales until a newly covered day; independently qualified PV-only and Manual/Force semantics remain separate.
 
-The operator reported .76 installed after HAOS 18.3 restoration onto a replacement SSD on 24 October. Last full supplied startup/source proof remains .75; .77 installation is left to the operator. No live HA, inverter, battery, export settings or Boost enablement changed during this release. O15 storage execution and O17 conditional ingress work remain separate; O5 policy, O11 parked follow-up and applicable physical acceptance gates remain open. Original O14/O16 worktrees and the frozen trace candidate remain preserved.
+The operator reported .76 installed after HAOS 18.3 restoration onto a replacement SSD on 24 October. Last full supplied startup/source proof remains .75; .77 installation is left to the operator. No live HA, inverter, battery, export settings or Boost enablement changed during this release. O15 storage execution and O17 ingress trust are outside .77; their combined local candidate is described above and remains unpublished. O5 policy, O11 parked follow-up and applicable physical acceptance gates remain open. Original O14/O16 worktrees and the frozen trace candidate remain preserved.
 
 See [the complete .77 receipt and operator notes](HAOS77_RELEASE_CANDIDATE.md).
 
