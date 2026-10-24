@@ -1,11 +1,11 @@
 # Changelog
 
-## Unreleased O15/O17 source candidate - 2026-10-24
+## 2.3.67-haos78 - local release candidate - 2026-10-24
 
 - Isolate runtime SQLite work on one bounded worker while retaining event-loop-owned import-ledger observations, immutable retries, exact acknowledgements and current-generation cost evidence. Busy, failed or unconfirmed storage retains existing unknown-cost safeguards; API responses distinguish rejected admission from an accepted mutation whose outcome is unconfirmed.
 - Require the actual Supervisor transport peer plus `X-Ingress-Path` for the existing HA ingress API-key exemption, and disable Uvicorn proxy-header rewriting in both supported launchers. Normal HA login, API-key flags, public read/status policy, Manual/Force priority and O14/O16 protections retain their documented boundaries.
 - Combined on-disk verification passed 1,355 tests / 1,305 subtests, zero failures, 206 existing warnings, 232.02 seconds. Focused checks passed 126 / 8 (202 warnings, 13.54 seconds). Independent source/test/documentation review is GO, with no High/Medium blocker. Standalone component and earlier limited in-memory checks remain separately attributed in the component records.
-- This is the recorded pre-commit source checkpoint on `fix/storage-ingress-integration`. One commit, branch push and draft PR are approved after final GO; Git/PR record their resulting identity. No version bump, merge, release, installation or live action is included. See [storage evidence](docs/STORAGE_EXECUTION_ISOLATION.md), [ingress evidence](docs/INGRESS_TRUST_BOUNDARY.md) and [current state](docs/CURRENT_STATE.md).
+- [PR #37](https://github.com/Belot77/sigenergy-optimizer/pull/37) normally merged reviewed head `6deb930da9cfc8e03724405a1bb42f95937f3f25` into main at `e12da76d9c11e6d92286ecaf9c98a7c3497e0872` with exactly the tested tree. Local branch `release/2.3.67-haos78` updates only five synchronized version markers and release/status docs. All 16 release/source-pinning checks passed in 9.58 seconds; exact marker-only source scope passed. Independent metadata review is GO with no High/Medium blocker; publication approval remains pending; .77 is still latest published. No installation or live changes are included. See [the .78 plan](docs/HAOS78_RELEASE_CANDIDATE.md), [storage evidence](docs/STORAGE_EXECUTION_ISOLATION.md), [ingress evidence](docs/INGRESS_TRUST_BOUNDARY.md) and [current state](docs/CURRENT_STATE.md).
 
 ## 2.3.66-haos77 - published release - 2026-10-24
 

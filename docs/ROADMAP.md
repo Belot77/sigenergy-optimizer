@@ -2,7 +2,7 @@
 
 This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
 
-## Current checkpoint - 2026-10-24 (published .77; reviewed O15/O17 source)
+## Current checkpoint - 2026-10-24 (published .77; local .78 candidate)
 
 Latest published release remains .77 / `2.3.66-haos77`, tag/source
 `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`. Both platform images and the
@@ -15,10 +15,14 @@ The `fix/storage-ingress-integration` source combines O15 bounded database
 execution with O17 ingress trust. Its on-disk combined suite passed 1,355 tests /
 1,305 subtests, zero failures, 206 warnings, 232.02 seconds; focused checks passed
 126 / 8. Independent source/test/documentation review is GO, with no High/Medium blocker.
-This records the pre-commit verification checkpoint: one commit, branch push and
-draft PR are approved after final GO. Git/PR establish resulting identity; no
-merge, release, installation or live action is included. Standalone O15 and O17
-results and the earlier limited in-memory check remain in their component records.
+[PR #37](https://github.com/Belot77/sigenergy-optimizer/pull/37) normally merged
+reviewed head `6deb930da9cfc8e03724405a1bb42f95937f3f25` into main at
+`e12da76d9c11e6d92286ecaf9c98a7c3497e0872` with exactly the tested tree.
+The local `2.3.67-haos78` release candidate changes five version markers and
+release/status docs only. All 16 release/source-pinning checks passed in
+9.58 seconds, with exactly five marker substitutions and no other source drift.
+Independent metadata review is GO with no High/Medium blocker; publication approval remains pending. No installation or live settings changes are included. Standalone O15/O17
+results remain separately attributed. See [the .78 plan](HAOS78_RELEASE_CANDIDATE.md).
 
 The supplied 24 October archive contains 152 records from 17:07:41 to 17:22:40
 Sydney, with sequence continuity and a maximum ten-second interval. This is partial
