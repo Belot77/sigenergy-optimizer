@@ -67,6 +67,7 @@ class _DummyOptimizer:
             automated_option="Automated",
             block_flow_option="Prevent Import & Export",
         )
+        self._control_lock = asyncio.Lock()
         self.last_decision = None
         self.last_state = SimpleNamespace(sigenergy_mode="Automated")
         self.audit_events: list[dict[str, object]] = []

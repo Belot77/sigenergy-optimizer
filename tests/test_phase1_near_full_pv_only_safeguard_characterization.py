@@ -16,6 +16,7 @@ from app.optimizer import (
     MODE_MAX_SELF,
 )
 from haos49_characterization_helpers import Haos49CharacterizationCase
+from import_topup_coverage_helpers import seed_complete_import_history
 
 
 class Phase1NearFullPvOnlySafeguardCharacterizationTests(
@@ -679,6 +680,8 @@ class Phase1NearFullPvOnlySafeguardCharacterizationTests(
         )
         morning_dump_optimizer._morning_dump_active = lambda *args, **kwargs: True
         morning = datetime(2026, 1, 15, 6, 0, 0)
+        # This owner comparison starts with known synthetic import history.
+        seed_complete_import_history(morning_dump_optimizer, morning)
         morning_dump_state = self._state(when=morning)
         morning_dump = self.decide(
             morning_dump_optimizer,

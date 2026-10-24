@@ -5,7 +5,11 @@ from datetime import datetime, timedelta, timezone
 
 from app.models import BATTERY_EXPORT, EXPORT_BLOCKED, MSC_SURPLUS_CEILING
 from app.optimizer import MODE_CMD_CHARGE_PV, MODE_MAX_SELF
-from haos49_characterization_helpers import Haos49CharacterizationCase, RecordingHA
+from haos49_characterization_helpers import (
+    Haos49CharacterizationCase,
+    RecordingHA,
+    seed_complete_import_history,
+)
 
 
 _MISSING = object()
@@ -101,6 +105,7 @@ class Phase1BatteryTelemetryTrustCharacterizationTests(Haos49CharacterizationCas
         optimizer = self.optimizer(ha=ha, **settings_overrides)
         # These fixtures express policy times as naive host-local datetimes.
         optimizer._tz = timezone(when.astimezone().utcoffset() or timedelta())
+        seed_complete_import_history(optimizer, when)
         cfg = optimizer.cfg
 
         states: dict[str, dict[str, object]] = {

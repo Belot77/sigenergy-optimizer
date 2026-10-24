@@ -9,7 +9,10 @@ from app.models import (
     HVACSolarInputContext,
 )
 from app.optimizer import MODE_CMD_CHARGE_GRID, MODE_CMD_DISCHARGE_PV, MODE_MAX_SELF
-from haos49_characterization_helpers import Haos49CharacterizationCase
+from haos49_characterization_helpers import (
+    Haos49CharacterizationCase,
+    seed_complete_import_history,
+)
 
 
 class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
@@ -206,6 +209,7 @@ class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
         capacity_trusted: bool = True,
         available_energy_trusted: bool = True,
     ):
+        seed_complete_import_history(optimizer, self.DUMP_TIME)
         capacity_kwh = 30.0
         state = self.state(
             self.DUMP_TIME,

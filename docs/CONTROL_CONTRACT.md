@@ -8,6 +8,22 @@ Application-outcome metadata is diagnostic only. `application.status` is `succee
 
 Update this contract whenever an approved control-ownership rule, invariant, or transition contract changes. Do not change it merely to match accidental current code behavior; report the mismatch and obtain an approved semantic decision first.
 
+## Runtime configuration activation
+
+Runtime single and batch configuration updates validate, optionally persist and activate under the same control lock as a complete automatic or Manual/Force application and direct ESS writes. Activation cannot split an awaited control operation between old authority evidence and new actuator bindings. Validation uses the configuration active after waiting. Failed persistence or cancellation while waiting does not activate changes. Queued configuration and direct ESS requests must still pass mutation authorization after acquiring the lock.
+
+A changed evidence identity retires old number-settlement requests, MSC baseline proof, cached telemetry/decisions and permissive Solar/Boost qualification. It refreshes the existing shared entity watch set. Current identity evidence must satisfy the existing authority and settlement gates before permissive recovery. A pending MSC transition retains its close barrier with retired old request proof; clearing configuration evidence must not turn an unfinished transition into completion.
+
+Preserve authenticated Manual/Force requests and explicit ESS overrides, independent restrictive owners and the snapshotted entry floor of an active Standby Holdoff, including consecutive activations before another decision. A newly bound selector's historical differing value cannot supersede a pending authenticated request: coherent transition evidence must be strictly later than both the request and ownership-identity activation. A verified later operator choice can still supersede it. A queued manual selection is rejected before dispatch if its selector or ownership-label interpretation changed while waiting; renamed or swapped labels cannot silently reinterpret operator intent.
+
+Changing an unrelated policy value or saving an unchanged identity does not retire identity-bound proof. HA HTTP/WebSocket connections keep their existing startup-bound settings; this contract introduces no client reconstruction, automatic restart, new policy priority or permission to alter live settings.
+
+## Passive trace archive clock recovery
+
+Trace persistence is diagnostic only and must never delay control on the event loop or modify system/control clocks. A different or unknown OS boot cannot prove UTC by pairing an old UTC anchor with a new monotonic sample, even within the normal continuity tolerance. Healthy same-boot monotonic continuity remains sufficient without network access.
+
+A new epoch after unresolved clock discontinuity requires bounded corroboration from two independent certificate-verified HTTPS origins with coherent Date, wall and monotonic timing. Before adopting that epoch, preserve full prior decision-segment bytes and the status captured by the completed preservation attempt in a verified durable history snapshot outside active retention. Missing evidence or failed preservation/status publication leaves writes and age-based deletion suspended. Historical gap flags remain sticky; recovery cannot reconstruct missing decisions. See [the recovery and preservation details](TRACE_CLOCK_RECOVERY.md).
+
 ## Automated baseline
 
 Normal Automated operation is deliberately uneventful:
@@ -251,6 +267,16 @@ Keep the qualified proposal (tier/source, selected and protected SoC floors, bou
 `battery_export_final_owner` is `none` when final export is blocked. A vetoed candidate must have zero export limit, `EXPORT_BLOCKED` intent, no commanded discharge through that candidate and no Morning preemption. Normal ESS discharge capability for MSC load service is a separate protection; a cost veto must not be repurposed into an unrelated discharge-cap clamp.
 
 The authoritative actual import-cost snapshot is shared by arbitration and advisory calculation. Unknown actual-cost evidence following optimizer import/top-up or a price below the actual-cost floor prevents applicable automatic battery-backed/mixed export; independently proven PV-only MSC and Manual/Force retain their established separate semantics. Value Gate remains advisory-only, including with enforcement configured. Preserve qualified proposals for advisory calculation when operator authority prevents execution, without granting actuator permission. `effective_battery_export_floor` remains a monetary value, never a SoC field.
+
+### Import-cost ledger completeness (approved local O16 candidate)
+
+Measured import evidence must be captured before automatic battery-export arbitration. Import ownership for that interval comes from prior application and observed permission, not a future decision that closes import. A confirmed close retains the next measured import tail; a command is not a new meter observation. Completed automatic application or confirmed Manual observations can establish permission. Pending, failed and generic no-op outcomes cannot establish a safe inactive boundary. Manual imports remain accounted for without removing the Manual/Force export exemption.
+
+Actual activation of accounting source, tariff, authority or import-actuator identities invalidates accounting and permission evidence under the control lock, even if changed back before the next sample. Validated direct Manual/ESS requests invalidate that evidence before their first write; unchanged identities, unrelated tuning and rejected validation do not. An unobserved open/close interval cannot certify trusted cost history or the following inactive midnight. Operator targets and the Manual/Force exemption remain unchanged; applicable automatic battery sales may remain paused for the affected day.
+
+Captured intervals retain immutable energy, original tariff/trust, date, source and stable identity through retry. Persist interval, checkpoint and coverage atomically; exact replay must not duplicate energy or rewind the durable checkpoint. An ID with changed payload is an error. Unknown or pending coverage cannot be treated as trusted zero cost. Query failure, missing/non-finite counters, unretained snapshots and queue overflow must remain conservative. The existing 0.01 kWh significance and 1¢ cost-floor policies remain unchanged.
+
+Startup/legacy history, restart, source/counter changes and observation gaps leave affected-day coverage unknown. Recoverable queued intervals may restore a previously covered day only after exact reconciliation. Irrecoverable unknown coverage remains sticky for that day; only a continuous known-inactive midnight boundary with valid observations establishes a newly covered day. This can defer applicable automatic battery sales beyond the current day. Coverage records accounting continuity under existing measurement assumptions, not physical verification or new telemetry freshness guarantees. Independently proven PV-only MSC permission, operator ownership, price/reserve rules and actuator safeguards retain their existing semantics. See [the local design and acceptance boundaries](IMPORT_LEDGER_INTEGRITY.md).
 
 Diagnostics distinguish tier, selected/protected floor, proposal qualification/selection, execution eligibility or rejection, binding protection, calculated power, proposal owner, final decision owner and Morning preemption. Neither a proposal nor a final requested decision proves observed physical settlement.
 

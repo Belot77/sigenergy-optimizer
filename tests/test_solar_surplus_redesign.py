@@ -14,6 +14,7 @@ from app.optimizer import (
     _solar_surplus_timing_budget,
 )
 from haos49_characterization_helpers import Haos49CharacterizationCase
+from import_topup_coverage_helpers import seed_complete_import_history
 
 
 class SolarSurplusEnergyBudgetTests(unittest.TestCase):
@@ -933,6 +934,8 @@ class SolarSurplusControlWiringTests(Haos49CharacterizationCase):
         optimizer = self._optimizer(morning_dump_enabled=True)
         optimizer._morning_dump_active = lambda *args, **kwargs: True
 
+        # This owner comparison starts with known synthetic import history.
+        seed_complete_import_history(optimizer, morning)
         morning_dump = self._decide(optimizer, when=morning)
 
         self.assertFalse(morning_dump.solar_surplus_policy_active)

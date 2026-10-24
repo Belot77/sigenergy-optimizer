@@ -62,6 +62,14 @@ class ReportingActuatorHA(shared_fixtures.RecordingHA):
 
 class EveningBoostReentryStabilityTests(unittest.TestCase):
     START = datetime(2026, 1, 15, 19, 18)
+    KNOWN_EMPTY_IMPORT_HISTORY = {
+        "today_import_topup_kwh": 0.0,
+        "today_highest_actual_import_price": None,
+        "import_cost_export_floor": None,
+        "import_cost_floor_trusted": True,
+        "import_cost_floor_unknown": False,
+        "import_history_complete": True,
+    }
 
     def setUp(self) -> None:
         self.fixture = reserve_fixtures.EveningBoostReserveTrustCharacterizationTests()
@@ -74,11 +82,17 @@ class EveningBoostReentryStabilityTests(unittest.TestCase):
 
     def new_optimizer(self):
         # Use the real admission gate even if narrow legacy policy fixtures mock it.
-        return self.fixture.optimizer(
+        optimizer = self.fixture.optimizer(
             evening_boost_enabled=True,
             evening_boost_min_tomorrow_forecast_kwh=100.0,
             evening_boost_min_feedin_price=0.01,
         )
+        # Admission timing tests isolate reentry behavior from persisted cost
+        # history, which is covered by the dedicated veto test below.
+        optimizer._optimizer_import_topup_summary_today = (
+            lambda: dict(self.KNOWN_EMPTY_IMPORT_HISTORY)
+        )
+        return optimizer
 
     def prepare(self, elapsed: float, *, load_kw: float = 0.0,
                 report_elapsed=None, feedin_price=0.15, mutate=None):
@@ -136,6 +150,14 @@ class EveningBoostReentryStabilityTests(unittest.TestCase):
     def real_tick(self, elapsed, *, mutate=None):
         """Exercise the real reader, tick and application against fake services."""
         when = self.prepare(elapsed, mutate=mutate)
+        meter = self.optimizer.cfg.daily_import_energy
+        self.optimizer.ha.states[meter] = {
+            "entity_id": meter,
+            "state": "0",
+            "attributes": {},
+            "last_updated": when.isoformat(),
+            "last_reported": when.isoformat(),
+        }
         clock = self.optimizer.ha.clock
         clock[0] = datetime.fromtimestamp(when.timestamp(), timezone.utc)
 
@@ -433,6 +455,9 @@ class EveningBoostReentryStabilityTests(unittest.TestCase):
             ha=ha, evening_boost_enabled=True,
             evening_boost_min_tomorrow_forecast_kwh=100.0,
         )
+        self.optimizer._optimizer_import_topup_summary_today = (
+            lambda: dict(self.KNOWN_EMPTY_IMPORT_HISTORY)
+        )
         self.optimizer._tz = timezone(self.START.astimezone().utcoffset() or timedelta())
         for elapsed in (0, 30, 60, 90):
             decision = self.real_tick(elapsed)
@@ -453,6 +478,9 @@ class EveningBoostReentryStabilityTests(unittest.TestCase):
         self.optimizer = self.fixture.optimizer(
             ha=ha, evening_boost_enabled=True,
             evening_boost_min_tomorrow_forecast_kwh=100.0,
+        )
+        self.optimizer._optimizer_import_topup_summary_today = (
+            lambda: dict(self.KNOWN_EMPTY_IMPORT_HISTORY)
         )
         self.optimizer._tz = timezone(self.START.astimezone().utcoffset() or timedelta())
 
@@ -478,6 +506,9 @@ class EveningBoostReentryStabilityTests(unittest.TestCase):
         self.optimizer = self.fixture.optimizer(
             ha=ha, evening_boost_enabled=True,
             evening_boost_min_tomorrow_forecast_kwh=100.0,
+        )
+        self.optimizer._optimizer_import_topup_summary_today = (
+            lambda: dict(self.KNOWN_EMPTY_IMPORT_HISTORY)
         )
         self.optimizer._tz = timezone(self.START.astimezone().utcoffset() or timedelta())
         captured = []

@@ -1224,6 +1224,12 @@ def _require_ha_service_success(success: bool, operation: str) -> None:
 @router.post("/set_ess")
 async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
     _require_mutation_auth(request)
+    async with _opt(request)._control_lock:
+        _require_mutation_auth(request)
+        return await _set_ess_locked(request, body)
+
+
+async def _set_ess_locked(request: Request, body: ESSRequest) -> dict[str, Any]:
     opt = _opt(request)
     ha = _ha(request)
     cfg = opt.cfg
@@ -1261,6 +1267,11 @@ async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
             details={"field_errors": field_errors},
         )
         raise _validation_exception(field_errors)
+
+    # A validated direct request may change import between optimizer samples.
+    invalidate_accounting = getattr(opt, "invalidate_import_accounting", None)
+    if callable(invalidate_accounting):
+        invalidate_accounting("direct_ess_import_boundary")
 
     old_values = {
         "ems_mode": opt.last_decision.ems_mode if opt.last_decision else None,
@@ -1459,6 +1470,13 @@ class ConfigBatchUpdateRequest(BaseModel):
 @router.post("/config")
 async def update_config(request: Request, body: ConfigUpdateRequest) -> dict[str, Any]:
     _require_mutation_auth(request)
+    async with _opt(request).configuration_transaction():
+        # Queued requests must still be authorized after a possible key change.
+        _require_mutation_auth(request)
+        return _update_config_locked(request, body)
+
+
+def _update_config_locked(request: Request, body: ConfigUpdateRequest) -> dict[str, Any]:
     cfg = _opt(request).cfg
     if not hasattr(cfg, body.key):
         raise HTTPException(status_code=400, detail=f"Unknown config key: {body.key}")
@@ -1607,6 +1625,12 @@ async def delete_preset(request: Request, name: str) -> dict[str, Any]:
 @router.post("/config/batch")
 async def update_config_batch(request: Request, body: ConfigBatchUpdateRequest) -> dict[str, Any]:
     _require_mutation_auth(request)
+    async with _opt(request).configuration_transaction():
+        _require_mutation_auth(request)
+        return _update_config_batch_locked(request, body)
+
+
+def _update_config_batch_locked(request: Request, body: ConfigBatchUpdateRequest) -> dict[str, Any]:
     cfg = _opt(request).cfg
 
     if not body.updates:

@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import json
 import logging
 import math
 import os
 import secrets
+import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -32,6 +35,9 @@ MAX_DOWNLOAD_SEGMENTS = 25  # 24 hours can straddle 25 hourly segments.
 DIAGNOSTIC_WORKERS = 3
 MAX_PENDING_WORK = 16
 CLOCK_JUMP_SECONDS = 300
+HISTORY_DIRECTORY = "clock-history"
+MAX_HISTORY_SEGMENTS = 25
+MAX_HISTORY_BYTES = 512 * 1024 * 1024
 STATUS_FILE = "archive-status.json"
 GAP_REASONS = frozenset({"recorded_gap", "session_discontinuity", "missing_archive_status",
                          "unreadable_archive_status", "orphan_compaction", "clock_discontinuity",
@@ -231,6 +237,7 @@ class DecisionTraceStore:
         self._committed: set[tuple[str, int]] = set()
         self._confirmed_sequences: frozenset[int] = frozenset()
         self._recovery_needed = True
+        self._deferred_repair = False
         self._ready = False
         self._historical_gaps = False
         self._stopping = threading.Event()
@@ -248,6 +255,10 @@ class DecisionTraceStore:
         self._wall_reference: datetime | None = None
         self._monotonic_reference = 0.0
         self._clock_uncertain = False
+        self._clock_requires_attestation = False
+        self._next_attestation = 0.0
+        self._loaded_status_bytes: bytes | None = None
+        self._clock_recovery: dict[str, Any] | None = None
         self._boot_id: str | None = None
         self._executor = ThreadPoolExecutor(max_workers=DIAGNOSTIC_WORKERS,
                                             thread_name_prefix="decision-trace")
@@ -327,7 +338,8 @@ class DecisionTraceStore:
         has_archive = any(self.directory.glob("????????T??.jsonl"))
         try:
             with path.open("rb") as handle:
-                status = json.loads(handle.read(4097))
+                self._loaded_status_bytes = handle.read(4097)
+                status = json.loads(self._loaded_status_bytes)
             if not isinstance(status, dict) or type(status.get("possible_gap")) is not bool:
                 raise ValueError("Invalid trace archive status")
             reasons = status.get("reasons", [])
@@ -341,13 +353,19 @@ class DecisionTraceStore:
             if status.get("last_session") != self.session:
                 self._note_gap("session_discontinuity")
             clock = status.get("clock")
+            self._clock_recovery = status.get("clock_recovery")
             if clock is None:
                 # Legacy status cannot clear a previously recorded clock gap.
                 self._clock_uncertain = has_archive or "clock_discontinuity" in reasons
+                self._clock_requires_attestation = self._clock_uncertain
             else:
                 if not isinstance(clock, dict) or type(clock.get("uncertain")) is not bool:
                     raise ValueError("Invalid trace clock status")
                 self._clock_uncertain = clock["uncertain"]
+                requires_attestation = clock.get("requires_attestation", self._clock_uncertain)
+                if type(requires_attestation) is not bool:
+                    raise ValueError("Invalid trace clock attestation status")
+                self._clock_requires_attestation = requires_attestation
                 anchor = clock.get("anchor")
                 if anchor is not None:
                     self._wall_reference = _timestamp({"ts": anchor})
@@ -366,15 +384,19 @@ class DecisionTraceStore:
                         # persisted UTC anchor, never adopt the startup wall clock.
                         self._monotonic_reference = monotonic
                         self._clock_uncertain = True
+                        self._clock_requires_attestation = True
                 elif has_archive or self._clock_uncertain:
                     self._clock_uncertain = True
+                    self._clock_requires_attestation = True
         except FileNotFoundError:
             if has_archive:
                 self._note_gap("missing_archive_status")
                 self._clock_uncertain = True
+                self._clock_requires_attestation = True
         except Exception:
             self._note_gap("unreadable_archive_status")
             self._clock_uncertain = True
+            self._clock_requires_attestation = True
             self._wall_reference = None
         if self._clock_uncertain:
             self._note_gap("clock_discontinuity")
@@ -388,8 +410,11 @@ class DecisionTraceStore:
             status = {"possible_gap": bool(self._gap_reasons),
                       "reasons": sorted(self._gap_reasons), "last_session": self.session,
                       "clock": {"uncertain": self._clock_uncertain,
+                                "requires_attestation": self._clock_requires_attestation,
                                 "anchor": self._wall_reference.isoformat() if self._wall_reference else None,
                                 "monotonic": self._monotonic_reference, "boot_id": self._boot_id}}
+            if self._clock_recovery is not None:
+                status["clock_recovery"] = self._clock_recovery
         path = self.directory / STATUS_FILE
         temporary = path.with_suffix(".json.tmp")
         try:
@@ -442,7 +467,7 @@ class DecisionTraceStore:
             expected = now
         else:
             expected = self._wall_reference + timedelta(seconds=monotonic - self._monotonic_reference)
-        sane = (monotonic >= self._monotonic_reference
+        sane = (not self._clock_requires_attestation and monotonic >= self._monotonic_reference
                 and abs((now - expected).total_seconds()) <= CLOCK_JUMP_SECONDS)
         if sane:
             self._wall_reference, self._monotonic_reference = now, monotonic
@@ -456,6 +481,178 @@ class DecisionTraceStore:
                 self._status_version += 1
         self._note_gap("clock_discontinuity")
         return expected, False
+
+    def _corroborated_time(self, now: datetime) -> dict[str, Any] | None:
+        # Worker only. A process deadline also bounds a stuck system DNS resolver.
+        from app.trace_clock import DATE_TOLERANCE, PAIR_SECONDS, PROBE_SECONDS, SOURCES
+        started, wall_started = self._clock_now(), datetime.now(timezone.utc)
+        try:
+            result = subprocess.run(
+                [sys.executable, "-B", "-m", "app.trace_clock"], input=now.isoformat(),
+                text=True, capture_output=True, timeout=PAIR_SECONDS + 2, check=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+            elapsed = self._clock_now() - started
+            wall_elapsed = (datetime.now(timezone.utc) - wall_started).total_seconds()
+            if (not 0 <= elapsed <= PAIR_SECONDS + 2 or abs(wall_elapsed - elapsed) > 1
+                    or abs((wall_started - now).total_seconds()) > DATE_TOLERANCE
+                    or len(result.stdout) > 2048):
+                return None
+            proof = json.loads(result.stdout)
+            if not isinstance(proof, dict) or proof.get("method") != "dual_https_date":
+                return None
+            samples = proof.get("sources")
+            if not isinstance(samples, list) or len(samples) != 2:
+                return None
+            dates = []
+            for sample, (source, _) in zip(samples, SOURCES):
+                if not isinstance(sample, dict) or sample.get("source") != source:
+                    return None
+                date = _timestamp({"ts": sample["date"]})
+                rtt = sample["rtt_seconds"]
+                if (type(rtt) not in (int, float) or not math.isfinite(rtt)
+                        or not 0 <= rtt <= PROBE_SECONDS
+                        or not now - timedelta(seconds=DATE_TOLERANCE) <= date
+                        <= now + timedelta(seconds=elapsed + DATE_TOLERANCE)):
+                    return None
+                dates.append(date)
+            if abs((dates[1] - dates[0]).total_seconds()) > DATE_TOLERANCE + elapsed:
+                return None
+            return {"method": "dual_https_date", "sources": samples}
+        except Exception:
+            return None
+
+    @staticmethod
+    def _file_digest(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while chunk := handle.read(CHUNK_BYTES):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _preserve_clock_epoch(self, proof: Any) -> str:
+        """Publish a verified immutable copy before new UTC may expire any bytes."""
+        paths = sorted(self._lengths)
+        if (len(paths) > MAX_HISTORY_SEGMENTS
+                or sum(path.stat().st_size for path in paths) > MAX_HISTORY_BYTES):
+            raise OSError("Decision trace history exceeds preservation resource limits")
+        entries = []
+        for path in paths:
+            if path.is_symlink() or not path.is_file():
+                raise OSError("Decision trace history contains an unsafe segment")
+            entries.append({"name": path.name, "size": path.stat().st_size,
+                            "sha256": self._file_digest(path), "committed_bytes": self._lengths[path]})
+        prior_anchor = self._wall_reference.isoformat() if self._wall_reference else None
+        stable = json.dumps({"anchor": prior_anchor, "segments": entries}, sort_keys=True).encode()
+        epoch = hashlib.sha256(stable).hexdigest()
+        history = self.directory / HISTORY_DIRECTORY
+        if history.is_symlink():
+            raise OSError("Decision trace history directory is unsafe")
+        history.mkdir(exist_ok=True)
+        destination = history / epoch
+        original_status = self._loaded_status_bytes
+        if original_status is not None and len(original_status) > 4096:
+            raise OSError("Decision trace prior status exceeds preservation limit")
+        if not destination.exists():
+            # Stable staging name is resumable after interruption; files are never
+            # considered preserved until the complete directory is atomically published.
+            staging = history / (epoch + ".pending")
+            if staging.is_symlink():
+                raise OSError("Decision trace history staging is unsafe")
+            staging.mkdir(exist_ok=True)
+            for entry, source in zip(entries, paths):
+                target = staging / entry["name"]
+                if target.is_symlink():
+                    raise OSError("Decision trace history target is unsafe")
+                with source.open("rb") as reader, target.open("wb") as writer:
+                    while chunk := reader.read(CHUNK_BYTES):
+                        writer.write(chunk)
+                    writer.flush()
+                    os.fsync(writer.fileno())
+                if target.stat().st_size != entry["size"] or self._file_digest(target) != entry["sha256"]:
+                    raise OSError("Decision trace history copy verification failed")
+            status_entry = None
+            if original_status is not None:
+                target = staging / STATUS_FILE
+                if target.is_symlink():
+                    raise OSError("Decision trace history status is unsafe")
+                with target.open("wb") as writer:
+                    writer.write(original_status)
+                    writer.flush()
+                    os.fsync(writer.fileno())
+                status_entry = {"size": len(original_status),
+                                "sha256": hashlib.sha256(original_status).hexdigest()}
+            manifest = {"schema": 1, "epoch": epoch, "prior_anchor": prior_anchor,
+                        "segments": entries, "status": status_entry, "corroboration": proof}
+            target = staging / "manifest.json"
+            if target.is_symlink():
+                raise OSError("Decision trace history manifest is unsafe")
+            with target.open("w", encoding="utf-8") as writer:
+                json.dump(manifest, writer, separators=(",", ":"))
+                writer.write("\n")
+                writer.flush()
+                os.fsync(writer.fileno())
+            self._sync_directory(staging)
+            os.replace(staging, destination)
+        if destination.is_symlink() or not destination.is_dir():
+            raise OSError("Decision trace published history is unsafe")
+        manifest_path = destination / "manifest.json"
+        if manifest_path.is_symlink() or manifest_path.stat().st_size > 32768:
+            raise OSError("Decision trace history manifest is unsafe")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (manifest.get("schema") != 1 or manifest.get("epoch") != epoch
+                or manifest.get("segments") != entries or manifest.get("prior_anchor") != prior_anchor):
+            raise OSError("Decision trace history manifest verification failed")
+        for entry in entries:
+            target = destination / entry["name"]
+            if (target.is_symlink() or target.stat().st_size != entry["size"]
+                    or self._file_digest(target) != entry["sha256"]):
+                raise OSError("Decision trace preserved history verification failed")
+        if manifest.get("status") is not None:
+            target = destination / STATUS_FILE
+            entry = manifest["status"]
+            if (target.is_symlink() or target.stat().st_size != entry["size"]
+                    or self._file_digest(target) != entry["sha256"]):
+                raise OSError("Decision trace preserved status verification failed")
+        self._sync_directory(history)
+        self._sync_directory(self.directory)
+        return epoch
+
+    def _try_clock_recovery(self, now: datetime) -> tuple[datetime, bool]:
+        monotonic = self._clock_now()
+        if monotonic < self._next_attestation:
+            return now, False
+        self._next_attestation = monotonic + FLUSH_INTERVAL
+        proof = self._corroborated_time(now)
+        if not proof:
+            logger.warning("Decision trace clock remains uncertain; independent UTC corroboration unavailable")
+            return now, False
+        elapsed = self._clock_now() - monotonic
+        if not 0 <= elapsed <= 12:
+            return now, False
+        epoch = self._preserve_clock_epoch(proof)
+        previous = (self._wall_reference, self._monotonic_reference, self._clock_recovery)
+        self._wall_reference = now + timedelta(seconds=elapsed)
+        self._monotonic_reference = monotonic + elapsed
+        self._clock_recovery = {"epoch": epoch, "method": "dual_https_date",
+                                "reanchored_at": self._wall_reference.isoformat()}
+        self._clock_uncertain = False
+        self._clock_requires_attestation = False
+        with self._status_lock:
+            self._status_version += 1
+        try:
+            self._save_status()
+        except Exception:
+            self._wall_reference, self._monotonic_reference, self._clock_recovery = previous
+            self._clock_uncertain = self._clock_requires_attestation = True
+            with self._status_lock:
+                self._status_version += 1
+            raise
+        # Corrupt/incomplete active rows were left untouched while untrusted.
+        # Their full bytes are now preserved; ordinary recovery may repair them.
+        self._recover()
+        logger.warning("Decision trace clock recovered using independent UTC corroboration; prior epoch preserved")
+        return self._wall_reference, True
 
     @property
     def ready(self) -> bool:
@@ -592,6 +789,7 @@ class DecisionTraceStore:
         identities: dict[Path, set[tuple[str, int]]] = {}
         committed: set[tuple[str, int]] = set()
         historical_gaps = False
+        self._deferred_repair = False
         for path in sorted(self.directory.glob("????????T??.jsonl")):
             try:
                 datetime.strptime(path.stem, "%Y%m%dT%H")
@@ -612,8 +810,11 @@ class DecisionTraceStore:
                     historical_gaps |= bool(row["_trace"].get("possible_gap"))
             if valid_bytes != size:
                 self._note_gap("discarded_record")
-                self._save_status()
-                ids = self._replace(path, None, committed)
+                if self._clock_uncertain:
+                    self._deferred_repair = True
+                else:
+                    self._save_status()
+                    ids = self._replace(path, None, committed)
             # A complete line from an uncertain previous append is acknowledged
             # only after a successful fsync, never merely because it parses.
             with path.open("ab") as handle:
@@ -693,9 +894,13 @@ class DecisionTraceStore:
                 safe_now, sane = self._checked_time(now)
                 self._save_status()
                 if not sane:
+                    safe_now, sane = self._try_clock_recovery(now)
+                if not sane:
                     # Preserve the archive and all existing indexes, but do not
                     # append or acknowledge cycles under an unresolved clock.
                     return True
+                if self._deferred_repair:
+                    self._recover()
                 cutoff = safe_now - RETENTION
                 batches: dict[Path, list[tuple[tuple[str, int], bytes]]] = {}
                 pending: set[tuple[str, int]] = set()

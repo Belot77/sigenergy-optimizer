@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from app.optimizer import (
     MODE_CMD_CHARGE_GRID,
@@ -10,9 +10,15 @@ from app.optimizer import (
     MODE_MAX_SELF,
 )
 from haos49_characterization_helpers import Haos49CharacterizationCase
+from import_topup_coverage_helpers import seed_complete_import_history
 
 
 class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
+    @staticmethod
+    def _seed_import_history(optimizer, when: datetime) -> None:
+        optimizer._tz = timezone(when.astimezone().utcoffset() or timedelta())
+        seed_complete_import_history(optimizer, when)
+
     def assert_control_outputs(
         self,
         decision,
@@ -307,6 +313,7 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
         for name, fit, fit_cents, spike, export_branch in cases:
             with self.subTest(name=name):
                 optimizer = self.optimizer(export_spike_threshold=0.60)
+                self._seed_import_history(optimizer, when)
                 state = self.state(
                     when,
                     sun_above_horizon=False,
@@ -340,6 +347,7 @@ class Haos49NormalCharacterizationTests(Haos49CharacterizationCase):
         ):
             with self.subTest(name=name):
                 optimizer = self.optimizer(export_spike_threshold=0.60)
+                self._seed_import_history(optimizer, self.FIXED_AFTERNOON)
                 state = self.state(
                     self.FIXED_AFTERNOON,
                     battery_soc=20.0,

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased - approved combined .77 safety and clock-recovery candidate - 2026-10-24
+
+- Combine O14 configuration activation under one authority/control transaction with O16 import-ledger integrity: preserve captured tariff/trust evidence through exact retries, atomically persist intervals/checkpoints/coverage, and fail closed when history remains unknown. Existing Manual/Force and independently qualified PV-only semantics remain separate.
+- Repair O10 trace clock recovery: corroborate re-anchoring with two fixed HTTPS time sources through a worker-only, hard-bounded subprocess (including DNS); preserve old trace segments and prior status in an immutable atomic snapshot before allowing normal active 24-hour pruning. No optimizer control rule changes. If the snapshot cannot complete within the disk budget, retain the old evidence and keep the clock guard closed; do not delete it automatically.
+- Combined O14/O16 focused validation passed 146 tests / 94 subtests (205 warnings, 4.32 seconds). Trace characterization reproduced long-stale/new-boot deadlock and short-new-boot false-clear cases; trace implementation/review and final combined validation remain in progress. These results do not establish release readiness or physical behavior.
+- Planned version: `2.3.66-haos77`; no version markers, tag, build or GitHub Release have been created in this preparation. The user approved completing the source PR, normal merge, tag/build verification and GitHub Release. Installation remains the operator's separate action. See [the .77 candidate plan and safety gates](docs/HAOS77_RELEASE_CANDIDATE.md), [O16 ledger boundaries](docs/IMPORT_LEDGER_INTEGRITY.md) and [current evidence](docs/CURRENT_STATE.md).
+
+- Final combined validation: 1,275 tests / 1,305 subtests passed, zero failures, 206 existing warnings, 226.40 seconds. Independent review was GO; no HA or physical acceptance is claimed.
+
 ## 2.3.65-haos76 - published release - 2026-10-23
 
 Published 22 October 2026 at 22:12:46 UTC (23 October 09:12:46 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.65-haos76). Tag/source `e70d9ff016a546615367b6d69f4ac4602da7b23c`, tree `42439dff8ee6e02bc503b5e36e05fc965996fc31`; PR #32 normally merged at `c226c98703263e3a0c5cd5ca811a2d39554ea315`, with the same tree. Actions run `39862508030` succeeded at the exact tag source; the multi-architecture build job completed in 2m25s.

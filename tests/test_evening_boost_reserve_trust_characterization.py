@@ -13,6 +13,14 @@ _UNSET = object()
 
 class EveningBoostReserveTrustCharacterizationTests(Haos49CharacterizationCase):
     EVENING = datetime(2026, 1, 15, 19, 18)
+    KNOWN_EMPTY_IMPORT_HISTORY = {
+        "today_import_topup_kwh": 0.0,
+        "today_highest_actual_import_price": None,
+        "import_cost_export_floor": None,
+        "import_cost_floor_trusted": True,
+        "import_cost_floor_unknown": False,
+        "import_history_complete": True,
+    }
 
     def _fixture_states(
         self,
@@ -126,6 +134,11 @@ class EveningBoostReserveTrustCharacterizationTests(Haos49CharacterizationCase):
             evening_boost_enabled=True,
             evening_boost_min_tomorrow_forecast_kwh=100.0,
             evening_boost_min_feedin_price=0.01,
+        )
+        # These cases isolate reserve/read trust; the Boost reentry suite owns
+        # explicit import-cost veto behavior.
+        optimizer._optimizer_import_topup_summary_today = (
+            lambda: dict(self.KNOWN_EMPTY_IMPORT_HISTORY)
         )
         # These cases characterize raw eligibility and reserve handling; the
         # dedicated reentry suite exercises the real delayed-admission state.

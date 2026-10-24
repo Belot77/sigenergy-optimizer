@@ -5,9 +5,23 @@ from datetime import datetime, timedelta, timezone
 
 from app.optimizer import MODE_CMD_DISCHARGE_PV, MODE_MAX_SELF
 from haos49_characterization_helpers import Haos49CharacterizationCase
+from import_topup_coverage_helpers import seed_complete_import_history
 
 
 class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
+    KNOWN_EMPTY_IMPORT_HISTORY = {
+        "today_import_topup_kwh": 0.0,
+        "today_highest_actual_import_price": None,
+        "import_cost_export_floor": None,
+        "import_cost_floor_trusted": True,
+        "import_cost_floor_unknown": False,
+        "import_history_complete": True,
+    }
+
+    def _seed_import_history(self, optimizer, when: datetime) -> None:
+        optimizer._tz = timezone(when.astimezone().utcoffset() or timedelta())
+        seed_complete_import_history(optimizer, when)
+
     def assert_outputs(
         self,
         decision,
@@ -28,6 +42,7 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
     def test_morning_dump_uses_full_deliberate_discharge_outputs(self) -> None:
         when = datetime(2026, 1, 15, 6, 0)
         optimizer = self.optimizer(morning_dump_enabled=True)
+        self._seed_import_history(optimizer, when)
         optimizer._morning_dump_active = lambda *args, **kwargs: True
         state = self.state(
             when,
@@ -53,6 +68,7 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
     def test_morning_dump_exit_recovers_to_closed_msc(self) -> None:
         when = datetime(2026, 1, 15, 6, 0)
         optimizer = self.optimizer(morning_dump_enabled=True)
+        self._seed_import_history(optimizer, when)
         optimizer._morning_dump_active = lambda *args, **kwargs: False
         state = self.state(
             when,
@@ -230,6 +246,7 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
     def test_evening_boost_uses_discharge_but_reports_normal_tier_branch(self) -> None:
         when = datetime(2026, 1, 15, 17, 30)
         optimizer = self.optimizer(evening_boost_enabled=True)
+        self._seed_import_history(optimizer, when)
         optimizer._evening_export_boost_active = lambda *args, **kwargs: True
         optimizer._evening_boost_reentry_allowed = (
             lambda state, *, candidate, now_ts: candidate
@@ -262,6 +279,7 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
         for name, fit, fit_cents, expected_mode, expected_pv_max in cases:
             with self.subTest(name=name):
                 optimizer = self.optimizer(evening_boost_enabled=True)
+                self._seed_import_history(optimizer, when)
                 optimizer._evening_export_boost_active = lambda *args, **kwargs: False
                 state = self.state(
                     when,
@@ -294,6 +312,11 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
             for hours in (3, 5, 7, 9, 11)
         ]
         optimizer = self.optimizer(morning_dump_enabled=True)
+        # Isolate dynamic policy gates from accounting history; dedicated
+        # O16 integration tests exercise the actual unknown-history veto.
+        optimizer._optimizer_import_topup_summary_today = (
+            lambda: dict(self.KNOWN_EMPTY_IMPORT_HISTORY)
+        )
         active_state = self.state(
             active_when,
             sun_above_horizon=False,
@@ -383,6 +406,11 @@ class Haos49SpecialModeCharacterizationTests(Haos49CharacterizationCase):
         optimizer = self.optimizer(
             evening_boost_enabled=True,
             evening_boost_min_tomorrow_forecast_kwh=100.0,
+        )
+        # Isolate dynamic policy gates from accounting history; dedicated
+        # O16 integration tests exercise the actual unknown-history veto.
+        optimizer._optimizer_import_topup_summary_today = (
+            lambda: dict(self.KNOWN_EMPTY_IMPORT_HISTORY)
         )
         # Keep this forecast-gate characterization independent of the separate
         # delayed reentry state, which has dedicated real-timer coverage.

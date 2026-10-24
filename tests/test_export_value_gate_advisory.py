@@ -27,6 +27,7 @@ from app.optimizer import (
     MODE_MAX_SELF,
     SigEnergyOptimizer,
 )
+from import_topup_coverage_helpers import seed_complete_import_history
 
 
 class _DummyHA:
@@ -215,6 +216,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         cfg = Settings(**values)
         optimizer = SigEnergyOptimizer(ha or _DummyHA(), cfg)
         self._optimizers.append(optimizer)
+        seed_complete_import_history(optimizer, datetime.now(optimizer._tz))
         return optimizer
 
     @staticmethod
@@ -235,9 +237,12 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
             next_sunrise_ts=14.0 * 3600,
             next_sunset_ts=2.0 * 3600,
             sun_above_horizon=False,
+            daily_import_meter_value=0.0,
         )
         for key, value in overrides.items():
             setattr(state, key, value)
+        if "daily_import_kwh" in overrides and "daily_import_meter_value" not in overrides:
+            state.daily_import_meter_value = overrides["daily_import_kwh"]
         return state
 
     def _qualifying_full_battery_msc_state(

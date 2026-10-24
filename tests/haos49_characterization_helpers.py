@@ -10,6 +10,7 @@ from unittest.mock import patch
 from app.config import Settings
 from app.models import SolarState
 from app.optimizer import MODE_MAX_SELF, SigEnergyOptimizer
+from import_topup_coverage_helpers import seed_complete_import_history
 
 
 class RecordingHA:
@@ -169,6 +170,7 @@ class Haos49CharacterizationCase(unittest.TestCase):
         values.update(overrides)
         optimizer = SigEnergyOptimizer(ha or RecordingHA(), Settings(**values))
         self._optimizers.append(optimizer)
+        seed_complete_import_history(optimizer, self.FIXED_AFTERNOON)
         return optimizer
 
     @staticmethod
@@ -224,10 +226,13 @@ class Haos49CharacterizationCase(unittest.TestCase):
             ha_control_switch_available=True,
             ha_control_switch_state="on",
             demand_window_observed=True,
+            daily_import_meter_value=0.0,
             timestamp=when,
         )
         for key, value in overrides.items():
             setattr(state, key, value)
+        if "daily_import_kwh" in overrides and "daily_import_meter_value" not in overrides:
+            state.daily_import_meter_value = overrides["daily_import_kwh"]
         return state
 
     @staticmethod

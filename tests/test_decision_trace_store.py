@@ -31,6 +31,9 @@ class DecisionTraceStoreTests(unittest.TestCase):
         boot = patch.object(DecisionTraceStore, "_boot_identity", return_value="test-boot")
         boot.start()
         self.addCleanup(boot.stop)
+        proof = patch.object(DecisionTraceStore, "_corroborated_time", return_value=None)
+        proof.start()
+        self.addCleanup(proof.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.store = DecisionTraceStore(Path(self.tmp.name) / "trace")
         self.stores = [self.store]
@@ -309,11 +312,11 @@ class DecisionTraceStoreTests(unittest.TestCase):
             self.assertTrue(restarted.flush([], NOW + timedelta(hours=26)))
         self.assertTrue(restarted._clock_uncertain)
         self.assertEqual({path: path.read_bytes() for path in before}, before)
-        # Without provable downtime, only agreement with the retained UTC
-        # anchor plus this process's elapsed time can reconcile the clock.
+        # Unknown-boot monotonic elapsed time cannot prove a UTC epoch, even
+        # when a later wall-clock sample matches the obsolete retained anchor.
         restarted._clock_now.return_value = 60.0
         self.assertTrue(restarted.flush([], NOW + timedelta(seconds=60)))
-        self.assertFalse(restarted._clock_uncertain)
+        self.assertTrue(restarted._clock_uncertain)
 
     def test_72_hours_of_clock_uncertainty_freezes_archive_and_identity_bookkeeping(self):
         self.rows.appendleft(row())

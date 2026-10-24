@@ -22,6 +22,7 @@ from haos49_characterization_helpers import (
     Haos49CharacterizationCase,
     RecordingHA,
 )
+from import_topup_coverage_helpers import seed_complete_import_history
 
 
 class ScriptedReadbackHA(RecordingHA):
@@ -161,6 +162,11 @@ async def establish_observed_msc_baseline(case, optimizer, ha, when) -> None:
 
 
 class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
+    @staticmethod
+    def _seed_import_history(optimizer, when: datetime) -> None:
+        optimizer._tz = timezone(when.astimezone().utcoffset() or timedelta())
+        seed_complete_import_history(optimizer, when)
+
     """Future MSC baseline; current haos53 is expected to fail architecture cases."""
 
     @staticmethod
@@ -2209,6 +2215,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                     optimizer._evening_boost_reentry_allowed = (
                         lambda state, *, candidate, now_ts: candidate
                     )
+                self._seed_import_history(optimizer, when)
                 decision = self.decide(optimizer, state, when)
 
                 self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
@@ -2614,6 +2621,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         )
         for name, optimizer, state, when, expected_owner in cases:
             with self.subTest(owner=name):
+                self._seed_import_history(optimizer, when)
                 decision = self.decide(optimizer, state, when)
 
                 self.assertTrue(bool(decision.trace_gates.get("positive_fit_override")))

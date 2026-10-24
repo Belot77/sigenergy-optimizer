@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -29,8 +30,14 @@ class _DummyCfg:
 class _DummyOptimizer:
     def __init__(self, cfg: Settings) -> None:
         self.cfg = cfg
+        self._control_lock = asyncio.Lock()
         self.audit_events: list[dict[str, object]] = []
         self.config_warnings_refreshed = False
+
+    @asynccontextmanager
+    async def configuration_transaction(self):
+        async with self._control_lock:
+            yield
 
     def record_audit_event(self, **event: object) -> None:
         self.audit_events.append(event)
