@@ -4,6 +4,30 @@ Last consolidated: 2026-10-26
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
+## Local UI log-retention correction - pre-commit checkpoint, 26 October 2026
+
+Approved local worktree `C:\Projects\sigenergy_optimizer-log-retention`, branch
+`fix/diagnostic-log-retention`, starts from verified main
+`0a1955874e8599ac273b8c8c06b5e8cde5595600`. Only recognized successful 2xx
+`httpx` INFO request messages are filtered from the UI handler's 500-record
+memory ring. HTTP failures, unknown formats, other loggers and warnings/errors
+retain their existing behavior. Console logs and logger levels are unchanged.
+The original failure reproduction was 16 failed / 10 passed; the refined focused
+module independently passed 30 cases. Combined logging, HA-client, ingress,
+application-outcome and fallback checks passed 122 tests / 10 subtests, zero
+failures, 202 existing warnings, in 68.94 seconds. Independent code/test review
+is GO. No full suite or physical acceptance is claimed.
+
+This records pre-commit validation of an unpublished local diagnostic correction.
+Any subsequent approved commit or PR identity is established by Git; publication
+and live actions remain separate. No HA access, control logic, retries, settlement,
+release markers or runtime settings change.
+The supplied trace's 65 application failures / 59 unsuccessful fallbacks remain
+unexplained; later helper success does not prove physical settlement. The supplied
+HTTP-only log covers a later, non-overlapping interval. Evicted/restarted UI history
+cannot be recovered by this filter; older host/container logs may still exist.
+Published .79 and existing installation/physical acceptance gates remain unchanged.
+
 ## Current .79 publication and verification - 26 October 2026
 
 **Latest published: 2.3.68-haos79.** [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.68-haos79)

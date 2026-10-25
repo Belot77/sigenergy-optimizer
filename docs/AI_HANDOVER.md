@@ -4,6 +4,39 @@ Last consolidated: 2026-10-26
 
 Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STATE.md` and relevant `CONTROL_CONTRACT.md` sections. Inspect only minimum relevant files. Git records repository identity; HA and operator evidence establish live state.
 
+## Local UI log-retention correction - pre-commit checkpoint, 26 October 2026
+
+The operator approved local branch `fix/diagnostic-log-retention`, in
+`C:\Projects\sigenergy_optimizer-log-retention`, from freshly fetched main
+`0a1955874e8599ac273b8c8c06b5e8cde5595600`. No commit, push, release, installation
+or live action is authorized by this local-fix approval. Original unfinished
+workspaces remain preserved.
+
+The supplied 500-entry log contains only successful HTTP INFO requests and spans
+84 seconds. A UI-handler-only filter now suppresses recognized 2xx `httpx` INFO
+request messages. Non-2xx responses, unknown formats, other loggers and all
+warnings/errors retain their existing behavior. Filtering fails open on unknown
+formats/errors and does not mutate shared records. Console logging and global
+logger levels are unchanged. The newest-first ring still holds at most 500 retained
+records and is cleared on process restart; later retained records can still evict
+older errors. No persistent storage or history recovery is added.
+
+Production scope is only the log-capture block in `app/routers/api.py`, with
+focused regression coverage in `tests/test_ui_log_retention.py` and matching
+README/changelog/current-state notes. Controls, service-call frequency, MSC
+settlement, application outcome metadata, accounting, release markers and settings
+are unchanged. This does not resolve the trace's 65 failed application outcomes
+or 59 unsuccessful fallbacks, whose underlying causes remain unproven.
+
+Before the change, the initial regression run reproduced the issue with
+16 failures / 10 passes. Independent focused verification of the refined module
+passed all 30 cases. Combined logging, HA-client, ingress, application-outcome and
+fallback checks passed 122 tests / 10 subtests, zero failures, 202 existing warnings,
+in 68.94 seconds. Independent code/test review is GO. No full-suite or physical
+acceptance is claimed. To roll back this local candidate,
+withhold the uncommitted branch; any later committed reversal must remain scoped
+to the diagnostic filter and preserve unrelated work.
+
 ## Current .79 publication and verification - 26 October 2026
 
 **2.3.68-haos79 is published.** [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.68-haos79)
