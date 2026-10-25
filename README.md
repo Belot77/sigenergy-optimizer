@@ -1,5 +1,15 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Local release candidate: 2.3.69-haos80
+
+Packages the reviewed UI log-retention fix from normally merged
+[PR #43](https://github.com/Belot77/sigenergy-optimizer/pull/43), main
+`bcd9fe51f7303467ed8e463805c30284110e6a95`. Routine successful HTTP polls no
+longer crowd the built-in UI log buffer; HTTP failures and other diagnostics keep
+their existing behavior. Console logs and inverter control are unchanged.
+This is local metadata/documentation preparation only, not a published or installed
+build. See [scope, verification and acceptance](docs/HAOS80_RELEASE_CANDIDATE.md).
+
 ## Current published release: 2.3.68-haos79
 
 Published 25 October 2026 at 21:08:21 UTC (26 October 08:08:21 Sydney):
@@ -236,7 +246,7 @@ Quick rule of thumb:
 - Add-on logs: Settings -> Add-ons -> SigEnergy Optimizer -> Logs
 - Optional CLI: ha addons logs local_sigenergy_optimizer
 
-Local logging candidate (not included in published .79): the optimizer's built-in
+Local .80 candidate (not included in published .79): the optimizer's built-in
 log viewer/download omits recognized successful 2xx `httpx` INFO requests while
 keeping HTTP failures and other diagnostics. Add-on console logs remain unchanged.
 The UI holds at most 500 retained records in memory, newest first; requesting more

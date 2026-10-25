@@ -2,7 +2,20 @@
 
 This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
 
-## Current checkpoint - 2026-10-26 (published .79)
+## Current checkpoint - 2026-10-26 (published .79; local .80 candidate)
+
+UI log-retention source [PR #43](https://github.com/Belot77/sigenergy-optimizer/pull/43)
+normally merged at `bcd9fe51f7303467ed8e463805c30284110e6a95`, exact reviewed
+tree `70805bd6f1f49eb47654b7c686c6a8d904371d13`. Local .80 preparation changes
+only five established version markers and six documents. Retained source checks
+passed 122 tests / 10 subtests; independent source/test/documentation review is GO.
+See [the release candidate](HAOS80_RELEASE_CANDIDATE.md) for release validation,
+publication boundaries and installed-build verification. No .80 tag/image/release
+or HA action is claimed. The filter does not resolve actuator failures or change
+control protections. O18, O5/O9, broader O6, parked O11 and existing physical gates
+retain their current ordering. The source branch and all original work remain intact.
+
+## Historical .79 publication checkpoint - 2026-10-26
 
 Version **2.3.68-haos79** is published at [GitHub Releases](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.68-haos79),
 25 October 2026 21:08:21 UTC (26 October 08:08:21 Sydney). Tag/source

@@ -4,7 +4,39 @@ Last consolidated: 2026-10-26
 
 Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STATE.md` and relevant `CONTROL_CONTRACT.md` sections. Inspect only minimum relevant files. Git records repository identity; HA and operator evidence establish live state.
 
-## Local UI log-retention correction - pre-commit checkpoint, 26 October 2026
+## Local .80 release preparation - 26 October 2026
+
+[PR #43](https://github.com/Belot77/sigenergy-optimizer/pull/43) normally merged
+reviewed head `512601da8083f88a260e343dd980c2c14183c814` into main at
+`bcd9fe51f7303467ed8e463805c30284110e6a95` at 10:00:11 Sydney
+(25 October 23:00:11 UTC), retaining exact reviewed tree
+`70805bd6f1f49eb47654b7c686c6a8d904371d13`. Source branch and all unfinished
+workspaces are preserved. The prior local correction checkpoint below is historical.
+
+The operator continued to local `2.3.69-haos80` preparation on branch
+`release/2.3.69-haos80` in `C:\Projects\sigenergy_optimizer-release-haos80`,
+based on that freshly verified main. Scope is five single-marker substitutions
+and six documents. No new logging/control/test/configuration-value/workflow change
+is bundled. Commit, tag/image/publication and HA installation remain separate.
+The future tag/container source will be a separately approved metadata commit,
+not the source merge above; it is not yet assigned.
+
+Retained logging-source validation passed 122 tests / 10 subtests, zero failures,
+202 existing warnings, 68.94 seconds; independent focused checks passed 30 cases.
+Independent source/test/documentation review is GO. The previous .79 full suite
+is historical and is not claimed as a full run of this new logging candidate.
+All 46 release/source-pinning/logging checks passed in 10.69 seconds, with 202
+existing warnings and zero failures. Exact five-marker/six-document scope is
+verified; independent metadata/documentation review is GO. See [the .80 candidate](HAOS80_RELEASE_CANDIDATE.md).
+
+Latest published remains .79 at `ea516ef6cabd9918dbea675694a9de3aa207c8af`.
+The logging fix only filters recognized successful 2xx HTTP INFO from the UI ring;
+console logs, its 500-record/process-lifetime limit and control behavior remain
+unchanged. It cannot recover lost history or explain recorded actuator failures.
+O18, O5/O9, broader O6 depletion/floor questions, parked O11 and existing live/Boost
+acceptance remain open. No installed .79/.80 identity or physical acceptance is claimed.
+
+## Historical local UI log-retention correction - pre-commit checkpoint, 26 October 2026
 
 The operator approved local branch `fix/diagnostic-log-retention`, in
 `C:\Projects\sigenergy_optimizer-log-retention`, from freshly fetched main
