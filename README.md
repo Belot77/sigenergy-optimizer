@@ -1,14 +1,32 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Local release candidate: 2.3.68-haos79
+## Current published release: 2.3.68-haos79
 
-Prepared locally from the normal [PR #40](https://github.com/Belot77/sigenergy-optimizer/pull/40)
-merge `fbe3bfcc14312952748f1991eec7836977adfcb5`. It packages bounded O2 Solar
-re-entry and O6 charge-handoff qualification, with no new configuration setting
-or further control change during release preparation. It is not yet published
-or install-ready. See [candidate scope and acceptance](docs/HAOS79_RELEASE_CANDIDATE.md).
+Published 25 October 2026 at 21:08:21 UTC (26 October 08:08:21 Sydney):
+[GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.68-haos79).
+Tag/source `ea516ef6cabd9918dbea675694a9de3aa207c8af`; metadata [PR #41](https://github.com/Belot77/sigenergy-optimizer/pull/41)
+normally merged at `44419af295a47be24d5f06af3ed7cba83b2f27bb` with exact tagged
+tree `8e7e6cf6cdcbb6196383352c2a351f055aed5912`. Actions run `40233491965`
+succeeded at the exact tag source.
 
-## Current published release: 2.3.67-haos78
+Includes bounded O2 Solar re-entry and O6 relieved-Morning charge-handoff
+qualification. Version/latest OCI index:
+`sha256:cbaa5f68e4830737abba90666e486b9db848b3a853d1c9138c33a93f3b02bdad`.
+Both amd64/arm64 images were checked; all 22 layer hashes, sizes and diff IDs
+were verified, and fourteen target files per platform match the tag. Verification fingerprint:
+`sha256:a5a6945fc54c5a872a97b717d377cb88b57c6c0e7d8a9704174bc33324f2e3f8`.
+Immutable .78 index remains unchanged at
+`sha256:35292feb279a4b33e4c86f5482d690a9704c91d7178038b115c3bc434ead991a`.
+
+Full offline validation passed 1,415 tests / 1,380 subtests, zero failures,
+206 existing warnings, in 241.93 seconds; focused checks passed 165 / 184.
+All 16 release checks passed in 9.83 seconds. Independent source and publication
+proof reviews were GO. See [the .79 publication receipt and acceptance limits](docs/HAOS79_RELEASE_CANDIDATE.md).
+Auto-update was confirmed off by the operator on 26 October. No HA installation
+or physical acceptance is claimed; O18 fill strategy, O5/O9 review, broader O6
+depletion/floor questions and parked O11 remain open.
+
+## Previous published release: 2.3.67-haos78
 
 Published 24 October 2026 at 07:57:03 UTC (18:57:03 Sydney):
 [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.67-haos78).
