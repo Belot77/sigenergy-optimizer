@@ -2,7 +2,17 @@
 
 This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
 
-## Current checkpoint - 2026-10-24 (published .78)
+## Current checkpoint - 2026-10-25 (published .78; local O2/O6 correction)
+
+The operator approved local branch `fix/solar-charge-reentry-stability` in
+`C:\Projects\sigenergy_optimizer-solar-reentry`. Separate O2 budget re-entry and
+O6 restrictive-charge handoff guards use 30-second advancing PV/load and local
+monotonic proof, with 60-second report age/gap bounds. This preserves immediate
+closures, raw Morning priority, valid Solar export and existing charge bounds.
+Full validation passed 1,415 tests / 1,380 subtests, zero failures, 206 existing
+warnings, in 241.93 seconds; focused checks passed 165 / 184. Independent peer
+review is GO. Any commit or publication needs separate approval.
+See [the candidate and acceptance plan](SOLAR_REENTRY_STABILITY.md).
 
 Latest published release is **.78 / `2.3.67-haos78`**, published 24 October
 at 07:57:03 UTC (18:57:03 Sydney). Tag/container source:
@@ -17,9 +27,11 @@ zero failures, 206 warnings, 232.02 seconds; focused 126 / 8. All 16 release che
 passed in 9.58 seconds. Independent source and metadata review were GO.
 No full-suite repeat was run for marker/docs-only release preparation.
 
-Publication is not installation or physical acceptance. The operator reported
-.76 installed after SSD restoration; latest full supplied startup/source proof
-remains .75. No HA installation, live settings or Boost enablement was performed.
+Publication is not installation or physical acceptance. The operator reports
+mostly .77 followed by a .78 update on the morning of 25 October; exact installed
+source is unverified. The latest full supplied startup/source proof remains the
+historical .75 excerpt. No agent HA installation, settings change or Boost
+enablement was performed.
 Unknown import-cost evidence retains its safeguards. Ordinary runtime Logs
 availability and historical HDD/MSC causation are not established as fixed.
 
@@ -38,6 +50,35 @@ then complete the ownership/configuration audit (O9), architecture, project clea
 full GUI/UX and Climate Manager integration. The integration candidate does not
 bypass those gates. The protected .65 source/image remain available, but the actual
 restore/reinstall path remains unproven.
+
+## 25 October trace follow-up priority
+
+1. **O6 and O2:** offline sequence characterization is now complete on local
+   tests-only branch `test/solar-charge-cycling` in
+   `C:\Projects\sigenergy_optimizer-charge-cycling`, based on main `c84a61b`.
+   Two new modules reproduce Morning Slow/Solar charge handoffs and Solar/normal
+   aggregate-budget crossings through real decision logic. Combined checks pass
+   118 tests / 127 subtests; independent cross-review is GO. The subsequent
+   explicitly approved local correction is now implemented in the isolated
+   branch above, with full validation and independent peer review GO. Neither
+   the tests nor supplied traces establish physical sensor causes, exact installed
+   configuration or lost energy. See [the characterization](SOLAR_CHARGE_CYCLING_CHARACTERIZATION.md).
+2. **O18:** review fill-strategy robustness against forecast downgrades. The
+   25 October battery was 69.6% at its 16:29:52 fill deadline. Normal charging
+   already requested 21 kW after 13:09:53; the earlier bypass contribution cannot
+   be determined from these samples alone. Zero-charge/minimum-charge behavior is
+   an operator-policy tradeoff requiring separate approval.
+3. **O5/O9:** retain reserve-policy and diagnostic review for a computed overnight
+   floor above 100%; this planning estimate is not an above-100% charging command.
+
+See [the dated evidence and updated register](CURRENT_STATE.md#25-october-trace-evidence-and-follow-up).
+The historical intake was documentation-only; the subsequent continuation
+approved local characterization tests and matching documentation. The later
+explicit approval covers the bounded local correction recorded above, regression
+tests, review and docs. Commit, publication and live actions remain separate.
+O11 remains parked. Existing acceptance and
+sequencing gates, the deferred short physical Demand Window import issue, and
+the later O9/architecture/cleanup/GUI/Climate Manager order remain unchanged.
 
 ## 1. Phase 1 code validation
 

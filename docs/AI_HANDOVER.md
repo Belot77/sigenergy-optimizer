@@ -1,8 +1,103 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-10-24
+Last consolidated: 2026-10-25
 
 Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STATE.md` and relevant `CONTROL_CONTRACT.md` sections. Inspect only minimum relevant files. Git records repository identity; HA and operator evidence establish live state.
+
+## 25 October approved local O2/O6 correction
+
+Workspace `C:\Projects\sigenergy_optimizer-solar-reentry`, branch
+`fix/solar-charge-reentry-stability`, starts from freshly fetched `origin/main`
+`c84a61b6a6ca1fb6d5f23c421f1f11ebf4a1ce49`. The operator explicitly approved
+the 30-second dual-source/monotonic qualification with 60-second age/gap bounds,
+local correction, regression tests, safety review and matching documentation.
+Commit, push, release and live actions are not authorized by this approval.
+
+O2 withholds Solar reacquisition after its strict aggregate-budget failure;
+initial activation and immediate failure closures remain unchanged. O6 delays
+only Solar's restrictive charge reacquisition after a completed relieved Morning
+owner restored the normal safe bound. Raw Morning priority and valid Solar export
+stay intact. The two obligations and qualification generations are independent.
+No available-energy trust prerequisite, new setting, minimum-charge rule or
+release-version change is added. O18 and broader O6 depletion/floor questions
+remain open. See [implementation, validation and acceptance](SOLAR_REENTRY_STABILITY.md).
+
+Final offline suite: **1,415 tests / 1,380 subtests passed**, zero failures,
+206 existing warnings, 241.93 seconds. Focused combined checks: **165 / 184**,
+202 warnings, 14.97 seconds. Independent production/helper/test peer reviews
+are **GO** after correcting unsafe-flow proof accrual and expiry after final
+helper awaits. Documentation review's stale status wording is reconciled.
+Syntax, whitespace, exact 15-file scope and original-file SHA-256 checks pass.
+No HA access or physical acceptance is claimed. This records pre-commit
+validation; Git supplies the identity of any separately approved commit.
+On 26 October, commit preparation confirmed unchanged main and the tested
+source/test fingerprint, then removed one extra EOF blank line exposed by the
+staged check in the new Morning test. Its Python AST is unchanged; no logic
+changed and no test repeat was needed. The exact 15-file patch is staged only
+for review. Local commit requires separate approval; push/publication/live
+actions remain outside the current authorization.
+
+The characterization workspace and its six uncommitted files remain preserved;
+they were copied into this isolated correction workspace. The earlier backlog
+workspace is also preserved. The following checkpoints are historical evidence.
+
+## Historical 25 October offline charge-switching characterization
+
+The operator approved the proposed tests-only branch by asking to continue.
+Workspace `C:\Projects\sigenergy_optimizer-charge-cycling`, branch
+`test/solar-charge-cycling`, starts from freshly fetched `origin/main`
+`c84a61b6a6ca1fb6d5f23c421f1f11ebf4a1ce49`. The three uncommitted backlog
+documents below were copied into this isolated checkout; their originals in
+`sigenergy_optimizer-release-haos78` remain unchanged.
+
+Two new modules reproduce **O2** Solar/normal and **O6** Morning Slow/Solar
+charge-owner switching using real decision, provider, eligibility and charge
+calculations. Six-second sequences alternate restrictive Solar requests with
+normal 21 kW permission. Explicit synthetic forecast/configuration assumptions
+prevent an exact-replay or installed-configuration claim. Controls retain
+immediate failed-gate release, steady-owner cases and the existing permitted
+zero-charge calculation. No production behavior was changed or accepted as fixed.
+
+Combined focused validation passed **118 tests / 127 subtests**, zero failures,
+202 existing warnings, in 3.82 seconds. Each new module received independent
+read-only cross-review: **GO**, no concrete blocker. No full suite was needed for
+this tests/documentation-only change. Tests do not dispatch controls, access HA,
+prove physical settlement or explain the sensor fluctuations.
+
+See [the characterization and next scope](SOLAR_CHARGE_CYCLING_CHARACTERIZATION.md).
+Next is a separately approved stabilization design/fix, retaining immediate hard
+closures and independent policy priorities. O18 fill-strategy/minimum-charge
+policy remains open; its single aggregate downgrade control is not a full
+strategy simulation. No commit, push, release or live action is included here.
+
+## Historical 25 October backlog intake from supplied traces
+
+The operator requested adding the discussed findings to the list. The documentation
+branch is `docs/trace-findings-20261025` in
+`C:\Projects\sigenergy_optimizer-release-haos78`, based on main
+`c84a61b6a6ca1fb6d5f23c421f1f11ebf4a1ce49`. Only CURRENT_STATE.md,
+AI_HANDOVER.md and ROADMAP.md are changed; no commit or push is included.
+
+Expanded **O2** for confirmed Solar/normal aggregate-budget cycling and **O6**
+for confirmed Morning Slow/Solar charge-owner switching. Added **O18** as a
+fill-strategy investigation/operator-policy review: the battery misses its
+16:29:52 fill objective at 69.6% despite normal 21 kW charge permission after
+13:09:53, and a large forecast downgrade occurs at 14:08:27. Earlier bypass
+contribution remains unproven; zero charge is permitted by existing policy.
+
+Linked the computed 113% overnight floor to **O5/O9** planning/diagnostic review.
+It is not a command to charge beyond 100%. O11 remains parked despite six
+additional afternoon helper failures/recoveries. No new tests, control changes,
+policy decisions, releases or live actions are authorized by this intake.
+
+The operator reports .78 installed on the morning of 25 October after mostly .77.
+The traces contain two recorder sessions but no runtime/source version; do not
+convert that report into verified installed identity or close physical acceptance.
+See [the evidence and register](CURRENT_STATE.md#25-october-trace-evidence-and-follow-up)
+and [the queued order](ROADMAP.md#25-october-trace-follow-up-priority).
+Raw traces remain outside the repository. Next proposed engineering is tests-first
+characterization of both switching boundaries and forecast-revision behavior,
+followed by separately scoped implementation/policy approval.
 
 ## Current .78 publication and verification - 24 October 2026
 
@@ -39,9 +134,10 @@ timeout; worker threads cannot interrupt wedged OS I/O. Custom proxies use the
 existing key path. No ordinary runtime Logs repair or HDD/MSC cause is established.
 
 Publication and receipt documentation are authorized; installation and live
-settings changes remain separate operator actions. The operator reported .76
-installed after SSD restoration on 24 October; latest full supplied startup/source
-proof remains .75. Fresh trace evidence is partial persistence proof only.
+settings changes remain separate operator actions. The operator reports mostly
+.77 followed by a .78 update on the morning of 25 October. Exact installed source
+remains unverified; the latest full supplied startup/source proof is the historical
+.75 excerpt. New trace evidence and its acceptance limits are recorded above.
 O5 policy, O11 parked follow-up and applicable live/Boost acceptance gates remain
 open. Original unfinished worktrees and protected data remain preserved.
 See [the complete .78 receipt and acceptance notes](HAOS78_RELEASE_CANDIDATE.md).

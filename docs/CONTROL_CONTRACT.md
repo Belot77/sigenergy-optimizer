@@ -154,6 +154,53 @@ The serialized event loop bounds quiet waits and event coalescing by the proof d
 
 Offline checks use synthetic live-report provenance and simulated application outcomes, plus fake-actuator expiry tests. They do not establish why PV collapsed in the supplied incident or prove inverter behavior. For later verification: monitor-only and dry-run observations must show the proof deadline and immediate hard-gate rejection without control writes; separately approved supervised live proof must compare source timestamps, held permission, actual flows and requested/observed ceilings, and confirm persistent low surplus expires. Stop and return to the operator's chosen safe mode on unsafe discharge/export, lost trust/authority, repeated failures or renewed flapping. Local rollback is to withhold this uncommitted candidate; no live rollback or settings change is performed here.
 
+### Scoped reacquisition qualification (local O2/O6 candidate)
+
+Initial Solar admission retains its existing rules. When a previously final
+Solar owner loses a valid strict aggregate energy-budget comparison, that loss
+closes Solar immediately and arms a process-local re-entry obligation. Subsequent
+Solar eligibility is withheld before export arbitration until the qualification
+below passes. Independent policies still arbitrate through their existing gates;
+pending Solar is not an active export or restrictive charge owner. The timer
+cannot extend permission through a failed budget, trust, tariff or safety gate.
+
+O6 is separate: only completed automatic genuinely owned Morning Slow operation
+with qualified forecast/physical relief restoring the normal safe charge bound
+arms its handoff obligation. Raw Morning eligibility, priority, artificial-cap
+relief and Solar's independent export permission remain unchanged. During a
+partial-battery Solar handoff, full Solar charge evidence and trajectory are
+still calculated, but its restrictive request waits for qualification. The
+already selected bounded normal charge request applies meanwhile; independent
+import and other charging owners are not overridden. Genuine slow charging
+without relief does not arm this guard. Exact-full retains its separate behavior.
+
+Each guard requires advancing provenance-bearing PV and load source reports
+spanning at least **30 seconds each**, plus at least **30 seconds of local
+monotonic time**. Each source report and each stream's local advancement gap
+must be at most **60 seconds** old; PV/load coherence retains its existing
+five-second bound. Cached reports cannot mature the interval. Observed Automated,
+exact MSC and Remote EMS ON authority and all existing applicable gates remain
+mandatory. These are minimum qualification bounds, not a promise of admission
+at 30 seconds or proof of physical continuity between observations.
+
+Failed gates, unavailable reports, regression of reports/wall/monotonic clocks,
+configuration/source/context changes, competing ownership and failed/cancelled
+application retire qualifying proof while preserving an unfulfilled obligation.
+Only a qualified final selection and completed automatic application without
+fallback retires its obligation. Generic success, Manual pauses and pending
+transitions are insufficient. Generations are rechecked after authority awaits,
+before relevant writes and before completion; expiry of O2 uses existing fallback,
+while expiry of O6 restores the selected bounded normal charge request without
+closing independently valid export. Provider expiry remains charge-only authority
+and is not a new O2 export prerequisite. Restart starts with the existing initial
+admission rules; neither qualification nor its cause is persisted.
+
+These scoped admission rules do not change the brief measured-surplus dip hold,
+Morning relief, control cadence, MSC settlement, export/import limits, reserve
+policy or the zero-charge/fill-deadline strategy. Waiting can reduce export and
+increase normal charging; it cannot guarantee filling after forecast downgrade.
+See [candidate validation and supervised acceptance](SOLAR_REENTRY_STABILITY.md).
+
 ### Aggregate energy budget
 
 The Phase 1 energy model is:

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased - local O2/O6 Solar reacquisition stabilization
+
+- After a final Solar owner fails its strict aggregate energy budget, close immediately and require fresh qualifying PV/load reports before Solar re-entry. Initial activation and independent export-policy priorities retain their existing behavior.
+- After completed automatic Morning Slow operation has released its artificial cap to the normal safe bound, qualify only subsequent Solar charge-restriction acquisition. Solar may keep independently valid MSC export permission while charging uses the existing bounded normal request. Genuine slow charging is not given a new normal-charge spike.
+- Both guards require each PV/load source to span 30 seconds and local monotonic time to span 30 seconds, with 60-second per-source age/advancement-gap bounds. Cached evidence cannot mature qualification. Failed gates invalidate proof without losing a pending reacquisition obligation; generation and dispatch checks reject stale acquisitions. No release version, runtime configuration, minimum-charge rule or live setting changes. See [scope, validation and acceptance](docs/SOLAR_REENTRY_STABILITY.md).
+
+- Full offline validation passed 1,415 tests / 1,380 subtests, zero failures, 206 existing warnings, in 241.93 seconds. Focused validation passed 165 / 184 in 14.97 seconds. Independent peer review is GO after corrected flow-qualification and late-dispatch findings. Publication and physical acceptance remain separate.
+
 ## 2.3.67-haos78 - published release - 2026-10-24
 
 - Isolate runtime SQLite work on one bounded worker while retaining event-loop-owned import-ledger observations, immutable retries, exact acknowledgements and current-generation cost evidence. Busy, failed or unconfirmed storage retains existing unknown-cost safeguards; API responses distinguish rejected admission from an accepted mutation whose outcome is unconfirmed.

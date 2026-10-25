@@ -48,6 +48,7 @@ from .models import (
 )
 from .state_store import StateStore
 from .storage_worker import StorageWorker, StorageUnavailable
+from .solar_reentry import SOLAR_REENTRY_MAX_REPORT_GAP_SECONDS, SolarReentryGuard
 
 logger = logging.getLogger(__name__)
 
@@ -595,6 +596,8 @@ class SigEnergyOptimizer:
         self._solar_dip_high_water: Optional[tuple[float, float]] = None
         self._solar_dip_last_clock: Optional[float] = None
         self._solar_dip_recheck_at: Optional[float] = None
+        self._solar_budget_reentry = SolarReentryGuard()
+        self._solar_charge_reentry = SolarReentryGuard()
         self._msc_transition: Optional[_MscTransition] = None
         self._msc_baseline_established = False
 
@@ -687,6 +690,7 @@ class SigEnergyOptimizer:
         self._solar_dip_high_water = None
         self._solar_dip_last_clock = None
         self._solar_dip_recheck_at = None
+        self._reset_solar_reentry("configuration_identity_changed")
         self._reset_evening_boost_reentry("configuration_identity_changed")
         if "consumed_power_sensor" in changed:
             self._evening_boost_report_high_water = None
@@ -955,7 +959,8 @@ class SigEnergyOptimizer:
             fill_deadline is not None and now_ts >= fill_deadline
             and s.battery_soc < 100.0
         )
-        if not trusted or fill_deadline_reached:
+        reentry_current = self._solar_reentry_dispatch_current(s, d, charge=True)
+        if not trusted or fill_deadline_reached or not reentry_current:
             d.ess_charge_limit = d.trace_values["solar_charge_ceiling_normal_request_kw"]
             d.trace_values["ess_charge_limit"] = d.ess_charge_limit
             d.trace_gates["solar_charge_ceiling_owned"] = False
@@ -964,8 +969,10 @@ class SigEnergyOptimizer:
             d.trace_values["solar_charge_ceiling_requested_kw"] = None
             d.trace_values["solar_charge_ceiling_reason"] = (
                 "fill_deadline_reached_before_apply" if fill_deadline_reached
+                else "morning_handoff_qualification_expired_before_apply" if not reentry_current
                 else "provider_authority_lost_before_apply"
             )
+            self._solar_charge_reentry.reset("charge_authority_lost_before_apply")
             self._clear_solar_physical_relief(d, "solar_charge_authority_lost")
         elif d.trace_gates.get("solar_physical_relief_active"):
             _, _, feedback = self._solar_physical_feedback(s, now_ts)
@@ -1563,6 +1570,7 @@ class SigEnergyOptimizer:
                 verified_evening_pending = self._finish_evening_boost_reentry_application(
                     state, decision, application_result,
                 )
+                self._finish_solar_reentry_application(state, decision, application_result)
                 self._record_application_trace(state, decision, application_result)
                 if (
                     isinstance(application_result, _ActuatorApplicationResult)
@@ -1626,6 +1634,7 @@ class SigEnergyOptimizer:
                 self._clear_solar_physical_relief()
                 self._solar_dip_proof = None
                 self._reset_evening_boost_reentry("cycle_cancelled")
+                self._reset_solar_reentry("cycle_cancelled")
                 raise
             except Exception:
                 if not application_committed:
@@ -1633,6 +1642,7 @@ class SigEnergyOptimizer:
                         self._import_topup_ledger.invalidate(datetime.now(self._tz), "application_not_confirmed")
                     if not verified_evening_pending:
                         self._reset_evening_boost_reentry("application_or_cycle_failed")
+                    self._reset_solar_reentry("application_or_cycle_failed")
                     self._clear_solar_physical_relief()
                     self._solar_dip_proof = None
                     if (
@@ -4320,6 +4330,27 @@ class SigEnergyOptimizer:
                 previously_active=previous_cycle_solar_surplus_policy_owned,
             ))
         )
+        # A failed aggregate budget closes immediately. Only reacquisition of
+        # this Solar policy waits; independent export owners retain arbitration.
+        if previous_cycle_solar_surplus_policy_owned and (
+            solar_energy_budget is not None and not solar_energy_budget_passed
+        ):
+            self._solar_budget_reentry.arm("aggregate_budget_failed")
+        solar_budget_raw_candidate = solar_surplus_bypass
+        solar_budget_reentry_required = self._solar_budget_reentry.required
+        reentry_discharge_kw, _ = self._battery_discharge_kw_for_pv_only_check(s)
+        solar_budget_reentry_allowed = self._solar_budget_reentry.evaluate(
+            candidate=bool(
+                solar_surplus_bypass
+                and reentry_discharge_kw is not None and reentry_discharge_kw <= 0.1
+            ),
+            reports=self._solar_reentry_reports(s, now_ts),
+            now_ts=now_ts, now_mono=monotonic(),
+            context=self._solar_reentry_context(s, now_ts),
+        )
+        solar_surplus_bypass = solar_surplus_bypass and solar_budget_reentry_allowed
+        if solar_budget_raw_candidate and not solar_budget_reentry_allowed:
+            solar_surplus_fail_reason = "aggregate_budget_reentry_qualifying"
         d.solar_surplus_bypass = solar_surplus_bypass
 
         # ---- Battery full safeguard ---------------------------------
@@ -4619,6 +4650,34 @@ class SigEnergyOptimizer:
                 str(getattr(raw_choice, "source", "external_override")),
                 float(tier_limit),
             )
+
+        if self._solar_budget_reentry.required and solar_budget_raw_candidate:
+            # Waiting must not accumulate time behind an independent winner.
+            # Preserve the existing SoC-based exception for synthetic refill
+            # need caused solely by untrusted available-energy telemetry.
+            probe_full_block = battery_full_safeguard_block
+            if (
+                not available_discharge_energy_trusted
+                and battery_full_safeguard_soc_headroom_block is False
+                and reentry_discharge_kw is not None and reentry_discharge_kw <= 0.1
+                and self._grid_export_kw_for_ordinary_msc_check(s)[0] is not None
+                and not any((export_spike_active, morning_dump_active,
+                             morning_slow_charge_active, evening_export_boost_active,
+                             export_solar_override, positive_fit_override, standby_holdoff_active,
+                             s.price_is_negative, s.feedin_is_negative))
+            ):
+                probe_full_block = False
+            probe_limit, probe_source, _ = choose_export_limit(
+                surplus_bypass_for_policy=True,
+                morning_slow_for_policy=morning_slow_charge_active,
+                battery_full_safeguard_for_arbitration=probe_full_block,
+            )
+            if probe_source != "solar_surplus_pv_high" or probe_limit <= 0.01:
+                self._solar_budget_reentry.reset("raw_solar_not_independent_winner")
+                solar_budget_reentry_allowed = False
+                solar_surplus_bypass = False
+                d.solar_surplus_bypass = False
+                solar_surplus_fail_reason = "aggregate_budget_reentry_independent_owner"
 
         (
             desired_export_limit,
@@ -5954,6 +6013,9 @@ class SigEnergyOptimizer:
             "solar_charge_ceiling_fill_deadline_margin_minutes": solar_fill_margin,
         }
         solar_charge_ceiling_reason = f"solar_not_owner: {solar_surplus_fail_reason}"
+        solar_charge_reentry_required = self._solar_charge_reentry.required
+        solar_charge_reentry_allowed = not solar_charge_reentry_required
+        solar_charge_reentry_candidate = False
         if grid_import_owns_charging:
             solar_charge_ceiling_reason = "higher_priority_grid_import_charging"
         elif d.solar_surplus_policy_active and not morning_slow_charge_active:
@@ -6025,21 +6087,52 @@ class SigEnergyOptimizer:
                         normal_cap,
                         requested.quantize(Decimal("0.01"), rounding=ROUND_CEILING),
                     )
-                    d.ess_charge_limit = float(requested)
-                    solar_charge_ceiling_owned = True
+                    solar_charge_reentry_candidate = True
+                    # Exact-full keeps its separate semantics. This guard only
+                    # postpones a partial-battery restriction after a relieved
+                    # Morning owner, never Solar's independent export ceiling.
+                    solar_charge_reentry_allowed = bool(
+                        battery_soc_value == 100.0
+                        or self._solar_charge_reentry.evaluate(
+                            candidate=True,
+                            reports=self._solar_reentry_reports(s, now_ts),
+                            now_ts=now_ts, now_mono=monotonic(),
+                            context=self._solar_reentry_context(s, now_ts, charge=True),
+                        )
+                    )
+                    if solar_charge_reentry_allowed:
+                        d.ess_charge_limit = float(requested)
+                        solar_charge_ceiling_owned = True
                     solar_charge_ceiling_evidence_trusted = True
                     solar_charge_ceiling_reason = (
                         "present_charging_required_for_fill_trajectory"
                         if required_now > 0 else "future_opportunity_covers_protected_fill"
                     )
                     solar_charge_ceiling_values.update({
-                        "ess_charge_limit_owner": "solar_surplus",
-                        "solar_charge_ceiling_requested_kw": float(requested),
+                        "ess_charge_limit_owner": (
+                            "solar_surplus" if solar_charge_ceiling_owned else "normal"
+                        ),
+                        "solar_charge_ceiling_requested_kw": (
+                            float(requested) if solar_charge_ceiling_owned else None
+                        ),
                         "solar_charge_ceiling_protected_fill_need_kwh": float(protected_fill),
                         "solar_charge_ceiling_future_opportunity_kwh": float(future_opportunity),
                         "solar_charge_ceiling_required_now_kwh": float(required_now),
                         "solar_charge_ceiling_current_window_hours": float(current_hours),
                     })
+                    if not solar_charge_reentry_allowed:
+                        solar_charge_ceiling_reason = "morning_handoff_qualifying"
+        if self._solar_charge_reentry.required and (
+            not solar_charge_reentry_candidate or battery_soc_value == 100.0
+        ):
+            self._solar_charge_reentry.reset("charge_candidate_unavailable_or_exact_full")
+        if self._solar_budget_reentry.required and (
+            battery_export_owner != "none" or morning_slow_charge_active
+            or morning_dump_active or grid_import_owns_charging
+            or standby_holdoff_active
+            or (solar_budget_reentry_allowed and not d.solar_surplus_policy_active)
+        ):
+            self._solar_budget_reentry.reset("independent_owner_or_final_solar_not_selected")
         d.ess_charge_limit, solar_relief_gates, solar_relief_values = self._solar_physical_export_relief(
             s, now_ts=now_ts, baseline_kw=d.ess_charge_limit,
             normal_kw=solar_charge_ceiling_values["solar_charge_ceiling_normal_request_kw"],
@@ -6721,6 +6814,33 @@ class SigEnergyOptimizer:
         )
         if msc_transition_pending:
             d.export_reason = "Export held closed pending observed export closure and later exact MSC."
+        d.trace_gates.update({
+            "solar_budget_reentry_raw_candidate": solar_budget_raw_candidate,
+            "solar_budget_reentry_allowed": solar_budget_reentry_allowed,
+            "solar_budget_reentry_qualified": bool(
+                solar_budget_reentry_required and solar_budget_reentry_allowed
+                and d.solar_surplus_policy_active
+            ),
+            "solar_charge_reentry_allowed": solar_charge_reentry_allowed,
+            "solar_charge_reentry_qualified": bool(
+                solar_charge_reentry_required and solar_charge_reentry_allowed
+                and solar_charge_ceiling_owned and battery_soc_value < 100.0
+            ),
+            "morning_slow_reentry_arm_candidate": bool(
+                morning_slow_genuinely_owns_charging
+                and morning_slow_charge_relief_active
+                and battery_export_owner == "none"
+                and desired_ems_mode == MODE_MAX_SELF
+                and not msc_transition_pending
+                and math.isclose(d.ess_charge_limit, self._bound_ess_request_kw(
+                    max(0.0, float(cfg.ess_charge_limit_value)),
+                    self.get_power_caps_kw(s)[0],
+                ), abs_tol=0.001)
+            ),
+        })
+        for prefix, guard in (("solar_budget", self._solar_budget_reentry),
+                              ("solar_charge", self._solar_charge_reentry)):
+            d.trace_values.update(guard.diagnostics(f"{prefix}_reentry"))
         return d
 
     # ------------------------------------------------------------------
@@ -6963,6 +7083,7 @@ class SigEnergyOptimizer:
             if not automated or remote != "on":
                 authority_revoked = True
                 self._reset_evening_boost_reentry("dispatch_authority_lost")
+                self._reset_solar_reentry("dispatch_authority_lost")
             if automated and remote == "on" and not authority_revoked:
                 had_automated_authority = True
                 return True
@@ -7018,6 +7139,13 @@ class SigEnergyOptimizer:
             if battery_discharge_capability:
                 evidence[cfg.grid_export_limit] = {}
             if not await _authority_permits(restrictive=restrictive, evidence=evidence):
+                return False
+            if (
+                not restrictive and recovery is None
+                and entity == cfg.grid_export_limit and value > 0.011
+                and not self._solar_reentry_dispatch_current(s, d, charge=False)
+            ):
+                self._solar_budget_reentry.reset("qualification_expired_during_dispatch")
                 return False
             if (
                 recovery is None and not restrictive
@@ -7143,6 +7271,7 @@ class SigEnergyOptimizer:
             self._msc_baseline_established = False
             self._msc_transition = _MscTransition()
             self._clear_solar_physical_relief(d, "actuator_fallback")
+            self._reset_solar_reentry("actuator_fallback")
             logger.error("Entering safe fallback: %s", reason)
             fallback_failures: list[str] = []
 
@@ -7765,6 +7894,9 @@ class SigEnergyOptimizer:
         if not await _authority_permits():
             await _independent_restrictions()
             return _authority_paused()
+        if not self._solar_reentry_dispatch_current(s, d, charge=False):
+            self._solar_budget_reentry.reset("qualification_expired_before_ess")
+            return await _safe_fallback("Solar budget re-entry qualification expired before ESS application")
         if d.trace_gates.get("solar_surplus_dip_hold_active") and not self._solar_dip_dispatch_current(s):
             self._solar_dip_proof = None
             return await _safe_fallback("Solar measured-surplus hold expired before ESS application")
@@ -7797,6 +7929,9 @@ class SigEnergyOptimizer:
                 if not await _authority_permits():
                     await _independent_restrictions()
                     return _authority_paused()
+                if not self._solar_reentry_dispatch_current(s, d, charge=False):
+                    self._solar_budget_reentry.reset("qualification_expired_during_ess")
+                    return await _safe_fallback("Solar budget re-entry qualification expired during ESS application")
                 if d.trace_gates.get("solar_surplus_dip_hold_active") and not self._solar_dip_dispatch_current(s):
                     self._solar_dip_proof = None
                     return await _safe_fallback("Solar measured-surplus hold expired during ESS application")
@@ -7877,6 +8012,28 @@ class SigEnergyOptimizer:
             ):
                 self._reset_evening_boost_reentry("admission_expired_during_application")
                 return await _safe_fallback("Evening Boost admission expired during application")
+        if (
+            d.trace_gates.get("solar_budget_reentry_qualified")
+            or d.trace_gates.get("solar_charge_reentry_qualified")
+        ):
+            # Helper writes above also await HA. Do not report a completed
+            # reacquisition if its proof expired after the actuator writes.
+            if not await _authority_permits():
+                await _independent_restrictions()
+                return _authority_paused()
+            if not self._solar_reentry_dispatch_current(s, d, charge=False):
+                self._solar_budget_reentry.reset("qualification_expired_during_application")
+                return await _safe_fallback("Solar budget re-entry expired during application")
+            was_owned = d.trace_gates.get("solar_charge_ceiling_owned")
+            self._recheck_solar_charge_authority(s, d, datetime.now(timezone.utc).timestamp())
+            if was_owned and not d.trace_gates.get("solar_charge_ceiling_owned"):
+                restored_charge = self._bound_ess_request_kw(d.ess_charge_limit, charge_cap_kw)
+                if cfg.ess_max_charging_limit and not await ha.set_number(
+                    cfg.ess_max_charging_limit, restored_charge,
+                ):
+                    return await _safe_fallback("Failed restoring expired Solar handoff charge restriction")
+                if not self._solar_reentry_dispatch_current(s, d, charge=False):
+                    return await _safe_fallback("Solar budget re-entry expired during charge restoration")
         return _ActuatorApplicationResult(
             succeeded=True, automatic_application_completed=True,
         )
@@ -8001,6 +8158,7 @@ class SigEnergyOptimizer:
 
     def _freeze_decision_to_live_mode(self, state: SolarState, decision: Decision, mode_label: str) -> None:
         if mode_label != self.cfg.automated_option:
+            self._reset_solar_reentry("operator_owned")
             self._solar_dip_proof = None
             self._solar_dip_recheck_at = None
             decision.trace_gates["solar_surplus_dip_hold_active"] = False
@@ -9483,6 +9641,120 @@ class SigEnergyOptimizer:
         load_need = hours_left * cfg.morning_slow_charge_base_load_kw
         required_kwh = (bat_fill_need + load_need) * cfg.forecast_safety_charging
         return s.forecast_remaining_kwh >= required_kwh
+
+    def _reset_solar_reentry(self, reason: str) -> None:
+        # Retire time proof, never the obligation created by a prior exit.
+        self._solar_budget_reentry.reset(reason)
+        self._solar_charge_reentry.reset(reason)
+
+    def _solar_reentry_context(
+        self, s: SolarState, now_ts: float, *, charge: bool = False,
+    ) -> tuple:
+        names = (
+            "solar_surplus_bypass_enabled", "solar_surplus_forecast_safety_factor",
+            "solar_surplus_fill_deadline_margin_minutes", "solcast_forecast_period_hours",
+            "morning_slow_charge_enabled", "morning_slow_charge_until",
+            "morning_slow_charge_rate_kw", "morning_slow_charge_base_load_kw",
+            "morning_slow_charge_sunset_cutoff", "forecast_safety_charging",
+            "grid_connection_export_limit_kw", "morning_slow_physical_export_headroom_kw",
+            "ess_charge_limit_value", "export_limit_high", "pv_power_sensor",
+            "consumed_power_sensor", "battery_soc_sensor", "rated_capacity_sensor",
+            "ems_mode_select", "ha_control_switch", "sigenergy_mode_select",
+            "morning_slow_charge_min_feedin_price",
+        )
+        return (
+            datetime.fromtimestamp(now_ts, tz=self._tz).date().isoformat(),
+            s.next_sunset_ts, s.battery_capacity_kwh, self.get_power_caps_kw(s)[0],
+            tuple(getattr(self.cfg, name, None) for name in names),
+            self._configured_solar_provider_source(),
+            self._solar_provider_epoch if charge else None,
+        )
+
+    def _solar_reentry_reports(
+        self, s: SolarState, now_ts: float,
+    ) -> Optional[tuple[float, float]]:
+        """Current Solar admission reports; no dip-hold or available-energy gate."""
+        inputs = s.hvac_solar_inputs
+        if (
+            not inputs.live_snapshot or self._manual_mode_override
+            or self._msc_transition is not None
+            or not s.sigenergy_mode_observed or s.sigenergy_mode != self.cfg.automated_option
+            or not s.ems_mode_observed or s.current_ems_mode != MODE_MAX_SELF
+            or not s.ha_control_enabled or not s.ha_control_switch_available
+            or s.ha_control_switch_state != "on"
+        ):
+            return None
+        for observation, expected in (
+            (inputs.control_mode, self.cfg.automated_option),
+            (inputs.observed_ems_mode, MODE_MAX_SELF),
+            (inputs.remote_ems_control, "on"),
+        ):
+            if not (observation.available and observation.fresh and observation.value == expected):
+                return None
+        try:
+            reports = tuple(_solar_surplus_finite_number("report", o.observed_at_ts)
+                            for o in (inputs.pv_power, inputs.load_power))
+            values = tuple(_solar_surplus_finite_number("power", o.value)
+                           for o in (inputs.pv_power, inputs.load_power))
+        except ValueError:
+            return None
+        if not (
+            all(o.available and o.fresh for o in (inputs.pv_power, inputs.load_power))
+            and all(0.0 <= now_ts - stamp <= SOLAR_REENTRY_MAX_REPORT_GAP_SECONDS
+                    for stamp in reports)
+            and max(reports) - min(reports) <= _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS
+            and all(value >= 0.0 for value in values)
+            and math.isclose(values[0], s.pv_kw, rel_tol=1e-9, abs_tol=1e-9)
+            and math.isclose(values[1], s.load_kw, rel_tol=1e-9, abs_tol=1e-9)
+        ):
+            return None
+        return reports
+
+    def _solar_reentry_dispatch_current(self, s: SolarState, d: Decision, *, charge: bool) -> bool:
+        prefix = "solar_charge" if charge else "solar_budget"
+        if not d.trace_gates.get(f"{prefix}_reentry_qualified"):
+            return True
+        guard = self._solar_charge_reentry if charge else self._solar_budget_reentry
+        now_ts = datetime.now(timezone.utc).timestamp()
+        return guard.current(
+            generation=d.trace_values.get(f"{prefix}_reentry_generation"),
+            reports=self._solar_reentry_reports(s, now_ts),
+            now_ts=now_ts, now_mono=monotonic(),
+            context=self._solar_reentry_context(s, now_ts, charge=charge),
+        )
+
+    def _finish_solar_reentry_application(self, s: SolarState, d: Decision, result: object) -> None:
+        completed = bool(
+            isinstance(result, _ActuatorApplicationResult) and result.succeeded
+            and result.automatic_application_completed and not result.transition_pending
+            and not result.fallback_attempted
+        )
+        if not completed:
+            self._reset_solar_reentry("automatic_application_not_completed")
+            return
+        for charge, guard, prefix in (
+            (False, self._solar_budget_reentry, "solar_budget"),
+            (True, self._solar_charge_reentry, "solar_charge"),
+        ):
+            if d.trace_gates.get(f"{prefix}_reentry_qualified"):
+                retained = bool(
+                    d.solar_surplus_policy_active
+                    and (not charge or d.trace_gates.get("solar_charge_ceiling_owned"))
+                    and self._solar_reentry_dispatch_current(s, d, charge=charge)
+                )
+                if retained:
+                    guard.commit(d.trace_values[f"{prefix}_reentry_generation"])
+                else:
+                    guard.reset("qualified_application_not_retained")
+        if (
+            d.trace_gates.get("morning_slow_reentry_arm_candidate")
+            and d.morning_slow_charge_active
+            and d.trace_values.get("ess_charge_limit_owner") == "morning_slow"
+            and d.ems_mode == MODE_MAX_SELF and d.import_limit <= 0.0
+            and not d.solar_surplus_policy_active
+            and d.trace_values.get("battery_export_owner") == "none"
+        ):
+            self._solar_charge_reentry.arm("completed_relieved_morning_handoff")
 
     def _reset_evening_boost_reentry(self, reason: str) -> None:
         previous = self._evening_boost_reentry
