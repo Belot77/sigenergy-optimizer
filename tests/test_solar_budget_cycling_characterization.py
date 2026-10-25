@@ -88,7 +88,7 @@ class SolarBudgetCyclingCharacterizationTests(Haos49CharacterizationCase):
                 optimizer._update_solar_provider(baseline, when.timestamp())
         return self.decide(optimizer, state, when)
 
-    def test_load_only_budget_crossing_releases_and_restores_solar_owner(self) -> None:
+    def test_load_only_budget_crossing_requires_fresh_reentry_proof(self) -> None:
         optimizer = self.optimizer(
             solar_surplus_bypass_enabled=True,
             solar_surplus_forecast_safety_factor=1.20,
@@ -137,9 +137,12 @@ class SolarBudgetCyclingCharacterizationTests(Haos49CharacterizationCase):
             deficit.trace_values["solar_surplus_threshold_kw"],
         )
 
-        self.assertTrue(recovered.solar_surplus_policy_active)
-        self.assertTrue(recovered.trace_gates["solar_charge_ceiling_owned"])
-        self.assertEqual(MSC_SURPLUS_CEILING, recovered.export_intent)
+        # A positive budget alone no longer reacquires Solar after its budget
+        # exit. This legacy hand-built snapshot has no advancing live reports.
+        self.assertFalse(recovered.solar_surplus_policy_active)
+        self.assertFalse(recovered.trace_gates["solar_charge_ceiling_owned"])
+        self.assertFalse(recovered.trace_gates["solar_budget_reentry_allowed"])
+        self.assertTrue(optimizer._solar_budget_reentry.required)
         self.assertEqual(MODE_MAX_SELF, recovered.ems_mode)
         self.assertGreater(recovered.trace_values["solar_raw_exportable_energy_kwh"], 0.0)
 
