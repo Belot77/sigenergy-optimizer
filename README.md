@@ -1,16 +1,39 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Local release candidate: 2.3.69-haos80
+## Current published release: 2.3.69-haos80
 
-Packages the reviewed UI log-retention fix from normally merged
-[PR #43](https://github.com/Belot77/sigenergy-optimizer/pull/43), main
-`bcd9fe51f7303467ed8e463805c30284110e6a95`. Routine successful HTTP polls no
-longer crowd the built-in UI log buffer; HTTP failures and other diagnostics keep
-their existing behavior. Console logs and inverter control are unchanged.
-This is local metadata/documentation preparation only, not a published or installed
-build. See [scope, verification and acceptance](docs/HAOS80_RELEASE_CANDIDATE.md).
+Published 25 October 2026 at 23:20:09 UTC (26 October 10:20:09 Sydney):
+[GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.69-haos80).
+Tag/source `acb576747e808e927bdd7d12346c507da9b188b6`, tree
+`14103ec71d3b41ad6a85e2d8a149e3db705606bf`; metadata [PR #44](https://github.com/Belot77/sigenergy-optimizer/pull/44)
+normally merged at `77bde899da35b2f933304192a9c7226d9e5e9ef3` with the exact tag
+tree. Build [40243683190](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40243683190)
+succeeded at the exact source.
 
-## Current published release: 2.3.68-haos79
+The UI logging fix filters recognized successful 2xx `httpx` INFO request messages
+from the built-in UI ring. The newest-first 500-record in-memory buffer resets on
+restart and can evict older errors; console logging and global levels are unchanged.
+No control, retry or settlement behavior changed. See [the .80 publication receipt
+and verification limits](docs/HAOS80_RELEASE_CANDIDATE.md).
+
+Version/latest OCI index: `sha256:91120b1039eec3915a37c6ff1a1210cf1cf5e79d97e3e1d9de31207206301a5a`.
+For amd64 and arm64, all 22 layer hashes, sizes and diff IDs were verified, and
+fourteen target files per architecture match the tag. Fingerprint:
+`sha256:386444cfc2defee474052cc86cb473059d8f1551d67ad49832e4e352fd382cf4`.
+Immutable .79 index remains unchanged at
+`sha256:cbaa5f68e4830737abba90666e486b9db848b3a853d1c9138c33a93f3b02bdad`.
+
+Retained source validation passed 122 tests / 10 subtests, zero failures, 202
+warnings, in 68.94 seconds; independent logging verification passed 30 cases.
+All 46 release/source-pinning/logging checks passed in 10.69 seconds. Independent
+helper and complete publication-proof reviews were GO; 68 synthetic verifier cases
+passed. Auto-update was last confirmed off on 26 October before .79 publication;
+there was no new HA query. No installed .79/.80 identity, full filesystem
+equivalence or physical acceptance is claimed. The 65 failed applications and
+59 unsuccessful fallbacks remain unexplained. O18, O5/O9, broader O6 depletion/floor
+questions and parked O11 remain open.
+
+## Previous published release: 2.3.68-haos79
 
 Published 25 October 2026 at 21:08:21 UTC (26 October 08:08:21 Sydney):
 [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.68-haos79).
@@ -246,7 +269,7 @@ Quick rule of thumb:
 - Add-on logs: Settings -> Add-ons -> SigEnergy Optimizer -> Logs
 - Optional CLI: ha addons logs local_sigenergy_optimizer
 
-Local .80 candidate (not included in published .79): the optimizer's built-in
+Published .80 release: the optimizer's built-in
 log viewer/download omits recognized successful 2xx `httpx` INFO requests while
 keeping HTTP failures and other diagnostics. Add-on console logs remain unchanged.
 The UI holds at most 500 retained records in memory, newest first; requesting more

@@ -4,7 +4,40 @@ Last consolidated: 2026-10-26
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
-## Local .80 release preparation - 26 October 2026
+## Current .80 publication and verification - 26 October 2026
+
+**Latest published: 2.3.69-haos80.** [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.69-haos80)
+published at 10:20:09 Sydney (25 October 23:20:09 UTC). Tag/container source
+`acb576747e808e927bdd7d12346c507da9b188b6`, approved/tag tree
+`14103ec71d3b41ad6a85e2d8a149e3db705606bf`. Metadata
+[PR #44](https://github.com/Belot77/sigenergy-optimizer/pull/44) normally merged
+at `77bde899da35b2f933304192a9c7226d9e5e9ef3`, retaining exactly that tag tree.
+
+[Build 40243683190](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40243683190)
+succeeded. Version/latest index:
+`sha256:91120b1039eec3915a37c6ff1a1210cf1cf5e79d97e3e1d9de31207206301a5a`.
+Both platforms passed all 22 layer hashes/sizes and diff IDs; fourteen target files
+per platform match exact tag source. Independent helper/proof review is GO,
+including 68 synthetic cases independently rerun. Immutable .79 is unchanged.
+See [the complete publication receipt](HAOS80_RELEASE_CANDIDATE.md).
+
+Published .80 filters recognized successful HTTP INFO only from the UI buffer.
+HTTP failures/unknown formats and other diagnostics keep their existing behavior;
+console logs, ring bound/process lifetime and inverter controls remain unchanged.
+Retained source checks passed 122 tests / 10 subtests; independent logging checks
+passed 30 cases. All 46 release/source-pinning/logging checks passed with zero
+failures, 202 existing warnings, in 10.69 seconds. No full-suite repeat or physical
+acceptance is claimed. Receipt scope is six documents only.
+
+Supplied trace failures remain unexplained; this is not an actuator or settlement
+correction. O18, O5/O9, broader O6, parked O11 and physical/Boost acceptance remain
+open. No HA installation or live setting changes were performed. Exact installed
+.80 identity is unverified. Auto update was last operator-confirmed off on
+26 October before .79 publication; no later change was reported or directly queried.
+Original unfinished work is preserved. Following preparation and older-release
+sections are historical; this summary establishes current publication status.
+
+## Historical local .80 release preparation - 26 October 2026
 
 The UI log-retention correction is merged through
 [PR #43](https://github.com/Belot77/sigenergy-optimizer/pull/43): source
@@ -54,7 +87,7 @@ HTTP-only log covers a later, non-overlapping interval. Evicted/restarted UI his
 cannot be recovered by this filter; older host/container logs may still exist.
 Published .79 and existing installation/physical acceptance gates remain unchanged.
 
-## Current .79 publication and verification - 26 October 2026
+## Historical .79 publication and verification - superseded by .80 - 26 October 2026
 
 **Latest published: 2.3.68-haos79.** [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.68-haos79)
 published at 08:08:21 Sydney (25 October 21:08:21 UTC). Exact tag/container source:

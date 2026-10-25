@@ -2,18 +2,35 @@
 
 This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
 
-## Current checkpoint - 2026-10-26 (published .79; local .80 candidate)
+## Current checkpoint - 2026-10-26 (published .80)
 
-UI log-retention source [PR #43](https://github.com/Belot77/sigenergy-optimizer/pull/43)
-normally merged at `bcd9fe51f7303467ed8e463805c30284110e6a95`, exact reviewed
-tree `70805bd6f1f49eb47654b7c686c6a8d904371d13`. Local .80 preparation changes
-only five established version markers and six documents. Retained source checks
-passed 122 tests / 10 subtests; independent source/test/documentation review is GO.
-See [the release candidate](HAOS80_RELEASE_CANDIDATE.md) for release validation,
-publication boundaries and installed-build verification. No .80 tag/image/release
-or HA action is claimed. The filter does not resolve actuator failures or change
-control protections. O18, O5/O9, broader O6, parked O11 and existing physical gates
-retain their current ordering. The source branch and all original work remain intact.
+Version **2.3.69-haos80** was published 25 October 2026 at 23:20:09 UTC
+(26 October 10:20:09 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.69-haos80).
+Tag/source `acb576747e808e927bdd7d12346c507da9b188b6`, tree
+`14103ec71d3b41ad6a85e2d8a149e3db705606bf`; metadata PR #44 normally merged at
+`77bde899da35b2f933304192a9c7226d9e5e9ef3`. Build 40243683190 succeeded at the
+exact source. Version/latest OCI index is
+`sha256:91120b1039eec3915a37c6ff1a1210cf1cf5e79d97e3e1d9de31207206301a5a`.
+All 22 layer hashes, sizes and diff IDs were verified for both architectures;
+fourteen target files per architecture match the tag. Fingerprint
+`sha256:386444cfc2defee474052cc86cb473059d8f1551d67ad49832e4e352fd382cf4`.
+Immutable .79 index remains unchanged. See [the .80 publication receipt](HAOS80_RELEASE_CANDIDATE.md)
+for proof details and limits.
+
+The UI-handler filter suppresses only recognized successful 2xx `httpx` INFO
+requests. Non-2xx, unknown formats, other loggers and warnings/errors retain their
+behavior; console logging and global levels are unchanged. The 500-record ring is
+in memory, resets on process restart and can evict older errors. The fix does not
+explain the 65 failed applications or 59 unsuccessful fallbacks. Retained source
+validation passed 122 tests / 10 subtests, with 202 warnings, in 68.94 seconds;
+independent logging checks passed 30 cases and all 46 release checks passed in
+10.69 seconds. Independent helper/proof reviews were GO, including 68 synthetic
+verifier cases. No full-suite repeat was run.
+
+Auto-update was last confirmed off on 26 October before .79 publication; no new
+HA query was made. No installed .79/.80 identity, physical acceptance or full
+filesystem equivalence is claimed. O18, O5/O9, broader O6 depletion/floor questions,
+parked O11 and existing live/Boost acceptance remain open.
 
 ## Historical .79 publication checkpoint - 2026-10-26
 
