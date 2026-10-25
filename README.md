@@ -236,6 +236,13 @@ Quick rule of thumb:
 - Add-on logs: Settings -> Add-ons -> SigEnergy Optimizer -> Logs
 - Optional CLI: ha addons logs local_sigenergy_optimizer
 
+Local logging candidate (not included in published .79): the optimizer's built-in
+log viewer/download omits recognized successful 2xx `httpx` INFO requests while
+keeping HTTP failures and other diagnostics. Add-on console logs remain unchanged.
+The UI holds at most 500 retained records in memory, newest first; requesting more
+lines cannot recover evicted entries, and restarting clears this buffer. This
+change improves diagnostic retention without changing optimizer control behavior.
+
 Quick check:
 1. Use a manual override in the UI.
 2. Confirm expected EMS mode and limits are written.

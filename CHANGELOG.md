@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased - local UI log retention - 2026-10-26
+
+- Keep recognized successful 2xx `httpx` INFO request messages out of the built-in UI log buffer. Non-2xx responses, unknown formats, other loggers and warning/error messages retain their existing behavior. The filter is attached only to the UI handler; console logging and global logger levels are unchanged.
+- Preserve the newest-first 500-record in-memory limit and existing log endpoints. This reduces diagnostic eviction by routine polls; it neither guarantees permanent error retention nor recovers evicted records or history lost on restart. No control, actuator retry, settlement, trace/accounting, configuration or release-version change is included. Published .79 remains unchanged.
+
 ## 2.3.68-haos79 - published release - 2026-10-26
 
 - Published 25 October 2026 at 21:08:21 UTC (26 October 08:08:21 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.68-haos79). Tag/source `ea516ef6cabd9918dbea675694a9de3aa207c8af`, tree `8e7e6cf6cdcbb6196383352c2a351f055aed5912`; metadata PR #41 normally merged at `44419af295a47be24d5f06af3ed7cba83b2f27bb`. Actions run `40233491965` succeeded at the exact tag source.

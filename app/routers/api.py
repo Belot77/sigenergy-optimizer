@@ -1763,6 +1763,25 @@ from fastapi.responses import StreamingResponse, PlainTextResponse
 
 _LOG_BUFFER: _collections.deque = _collections.deque(maxlen=500)
 
+
+class _UILogHTTPFilter(_logging.Filter):
+    """Keep routine successful HTTP polls out of this handler's bounded ring."""
+
+    _successful_response = re.compile(
+        r'HTTP Request: [A-Z]+ \S+ "HTTP/[0-9]+(?:\.[0-9]+)? '
+        r'2[0-9]{2}(?: [^"\r\n]*)?"'
+    )
+
+    def filter(self, record: _logging.LogRecord) -> bool:
+        if record.name != "httpx" or record.levelno != _logging.INFO:
+            return True
+        try:
+            return self._successful_response.fullmatch(record.getMessage()) is None
+        except Exception:
+            # Unknown formats stay visible; diagnostic filtering must not raise.
+            return True
+
+
 class _UILogHandler(_logging.Handler):
     def emit(self, record):
         try:
@@ -1770,7 +1789,9 @@ class _UILogHandler(_logging.Handler):
         except Exception:
             pass
 
+# Filter only the UI handler; console and other handlers retain full HTTP logs.
 _handler = _UILogHandler()
+_handler.addFilter(_UILogHTTPFilter())
 _handler.setFormatter(_logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s", datefmt="%Y-%m-%dT%H:%M:%S"))
 _handler._sigenergy_ui_log_handler = True
 _root_logger = _logging.getLogger()
