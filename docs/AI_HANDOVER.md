@@ -4,7 +4,47 @@ Last consolidated: 2026-10-26
 
 Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STATE.md` and relevant `CONTROL_CONTRACT.md` sections. Inspect only minimum relevant files. Git records repository identity; HA and operator evidence establish live state.
 
-## Local .80 release preparation - 26 October 2026
+## Current .80 publication and verification - 26 October 2026
+
+**2.3.69-haos80 is published.** [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.69-haos80)
+published at 10:20:09 Sydney (25 October 23:20:09 UTC). Exact tag/container source
+is `acb576747e808e927bdd7d12346c507da9b188b6`, approved/tag tree
+`14103ec71d3b41ad6a85e2d8a149e3db705606bf`. Metadata
+[PR #44](https://github.com/Belot77/sigenergy-optimizer/pull/44) normally merged at
+`77bde899da35b2f933304192a9c7226d9e5e9ef3` at 10:19:24 Sydney with exactly the
+tag tree. Source PR #43, its branch and all unfinished workspaces remain preserved.
+
+[Build 40243683190](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40243683190)
+succeeded at the exact source. Version and `latest` index:
+`sha256:91120b1039eec3915a37c6ff1a1210cf1cf5e79d97e3e1d9de31207206301a5a`.
+All 22 compressed-layer hashes/sizes and uncompressed diff IDs passed; fourteen
+target files per amd64/arm64 platform match exact tag bytes. Shared fingerprint:
+`sha256:386444cfc2defee474052cc86cb473059d8f1551d67ad49832e4e352fd382cf4`.
+Independent helper/proof review is GO; 68 synthetic verifier cases independently
+passed. Immutable .79 remains unchanged. Full identities, scope and verification
+limits are in [the publication receipt](HAOS80_RELEASE_CANDIDATE.md).
+
+Retained logging-source validation passed 122 tests / 10 subtests, zero failures,
+202 existing warnings, 68.94 seconds. The independent logging module passed 30
+cases; all 46 release/source-pinning/logging checks passed in 10.69 seconds.
+No full suite was repeated for this narrow fix or release markers/receipt docs.
+The filter improves UI diagnostic retention only: console logs, the 500-record
+process-memory bound, controls, retries and settlement are unchanged. It does not
+recover lost records or explain the 65 application / 59 unsuccessful fallback
+outcomes in supplied evidence. O18, O5/O9, broader O6, parked O11 and physical/Boost
+acceptance remain open.
+
+Auto update was last confirmed off by the operator on 26 October before .79
+publication; no later change was reported and no direct HA query is claimed.
+No HA installation/live changes or exact installed .80 identity is established.
+Expected startup is `Runtime signature=2.3.69-haos80` and
+`Container source commit=acb576747e808e927bdd7d12346c507da9b188b6`.
+The receipt workspace `C:\Projects\sigenergy_optimizer-receipt-haos80`, branch
+`docs/haos80-publication-proof`, starts at metadata merge `77bde899...` and changes
+six documents only. Following local-preparation/publication sections record their
+dated checkpoints; this .80 summary supersedes their current-version statements.
+
+## Historical local .80 release preparation - 26 October 2026
 
 [PR #43](https://github.com/Belot77/sigenergy-optimizer/pull/43) normally merged
 reviewed head `512601da8083f88a260e343dd980c2c14183c814` into main at
@@ -69,7 +109,7 @@ acceptance is claimed. To roll back this local candidate,
 withhold the uncommitted branch; any later committed reversal must remain scoped
 to the diagnostic filter and preserve unrelated work.
 
-## Current .79 publication and verification - 26 October 2026
+## Historical .79 publication and verification - superseded by .80 - 26 October 2026
 
 **2.3.68-haos79 is published.** [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.68-haos79)
 was published at 08:08:21 Sydney (25 October 21:08:21 UTC). Tag/container source
