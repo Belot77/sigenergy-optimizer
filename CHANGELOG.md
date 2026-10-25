@@ -1,9 +1,13 @@
 # Changelog
 
-## Unreleased - local UI log retention - 2026-10-26
+## 2.3.69-haos80 - local release candidate - 2026-10-26
+
+- Package reviewed logging-fix source `512601da8083f88a260e343dd980c2c14183c814` from [PR #43](https://github.com/Belot77/sigenergy-optimizer/pull/43), normally merged at `bcd9fe51f7303467ed8e463805c30284110e6a95` with exact reviewed tree `70805bd6f1f49eb47654b7c686c6a8d904371d13`. Align only five established version markers and six release/status documents. This local preparation does not commit, tag, publish or install .80. See [the candidate](docs/HAOS80_RELEASE_CANDIDATE.md).
 
 - Keep recognized successful 2xx `httpx` INFO request messages out of the built-in UI log buffer. Non-2xx responses, unknown formats, other loggers and warning/error messages retain their existing behavior. The filter is attached only to the UI handler; console logging and global logger levels are unchanged.
-- Preserve the newest-first 500-record in-memory limit and existing log endpoints. This reduces diagnostic eviction by routine polls; it neither guarantees permanent error retention nor recovers evicted records or history lost on restart. No control, actuator retry, settlement, trace/accounting, configuration or release-version change is included. Published .79 remains unchanged.
+- Preserve the newest-first 500-record in-memory limit and existing log endpoints. This reduces diagnostic eviction by routine polls; it neither guarantees permanent error retention nor recovers evicted records or history lost on restart. Apart from the five release markers, no control, actuator retry, settlement, trace/accounting, configuration-value or workflow change is included. Published .79 remains unchanged.
+
+- Retained source validation passed 122 tests / 10 subtests, zero failures, 202 existing warnings, in 68.94 seconds; independent logging verification passed all 30 cases. Independent source/test/documentation review is GO. All 46 release/source-pinning/logging checks passed in 10.69 seconds, with 202 existing warnings and zero failures. Normalized comparison confirms exactly five marker substitutions plus six documents. This is not a full-suite or physical-acceptance claim.
 
 ## 2.3.68-haos79 - published release - 2026-10-26
 

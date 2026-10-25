@@ -4,7 +4,33 @@ Last consolidated: 2026-10-26
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
-## Local UI log-retention correction - pre-commit checkpoint, 26 October 2026
+## Local .80 release preparation - 26 October 2026
+
+The UI log-retention correction is merged through
+[PR #43](https://github.com/Belot77/sigenergy-optimizer/pull/43): source
+`512601da8083f88a260e343dd980c2c14183c814`, normal merge
+`bcd9fe51f7303467ed8e463805c30284110e6a95`, exact reviewed/tested tree
+`70805bd6f1f49eb47654b7c686c6a8d904371d13`. It is not yet published.
+
+Local `2.3.69-haos80` preparation uses `release/2.3.69-haos80` in
+`C:\Projects\sigenergy_optimizer-release-haos80`, from that verified main.
+Only five synchronized version markers and six documents change. No further
+logging, control, test, configuration-value or workflow change is included.
+There is no .80 commit, tag, image, release or installation in this checkpoint;
+the eventual metadata commit will supply exact container/source identity.
+See [the candidate and acceptance limits](HAOS80_RELEASE_CANDIDATE.md).
+
+Retained source checks passed 122 tests / 10 subtests, zero failures,
+202 existing warnings, 68.94 seconds; independent focused logging verification
+passed 30 cases. Independent source/test/documentation review is GO. No new full
+suite or physical proof is claimed. All 46 release/source-pinning/logging checks
+passed, zero failures, 202 existing warnings, in 10.69 seconds. Canonical comparison
+confirms exactly five marker substitutions plus six documents. Independent metadata/documentation review is GO. Published .79 remains unchanged. Original unfinished work,
+O18/O5/O9, broader O6, parked O11 and existing physical/Boost gates are preserved.
+The supplied trace's actuator failures remain unexplained; this release changes
+UI diagnostic retention only and does not repair physical settlement.
+
+## Historical local UI log-retention correction - pre-commit checkpoint, 26 October 2026
 
 Approved local worktree `C:\Projects\sigenergy_optimizer-log-retention`, branch
 `fix/diagnostic-log-retention`, starts from verified main
