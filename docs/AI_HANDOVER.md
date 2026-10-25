@@ -4,7 +4,44 @@ Last consolidated: 2026-10-26
 
 Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STATE.md` and relevant `CONTROL_CONTRACT.md` sections. Inspect only minimum relevant files. Git records repository identity; HA and operator evidence establish live state.
 
-## 26 October local .79 release preparation
+## Current .79 publication and verification - 26 October 2026
+
+**2.3.68-haos79 is published.** [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.68-haos79)
+was published at 08:08:21 Sydney (25 October 21:08:21 UTC). Tag/container source
+is `ea516ef6cabd9918dbea675694a9de3aa207c8af`, tree
+`8e7e6cf6cdcbb6196383352c2a351f055aed5912`. Metadata
+[PR #41](https://github.com/Belot77/sigenergy-optimizer/pull/41) normally merged
+at `44419af295a47be24d5f06af3ed7cba83b2f27bb` at 08:07:43 Sydney, with exactly
+the tag tree. Source PR #40 and all original worktrees remain preserved.
+
+[Tag build 40233491965](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40233491965)
+succeeded at that exact source. Version and `latest` index are
+`sha256:cbaa5f68e4830737abba90666e486b9db848b3a853d1c9138c33a93f3b02bdad`.
+Both amd64/arm64 images passed all 22 compressed-layer and uncompressed diff-ID
+checks, with fourteen exact target files each, including `solar_reentry.py`.
+Their shared file fingerprint is
+`sha256:a5a6945fc54c5a872a97b717d377cb88b57c6c0e7d8a9704174bc33324f2e3f8`.
+Independent helper/proof review is GO; 68 synthetic verifier cases passed.
+This is source/image evidence, not runtime or physical acceptance. Full identities,
+verification limits and rollback are in [the publication receipt](HAOS79_RELEASE_CANDIDATE.md).
+
+Retained control validation: 1,415 tests / 1,380 subtests passed, zero failures,
+206 existing warnings, 241.93 seconds; focused 165 / 184. All 16 release checks
+passed in 9.83 seconds. The final receipt changes documentation only. O2 budget
+reacquisition and the narrow O6 relieved-Morning restrictive-charge handoff ship
+in .79; O18 fill strategy, O5/O9 review, broader O6 depletion/floor questions,
+parked O11 and existing physical/Boost acceptance remain open.
+
+The operator confirmed Auto update off on 26 October. No HA installation,
+live settings change or installed .79 identity is claimed. Expected startup is
+`Runtime signature=2.3.68-haos79` and
+`Container source commit=ea516ef6cabd9918dbea675694a9de3aa207c8af`.
+The receipt workspace is `C:\Projects\sigenergy_optimizer-receipt-haos79`, branch
+`docs/haos79-publication-proof`, based on metadata merge `44419af...`.
+The following dated local-preparation checkpoints are historical, superseded by
+this publication; their narrower approval statements describe those earlier steps.
+
+## Historical 26 October local .79 release preparation
 
 [PR #40](https://github.com/Belot77/sigenergy-optimizer/pull/40) normally merged
 reviewed head `ad0e89fdc72d9bb6d52b03aada0456e629bd2963` into main at
@@ -129,7 +166,7 @@ Raw traces remain outside the repository. Next proposed engineering is tests-fir
 characterization of both switching boundaries and forecast-revision behavior,
 followed by separately scoped implementation/policy approval.
 
-## Current .78 publication and verification - 24 October 2026
+## Historical .78 publication and verification - superseded by .79 - 24 October 2026
 
 Published **2.3.67-haos78** on 24 October at 07:57:03 UTC (18:57:03 Sydney):
 [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.67-haos78).

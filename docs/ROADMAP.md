@@ -2,18 +2,26 @@
 
 This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
 
-## Current checkpoint - 2026-10-26 (published .78; local .79 candidate)
+## Current checkpoint - 2026-10-26 (published .79)
 
-O2/O6 source [PR #40](https://github.com/Belot77/sigenergy-optimizer/pull/40)
-normally merged at `fbe3bfcc14312952748f1991eec7836977adfcb5`, exactly the
-reviewed/tested tree. Local release preparation on `release/2.3.68-haos79` in
-`C:\Projects\sigenergy_optimizer-release-haos79` changes only five markers and
-seven documents. All 16 release/version/source-pinning checks passed in 9.83
-seconds; normalized scope comparison and independent metadata review are GO.
-Retained source results and release checks are recorded in
-[the .79 candidate](HAOS79_RELEASE_CANDIDATE.md).
-Commit, tag/image/publication and installation remain separate approvals/actions.
-O18 strategy follows independently; no minimum-charge policy is bundled here.
+Version **2.3.68-haos79** is published at [GitHub Releases](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.68-haos79),
+25 October 2026 21:08:21 UTC (26 October 08:08:21 Sydney). Tag/source
+`ea516ef6cabd9918dbea675694a9de3aa207c8af`, tree
+`8e7e6cf6cdcbb6196383352c2a351f055aed5912`; metadata PR #41 normally merged at
+`44419af295a47be24d5f06af3ed7cba83b2f27bb`. Actions run `40233491965` succeeded
+at the exact tag source. Version/latest OCI index
+`sha256:cbaa5f68e4830737abba90666e486b9db848b3a853d1c9138c33a93f3b02bdad`;
+both architecture images were checked: all 22 layer hashes, sizes and diff IDs
+were verified, and fourteen target files per platform match the tag. Fingerprint `sha256:a5a6945fc54c5a872a97b717d377cb88b57c6c0e7d8a9704174bc33324f2e3f8`.
+Immutable .78 index remains unchanged. Full validation, publication proof and
+acceptance limits are in [the .79 receipt](HAOS79_RELEASE_CANDIDATE.md).
+
+Retained source validation passed 1,415 tests / 1,380 subtests, zero failures,
+206 warnings, in 241.93 seconds; focused checks passed 165 / 184. All 16 release
+checks passed in 9.83 seconds. Independent source/proof reviews are GO. Auto-update
+was confirmed off by the operator on 26 October. No HA installation or physical
+acceptance is claimed. O18, O5/O9, broader O6 depletion/floor questions and parked
+O11 remain open. This is a documentation receipt; no source or tests changed.
 
 ## Historical 25 October source-validation checkpoint
 
@@ -24,10 +32,10 @@ monotonic proof, with 60-second report age/gap bounds. This preserves immediate
 closures, raw Morning priority, valid Solar export and existing charge bounds.
 Full validation passed 1,415 tests / 1,380 subtests, zero failures, 206 existing
 warnings, in 241.93 seconds; focused checks passed 165 / 184. Independent peer
-review is GO. Any commit or publication needs separate approval.
-See [the candidate and acceptance plan](SOLAR_REENTRY_STABILITY.md).
+review is GO. The correction is now published in .79; installation and physical
+acceptance remain separate. See [the implementation and acceptance plan](SOLAR_REENTRY_STABILITY.md).
 
-Latest published release is **.78 / `2.3.67-haos78`**, published 24 October
+Previous published release is **.78 / `2.3.67-haos78`**, published 24 October
 at 07:57:03 UTC (18:57:03 Sydney). Tag/container source:
 `3ccf99cc69a4586715aadcbdd2f1282aeea77bf0`. Metadata PR #38 normally merged
 at `5b84d7f976e9d9db07fbeefd98aa90089a2f40be` with the exact tag tree.
@@ -72,8 +80,8 @@ restore/reinstall path remains unproven.
    Two new modules reproduce Morning Slow/Solar charge handoffs and Solar/normal
    aggregate-budget crossings through real decision logic. Combined checks pass
    118 tests / 127 subtests; independent cross-review is GO. The subsequent
-   explicitly approved correction merged normally through PR #40 and is included
-   in the local .79 candidate, with full validation and independent review GO. Neither
+   correction merged normally through PR #40 and is now published in .79, with
+   full validation and independent review GO. Neither
    the tests nor supplied traces establish physical sensor causes, exact installed
    configuration or lost energy. See [the characterization](SOLAR_CHARGE_CYCLING_CHARACTERIZATION.md).
 2. **O18:** review fill-strategy robustness against forecast downgrades. The
