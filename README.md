@@ -1,9 +1,12 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-Local development on `fix/solar-charge-reentry-stability` adds bounded
-O2 Solar re-entry and O6 charge-handoff qualification. It is not part of the
-published .78 image and adds no configuration settings. See
-[the candidate scope and acceptance checks](docs/SOLAR_REENTRY_STABILITY.md).
+## Local release candidate: 2.3.68-haos79
+
+Prepared locally from the normal [PR #40](https://github.com/Belot77/sigenergy-optimizer/pull/40)
+merge `fbe3bfcc14312952748f1991eec7836977adfcb5`. It packages bounded O2 Solar
+re-entry and O6 charge-handoff qualification, with no new configuration setting
+or further control change during release preparation. It is not yet published
+or install-ready. See [candidate scope and acceptance](docs/HAOS79_RELEASE_CANDIDATE.md).
 
 ## Current published release: 2.3.67-haos78
 

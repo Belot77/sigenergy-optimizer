@@ -1,4 +1,11 @@
-# Solar re-entry stability - local O2/O6 candidate
+# Solar re-entry stability - merged O2/O6 source
+
+[PR #40](https://github.com/Belot77/sigenergy-optimizer/pull/40) normally merged
+reviewed source `ad0e89fdc72d9bb6d52b03aada0456e629bd2963` into main at
+`fbe3bfcc14312952748f1991eec7836977adfcb5` on 26 October 2026, retaining exactly
+the tested tree. The separate [local .79 release preparation](HAOS79_RELEASE_CANDIDATE.md)
+adds version metadata only; it is not publication or physical acceptance.
+The following record preserves the original local engineering scope and evidence.
 
 Date: 25 October 2026. Workspace
 `C:\Projects\sigenergy_optimizer-solar-reentry`, branch

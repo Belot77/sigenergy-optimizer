@@ -2,7 +2,20 @@
 
 This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
 
-## Current checkpoint - 2026-10-25 (published .78; local O2/O6 correction)
+## Current checkpoint - 2026-10-26 (published .78; local .79 candidate)
+
+O2/O6 source [PR #40](https://github.com/Belot77/sigenergy-optimizer/pull/40)
+normally merged at `fbe3bfcc14312952748f1991eec7836977adfcb5`, exactly the
+reviewed/tested tree. Local release preparation on `release/2.3.68-haos79` in
+`C:\Projects\sigenergy_optimizer-release-haos79` changes only five markers and
+seven documents. All 16 release/version/source-pinning checks passed in 9.83
+seconds; normalized scope comparison and independent metadata review are GO.
+Retained source results and release checks are recorded in
+[the .79 candidate](HAOS79_RELEASE_CANDIDATE.md).
+Commit, tag/image/publication and installation remain separate approvals/actions.
+O18 strategy follows independently; no minimum-charge policy is bundled here.
+
+## Historical 25 October source-validation checkpoint
 
 The operator approved local branch `fix/solar-charge-reentry-stability` in
 `C:\Projects\sigenergy_optimizer-solar-reentry`. Separate O2 budget re-entry and
@@ -59,8 +72,8 @@ restore/reinstall path remains unproven.
    Two new modules reproduce Morning Slow/Solar charge handoffs and Solar/normal
    aggregate-budget crossings through real decision logic. Combined checks pass
    118 tests / 127 subtests; independent cross-review is GO. The subsequent
-   explicitly approved local correction is now implemented in the isolated
-   branch above, with full validation and independent peer review GO. Neither
+   explicitly approved correction merged normally through PR #40 and is included
+   in the local .79 candidate, with full validation and independent review GO. Neither
    the tests nor supplied traces establish physical sensor causes, exact installed
    configuration or lost energy. See [the characterization](SOLAR_CHARGE_CYCLING_CHARACTERIZATION.md).
 2. **O18:** review fill-strategy robustness against forecast downgrades. The
