@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased - local O2/O6 Solar reacquisition stabilization
+## 2.3.68-haos79 - local release candidate - 2026-10-26
+
+- Package the reviewed O2/O6 source from [PR #40](https://github.com/Belot77/sigenergy-optimizer/pull/40), normally merged at `fbe3bfcc14312952748f1991eec7836977adfcb5` with exact reviewed tree `6a70c7c55321372969d87e522e57e27a2271b0ce`. Align the five established release markers only; no further control, test, configuration-value or workflow changes. Commit, publication and installation remain separate. See [the candidate](docs/HAOS79_RELEASE_CANDIDATE.md).
 
 - After a final Solar owner fails its strict aggregate energy budget, close immediately and require fresh qualifying PV/load reports before Solar re-entry. Initial activation and independent export-policy priorities retain their existing behavior.
 - After completed automatic Morning Slow operation has released its artificial cap to the normal safe bound, qualify only subsequent Solar charge-restriction acquisition. Solar may keep independently valid MSC export permission while charging uses the existing bounded normal request. Genuine slow charging is not given a new normal-charge spike.
-- Both guards require each PV/load source to span 30 seconds and local monotonic time to span 30 seconds, with 60-second per-source age/advancement-gap bounds. Cached evidence cannot mature qualification. Failed gates invalidate proof without losing a pending reacquisition obligation; generation and dispatch checks reject stale acquisitions. No release version, runtime configuration, minimum-charge rule or live setting changes. See [scope, validation and acceptance](docs/SOLAR_REENTRY_STABILITY.md).
+- Both guards require each PV/load source to span 30 seconds and local monotonic time to span 30 seconds, with 60-second per-source age/advancement-gap bounds. Cached evidence cannot mature qualification. Failed gates invalidate proof without losing a pending reacquisition obligation; generation and dispatch checks reject stale acquisitions. No runtime configuration, minimum-charge rule or live setting changes. See [scope, validation and acceptance](docs/SOLAR_REENTRY_STABILITY.md).
 
 - Full offline validation passed 1,415 tests / 1,380 subtests, zero failures, 206 existing warnings, in 241.93 seconds. Focused validation passed 165 / 184 in 14.97 seconds. Independent peer review is GO after corrected flow-qualification and late-dispatch findings. Publication and physical acceptance remain separate.
 

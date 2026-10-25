@@ -1,10 +1,40 @@
 # SigEnergy Optimizer AI Handover
 
-Last consolidated: 2026-10-25
+Last consolidated: 2026-10-26
 
 Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STATE.md` and relevant `CONTROL_CONTRACT.md` sections. Inspect only minimum relevant files. Git records repository identity; HA and operator evidence establish live state.
 
-## 25 October approved local O2/O6 correction
+## 26 October local .79 release preparation
+
+[PR #40](https://github.com/Belot77/sigenergy-optimizer/pull/40) normally merged
+reviewed head `ad0e89fdc72d9bb6d52b03aada0456e629bd2963` into main at
+`fbe3bfcc14312952748f1991eec7836977adfcb5` on 26 October at 07:31:05 Sydney
+(25 October 20:31:05 UTC). The merge tree is the reviewed/tested
+`6a70c7c55321372969d87e522e57e27a2271b0ce`. Source branch and original workspaces
+remain preserved. No public PR comments/reviews/checks blocked that source merge.
+
+The operator then continued the proposed local `2.3.68-haos79` preparation on
+branch `release/2.3.68-haos79` in `C:\Projects\sigenergy_optimizer-release-haos79`,
+based on that freshly verified main. Five version markers and seven documents
+are the complete release-preparation scope. No new control/test/workflow change,
+commit, push, tag, image, GitHub release or HA action is included here. The future
+tag/container source will be a separately approved metadata commit; it is not
+the source merge SHA above and is not yet assigned.
+
+Published .78 remains `2.3.67-haos78`, source
+`3ccf99cc69a4586715aadcbdd2f1282aeea77bf0`. Proposed .79 tag, GitHub release,
+release PR and GHCR version tag are absent at preflight; .78's immutable version
+index remains `sha256:35292feb279a4b33e4c86f5482d690a9704c91d7178038b115c3bc434ead991a`.
+Retained source validation is 1,415 tests / 1,380 subtests, zero failures,
+206 warnings, 241.93 seconds; focused 165 / 184. Independent source/helper/test
+review is GO. All 16 release/version/source-pinning checks passed in 9.83 seconds;
+normalized comparison confirms exactly five marker substitutions and seven docs.
+Independent release metadata/documentation review is GO. These are recorded in
+[the .79 candidate](HAOS79_RELEASE_CANDIDATE.md), with publication and live gates.
+O18 strategy, O5/O9 review, broader O6 depletion, parked O11 and physical
+acceptance remain open. No assumption of exact installed .78 identity is made.
+
+## Historical 25 October approved local O2/O6 correction
 
 Workspace `C:\Projects\sigenergy_optimizer-solar-reentry`, branch
 `fix/solar-charge-reentry-stability`, starts from freshly fetched `origin/main`
