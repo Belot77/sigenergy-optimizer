@@ -4,7 +4,30 @@ Last consolidated: 2026-10-26
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
-## Current local passive allocation evidence - 26 October 2026
+## Current local .81 release candidate - 26 October 2026
+
+Reviewed evidence [PR #46](https://github.com/Belot77/sigenergy-optimizer/pull/46)
+normally merged into main at `ff5993a7fd56e228bd1e776df1447cc085d5a8a5`,
+17:35:44 Sydney, preserving tested tree `a8eead0542ea3cacac6d85532a73a6c16362f467`.
+The approved isolated branch `release/2.3.70-haos81` in
+`C:\Projects\sigenergy_optimizer-release-haos81` starts at that freshly fetched
+main. Preparation changes exactly five version markers and six release/status
+documents. There is no additional control/test/configuration-value/workflow change.
+The future tag/container source is not assigned until a separately approved
+metadata commit. No commit, push, publication, installation or live action is
+authorized by this preparation step.
+
+Latest published remains .80. Candidate tag/release/remote branch/image tag are
+absent at preflight; .80/latest digest headers remain unchanged. Retained source
+validation is 204 tests / 196 subtests, zero failures, 202 warnings, 42.15 seconds,
+with independent source/test/docs reviews GO. All 54 candidate checks / 12 subtests
+passed in 13.86 seconds, with 202 existing warnings and zero failures. Exact scope
+and review are recorded in [the release candidate](HAOS81_RELEASE_CANDIDATE.md). No full-suite
+repeat or physical acceptance is claimed. Operator reports installed .79; exact
+runtime identity is unverified. Solar allocation, O18, O5/O9, broader O6, parked
+O11 and physical/Boost acceptance remain open. All unfinished work is preserved.
+
+## Historical local passive evidence checkpoint - before PR #46 merge
 
 Approved branch `fix/solar-allocation-evidence` in
 `C:\Projects\sigenergy_optimizer-solar-evidence` adds reported ESS charge-limit

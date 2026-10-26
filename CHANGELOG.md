@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased - passive Solar allocation evidence
+## 2.3.70-haos81 - local release candidate - 2026-10-26
+
+- Prepare the merged passive evidence from [PR #46](https://github.com/Belot77/sigenergy-optimizer/pull/46), normal main merge `ff5993a7fd56e228bd1e776df1447cc085d5a8a5`, with exactly the reviewed source tree `a8eead0542ea3cacac6d85532a73a6c16362f467`. Five version markers and release/status documentation are the only preparation changes; no additional control, test, configuration-value or workflow change is bundled.
+- Retain source validation of 204 tests / 196 subtests, zero failures, 202 existing warnings, in 42.15 seconds, and independent source/test/documentation review GO. All 54 release/source-pinning/evidence/logging checks / 12 subtests passed in 13.86 seconds, with 202 existing warnings and zero failures. See [the preparation record](docs/HAOS81_RELEASE_CANDIDATE.md). No full-suite repeat, publication, installed identity or physical acceptance is claimed.
 
 - Add trace evidence for the pre-application ESS charge-limit readback and its
   provenance, the five measured flow observations, signed aggregate balance and

@@ -4,7 +4,41 @@ Last consolidated: 2026-10-26
 
 Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STATE.md` and relevant `CONTROL_CONTRACT.md` sections. Inspect only minimum relevant files. Git records repository identity; HA and operator evidence establish live state.
 
-## Current local Solar allocation evidence patch - 26 October 2026
+## Current local .81 release preparation - 26 October 2026
+
+[PR #46](https://github.com/Belot77/sigenergy-optimizer/pull/46) normally merged
+reviewed head `6ad0175dd824e930954294b4a8a71f4524588dd5` into main at
+`ff5993a7fd56e228bd1e776df1447cc085d5a8a5`, 17:35:44 Sydney
+(06:35:44 UTC). Its merge tree exactly matches the reviewed/tested
+`a8eead0542ea3cacac6d85532a73a6c16362f467`. Source branch, original
+characterization worktree and unfinished work remain preserved.
+
+The operator approved local `release/2.3.70-haos81` preparation in
+`C:\Projects\sigenergy_optimizer-release-haos81` from that freshly fetched main.
+Scope is five single-marker substitutions and six release/status documents.
+The future tag/container source will be the separately approved metadata commit,
+not the source merge above; it is not yet assigned. No further control, test,
+configuration-value, workflow or evidence-contract change is included. Commit,
+push, tag/image publication, metadata merge, installation and live changes remain
+outside this local-preparation approval.
+
+Latest published remains .80, source `acb576747e808e927bdd7d12346c507da9b188b6`.
+The candidate tag/release/remote branch/image tag are absent at preflight;
+.80/latest registry digest headers retain the verified .80 index. Retained source
+checks passed 204 tests / 196 subtests, zero failures, 202 existing warnings,
+42.15 seconds; focused checks passed 19 / 22. Independent source/tests/docs
+reviews are GO. All 54 release-marker/source-pinning/evidence/logging tests /
+12 subtests passed, zero failures, 202 existing warnings, in 13.86 seconds.
+Exact scope and release-documentation review are recorded in [the candidate](HAOS81_RELEASE_CANDIDATE.md).
+No full suite or physical acceptance is implied by metadata preparation.
+
+The operator reports installed .79, without renewed exact startup identity.
+This candidate adds passive evidence, not an allocation correction. Keep O18,
+O5/O9, broader O6, parked O11 and physical/Boost acceptance open. Fresh HA reports,
+ESS setting readback and Solar feedback boundaries do not establish simultaneous
+physical samples or inverter settlement. Existing control rules remain unchanged.
+
+## Historical local Solar evidence validation - before PR #46 merge
 
 The operator approved `fix/solar-allocation-evidence`, isolated in
 `C:\Projects\sigenergy_optimizer-solar-evidence` from freshly fetched main

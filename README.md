@@ -1,10 +1,11 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-Local, unpublished diagnostics candidate: decision traces distinguish requested
-ESS charging from the reported charge-limit setting and measured battery power,
-with flow report timestamps and Solar feedback boundaries. This does not correct
-Solar allocation or prove inverter settlement. See the
-[passive evidence contract](docs/CONTROL_CONTRACT.md#passive-charge-allocation-evidence).
+Local release candidate **2.3.70-haos81** packages the merged passive diagnostics.
+It is not published or installed. Traces distinguish requested ESS charging from
+the reported charge-limit setting and measured battery power, with report times
+and Solar feedback boundaries. This does not correct Solar allocation or prove
+inverter settlement. See the [candidate and release gates](docs/HAOS81_RELEASE_CANDIDATE.md)
+and [evidence contract](docs/CONTROL_CONTRACT.md#passive-charge-allocation-evidence).
 
 ## Current published release: 2.3.69-haos80
 
