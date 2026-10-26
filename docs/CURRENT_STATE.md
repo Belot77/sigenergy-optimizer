@@ -4,28 +4,40 @@ Last consolidated: 2026-10-26
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
-## Current local .81 release candidate - 26 October 2026
+## Current .81 publication and verification - 26 October 2026
 
-Reviewed evidence [PR #46](https://github.com/Belot77/sigenergy-optimizer/pull/46)
-normally merged into main at `ff5993a7fd56e228bd1e776df1447cc085d5a8a5`,
-17:35:44 Sydney, preserving tested tree `a8eead0542ea3cacac6d85532a73a6c16362f467`.
-The approved isolated branch `release/2.3.70-haos81` in
-`C:\Projects\sigenergy_optimizer-release-haos81` starts at that freshly fetched
-main. Preparation changes exactly five version markers and six release/status
-documents. There is no additional control/test/configuration-value/workflow change.
-The future tag/container source is not assigned until a separately approved
-metadata commit. No commit, push, publication, installation or live action is
-authorized by this preparation step.
+**2.3.70-haos81 is published.** [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.70-haos81)
+published 26 October at 18:24:39 Sydney (07:24:39 UTC). Tag/container source
+`247095a4f9905932c3f5716f3d1be6cee7b3c7f8`, approved/tag tree
+`8a49610bcaee9fc41390c96580710136831a3ffe`. Metadata
+[PR #47](https://github.com/Belot77/sigenergy-optimizer/pull/47) normally merged at
+`f2a2d9a4b77ba6ce8e8ef40d419a6abe56f7d55f`, 18:24:19 Sydney, with exactly that tree.
+Source [PR #46](https://github.com/Belot77/sigenergy-optimizer/pull/46) remains the
+reviewed passive implementation; all original unfinished work is preserved.
 
-Latest published remains .80. Candidate tag/release/remote branch/image tag are
-absent at preflight; .80/latest digest headers remain unchanged. Retained source
-validation is 204 tests / 196 subtests, zero failures, 202 warnings, 42.15 seconds,
-with independent source/test/docs reviews GO. All 54 candidate checks / 12 subtests
-passed in 13.86 seconds, with 202 existing warnings and zero failures. Exact scope
-and review are recorded in [the release candidate](HAOS81_RELEASE_CANDIDATE.md). No full-suite
-repeat or physical acceptance is claimed. Operator reports installed .79; exact
-runtime identity is unverified. Solar allocation, O18, O5/O9, broader O6, parked
-O11 and physical/Boost acceptance remain open. All unfinished work is preserved.
+[Build 40284898464](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40284898464)
+succeeded at the exact source. Version/latest OCI index:
+`sha256:e3f58087681c0c08ab53b0b8263387e8388d0916796aea326fdf9344ba821526`.
+Both architectures passed all 22 compressed-layer hashes/sizes and uncompressed
+diff IDs; fourteen final target files per platform match the tag. Independent
+helper and final proof review are GO; 68 offline verifier cases independently
+passed. The reviewer separately checked manifests/configs and Git target hashes,
+without redownloading every layer. Immutable .80 is unchanged.
+[Full publication receipt and verification limits](HAOS81_RELEASE_CANDIDATE.md).
+
+Retained source validation passed 204 tests / 196 subtests, zero failures,
+202 existing warnings, in 42.15 seconds; focused evidence/outcome checks passed
+19 / 22. All 54 release/source-pinning/evidence/logging tests / 12 subtests passed,
+zero failures, 202 warnings, in 13.86 seconds. No full suite was repeated for
+metadata or this six-document receipt.
+
+This release adds passive evidence and retains the .80 UI log filter.
+It does not change allocation, targets, tolerances, authority, settlement or safe
+fallback. HA report times and setting/helper acknowledgments are not physical
+settlement proof. O18, O5/O9, broader O6, parked O11 and physical/Boost acceptance
+remain open. The operator last reported installed .79; exact installed .81
+identity is unverified. Auto update was last operator-confirmed off on 26 October;
+no direct HA query, installation or live settings change was performed.
 
 ## Historical local passive evidence checkpoint - before PR #46 merge
 
@@ -56,9 +68,9 @@ independent test-source review is GO. No full-suite repeat was needed.
 .80 does not change this controller. O18 remains open; see the
 [characterization and next engineering boundary](SOLAR_EXPORT_CHARGE_ALLOCATION_CHARACTERIZATION.md).
 
-## Current .80 publication and verification - 26 October 2026
+## Historical .80 publication and verification - superseded by .81 - 26 October 2026
 
-**Latest published: 2.3.69-haos80.** [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.69-haos80)
+**Published at this historical checkpoint: 2.3.69-haos80.** [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.69-haos80)
 published at 10:20:09 Sydney (25 October 23:20:09 UTC). Tag/container source
 `acb576747e808e927bdd7d12346c507da9b188b6`, approved/tag tree
 `14103ec71d3b41ad6a85e2d8a149e3db705606bf`. Metadata
