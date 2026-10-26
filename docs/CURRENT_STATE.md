@@ -4,6 +4,35 @@ Last consolidated: 2026-10-26
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
 
+## Current local passive allocation evidence - 26 October 2026
+
+Approved branch `fix/solar-allocation-evidence` in
+`C:\Projects\sigenergy_optimizer-solar-evidence` adds reported ESS charge-limit
+provenance, five flow report timestamps, signed balance and Solar feedback
+boundaries to new trace rows. Requested limits, reported settings and measured
+battery power remain distinct. Existing controls, negative-flow rejection,
+settlement and safe recovery are unchanged. No allocation fix, commit, push,
+publication or live action is included. The original characterization workspace
+and all unfinished work remain preserved. Applicable checks passed 204 tests /
+196 subtests, zero failures, 202 existing warnings, in 42.15 seconds; focused
+checks passed 19 / 22. Independent production review is GO; baseline control AST
+comparison passes after removing only passive additions. No full-suite or physical
+acceptance claim. [Contract and limits](CONTROL_CONTRACT.md#passive-charge-allocation-evidence).
+
+## Current Solar allocation characterization - 26 October 2026
+
+The operator reports installed .79. Supplied evidence shows both zero charge
+requests near 15 kW export and a later screenshot with 18.87 kW charging/zero
+export. The approved isolated `test/solar-export-charge-allocation` branch adds
+tests and investigation documentation only. Strict flow rejection can reset
+relief; pending restrictive-charge handoff permits normal charging. Fallback
+recovery and cached status require careful separation from physical readback.
+The screenshot's exact cause and physical command acceptance remain unproven.
+Combined focused checks passed 105 tests / 136 subtests, zero failures;
+independent test-source review is GO. No full-suite repeat was needed.
+.80 does not change this controller. O18 remains open; see the
+[characterization and next engineering boundary](SOLAR_EXPORT_CHARGE_ALLOCATION_CHARACTERIZATION.md).
+
 ## Current .80 publication and verification - 26 October 2026
 
 **Latest published: 2.3.69-haos80.** [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.69-haos80)

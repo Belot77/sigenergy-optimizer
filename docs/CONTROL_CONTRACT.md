@@ -6,6 +6,52 @@ This document defines durable approved control semantics, not current implementa
 
 Application-outcome metadata is diagnostic only. `application.status` is `succeeded`, `pending`, `failed`, `exception`, or `unreported`; `application.succeeded` is true/false/null. `transition_phase` is `close`, `msc`, or `unknown` only while pending, and null otherwise. `fallback_attempted` and `fallback_succeeded` describe fallback activity. These fields record the application helper's returned result or an ordinary raised application exception; they do not establish whole-cycle success, actuator readback, or physical settlement. A `succeeded` outcome means only that the helper returned success, including a no-op or manual pause. The internal `_ActuatorApplicationResult.transition_pending` flag marks only an intentional wait returned without restriction-write errors; it is not a separate JSON field and it does not redefine existing `succeeded=False` or control-exception behavior. Pending/failed application attempts do not replace the committed decision. Missing metadata on historical rows means unknown. Trace recording failure must not stop control, and `result.error` or exception text is not retained.
 
+### Passive charge-allocation evidence
+
+New trace rows include an additive `charge_allocation` object. Existing request,
+state, gate, value and application fields retain their meanings. Historical rows
+without this object contain unknown evidence; no archive migration or backfill is
+performed. The status UI still uses its existing committed-state semantics.
+
+`snapshot_phase=pre_application` and `snapshot_timestamp` identify the decision's
+input state. `ess_charge_limit_readback` retains the configured HA charge-limit
+entity's reported number and provenance independently of the requested ceiling
+in `summary.ess_charge_limit_kw`. It does not infer an unknown setting from the
+legacy numeric zero default, and does not establish that the inverter obeyed it.
+The existing legacy `current_ess_charge_limit` control value is unchanged.
+
+`flows` contains `pv`, `load`, `grid_import`, `grid_export` and `battery`.
+Each observation and the charge-limit readback contain `value_kw`, `available`,
+`fresh` and `reported_at_ts`. Missing or nonfinite values become null with false
+availability/freshness. A finite stale reading remains visible with `fresh=false`.
+Freshness is the flag at state-read time, not a new check at trace-recording time.
+ESS provenance uses the existing bulk response; no independent metadata request
+is added. An unchanged entity can therefore conservatively appear stale.
+Report timestamps are HA metadata, not proof of simultaneous physical samples.
+Battery sign and unit conversion retain the existing configured reader semantics:
+positive battery power means charging after that conversion. No entity IDs or
+configuration secrets are added by this object.
+
+`derived_balance_kw` is signed PV plus import minus export minus load, only when
+all four directional observations are available, finite and nonnegative. It may
+be negative and may use stale readings; their individual flags remain visible.
+It is diagnostic arithmetic, not a new balance tolerance, trust gate, hidden-PV
+estimate or permission to charge/discharge. Missing/invalid components or an
+overflowed result produce null.
+
+`solar_feedback_before_evaluation` copies the prior Solar feedback command before
+this evaluation can reset it. `solar_feedback_at_recording` describes the armed
+feedback state when this row is built, which may precede later failure cleanup.
+Both contain `command_kw` and `acknowledged_at_ts`, with null for unknown fields.
+The timestamp is Solar's feedback boundary after a successful charge-write
+response; it is not ESS readback, physical settlement or a full actuator-write
+history. Reasserting an unchanged command retains the existing boundary.
+
+These fields are passive. They add no HA request or actuator write, change no
+control authority or safety condition, and remain inside diagnostic failure
+isolation. In particular, negative balance still rejects physical relief, and
+normal charging recovery still requires the existing ownership/settlement gates.
+
 Update this contract whenever an approved control-ownership rule, invariant, or transition contract changes. Do not change it merely to match accidental current code behavior; report the mismatch and obtain an approved semantic decision first.
 
 ## Runtime configuration activation

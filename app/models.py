@@ -226,6 +226,10 @@ class SolarState:
 
     timestamp: datetime = field(default_factory=datetime.now)
 
+    # Passive readback provenance only; keep existing positional fields and
+    # legacy current_ess_charge_limit control semantics unchanged.
+    current_ess_charge_limit_observation: HVACObservedValue = field(default_factory=HVACObservedValue)
+
 
 EXPORT_BLOCKED = "EXPORT_BLOCKED"
 MSC_SURPLUS_CEILING = "MSC_SURPLUS_CEILING"
