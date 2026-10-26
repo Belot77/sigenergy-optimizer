@@ -2,7 +2,27 @@
 
 This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
 
-## Current checkpoint - 2026-10-26 (published .80)
+## Current local preparation - 2026-10-26 (.81)
+
+Passive Solar allocation evidence from [PR #46](https://github.com/Belot77/sigenergy-optimizer/pull/46)
+is merged at `ff5993a7fd56e228bd1e776df1447cc085d5a8a5`, with exactly the reviewed
+tree. Approved local `release/2.3.70-haos81` preparation changes five version
+markers and six documents; no further control/test/configuration-value/workflow
+change or publication is included. Retained source checks passed 204 tests /
+196 subtests, with independent review GO. All 54 candidate checks / 12 subtests
+passed in 13.86 seconds. Release scope and limits are in
+[the candidate](HAOS81_RELEASE_CANDIDATE.md). Latest published remains .80.
+
+Next gates are separately authorized publication with exact image/source proof,
+then installation/runtime identity and supplied evidence from that build. Use the
+new readback/provenance to investigate allocation and command response; do not
+silently accept meter disagreement, force export, or remove safe charging recovery.
+This is not a fix for O18 or the whole allocation symptom. O5/O9, broader O6,
+parked O11 and physical/Boost acceptance retain their existing gates. Preserve
+the remaining ownership audit, architecture, cleanup, GUI/UX and Climate Manager
+sequence below. No live experiment or inverter setting change is authorized.
+
+## Latest published checkpoint - 2026-10-26 (.80)
 
 Version **2.3.69-haos80** was published 25 October 2026 at 23:20:09 UTC
 (26 October 10:20:09 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.69-haos80).
