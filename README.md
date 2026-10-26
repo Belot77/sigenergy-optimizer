@@ -1,13 +1,31 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-Local release candidate **2.3.70-haos81** packages the merged passive diagnostics.
-It is not published or installed. Traces distinguish requested ESS charging from
-the reported charge-limit setting and measured battery power, with report times
-and Solar feedback boundaries. This does not correct Solar allocation or prove
-inverter settlement. See the [candidate and release gates](docs/HAOS81_RELEASE_CANDIDATE.md)
-and [evidence contract](docs/CONTROL_CONTRACT.md#passive-charge-allocation-evidence).
+## Current published release: 2.3.70-haos81
 
-## Current published release: 2.3.69-haos80
+Published 26 October 2026 at 07:24:39 UTC (18:24:39 Sydney):
+[GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.70-haos81).
+Tag/container source `247095a4f9905932c3f5716f3d1be6cee7b3c7f8`, tree
+`8a49610bcaee9fc41390c96580710136831a3ffe`. Metadata
+[PR #47](https://github.com/Belot77/sigenergy-optimizer/pull/47) normally merged at
+`f2a2d9a4b77ba6ce8e8ef40d419a6abe56f7d55f` with the exact tag tree.
+[Build 40284898464](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40284898464)
+and independent image/source verification passed for amd64 and arm64:
+22 layer hashes/sizes/diff IDs and fourteen target files per platform.
+Version/latest OCI index:
+`sha256:e3f58087681c0c08ab53b0b8263387e8388d0916796aea326fdf9344ba821526`.
+Immutable .80 remains unchanged.
+
+New traces separate requested ESS charging, the reported charge-limit setting and
+measured battery power, with five flow report times and Solar feedback boundaries.
+This is diagnostic evidence, not a Solar allocation correction or physical
+settlement proof. The .80 UI log-retention improvement is included unchanged.
+Retained source checks passed 204 tests / 196 subtests; release/evidence/logging
+checks passed 54 tests / 12 subtests. No full suite was repeated.
+See [the publication receipt and installation gates](docs/HAOS81_RELEASE_CANDIDATE.md)
+and [evidence contract](docs/CONTROL_CONTRACT.md#passive-charge-allocation-evidence).
+No installed .81 identity or live acceptance is claimed.
+
+## Previous published release: 2.3.69-haos80
 
 Published 25 October 2026 at 23:20:09 UTC (26 October 10:20:09 Sydney):
 [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.69-haos80).

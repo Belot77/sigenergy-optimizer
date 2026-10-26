@@ -1,17 +1,18 @@
 # Changelog
 
-## 2.3.70-haos81 - local release candidate - 2026-10-26
+## 2.3.70-haos81 - published release - 2026-10-26
 
-- Prepare the merged passive evidence from [PR #46](https://github.com/Belot77/sigenergy-optimizer/pull/46), normal main merge `ff5993a7fd56e228bd1e776df1447cc085d5a8a5`, with exactly the reviewed source tree `a8eead0542ea3cacac6d85532a73a6c16362f467`. Five version markers and release/status documentation are the only preparation changes; no additional control, test, configuration-value or workflow change is bundled.
-- Retain source validation of 204 tests / 196 subtests, zero failures, 202 existing warnings, in 42.15 seconds, and independent source/test/documentation review GO. All 54 release/source-pinning/evidence/logging checks / 12 subtests passed in 13.86 seconds, with 202 existing warnings and zero failures. See [the preparation record](docs/HAOS81_RELEASE_CANDIDATE.md). No full-suite repeat, publication, installed identity or physical acceptance is claimed.
+- Published at 07:24:39 UTC (18:24:39 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.70-haos81). Tag/container source `247095a4f9905932c3f5716f3d1be6cee7b3c7f8`, tree `8a49610bcaee9fc41390c96580710136831a3ffe`. Metadata PR #47 normally merged at `f2a2d9a4b77ba6ce8e8ef40d419a6abe56f7d55f` with exactly that tree, after source PR #46. Preparation changed five version markers and six documents only.
+- [Build 40284898464](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40284898464) succeeded at the exact source. Version/latest index: `sha256:e3f58087681c0c08ab53b0b8263387e8388d0916796aea326fdf9344ba821526`. Both architectures passed all 22 compressed-layer and diff-ID checks, with fourteen target files each matching the tag. Independent helper/proof review is GO; 68 offline verifier cases independently passed. Immutable .80 is unchanged.
+- Retained source validation passed 204 tests / 196 subtests, zero failures, 202 warnings, in 42.15 seconds. All 54 release/source-pinning/evidence/logging tests / 12 subtests passed in 13.86 seconds. No full suite was repeated for metadata or the final six-document receipt. No HA installation, exact installed .81 identity or physical acceptance is claimed. See [the publication receipt](docs/HAOS81_RELEASE_CANDIDATE.md).
 
 - Add trace evidence for the pre-application ESS charge-limit readback and its
   provenance, the five measured flow observations, signed aggregate balance and
   Solar feedback command boundaries. Preserve missing/stale data as such; do not
   infer actual charging from a request or helper success.
 - Preserve all control decisions, flow rejection, settlement, fallback, Manual/
-  Force ownership and configuration. No allocation fix, release marker change,
-  archive backfill or live-system change is included.
+  Force ownership and configuration. No allocation fix, archive backfill or
+  live-system change is included.
 
 ## 2.3.69-haos80 - published release - 2026-10-26
 
