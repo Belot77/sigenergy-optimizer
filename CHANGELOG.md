@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased - passive Solar allocation evidence
+
+- Add trace evidence for the pre-application ESS charge-limit readback and its
+  provenance, the five measured flow observations, signed aggregate balance and
+  Solar feedback command boundaries. Preserve missing/stale data as such; do not
+  infer actual charging from a request or helper success.
+- Preserve all control decisions, flow rejection, settlement, fallback, Manual/
+  Force ownership and configuration. No allocation fix, release marker change,
+  archive backfill or live-system change is included.
+
 ## 2.3.69-haos80 - published release - 2026-10-26
 
 - Published 25 October 2026 at 23:20:09 UTC (26 October 10:20:09 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.69-haos80). Tag/source `acb576747e808e927bdd7d12346c507da9b188b6`, tree `14103ec71d3b41ad6a85e2d8a149e3db705606bf`; metadata PR #44 normally merged at `77bde899da35b2f933304192a9c7226d9e5e9ef3` with the exact tag tree. Build [40243683190](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40243683190) succeeded at that exact source.

@@ -217,8 +217,8 @@ class DecisionTraceApplicationOutcomeTests(Haos49CharacterizationCase):
         optimizer._apply.assert_not_awaited()
         self.assert_not_committed(optimizer, previous, previous_state)
 
-    def test_direct_recorder_keeps_legacy_shape_without_application_metadata(self):
+    def test_direct_recorder_adds_passive_evidence_without_application_metadata(self):
         optimizer, state, requested, _, _ = self.cycle()
         optimizer._record_decision_trace(state, requested)
-        self.assertEqual({"ts", "summary", "state", "gates", "values"},
+        self.assertEqual({"ts", "summary", "state", "gates", "values", "charge_allocation"},
                          set(self.only_row(optimizer)))

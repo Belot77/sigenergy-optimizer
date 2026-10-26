@@ -1044,6 +1044,10 @@ class SigEnergyOptimizer:
         reduction, three observations are required. Forecast/estimated PV and
         Morning Slow's binary relief/tuning have no authority here.
         """
+        # Copy diagnostic context before any reset. These values never grant
+        # feedback trust or authorize a charge request.
+        feedback_command_kw = self._solar_relief.command_kw
+        feedback_command_ts = self._solar_relief.command_ts
         export_kw, charge_kw, timestamps = self._solar_physical_feedback(s, now_ts)
         limit_kw = None
         flow_trusted = timestamps is not None
@@ -1063,6 +1067,8 @@ class SigEnergyOptimizer:
                 "solar_physical_relief_export_kw": export_kw,
                 "solar_physical_relief_limit_kw": limit_kw,
                 "solar_physical_relief_confirmations": state.confirmations,
+                "solar_physical_relief_feedback_command_kw": feedback_command_kw,
+                "solar_physical_relief_feedback_command_ts": feedback_command_ts,
             }
 
         try:
@@ -2193,6 +2199,68 @@ class SigEnergyOptimizer:
             # Diagnostic failures must not mask application failures or stop control.
             logger.warning("Decision trace recording failed")
 
+    def _charge_allocation_trace_evidence(
+        self, s: SolarState, values: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Describe the input snapshot and feedback epochs, never control them.
+
+        Report timestamps are HA metadata, not physical sampling guarantees.
+        The recording-time epoch may precede later application-error cleanup.
+        Acknowledgment identifies Solar's feedback boundary, not ESS settlement
+        or a complete history of successful charge writes.
+        """
+        def finite_number(value: Any) -> Optional[float]:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return None
+            try:
+                result = float(value)
+            except (ValueError, OverflowError):
+                return None
+            return result if math.isfinite(result) else None
+
+        def observation(item: Any) -> dict[str, Any]:
+            value = finite_number(getattr(item, "value", None))
+            available = getattr(item, "available", False) is True and value is not None
+            return {
+                "value_kw": value,
+                "available": available,
+                "fresh": available and getattr(item, "fresh", False) is True,
+                "reported_at_ts": finite_number(getattr(item, "observed_at_ts", None)),
+            }
+
+        inputs = s.hvac_solar_inputs
+        flows = {
+            "pv": observation(inputs.pv_power),
+            "load": observation(inputs.load_power),
+            "grid_import": observation(inputs.grid_import_power),
+            "grid_export": observation(inputs.grid_export_power),
+            "battery": observation(inputs.battery_power),
+        }
+        components = [flows[name] for name in ("pv", "load", "grid_import", "grid_export")]
+        balance = None
+        if all(item["available"] and item["value_kw"] >= 0.0 for item in components):
+            balance = finite_number(
+                flows["pv"]["value_kw"] + flows["grid_import"]["value_kw"]
+                - flows["grid_export"]["value_kw"] - flows["load"]["value_kw"]
+            )
+        return {
+            "snapshot_phase": "pre_application",
+            "snapshot_timestamp": s.timestamp.isoformat(),
+            "ess_charge_limit_readback": observation(s.current_ess_charge_limit_observation),
+            "flows": flows,
+            # Signed diagnostic arithmetic, even for stale observations. This
+            # does not replace the controller's freshness/coherence checks.
+            "derived_balance_kw": balance,
+            "solar_feedback_before_evaluation": {
+                "command_kw": finite_number(values.get("solar_physical_relief_feedback_command_kw")),
+                "acknowledged_at_ts": finite_number(values.get("solar_physical_relief_feedback_command_ts")),
+            },
+            "solar_feedback_at_recording": {
+                "command_kw": finite_number(self._solar_relief.command_kw),
+                "acknowledged_at_ts": finite_number(self._solar_relief.command_ts),
+            },
+        }
+
     def _record_decision_trace(
         self, s: SolarState, d: Decision,
         *, application: Optional[dict[str, Any]] = None,
@@ -2225,6 +2293,7 @@ class SigEnergyOptimizer:
                 },
                 "gates": gates,
                 "values": values,
+                "charge_allocation": self._charge_allocation_trace_evidence(s, values),
                 **({"application": dict(application)} if application is not None else {}),
             }
         )
@@ -3153,6 +3222,9 @@ class SigEnergyOptimizer:
         legacy_discharge_entity_max_kw = None
         if cfg.ess_max_charging_limit:
             s.current_ess_charge_limit = _fv(cfg.ess_max_charging_limit)
+            s.current_ess_charge_limit_observation = _observed_number(
+                cfg.ess_max_charging_limit, max_age_seconds=live_max_age,
+            )
             legacy_charge_entity_max_kw = _legacy_manual_number_entity_max_kw(
                 cfg.ess_max_charging_limit
             )
