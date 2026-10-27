@@ -449,6 +449,7 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         decision.trace_values["battery_export_owner"] = "none"
 
         with self._automated_fallback_clock(optimizer, ha, self.FIXED_AFTERNOON):
+            ha._record_state_value(cfg.demand_window_sensor, "off")
             result = asyncio.run(optimizer._apply(state, decision))
 
         self.assertEqual(
@@ -605,6 +606,8 @@ class Phase1ActuatorSettlementFallbackCharacterizationTests(
         # This fixture supplies independent post-dispatch export closure and
         # exact MSC reports. With settle_selects=False the latter stays absent.
         with self._automated_fallback_clock(optimizer, ha, when):
+            if demand_observed:
+                ha._record_state_value(cfg.demand_window_sensor, "off")
             result = asyncio.run(optimizer._apply(state, decision))
         self.assertFalse(result.succeeded)
         self.assertTrue(result.fallback_attempted)

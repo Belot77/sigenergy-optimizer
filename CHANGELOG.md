@@ -1,5 +1,56 @@
 # Changelog
 
+## Unreleased - bounded MSC fallback recovery (O21) - 2026-10-27
+
+- Restore bounded MSC house-serving ESS discharge after a failed battery-export
+  attempt only after current authority and fresh export-close/MSC proof.
+  Ordinary deliberate export still requires its intended target.
+- Preserve independent decision limits and normal configured/entity/hardware
+  capability bounds. Decision-time snapshot semantics remain unchanged.
+  The primary application stays failed; fallback succeeds only when its own
+  proof and service requests succeed.
+- Final guarded validation: 1,504 tests / 1,439 subtests passed, zero failures,
+  206 warnings. Focused checks passed 24 / 30. Independent local review is GO.
+  No commit, release, installation or physical acceptance is included.
+
+
+## Unreleased policy clarification - 2026-10-27
+
+- Record the approved cost-policy boundary: incomplete or unpriced import
+  history alone is advisory and does not veto otherwise-qualified automatic
+  battery-backed export. Any finite recorded highest actual import price
+  available in the existing shared summary remains the cost floor even while
+  history is incomplete; zero and negative prices are valid, and the floor
+  is not a weighted average. Ledger coverage, sticky
+  unknown-day flags, retained interval payloads and exact retries remain
+  unchanged. The local integration candidate also includes the reviewed O19
+  fallback Demand Window correction; both original worktrees remain preserved.
+  No version or UI setting changes. Local validation and review are recorded
+  in `docs/CURRENT_STATE.md`; this does not claim release, installation or
+  physical acceptance.
+
+## Unreleased - local O19 fallback Demand Window correction - 2026-10-26
+
+- Recheck current Demand Window in the same final authority/settlement read
+  before fallback can reopen grid import. ON or untrusted, malformed or
+  conflicting evidence requests the existing restrictive 0.01 kW close, with
+  current operator authority checked again.
+- Three separate scripted cases exercise current Demand ON, unknown, and trusted OFF.
+  In each, positive BATTERY_EXPORT fails, post-request EXPORT closes at 0.01 kW,
+  and exact MSC proof is present. ON/unknown keep import closed; trusted OFF permits
+  the fixture's 13.25 kW import recovery. The normal Automated ESS discharge
+  capability restore is independently rejected: original GRID-EXPORT target (25 kW
+  in this fixture) mismatches current EXPORT 0.01 kW. Both application statuses are
+  false with `normal Automated ESS discharge capability returned failure`; ESS
+  discharge capability remains 0.01 kW. Fixture values are not site or physical
+  proof. This records the historical integration baseline; see the local O21 correction for current status.
+- Preserve initial Demand/Standby/Morning Dump import blocks, request-specific
+  MSC/export settlement, ordinary import policy and independently permitted
+  ESS/PV recovery. Retain the existing 360-second freshness boundary and
+  metadata-failure fallback; add no timer, threshold, setting or version bump.
+- This correction is included in the local combined cost/fallback integration
+  candidate. The combined offline suite passed 1,499 tests / 1,429 subtests, zero failures. Independent source/test review was GO for this local integration and characterization only; O21 was unfixed in that integration baseline; see the local correction for current status. No release or live action is included. See `docs/CONTROL_LIFECYCLE_REVIEW.md`.
+
 ## 2.3.70-haos81 - published release - 2026-10-26
 
 - Published at 07:24:39 UTC (18:24:39 Sydney): [GitHub Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.70-haos81). Tag/container source `247095a4f9905932c3f5716f3d1be6cee7b3c7f8`, tree `8a49610bcaee9fc41390c96580710136831a3ffe`. Metadata PR #47 normally merged at `f2a2d9a4b77ba6ce8e8ef40d419a6abe56f7d55f` with exactly that tree, after source PR #46. Preparation changed five version markers and six documents only.

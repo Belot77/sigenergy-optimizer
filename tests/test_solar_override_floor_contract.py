@@ -207,7 +207,8 @@ class SolarOverrideFloorCharacterizationTests(Haos49CharacterizationCase):
     def test_actual_import_cost_guard_still_vetoes_legacy_solar_override(self):
         for summary in (
             {"today_highest_actual_import_price": 2.0},
-            {"import_cost_floor_unknown": True},
+            {"import_cost_floor_unknown": True,
+             "today_highest_actual_import_price": 2.0},
         ):
             with self.subTest(import_summary=summary):
                 decision = self.characterize(medium_floor=90.0, import_summary=summary)
@@ -217,3 +218,18 @@ class SolarOverrideFloorCharacterizationTests(Haos49CharacterizationCase):
                 self.assertEqual("none", decision.trace_values["battery_export_final_owner"])
                 self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
                 self.assertEqual(0.0, decision.export_limit)
+
+    def test_unknown_cost_history_alone_keeps_qualified_solar_override(self):
+        decision = self.characterize(medium_floor=90.0, import_summary={
+            "import_cost_floor_unknown": True,
+            "today_highest_actual_import_price": None,
+        })
+        self.assertTrue(decision.trace_gates["export_solar_override"])
+        self.assertTrue(decision.trace_gates["import_cost_floor_unknown"])
+        self.assertTrue(decision.trace_gates["actual_import_cost_guard_active"])
+        self.assertFalse(decision.trace_gates["actual_import_cost_guard_blocking"])
+        self.assertIn("warning", decision.trace_values["actual_import_cost_guard_reason"].lower())
+        self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual("solar_override", decision.trace_values["battery_export_final_owner"])
+        self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+        self.assertGreater(decision.export_limit, 0.01)

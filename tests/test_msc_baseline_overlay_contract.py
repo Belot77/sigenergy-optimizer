@@ -1310,6 +1310,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                 pv_max_power_limit=25.0,
             )
             with patch("app.optimizer.datetime", ObservedDateTime):
+                ha._record_state_value(cfg.demand_window_sensor, "off")
                 result = await optimizer._apply(state, decision)
                 export_value, export_trusted = await optimizer._read_trusted_live_number(cfg.grid_export_limit)
 

@@ -1,6 +1,43 @@
 # O16 import-cost ledger integrity
 
-Status: published in **2.3.66-haos77**, tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`. O14/O16 integration and all 15 accounting-boundary regressions are complete; combined full validation passed 1,275 tests / 1,305 subtests. Installation remains the operator action. See [publication/source evidence](HAOS77_RELEASE_CANDIDATE.md).
+## Local O21 dispatch follow-up - 27 October 2026
+
+The O21 correction changes fallback ESS dispatch only. It does not change ledger
+coverage, retained prices, retries or the accepted unknown-cost advisory policy.
+A failed primary application stays failed even when fallback succeeds; fallback
+success does not certify missing accounting history. The full local candidate
+passed 1,504 tests / 1,439 subtests, zero failures. See CURRENT_STATE.md for scope,
+proof limits and unreleased status.
+
+
+## Current policy boundary - 27 October 2026
+
+This ledger's accounting semantics remain unchanged: incomplete coverage stays
+unknown and sticky for the affected day; recorded intervals retain their
+original tariff and trust state; retries replay identical payloads; and lost
+history is never inferred from an empty queue, recovery, or zero-looking
+counter. A finite recorded highest actual import price remains usable as the
+cost floor even when coverage is incomplete, including zero and negative
+values available in the existing authoritative shared summary. With incomplete
+history, that known maximum is only a lower bound on the true daily maximum; a
+summary/cache miss or storage/query failure may leave no known price available.
+Unknown or unpriced cost alone is advisory for export policy and does not veto
+otherwise-qualified automatic battery-backed export. The floor is not a
+weighted average, and no last-known-price cache is added. This accepts the
+financial risk that unpriced imported energy may be exported at a loss, and that
+an incomplete lower-bound price can miss an unobserved higher cost.
+
+The guard can remain `active` as context for the existing PV-only clamp while
+unknown; `blocking` means the known priced floor actually vetoed battery-backed
+or mixed export. Existing authority, reserve, flow, permission, Demand Window,
+PV-only and settlement safeguards remain unchanged. The supplied two-day
+reported lifecycle (26 October unknown/Boost veto under the then-current policy;
+27 October midnight recovery/07:00 pending MSC invalidation) is not physical
+settlement evidence. The local combined integration candidate carries O19's
+Demand Window fallback recheck; its original candidate worktree remains
+preserved. The combined offline suite passed 1,499 tests / 1,429 subtests, zero failures; source/test review was GO for local integration and characterization only. The integration-only O21 finding is historical; see the local correction for current status. No installation or live acceptance is claimed.
+
+Historical O16 publication status: published in **2.3.66-haos77**, tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`. O14/O16 integration and all 15 accounting-boundary regressions were complete at that checkpoint; its combined full validation passed 1,275 tests / 1,305 subtests. Installation remained the operator action. This historical status is superseded by the current .81 publication and local cost/fallback integration status above. See [publication/source evidence](HAOS77_RELEASE_CANDIDATE.md).
 
 ## Problem and resulting behavior
 
@@ -34,21 +71,21 @@ Pending writes or unavailable queries make the current summary unknown. Reconcil
 
 Startup/migration, restart, source/counter changes, observation gaps or clock rollback, unavailable counter data, unretained snapshots and queue overflow leave affected-day coverage unknown. This state is sticky for that day. Restored database access or an empty retry queue cannot clear it. A new day becomes covered only through a continuous, known-inactive midnight boundary with available counter evidence. Active or unproven import at midnight leaves the new day unknown too.
 
-Expected tradeoff: applicable automatic battery-backed/mixed sales may remain paused beyond the current day. Independently proven PV-only MSC permissions and Manual/Force ownership retain their separate semantics. Existing reserve, tariff, capability, authority and settlement protections remain mandatory. No live setting change is needed or authorized by this local work.
+Historical O16 publication tradeoff (superseded by the 27 October policy above): applicable automatic battery-backed/mixed sales could remain paused beyond the current day. Independently proven PV-only MSC permissions and Manual/Force ownership retain their separate semantics. Existing reserve, tariff, capability, authority and settlement protections remain mandatory. No live setting change is needed or authorized by this local work.
 
 ## Verification and operational acceptance
 
 Final full offline validation: **1,210 tests / 1,287 subtests passed**, zero failures, 206 existing warnings, 222.95 seconds. Focused validation: 244 tests / 268 subtests, 203 warnings, 17.10 seconds. Independent review was GO with no High/Medium blocker; the reviewer did not run tests. The first full run exposed fixture accounting-time prerequisites; the assertions and production code remained unchanged during those repairs.
 
-Local tests use synthetic HA, in-memory SQLite and injected insert/commit/acknowledgement/query faults. They cover original tariff/trust retention, exact retry, payload mismatch, rollback, restart, legacy rows, source/day/counter changes, gaps, bounded-queue loss, missing meter values, final measured import before decisions, close tails, Manual accounting and unconfirmed application. Shared policy fixtures explicitly establish known synthetic accounting history; they do not relax the production unknown-history veto. Final counts and independent-review limits are recorded in `CURRENT_STATE.md` and `AI_HANDOVER.md`.
+Local tests use synthetic HA, in-memory SQLite and injected insert/commit/acknowledgement/query faults. They cover original tariff/trust retention, exact retry, payload mismatch, rollback, restart, legacy rows, source/day/counter changes, gaps, bounded-queue loss, missing meter values, final measured import before decisions, close tails, Manual accounting and unconfirmed application. Shared policy fixtures explicitly establish known synthetic accounting history. Ledger truth assertions remain unchanged; export-policy tests must distinguish unknown-only advisory behavior from the retained known-priced-floor veto. Final counts and independent-review limits are recorded in `CURRENT_STATE.md` and `AI_HANDOVER.md`.
 
 Before any separately authorized installation, verify source identity and an appropriate backup/reinstall and ledger rollback plan. After installation:
 
 1. Monitor-only: inspect runtime/source, meter availability, accounting source and coverage reason. Confirm that startup history is unknown. Do not infer physical export from a requested limit or database status.
 2. Offline dry-run: retain deterministic fault/retry and decision regressions. Do not inject faults, delete rows or fabricate complete coverage on a live system.
-3. Separately authorized supervised live acceptance: compare fresh meter/tariff evidence, coverage, policy ownership and observed application/settlement. Check that an unknown history prevents applicable automatic battery sales and that independently qualified PV-only/manual behavior remains separate. Check a natural inactive midnight boundary when available; do not alter settings to manufacture one.
+3. Separately authorized supervised live acceptance: compare fresh meter/tariff evidence, coverage, policy ownership and observed application/settlement. Confirm unknown-only cost is surfaced as warning/context without a global veto, while any finite recorded known floor still blocks when FiT is below it; independently qualified PV-only and Manual/Force behavior remains separate. Check a natural midnight boundary when available; do not alter settings to manufacture one. Never infer physical export or settlement from an application result or database status.
 
-The original stale-archive/MSC investigation remains parked and its cause, including HDD causation, is unproven; O10 clock recovery is corrected in published .77; physical archive recovery remains unverified. O11, O5 reserve-policy decisions and existing Phase 1/2 physical-evidence gates remain unchanged. Latest published release is `.77`. The operator reports .76 installed on 24 October, while the latest supplied full installed proof remains `.75`. Local tests do not establish installation identity, physical operation or unattended Boost readiness.
+Historical O16 publication checkpoint (at the time of the .77 documentation): the original stale-archive/HDD-cause investigation was parked and unproven, and physical archive recovery was unverified. This does not describe the current recurring MSC/application errors, which are separate actuator issues and are not fixed by the cost-policy clarification. O10 clock recovery was corrected in published .77. O11, O5 reserve-policy decisions and existing Phase 1/2 physical-evidence gates remain unchanged. Current context: .81 was published on 26 October; the supplied 27 October startup identifies .80 source `acb5767`, not an installed .81. The historical operator report of .76 installed on 24 October and supplied full proof of .75 are retained as historical evidence only. Local tests do not establish current installation identity, physical operation or unattended Boost readiness.
 
 ## Historical standalone O16 reviewed identity
 

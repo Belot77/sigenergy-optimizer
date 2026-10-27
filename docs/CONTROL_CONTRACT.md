@@ -2,6 +2,33 @@
 
 This document defines durable approved control semantics, not current implementation status. Current commits, test counts, and immediate work belong in `CURRENT_STATE.md`.
 
+## Import-cost policy with incomplete history
+
+Incomplete accounting coverage or unpriced import by itself is advisory: it
+must not veto an otherwise-qualified automatic battery-backed export. When the
+existing shared summary contains finite recorded actual import prices, their
+highest value remains the cost floor even while coverage is incomplete; zero
+and negative finite prices are valid, and no weighted average is used. With
+incomplete history, that known maximum is only a lower bound on the true daily
+maximum. A deferred summary/cache miss or storage/query failure may leave no
+known price available, in which case unknown cost warns and does not veto. This
+policy adds no last-known-price cache. Unknown coverage remains unknown in the
+ledger and UI context, including its sticky day marker and reconciliation
+state. A successful later write does not reconstruct missing intervals or
+establish that no import occurred.
+
+The actual import-cost guard can report `active` while cost is unknown because
+it also supplies the existing PV-only clamp context. `blocking` describes an
+actual veto from a known priced floor. The classic Value Gate remains
+advisory-only: stored-energy and reserve analysis and known-price comparisons
+continue, while unknown cost alone warns. Manual/Force exemptions remain as
+defined elsewhere. Physical protection is
+unchanged: authority, permissions, MSC settlement, reserves, flow validation,
+Demand Window behavior, PV-only limits and the 120-second Evening Boost
+qualification continue to apply. The accepted financial risk is that imported
+energy without a known cost can be exported at a loss. Existing UI reason text
+may expose the warning; no new UI setting is part of this policy.
+
 ## Application outcome trace metadata
 
 Application-outcome metadata is diagnostic only. `application.status` is `succeeded`, `pending`, `failed`, `exception`, or `unreported`; `application.succeeded` is true/false/null. `transition_phase` is `close`, `msc`, or `unknown` only while pending, and null otherwise. `fallback_attempted` and `fallback_succeeded` describe fallback activity. These fields record the application helper's returned result or an ordinary raised application exception; they do not establish whole-cycle success, actuator readback, or physical settlement. A `succeeded` outcome means only that the helper returned success, including a no-op or manual pause. The internal `_ActuatorApplicationResult.transition_pending` flag marks only an intentional wait returned without restriction-write errors; it is not a separate JSON field and it does not redefine existing `succeeded=False` or control-exception behavior. Pending/failed application attempts do not replace the committed decision. Missing metadata on historical rows means unknown. Trace recording failure must not stop control, and `result.error` or exception text is not retained.
@@ -81,10 +108,12 @@ interval, measurement-tail and coverage guards applied. A late result cannot
 restore trust after configuration A-to-B-to-A or direct-control invalidation.
 
 One finite pre-decision wait cannot become an unbounded wait under the control
-lock. Busy, failed or unconfirmed accounting retains unknown-cost protections;
-it does not fabricate known-empty history. Existing independently qualified
-PV-only and Manual/Force policies remain separate. Authority, settlement,
-independent restrictions and economic thresholds retain their existing rules.
+lock. Busy, failed or unconfirmed accounting retains unknown coverage and any
+known finite-price comparisons available from the existing shared summary; it
+does not fabricate known-empty history. Unknown-only cost warns without a
+global export veto. Existing independently qualified PV-only and Manual/Force
+policies remain separate. Authority, settlement, independent restrictions and
+economic thresholds retain their existing rules.
 
 A timeout or cancelled waiter does not prove that a running mutation was rolled
 back. Keep its execution slot and reconcile its eventual result; do not create a
@@ -386,7 +415,7 @@ Forecast evidence remains context-dependent. Required Remaining Today or reserve
 
 The Low setting is retained for config/API/UI compatibility and defaults to 100%; it is not an execution gate that operators can lower to restore battery sale. Low cannot create `BATTERY_EXPORT`, a battery-export proposal/final owner, commanded discharge EMS or Morning preemption. Ordinary positive-FiT MSC, exact-full cheap-FiT and legitimate Solar Bypass retain their independently qualified PV-only behavior. Below-Medium deliberate discharge remains possible only through a separately named, explicitly qualified policy such as Morning Dump or Evening Boost, or operator-owned Manual/Force. These policies keep their own guards and priority; Low cannot supply accidental fallback authority.
 
-High/Spike may preempt Morning Dump or Morning Slow only after a valid positive bounded proposal, actual import-cost permission, observed Automated authority and all other guards pass. Use the same actual import-cost evidence and permission result for Morning preemption and final battery-export execution. A failed candidate leaves an otherwise eligible Morning owner intact. Morning Slow itself requires trusted remaining-forecast evidence; an ineligible Morning owner must not be artificially retained. Medium/Low do not gain High/Spike Morning-preemption authority. Preserve other owner priorities, Demand Window import blocking and Manual/Force ownership.
+High/Spike may preempt Morning Dump or Morning Slow only after a valid positive bounded proposal, known-priced-floor permission when a finite price is available, observed Automated authority and all other guards pass. Unknown cost alone is advisory and does not veto or prevent preemption; use the same known-price evidence and permission result for Morning preemption and final battery-export execution. A failed candidate leaves an otherwise eligible Morning owner intact. Morning Slow itself requires trusted remaining-forecast evidence; an ineligible Morning owner must not be artificially retained. Medium/Low do not gain High/Spike Morning-preemption authority. Preserve other owner priorities, Demand Window import blocking and Manual/Force ownership.
 
 ### Proposal, permission and final ownership
 
@@ -394,17 +423,17 @@ Keep the qualified proposal (tier/source, selected and protected SoC floors, bou
 
 `battery_export_final_owner` is `none` when final export is blocked. A vetoed candidate must have zero export limit, `EXPORT_BLOCKED` intent, no commanded discharge through that candidate and no Morning preemption. Normal ESS discharge capability for MSC load service is a separate protection; a cost veto must not be repurposed into an unrelated discharge-cap clamp.
 
-The authoritative actual import-cost snapshot is shared by arbitration and advisory calculation. Unknown actual-cost evidence following optimizer import/top-up or a price below the actual-cost floor prevents applicable automatic battery-backed/mixed export; independently proven PV-only MSC and Manual/Force retain their established separate semantics. Value Gate remains advisory-only, including with enforcement configured. Preserve qualified proposals for advisory calculation when operator authority prevents execution, without granting actuator permission. `effective_battery_export_floor` remains a monetary value, never a SoC field.
+The authoritative actual import-cost snapshot is shared by arbitration and advisory calculation. A finite highest price present in that snapshot can veto applicable automatic battery-backed/mixed export only when FiT is below its floor; equality or a higher FiT does not fail this cost comparison. Unknown actual-cost evidence alone warns and does not veto. When history is incomplete, the known maximum is only a lower bound, and a summary/cache miss or storage/query failure may leave no known price; no last-known-price cache is added. Independently proven PV-only MSC and Manual/Force retain their established separate semantics. Value Gate remains advisory-only, including with enforcement configured; stored-energy/reserve analysis and known-price comparisons continue. Preserve qualified proposals for advisory calculation when operator authority prevents execution, without granting actuator permission. `effective_battery_export_floor` remains a monetary value, never a SoC field.
 
 ### Import-cost ledger completeness (approved local O16 candidate)
 
 Measured import evidence must be captured before automatic battery-export arbitration. Import ownership for that interval comes from prior application and observed permission, not a future decision that closes import. A confirmed close retains the next measured import tail; a command is not a new meter observation. Completed automatic application or confirmed Manual observations can establish permission. Pending, failed and generic no-op outcomes cannot establish a safe inactive boundary. Manual imports remain accounted for without removing the Manual/Force export exemption.
 
-Actual activation of accounting source, tariff, authority or import-actuator identities invalidates accounting and permission evidence under the control lock, even if changed back before the next sample. Validated direct Manual/ESS requests invalidate that evidence before their first write; unchanged identities, unrelated tuning and rejected validation do not. An unobserved open/close interval cannot certify trusted cost history or the following inactive midnight. Operator targets and the Manual/Force exemption remain unchanged; applicable automatic battery sales may remain paused for the affected day.
+Actual activation of accounting source, tariff, authority or import-actuator identities invalidates accounting and permission evidence under the control lock, even if changed back before the next sample. Validated direct Manual/ESS requests invalidate that evidence before their first write; unchanged identities, unrelated tuning and rejected validation do not. An unobserved open/close interval cannot certify trusted cost history or the following inactive midnight. Operator targets and the Manual/Force exemption remain unchanged. Accounting unknown by itself is a warning; any independent loss of authority or permission still follows its existing safety behavior.
 
 Captured intervals retain immutable energy, original tariff/trust, date, source and stable identity through retry. Persist interval, checkpoint and coverage atomically; exact replay must not duplicate energy or rewind the durable checkpoint. An ID with changed payload is an error. Unknown or pending coverage cannot be treated as trusted zero cost. Query failure, missing/non-finite counters, unretained snapshots and queue overflow must remain conservative. The existing 0.01 kWh significance and 1¢ cost-floor policies remain unchanged.
 
-Startup/legacy history, restart, source/counter changes and observation gaps leave affected-day coverage unknown. Recoverable queued intervals may restore a previously covered day only after exact reconciliation. Irrecoverable unknown coverage remains sticky for that day; only a continuous known-inactive midnight boundary with valid observations establishes a newly covered day. This can defer applicable automatic battery sales beyond the current day. Coverage records accounting continuity under existing measurement assumptions, not physical verification or new telemetry freshness guarantees. Independently proven PV-only MSC permission, operator ownership, price/reserve rules and actuator safeguards retain their existing semantics. See [the local design and acceptance boundaries](IMPORT_LEDGER_INTEGRITY.md).
+Startup/legacy history, restart, source/counter changes and observation gaps leave affected-day coverage unknown. Recoverable queued intervals may restore a previously covered day only after exact reconciliation. Irrecoverable unknown coverage remains sticky for that day; only a continuous known-inactive midnight boundary with valid observations establishes a newly covered day. Accounting coverage can remain unknown beyond the current day, but unknown cost alone is advisory and does not veto otherwise-qualified automatic battery-backed export. Coverage records accounting continuity under existing measurement assumptions, not physical verification or new telemetry freshness guarantees. Independently proven PV-only MSC permission, operator ownership, price/reserve rules and actuator safeguards retain their existing semantics. See [the local design and acceptance boundaries](IMPORT_LEDGER_INTEGRITY.md).
 
 Diagnostics distinguish tier, selected/protected floor, proposal qualification/selection, execution eligibility or rejection, binding protection, calculated power, proposal owner, final decision owner and Morning preemption. Neither a proposal nor a final requested decision proves observed physical settlement.
 
@@ -470,6 +499,27 @@ Observed ON blocks import. Observed OFF permits ordinary policy, subject to all 
 Demand Window observations use a dedicated 360-second freshness maximum, reflecting the source's slower reporting cadence. A trusted current ON state has its normal import-block effect. Uncertainty does not gain trusted-ON export effects, create battery-export ownership, or by itself reduce normal PV MAX. Notification remembered state advances only from trusted observations.
 
 Unless another explicit overlay or safety rule owns a different value, normal PV MAX and the MSC surplus ceiling remain available; failing Demand Window closed for import does not itself curtail PV or authorize battery export.
+
+### Fallback recovery revalidates Demand Window (local O19)
+
+Before permissive fallback import recovery, include Demand Window in the same
+final read as operator/Remote EMS authority and MSC/export settlement evidence.
+Only trusted current OFF within the existing 360-second freshness boundary
+permits the opening. ON, unknown, unavailable, stale, malformed or conflicting
+evidence requests the existing restrictive 0.01 kW import close through the
+same dispatcher, with a fresh restrictive-authority check. Manual/Force takeover
+or lost Remote EMS prevents automatic writes. This 0.01 kW value is the
+existing restrictive sentinel; it does not represent permission to recover
+import.
+
+Initial Demand, Standby and Morning Dump import blocks remain binding despite a
+later OFF report. The correction adds no timer, threshold, tolerance, setting or
+ordinary-import rule, does not cover every import opening, and cannot guarantee
+zero physical transient import. Other independently permitted ESS/PV recovery
+and request-specific settlement remain unchanged. Pending/failed applications
+still cannot certify permission or accounting coverage. Unknown cost alone is
+advisory under the import-cost policy above; any independent authority,
+permission, flow or settlement failure retains its existing protective effect.
 
 ## Trusted non-positive import price
 
@@ -538,6 +588,19 @@ Automated control requires current verified Automated ownership and observed Rem
 Settlement is specific to the dispatched request. Conflicting actuator state/metadata observations cannot establish settlement; report timestamps must be coherent with state and update provenance. Deliberate discharge requires the intended bounded export target, not merely a lower safe value, proven by a fresh trusted report strictly after that target's dispatch boundary. Safety closes and bounded restrictive corrections retain their upper-bound semantics. Recheck settlement and authority before permissive recovery; a later contradiction or takeover invalidates prior proof.
 
 Successful fallback releases only its temporary restrictions. ESS charge and discharge recovery remain bounded by independently owned decision limits and normal safe/trusted capabilities. Relinquished Solar charge ownership restores the otherwise applicable safe normal charge request; it cannot remove another owner's restriction. Demand Window import blocking and independent restrictive PV MAX remain effective through failed or successful fallback.
+
+Approved O21 recovery semantics: classify positive ESS discharge as deliberate
+battery-export capability only during ordinary dispatch (recovery is None).
+Fallback retains its non-None recovery context and must still prove current
+authority, request-correlated export closure and exact MSC before every
+permissive recovery write. It must not require the failed proposal's old
+positive export target to restore bounded house-serving capability under MSC.
+Normal capability and independent decision limits remain binding. The primary
+application stays failed even when its separate fallback succeeds.
+Capability and policy values retain decision-time snapshot semantics; no
+after-await tariff or hardware-cap refresh is added. Historical reproduction
+and local implementation status are recorded in CONTROL_LIFECYCLE_REVIEW.md
+and CURRENT_STATE.md.
 
 An authenticated pending Manual/Force request is not cancelled by repeated unchanged Automated selector reports. Supersession requires a verified differing selector state transition strictly after the request, with coherent `request < last_changed <= last_updated <= observed report` evidence. Freshness alone does not prove an operator transition. Once superseded, subsequent writes and retries for the old request stop. Manual/Force targets, including the legacy 25 kW target, remain unchanged. Physical grid-export enforcement and ESS limits remain separate controls.
 

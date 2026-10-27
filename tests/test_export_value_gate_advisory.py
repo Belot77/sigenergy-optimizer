@@ -572,7 +572,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertTrue(allowed["export_value_gate_would_allow"])
         self.assertFalse(allowed["export_value_gate_would_block"])
 
-    def test_untrusted_import_topup_blocks_battery_export_until_day_resets(self) -> None:
+    def test_untrusted_import_topup_is_reported_without_an_advisory_cost_veto(self) -> None:
         optimizer = self._optimizer()
         self._record_import_topup(optimizer, import_kwh=0.5, import_price=None, price_trusted=False)
         state = self._state(
@@ -583,8 +583,10 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
 
         advisory = self._advisory(optimizer, state, desired_export_limit=5.0)
 
-        self.assertTrue(advisory["export_value_gate_would_block"])
-        self.assertEqual(advisory["export_value_gate_block_reason"], "import_cost_floor_untrusted")
+        self.assertTrue(advisory["export_value_gate_would_allow"])
+        self.assertFalse(advisory["export_value_gate_would_block"])
+        self.assertNotEqual(advisory["export_value_gate_block_reason"], "import_cost_floor_untrusted")
+        self.assertTrue(advisory["import_cost_floor_unknown"])
         self.assertFalse(advisory["import_cost_floor_trusted"])
 
     def test_spike_override_allows_only_when_surplus_exists_above_protected_reserve(self) -> None:
@@ -3348,7 +3350,10 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
 
     def test_cost_vetoed_high_spike_cannot_escape_through_solar_overlap(self) -> None:
         for spike in (False, True):
-            for summary in ({"import_cost_floor_unknown": True}, {"today_highest_actual_import_price": 2.0}):
+            # A priced 2.0 floor binds at 1.20 FiT even when coverage is unknown.
+            for summary in ({"today_highest_actual_import_price": 2.0},
+                            {"import_cost_floor_unknown": True,
+                             "today_highest_actual_import_price": 2.0}):
                 with self.subTest(spike=spike, cost=summary):
                     optimizer = self._optimizer(battery_full_safeguard_enabled=False, max_battery_soc=100.0, export_spike_threshold=1.0)
                     optimizer._is_evening_or_night = lambda _now: False
@@ -3366,6 +3371,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                     self.assertEqual(0.0, decision.export_limit)
                     self.assertNotIn(decision.ems_mode, DISCHARGE_MODES)
                     self.assertFalse(decision.trace_values["morning_preempted"])
+                    self.assertTrue(decision.trace_gates["actual_import_cost_guard_blocking"])
 
     def test_solar_bypass_eligibility_does_not_capture_high_price_battery_export(self) -> None:
         now_ts = datetime.now().timestamp()
@@ -4357,7 +4363,7 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertGreater(decision.export_limit, 0.0)
         self.assertIn("manual mode", str(decision.trace_values.get("actual_import_cost_guard_reason", "")).lower())
 
-    def test_positive_untrusted_import_blocks_hard_guard_conservatively(self) -> None:
+    def test_positive_untrusted_import_keeps_cost_warning_without_false_veto(self) -> None:
         now_ts = datetime.now().timestamp()
         optimizer = self._optimizer(
             export_value_gate_enabled=False,
@@ -4394,11 +4400,11 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertEqual("battery_backed", decision.trace_values.get("export_value_gate_export_type"))
         self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_applies_to_export_type")))
         self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_bypassed_for_pv_surplus_only")))
-        self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
-        self.assertEqual(0.0, decision.export_limit)
-        self.assertIn("unavailable or untrusted", decision.trace_values.get("actual_import_cost_guard_reason"))
+        self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
+        self.assertGreater(decision.export_limit, 0.01)
+        self.assertIn("warning", decision.trace_values.get("actual_import_cost_guard_reason", "").lower())
 
-    def test_untrusted_import_cost_blocks_unknown_or_mixed_export(self) -> None:
+    def test_untrusted_import_cost_warns_on_unknown_or_mixed_export(self) -> None:
         now_ts = datetime.now().timestamp()
         optimizer = self._optimizer(
             export_value_gate_enabled=False,
@@ -4437,9 +4443,9 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
         self.assertEqual("unknown_or_mixed", decision.trace_values.get("export_value_gate_export_type"))
         self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_applies_to_export_type")))
         self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_bypassed_for_pv_surplus_only")))
-        self.assertTrue(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
-        self.assertEqual(0.0, decision.export_limit)
-        self.assertIn("unavailable or untrusted", decision.trace_values.get("actual_import_cost_guard_reason"))
+        self.assertFalse(bool(decision.trace_gates.get("actual_import_cost_guard_blocking")))
+        self.assertGreater(decision.export_limit, 0.01)
+        self.assertIn("warning", decision.trace_values.get("actual_import_cost_guard_reason", "").lower())
 
     def test_measured_discharge_uses_independent_actual_import_cost_guard(self) -> None:
         now_ts = datetime.now().timestamp()

@@ -41,7 +41,13 @@ def test_identity_change_and_revert_cannot_hide_an_accounting_gap(context, name)
         assert not optimizer._optimizer_import_topup_summary_today()["import_cost_floor_unknown"]
         asyncio.run(run())
         assert optimizer._optimizer_import_topup_summary_today()["import_cost_floor_unknown"]
-        assert optimizer._decide(measured(case, when, total=1, price=0.4)).export_intent != BATTERY_EXPORT
+        # Decision-only policy: the invalidated history remains unknown, while
+        # no acknowledged priced import supplies an economic export floor.
+        decision = optimizer._decide(measured(case, when, total=1, price=0.4))
+        assert decision.trace_gates["import_cost_floor_unknown"]
+        assert not decision.trace_gates["actual_import_cost_guard_blocking"]
+        assert "warning" in decision.trace_values["actual_import_cost_guard_reason"].lower()
+        assert decision.export_intent == BATTERY_EXPORT
 
 
 def test_unchanged_identity_and_unrelated_tuning_preserve_accounting(context):
@@ -75,7 +81,11 @@ def test_back_to_back_force_import_block_and_auto_keep_unobserved_cost_unknown(c
         asyncio.run(run())
         assert not optimizer._import_topup_ledger.permission_known
         assert optimizer._optimizer_import_topup_summary_today()["import_cost_floor_unknown"]
-        assert optimizer._decide(measured(case, when, total=1, price=0.4)).export_intent != BATTERY_EXPORT
+        decision = optimizer._decide(measured(case, when, total=1, price=0.4))
+        assert decision.trace_gates["import_cost_floor_unknown"]
+        assert not decision.trace_gates["actual_import_cost_guard_blocking"]
+        assert "warning" in decision.trace_values["actual_import_cost_guard_reason"].lower()
+        assert decision.export_intent == BATTERY_EXPORT
     import_writes = [call for call in optimizer.ha.calls if call[0] == "set_number" and call[1] == optimizer.cfg.grid_import_limit]
     assert any(call[2] > 0.011 for call in import_writes)
     assert any(call[2] <= 0.011 for call in import_writes)

@@ -187,12 +187,29 @@ class MorningDumpExportIntentTests(Haos49CharacterizationCase):
     def test_actual_import_cost_veto_still_closes_dump(self):
         for summary in (
             {"today_highest_actual_import_price": 0.20},
-            {"import_cost_floor_unknown": True},
+            {"import_cost_floor_unknown": True,
+             "today_highest_actual_import_price": 0.20},
         ):
             with self.subTest(import_summary=summary):
                 decision = self.characterize(import_summary=summary)
                 self.assertTrue(decision.trace_gates["actual_import_cost_guard_blocking"])
                 self.assert_closed_msc(decision)
+
+    def test_unknown_cost_history_alone_keeps_qualified_dump(self):
+        decision = self.characterize(import_summary={
+            "import_cost_floor_unknown": True,
+            "today_highest_actual_import_price": None,
+        })
+        self.assertTrue(decision.morning_dump_active)
+        self.assertTrue(decision.trace_gates["import_cost_floor_unknown"])
+        self.assertTrue(decision.trace_gates["actual_import_cost_guard_active"])
+        self.assertFalse(decision.trace_gates["actual_import_cost_guard_blocking"])
+        self.assertIn("warning", decision.trace_values["actual_import_cost_guard_reason"].lower())
+        self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+        self.assertEqual("morning_dump", decision.trace_values["battery_export_final_owner"])
+        self.assertEqual(MODE_CMD_DISCHARGE_PV, decision.ems_mode)
+        self.assertGreater(decision.export_limit, 0.01)
+        self.assertEqual(0.0, decision.import_limit)
 
     def test_zero_discharge_capability_cannot_select_discharge_ems(self):
         decision = self.characterize(state_overrides={"ess_max_discharge_kw": 0.0})

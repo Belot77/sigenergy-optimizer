@@ -225,12 +225,21 @@ def test_runtime_real_tick_captures_cost_before_decision_without_stalling_ha(blo
             beat = asyncio.create_task(heartbeat())
             decision = await run_tick(when, 2, 0.4)
             assert await beat < 0.08
-            assert decision.export_intent != BATTERY_EXPORT
-            assert decision.export_limit == 0
             if blocked:
                 assert time.monotonic() - started < 0.15
                 assert decision.trace_gates["import_cost_floor_unknown"]
                 assert ledger.has_pending
+                # The worker has not supplied the 40c interval yet. Unknown
+                # coverage warns, and no available priced floor vetoes this tick.
+                assert not decision.trace_gates["actual_import_cost_guard_blocking"]
+                assert "warning" in decision.trace_values["actual_import_cost_guard_reason"].lower()
+                assert decision.export_intent == BATTERY_EXPORT
+                assert decision.export_limit > 0.01
+            else:
+                # The 40c interval is known before arbitration and still binds.
+                assert decision.trace_gates["actual_import_cost_guard_blocking"]
+                assert decision.export_intent != BATTERY_EXPORT
+                assert decision.export_limit == 0
             # The application still established its new permission on the loop.
             assert ledger.permission_known
             release.set()
@@ -242,6 +251,13 @@ def test_runtime_real_tick_captures_cost_before_decision_without_stalling_ha(blo
             summary = await worker.call("optimizer_import_topup_summary", when.date().isoformat())
             assert summary["today_import_topup_kwh"] == 2
             assert summary["today_highest_actual_import_price"] == 0.4
+            # Exact reconciliation makes the priced 40c row available to the
+            # next real tick, independent of whether day coverage is complete.
+            later = await run_tick(when + timedelta(seconds=10), 2, 0.4)
+            assert later.trace_values["today_highest_actual_import_price"] == 0.4
+            assert later.trace_gates["actual_import_cost_guard_blocking"]
+            assert later.export_intent != BATTERY_EXPORT
+            assert later.export_limit == 0
         finally:
             release.set()
             await worker.close()

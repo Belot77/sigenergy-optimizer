@@ -90,6 +90,12 @@ _HA_CONTROL_WARNING_INTERVAL_SECONDS = 300.0
 # without weakening the separate 120-second inverter-telemetry boundary.
 _DEMAND_WINDOW_MAX_AGE_SECONDS = 360.0
 
+_IMPORT_COST_HISTORY_WARNING = (
+    " Warning: import-cost history is incomplete; unpriced energy may be "
+    "exported at a loss. Available recorded prices still limit applicable "
+    "automatic battery exports."
+)
+
 # Config attribute names whose entity IDs should trigger event-driven cycles
 _TRIGGER_ENTITY_ATTRS = [
     "pv_power_sensor",
@@ -2455,8 +2461,10 @@ class SigEnergyOptimizer:
                     self.cfg.grid_export_limit, self.cfg.grid_import_limit,
                     self.cfg.ems_mode_select, self.cfg.pv_max_power_limit,
                     self.cfg.ess_max_charging_limit, self.cfg.ess_max_discharging_limit,
+                    self.cfg.demand_window_sensor,
                 }:
-                    # Neither conflicting read can prove actuator settlement.
+                    # Neither conflicting read can prove actuator settlement or
+                    # current Demand Window permission to reopen grid import.
                     rejected = dict(snapshot)
                     rejected["_actuator_metadata_conflict"] = True
                     bulk[entity_id] = rejected
@@ -4543,13 +4551,10 @@ class SigEnergyOptimizer:
         battery_export_candidate_tier_limit = 0.0
         battery_export_rejection = "none"
         tier_import_summary = self._optimizer_import_topup_summary_today()
-        tier_import_floor = tier_import_summary.get("today_highest_actual_import_price")
+        tier_import_floor = self._known_import_cost_floor(tier_import_summary)
         tier_import_cost_veto = bool(
-            tier_import_summary.get("import_cost_floor_unknown", False)
-            or (
-                tier_import_floor is not None
-                and s.feedin_price + 1e-9 < float(tier_import_floor)
-            )
+            tier_import_floor is not None
+            and s.feedin_price + 1e-9 < tier_import_floor
         )
         battery_export_automated_authority = bool(
             not self._manual_mode_override and s.sigenergy_mode_observed
@@ -5693,11 +5698,6 @@ class SigEnergyOptimizer:
             actual_import_cost_guard_reason = (
                 f"inactive: export type {export_value_gate_export_type} is not subject to the import-cost guard."
             )
-        elif import_cost_floor_unknown:
-            actual_import_cost_guard_blocking = True
-            actual_import_cost_guard_reason = (
-                "blocking: optimiser import/top-up occurred today but actual import price was unavailable or untrusted."
-            )
         else:
             import_cost_floor_value = (
                 float(import_cost_export_floor)
@@ -5711,10 +5711,17 @@ class SigEnergyOptimizer:
                     "blocking: automatic battery-backed/mixed export below today's highest actual import price "
                     f"({float(s.feedin_price or 0.0) * 100.0:.0f}c/kWh < {import_cost_floor_value * 100.0:.0f}c/kWh)."
                 )
+            elif import_cost_floor_value is None:
+                actual_import_cost_guard_reason = (
+                    "advisory: no recorded import-cost floor is available."
+                )
             else:
                 actual_import_cost_guard_reason = (
-                    "active: feed-in price meets today's actual import-cost floor."
+                    "active: feed-in price meets today's recorded actual import-cost floor."
                 )
+
+        if import_cost_floor_unknown:
+            actual_import_cost_guard_reason += _IMPORT_COST_HISTORY_WARNING
 
         if actual_import_cost_guard_blocking and desired_export_limit > 0:
             if value_gate_would_veto_live:
@@ -5736,6 +5743,12 @@ class SigEnergyOptimizer:
                 "Enforced veto: export blocked by value gate. "
                 f"{d.export_value_gate_reason}"
             )
+
+        if (
+            import_cost_floor_unknown
+            and _IMPORT_COST_HISTORY_WARNING not in d.export_value_gate_reason
+        ):
+            d.export_value_gate_reason += _IMPORT_COST_HISTORY_WARNING
 
         battery_export_proposed_intent = requested_export_intent
         if battery_export_proposal_selected:
@@ -7201,17 +7214,42 @@ class SigEnergyOptimizer:
             recovery: Optional[tuple[float, float]] = None,
         ) -> bool:
             evidence: dict[str, dict[str, Any]] = {}
+            fallback_import_recovery = bool(
+                recovery is not None and entity == cfg.grid_import_limit
+                and value > 0.011
+            )
             if recovery is not None or (entity == cfg.grid_export_limit and value > 0.011 and d.requires_verified_msc_before_export):
                 evidence[cfg.ems_mode_select] = {}
                 evidence[cfg.grid_export_limit] = {}
+            if fallback_import_recovery:
+                evidence[cfg.demand_window_sensor] = {}
+            # Fallback restores house-serving capability under MSC, using its
+            # separate recovery proof rather than the original export target.
             battery_discharge_capability = bool(
-                entity == cfg.ess_max_discharging_limit and value > 0.011
+                recovery is None
+                and entity == cfg.ess_max_discharging_limit and value > 0.011
                 and d.export_intent == BATTERY_EXPORT
             )
             if battery_discharge_capability:
                 evidence[cfg.grid_export_limit] = {}
             if not await _authority_permits(restrictive=restrictive, evidence=evidence):
                 return False
+            if fallback_import_recovery:
+                # Use the same final read as authority and settlement. A late
+                # Demand Window veto requires a close even before settlement;
+                # the restrictive request rechecks authority, including takeover.
+                current_demand = evidence.get(cfg.demand_window_sensor)
+                if not (
+                    isinstance(current_demand, dict)
+                    and str(current_demand.get("state", "")).strip().lower() == "off"
+                    and self._state_metadata_is_fresh(
+                        current_demand, _DEMAND_WINDOW_MAX_AGE_SECONDS,
+                        observed_at=datetime.now(timezone.utc),
+                    )
+                ):
+                    return await _automatic_number(
+                        cfg.grid_import_limit, 0.01, restrictive=True,
+                    )
             if (
                 not restrictive and recovery is None
                 and entity == cfg.grid_export_limit and value > 0.011
@@ -7455,7 +7493,7 @@ class SigEnergyOptimizer:
                 # independently of this fallback's temporary safety clamp.
                 if not independent_import_blocked:
                     await _attempt(
-                        "normal Automated grid import capability",
+                        "Automated grid import recovery or safety close",
                         lambda: _recovery_number(
                             cfg.grid_import_limit,
                             normal_grid_import_kw,
@@ -7491,8 +7529,8 @@ class SigEnergyOptimizer:
                 error = f"{reason}; safe fallback incomplete: {fallback_detail}"
             else:
                 error = (
-                    f"{reason}; safe fallback recovery was observed and normal "
-                    "Automated house-serving capability was requested"
+                    f"{reason}; safe fallback recovery was observed and independently "
+                    "permitted Automated house-serving capability was requested"
                 )
             return _ActuatorApplicationResult(
                 succeeded=False,
@@ -9006,6 +9044,18 @@ class SigEnergyOptimizer:
             now.date().isoformat(), source=self._import_topup_source(), observed_at=now,
         )
 
+    @staticmethod
+    def _known_import_cost_floor(import_summary: dict[str, Any]) -> Optional[float]:
+        """Return the available priced lower bound without certifying coverage."""
+        raw_price = import_summary.get("today_highest_actual_import_price")
+        if raw_price is None or isinstance(raw_price, bool):
+            return None
+        try:
+            price = float(raw_price)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return price if math.isfinite(price) else None
+
     def _export_value_gate_advisory(
         self,
         s: SolarState,
@@ -9031,12 +9081,7 @@ class SigEnergyOptimizer:
 
         gate_active = bool(cfg.export_value_gate_enabled or cfg.export_value_gate_dry_run)
         if not gate_active:
-            today_highest_actual_import_price_raw = import_summary.get("today_highest_actual_import_price")
-            today_highest_actual_import_price = (
-                float(today_highest_actual_import_price_raw)
-                if today_highest_actual_import_price_raw is not None
-                else None
-            )
+            today_highest_actual_import_price = self._known_import_cost_floor(import_summary)
             import_cost_export_floor = today_highest_actual_import_price
             import_cost_floor_unknown = bool(import_summary.get("import_cost_floor_unknown", False))
             return {
@@ -9051,7 +9096,10 @@ class SigEnergyOptimizer:
                 "import_cost_floor_unknown": import_cost_floor_unknown,
                 "export_value_gate_would_allow": False,
                 "export_value_gate_would_block": False,
-                "export_value_gate_reason": "Value gate disabled.",
+                "export_value_gate_reason": (
+                    "Value gate disabled."
+                    + (_IMPORT_COST_HISTORY_WARNING if import_cost_floor_unknown else "")
+                ),
                 "export_value_gate_block_reason": "disabled",
                 "export_value_gate_mode": _mode_text(),
                 "export_value_gate_fit_cents": fit_cents,
@@ -9110,12 +9158,7 @@ class SigEnergyOptimizer:
             - forecast_modifier,
         )
         today_import_topup_kwh = float(import_summary.get("today_import_topup_kwh") or 0.0)
-        today_highest_actual_import_price_raw = import_summary.get("today_highest_actual_import_price")
-        today_highest_actual_import_price = (
-            float(today_highest_actual_import_price_raw)
-            if today_highest_actual_import_price_raw is not None
-            else None
-        )
+        today_highest_actual_import_price = self._known_import_cost_floor(import_summary)
         import_cost_export_floor = today_highest_actual_import_price
         import_cost_floor_trusted = bool(import_summary.get("import_cost_floor_trusted", True))
         import_cost_floor_unknown = bool(import_summary.get("import_cost_floor_unknown", False))
@@ -9150,7 +9193,9 @@ class SigEnergyOptimizer:
                 "import_cost_floor_unknown": import_cost_floor_unknown,
                 "export_value_gate_would_allow": would_allow,
                 "export_value_gate_would_block": would_block,
-                "export_value_gate_reason": reason,
+                "export_value_gate_reason": (
+                    reason + (_IMPORT_COST_HISTORY_WARNING if import_cost_floor_unknown else "")
+                ),
                 "export_value_gate_block_reason": block_reason,
                 "export_value_gate_mode": _mode_text(),
                 "export_value_gate_fit_cents": fit_cents,
@@ -9175,17 +9220,6 @@ class SigEnergyOptimizer:
                     f"{protected_reserve_soc:.1f}% for evening/load until useful solar."
                 ),
                 block_reason="protected_reserve",
-            )
-
-        if import_cost_floor_unknown:
-            return _payload(
-                would_allow=False,
-                would_block=True,
-                reason=(
-                    "Would block export because optimizer import/top-up occurred today "
-                    "while actual import price was unavailable or untrusted."
-                ),
-                block_reason="import_cost_floor_untrusted",
             )
 
         if (

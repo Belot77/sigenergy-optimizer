@@ -1,6 +1,54 @@
 # Roadmap
 
+## Local O21 fallback correction - 27 October 2026
+
+A local, unreleased correction restores only bounded MSC house-serving ESS
+discharge after a failed battery-export attempt and verified fallback closure.
+Current authority and fresh export-close/MSC proof remain mandatory. Ordinary
+export-target checks, independent decision limits and normal capability bounds
+remain. The original application stays failed even when fallback succeeds.
+
+The guarded full suite passed 1,504 tests / 1,439 subtests, zero failures.
+Independent source/test review is GO for the local correction. O21 is locally
+verified; publication and physical acceptance remain separate. Capability and
+policy values retain decision-time snapshot semantics; no after-await refresh
+is added. See CURRENT_STATE.md for exact scope, results and approval boundaries.
+
+
 This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
+
+## Approved cost-policy clarification - 2026-10-27
+
+Unknown or unpriced cost alone warns and does not veto otherwise-qualified
+automatic battery-backed export. Any finite recorded highest actual import
+price remains the cost floor during incomplete coverage, including zero and
+negative values. Ledger accounting truth and sticky unknown coverage remain
+unchanged; see `CONTROL_CONTRACT.md` and `IMPORT_LEDGER_INTEGRITY.md`. The
+integration candidate also carries the narrowly scoped O19 fallback Demand
+Window recheck described below. The original O19 worktree at
+`C:\Projects\sigenergy_optimizer-fallback-demand` is preserved. Combined offline validation passed 1,499 tests / 1,429 subtests, zero failures; source/test review was GO for local integration and characterization only. The integration-only O21 finding is historical; see the local correction for current status. Results and scope are in `CURRENT_STATE.md`. Before any live acceptance, verify
+runtime identity, current coverage and price evidence, control ownership,
+settlement, reserves and rollback readiness. The accepted financial risk is that
+unpriced energy can be exported at a loss. A safe code rollback requires a
+separately reviewed scoped revert; this checkpoint authorizes no install,
+release or live action.
+
+## Local O19 fallback Demand Window correction - 2026-10-26
+
+The combined integration candidate carries O19 from the preserved
+`fix/fallback-demand-revalidation` worktree, based on the same verified main.
+The correction revalidates current Demand Window evidence in the final
+authority/settlement read before fallback can reopen import. ON or
+untrusted/conflicting evidence requests the existing 0.01 kW close with a fresh
+authority check. Initial Demand/Standby/Morning Dump restrictions, ordinary
+import policy, freshness bounds and other recovery/settlement protections remain.
+
+Historical O21 integration baseline (superseded by the local correction): Three separate scripted cases exercise current Demand ON, unknown, and trusted OFF. In each, the positive BATTERY_EXPORT proposal fails; the post-request EXPORT close is 0.01 kW and exact MSC proof is present. ON and unknown keep import closed; trusted OFF permits the fixture's 13.25 kW import recovery. Independently, normal Automated ESS discharge-capability restoration is rejected because the original GRID-EXPORT target (25 kW in this fixture) does not match current EXPORT 0.01 kW. `result.succeeded` and `fallback_succeeded` are false, with error `normal Automated ESS discharge capability returned failure`; ESS discharge capability remains 0.01 kW. These fixture values are not site configuration or physical-operation evidence. That integration-only baseline contained no source correction. Track as O21 (Medium: incomplete ESS discharge recovery after failed battery export), which blocked release readiness at the integration checkpoint. This issue is not assigned to O5 overnight reserve or O9 obsolete/overlapping policies.
+
+Standalone O19 validation passed 1,477 tests / 1,426 subtests, zero failures;
+standalone cost-policy validation passed 1,476 / 1,404. These are separate
+historical results, not combined validation. The combined offline run passed; local review was GO for integration/characterization only. O21 was unfixed and blocked release readiness at the historical integration checkpoint; details are in `CURRENT_STATE.md`. This candidate does not fix recurring MSC/application errors or Solar
+allocation. No commit, release, installation or live action is included.
 
 ## Latest published checkpoint - 2026-10-26 (.81)
 
