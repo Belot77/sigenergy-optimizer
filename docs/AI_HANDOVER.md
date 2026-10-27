@@ -1,39 +1,48 @@
 # SigEnergy Optimizer AI Handover
 
-## Local release candidate 2.3.72-haos83 - 27 October 2026
+## Published 2.3.72-haos83 - 27 October 2026
 
-Approved local preparation: `release/2.3.72-haos83` in
-`C:/Projects/sigenergy_optimizer-release-haos83`, based on verified main
-`140ecf474253d520a503e4dbe1259b4c9c2e4bf4`, tree
-`25c8cd1f98a780be17a392b0a53a4a587a1ba086`.
-[PR #52](https://github.com/Belot77/sigenergy-optimizer/pull/52) merged normally
-from reviewed head `57949e728a635fd1488f567d04ce8bd916b39fc8` with exactly that tree.
-The source fix is committed, pushed and merged. This separate release candidate
-updates only five version markers plus release/status documentation; control
-behavior, tests, dependencies, workflows and permanent instructions are unchanged.
+Published at 04:13:16 UTC: [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.72-haos83).
+Tag/container source: `51d370a559397e52e2b5f5012733b87fab7a8096`; reviewed tree:
+`d0c370d71c1ac965c59de02901b6541b3e15fc96`.
+Metadata [PR #53](https://github.com/Belot77/sigenergy-optimizer/pull/53) normally
+merged at `ba3642cf66019614da0265e0b62426c124d910a7` with exactly that tree.
+Source [PR #52](https://github.com/Belot77/sigenergy-optimizer/pull/52) supplies
+bounded Morning Slow partial charging with completed-command, distinct setting
+readback and later coherent-flow evidence. Forecast refill, import priority,
+Manual/Force authority and independent MSC/import/export protections remain.
 
-Morning physical relief now uses bounded partial charging with separate completed
-command, setting-readback and later coherent-flow evidence. Forecast refill,
-import priority, other policy owners and MSC protections remain separate.
-Retained source validation passed 1,525 tests / 1,450 subtests, zero failures,
-206 warnings, in 254.31 seconds; final new-module checks passed 21 / 11.
-Those results precede the mechanical release-marker substitutions. Final candidate
-release/source-pinning/Morning checks passed 37 tests / 11 subtests, zero failures,
-202 warnings, in 11.53 seconds; guards recorded 0 memory and 28 temporary-path
-StateStore constructions with dotenv disabled. Independent metadata/docs review is
-GO for local preparation. Canonical Git comparison proves exactly one version
-substitution in each of five markers and no other production drift; no full suite
-was repeated for these mechanical changes.
-See [the .83 preparation record](HAOS83_RELEASE_CANDIDATE.md) and
-[Morning policy and verification](MORNING_SLOW_PARTIAL_RELIEF.md).
+[Build 40448173242](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40448173242)
+succeeded at the exact tagged source. Version/latest OCI index:
+`sha256:55b20ab7f7e5f6c0c80f9ef0c55fee69537769fe686b8560b2997ea8a9d513b3`.
+Across amd64/arm64, all 22 compressed-layer hash/size and uncompressed diff-ID
+checks passed, plus fourteen final source-file byte/mode checks per platform. Author and independent
+runs each passed 71 offline verifier cases. Separate independent index/manifest/config
+and Git-source comparison passed; it did not redownload the layer bodies.
+Previous immutable .82 remains unchanged. See [the full publication receipt](HAOS83_RELEASE_CANDIDATE.md).
 
-The latest published release remains 2.3.71-haos82. No .83 commit, push, tag,
-image, GitHub release, installation or live HA action is included in this local
-preparation. Original unfinished and tests-only worktrees remain preserved.
-HA setting precision at hundredths of a kW and physical stability remain unproven.
-Solar feedback allocation and recurring MSC diagnosis remain separate open work.
+Retained guarded source suite: 1,525 tests / 1,450 subtests passed, zero failures,
+206 warnings, 254.31 seconds. Release/source-pinning/Morning checks passed 37 / 11,
+zero failures, 202 warnings, 11.53 seconds. Dotenv was disabled; StateStore guards
+allowed only memory/isolated temporary paths (0 memory / 28 temporary constructions
+in release checks). No full suite was repeated for five single version substitutions
+or this documentation-only receipt. Independent source and metadata reviews were GO.
 
-## Current .82 publication and verification - 27 October 2026
+Receipt branch `docs/haos83-publication-proof` in
+`C:/Projects/sigenergy_optimizer-haos83-publication-proof` starts at the exact normal
+metadata merge and changes documentation only. Original unfinished work and the
+separate tests-only Morning characterization remain preserved.
+
+Installation, HA hundredth-kW setting precision and physical stability remain
+unverified. Latest supplied 27 October startup identifies .81 source
+`247095a4f9905932c3f5716f3d1be6cee7b3c7f8`; no later installed identity is claimed.
+Auto update was last confirmed off on 26 October. No HA query, installation or live
+setting change was performed. Solar feedback allocation and recurring MSC error
+causes remain open. Next: separately approved installation and exact startup identity,
+then passive observations and supervised physical validation. A requested limit or
+successful API call is not proof of actual inverter response or a hard export bound.
+
+## Historical .82 publication and verification - 27 October 2026
 
 Published 27 October 2026 at 00:24:22 UTC:
 [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.71-haos82).

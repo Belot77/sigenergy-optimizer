@@ -1,31 +1,36 @@
 # Roadmap
 
-## Local 2.3.72-haos83 release-preparation candidate - 27 October 2026
+## Current published checkpoint - 27 October 2026 (.83)
 
-The Morning Slow partial-relief source change was reviewed and merged normally
-as PR #52 at `140ecf474253d520a503e4dbe1259b4c9c2e4bf4`, with tree
-`25c8cd1f98a780be17a392b0a53a4a587a1ba086`. This fresh local release-preparation
-branch starts from that merged main commit and changes no control behavior; it is
-preparing version metadata for a proposed `2.3.72-haos83` candidate. The .82
-release remains the latest published release. This candidate is not yet committed,
-pushed, tagged, built, published, installed or physically accepted. No HA or live
-setting action is authorized by this checkpoint.
+Version **2.3.72-haos83** was published 27 October 2026 at 04:13:16 UTC:
+[GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.72-haos83).
+Tag `v2.3.72-haos83` points to source `51d370a559397e52e2b5f5012733b87fab7a8096`,
+tree `d0c370d71c1ac965c59de02901b6541b3e15fc96` (annotated tag object
+`d4ef5e979767286b0e2a99b6fc735b2044f7943f`). Source PR #52 normally merged as
+`140ecf474253d520a503e4dbe1259b4c9c2e4bf4`; release metadata PR #53 normally
+merged as `ba3642cf66019614da0265e0b62426c124d910a7` with exactly the tagged tree.
+
+Build [40448173242](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40448173242)
+succeeded at the exact source. Version/latest OCI index:
+`sha256:55b20ab7f7e5f6c0c80f9ef0c55fee69537769fe686b8560b2997ea8a9d513b3`;
+the prior .82 index `sha256:b286d224ee01bb54b5144cb6b3c642374d4e1c557df9c7074501f05179e51cb3`
+remains unchanged. Across both platforms, all 22 compressed-layer and diff-ID checks
+passed, plus fourteen final target byte/mode checks per platform. Author and
+independent verifier runs passed all 71 synthetic cases; independent metadata,
+manifest/config and expected-source comparisons were GO. The independent proof
+did not redownload all compressed layer bodies.
 
 The retained local validation for the merged source passed 1,525 tests / 1,450
 subtests, zero failures, 206 warnings; focused new-module checks passed 21 tests /
-11 subtests. Those results predate this release-preparation branch and do not
-validate any build/image. Candidate release/source-pinning/Morning checks passed
-37 tests / 11 subtests, zero failures, 202 warnings, in 11.53 seconds with dotenv
-disabled and memory/temporary-only StateStore guards (0 memory / 28 temporary
-constructions). Canonical Git comparison proves exactly one version substitution
-per marker and no other production drift. Independent metadata/docs review is GO
-for local preparation. Next: seek separate approval for publication and image
-proof. Installation and supervised live
-acceptance require separate approval after publication; verify identity and use
-monitor-only observations before considering controlled live checks. Device
-readback precision, physical response and stability remain unverified.
+11 subtests. Release/source-pinning/Morning checks passed 37 tests / 11 subtests,
+zero failures, 202 warnings; no full suite was repeated for marker substitutions.
+No Home Assistant installation, live setting change or physical acceptance is
+claimed. Device readback precision and physical response/stability remain
+unverified. Solar feedback allocation and recurring MSC errors remain separate.
+Any installation, live validation or rollback requires its own approval and
+verified procedure.
 
-## Published checkpoint - 27 October 2026 (.82)
+## Historical published checkpoint - 27 October 2026 (.82)
 
 Published 27 October 2026 at 00:24:22 UTC:
 [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.71-haos82).

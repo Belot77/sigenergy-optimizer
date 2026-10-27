@@ -1,21 +1,26 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Local release candidate: 2.3.72-haos83
+## Current published release: 2.3.72-haos83
 
-Morning Slow partial relief from [PR #52](https://github.com/Belot77/sigenergy-optimizer/pull/52)
-is merged at `140ecf474253d520a503e4dbe1259b4c9c2e4bf4`. It replaces binary physical
-charge-cap release with bounded partial charging and command/readback/flow feedback.
-Forecast refill and other policy priorities remain separate.
+[Published 27 October 2026, 04:13:16 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.72-haos83).
+Morning Slow now uses bounded partial charging instead of binary normal-cap release,
+with command/readback/later-flow feedback. Forecast refill and other priorities remain
+independent. Source PR #52 and metadata PR #53 are normally merged.
 
-Local `release/2.3.72-haos83` preparation changes five version markers and status
-docs. Retained source validation passed 1,525 tests / 1,450 subtests. Candidate
-checks passed 37 tests / 11 subtests; independent metadata/docs review is GO for
-local preparation. The candidate is not committed, published, installed or
-physically accepted. Latest published release remains .82.
-See [the release preparation record](docs/HAOS83_RELEASE_CANDIDATE.md) and
-[policy assumptions and validation](docs/MORNING_SLOW_PARTIAL_RELIEF.md).
+Tag/container source: `51d370a559397e52e2b5f5012733b87fab7a8096`.
+Build 40448173242 passed. Across amd64/arm64, all 22 layer/diff-ID checks passed.
+Each platform passed fourteen final source byte/mode checks; independent comparison passed.
+Version/latest index: `sha256:55b20ab7f7e5f6c0c80f9ef0c55fee69537769fe686b8560b2997ea8a9d513b3`.
+Retained source validation: 1,525 tests / 1,450 subtests; release checks: 37 / 11.
+Previous immutable .82 remains unchanged.
 
-## Current published release: 2.3.71-haos82
+See [publication proof and installation gates](docs/HAOS83_RELEASE_CANDIDATE.md)
+and [Morning policy assumptions](docs/MORNING_SLOW_PARTIAL_RELIEF.md).
+Installed .83 identity, hundredth-kW device precision and physical stability remain
+unverified. Solar feedback allocation and recurring MSC diagnosis remain open.
+No HA installation or live settings changes were performed.
+
+## Previous published release: 2.3.71-haos82
 
 Published 27 October 2026 at 00:24:22 UTC:
 [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.71-haos82).
