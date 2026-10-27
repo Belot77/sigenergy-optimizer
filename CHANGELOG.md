@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — charge readback report metadata — 2026-10-28
+
+- Add `cfg.ess_max_charging_limit` to `_read_state` report entity IDs so unchanged charge-limit observations can use HA's `last_reported` timestamp when establishing freshness. Exact-state / `last_updated` correlation remains. Missing or malformed metadata may use the existing `last_updated` fallback; stale metadata remains subject to existing freshness checks. Conflicting state / `last_updated` metadata sets `_actuator_metadata_conflict` and rejects the observation timestamp. Existing age, post-command, matching, and coherent-flow rules are unchanged.
+- No timestamps are synthesized. An HA metadata batch failure can reduce readback availability, and this cannot compensate for an integration that does not report the entity.
+- Validation: initial two regressions reproduced; final applicable run passed 221 tests / 172 subtests (202 warnings). Independent source/test review GO. An existing deadline timing test initially woke 9.441 ms early; isolated baseline/candidate checks and the complete applicable rerun passed. No assertion was weakened. The supplied 448-row `.83` trace has every readback `fresh=false` and the same report time (`06:04:53.712060` AEDT); the supplied Morning partial-qualification export was not seen (maximum `3.557 kW` versus `14.5 kW`). This candidate is not live-validated. Supplied startup evidence identifies `.83` at 07:42:15 AEDT on 28 October (`2.3.72-haos83`, source `51d370a559397e52e2b5f5012733b87fab7a8096`); physical acceptance remains unestablished.
+- Boost’s 3,955 selected decision records on 27 October and recurring MSC failures remain separate open issues; this change does not address them. Rollback, if later committed, is a scoped revert of the report-entity query addition.
+
 ## 2.3.72-haos83 - published release - 2026-10-27
 
 - [Published at 04:13:16 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.72-haos83).

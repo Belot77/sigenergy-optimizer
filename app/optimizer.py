@@ -3024,6 +3024,7 @@ class SigEnergyOptimizer:
             cfg.solar_power_now_sensor,
             cfg.grid_export_limit,
             cfg.grid_import_limit,
+            cfg.ess_max_charging_limit,
             cfg.ems_mode_select,
             cfg.demand_window_sensor,
             cfg.sigenergy_mode_select,
