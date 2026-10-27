@@ -1,6 +1,60 @@
 # SigEnergy Optimizer AI Handover
 
-## Published 2.3.72-haos83 - 27 October 2026
+## Local candidate: charge readback report metadata — 28 October 2026
+
+Approved local branch `fix/charge-readback-report-metadata` at
+`C:\Projects\sigenergy_optimizer-charge-readback-metadata`, based on
+`3b10c7007f4a592a48ba92ec4fa0da291e3f385e`, contains a narrow candidate adding
+`cfg.ess_max_charging_limit` to `_read_state` report entity IDs. This lets
+charge-limit observations use HA's `last_reported` time when the setting is unchanged
+and its `last_updated` time no longer advances. Exact-state / `last_updated`
+correlation remains. Missing or malformed metadata may use the existing
+`last_updated` fallback; stale metadata remains subject to existing freshness
+checks. Conflicting state / `last_updated` metadata sets
+`_actuator_metadata_conflict` and rejects the observation timestamp. Existing
+age, post-command, matching, and coherent-flow rules are unchanged. No
+timestamps are synthesized. A metadata batch failure can reduce readback
+availability, and this cannot help an integration that does not report the
+entity.
+
+The supplied 448-row `.83` trace shows every readback `fresh=false` with the
+recorded report time frozen at `06:04:53.712060` AEDT. The supplied Morning
+partial-qualification export was not seen (maximum `3.557 kW` versus `14.5 kW`). These are supplied
+trace findings, not proof that this candidate fixes live behavior. Supplied
+startup evidence identifies `.83` at 07:42:15 AEDT on 28 October, runtime
+`2.3.72-haos83`, source
+`51d370a559397e52e2b5f5012733b87fab7a8096`; physical acceptance is not
+established. Boost’s 3,955 selected decision records on 27 October and recurring
+MSC failures remain separate open issues.
+
+Validation: both initial regressions failed before the query addition. The final
+six-module guarded run passed 221 tests / 172 subtests (202 warnings, 43.24 s);
+StateStore guards allowed only isolated temporary storage (314 constructions),
+with dotenv disabled. One existing Solcast event-loop deadline test initially
+woke 9.441 ms early; isolated unchanged-.83 and candidate checks passed, then
+the complete applicable set passed on repeat. No timing assertions were changed.
+Independent source/test review: GO. No full-suite run or live access was performed.
+
+The only production change is the report-entity query addition. It can let the
+existing Morning relief controller qualify a genuinely fresh charge readback;
+it does not guarantee relief or fix provider, Boost or MSC recovery.
+
+Verification sequence for a separately authorized installation:
+
+- Monitor-only: inspect correlated charge state, `last_updated` and `last_reported`
+  without changing settings; confirm genuine integration reports advance.
+- Offline dry-run: use fake HA/isolated storage to check fresh matching reports
+  and rejection of missing, conflicting, stale and future reports. No global
+  runtime dry-run switch or suppression of all writes is claimed.
+- Supervised live control: retain existing authority/physical limits and compare
+  command completion, later matching readback and later coherent flows when
+  Morning relief actually qualifies. Stop on unsafe flow, lost authority or
+  repeated settlement failures; passing local tests is not physical acceptance.
+
+If later committed, rollback is a scoped revert of the query addition. This local documentation
+update makes no claim of live validation, installation, or physical acceptance.
+
+## Historical .83 publication checkpoint - 27 October 2026
 
 Published at 04:13:16 UTC: [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.72-haos83).
 Tag/container source: `51d370a559397e52e2b5f5012733b87fab7a8096`; reviewed tree:

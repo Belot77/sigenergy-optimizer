@@ -68,6 +68,123 @@ class SolarAllocationEvidenceTests(unittest.TestCase):
                 else:
                     self.assertIsNone(observation.value)
 
+    def test_charge_limit_readback_uses_correlated_current_report_metadata(self):
+        optimizer = self.fixture._optimizer()
+        ha = RecordingHA()
+        optimizer.ha = ha
+        entity = optimizer.cfg.ess_max_charging_limit
+        now = self.fixture.WHEN
+        updated = now - timedelta(seconds=optimizer.cfg.hvac_solar_data_max_age_seconds + 60)
+        reported = now - timedelta(seconds=5)
+        iso = lambda value: value.astimezone(timezone.utc).isoformat()
+        ha.states[entity] = {
+            "state": "2.0",
+            "attributes": {},
+            "last_updated": iso(updated),
+            # REST may retain an old report time for an unchanged entity.
+            "last_reported": iso(updated),
+        }
+        requested: list[list[str]] = []
+
+        async def current_metadata(entity_ids):
+            requested.append(list(entity_ids))
+            return {
+                entity: {
+                    "entity_id": entity,
+                    "state": "2.0",
+                    "last_updated": iso(updated),
+                    "last_reported": iso(reported),
+                }
+            } if entity in entity_ids else {}
+
+        ha.get_state_report_metadata = current_metadata
+        with self.fixture.optimizer_time(now):
+            state = asyncio.run(optimizer._read_state())
+
+        self.assertTrue(requested, "read_state must request current State-object metadata")
+        self.assertIn(entity, requested[0])
+        observation = state.current_ess_charge_limit_observation
+        self.assertTrue(observation.available)
+        self.assertTrue(observation.fresh)
+        self.assertEqual(reported.timestamp(), observation.observed_at_ts)
+        self.assertEqual(2.0, state.current_ess_charge_limit)
+
+    def test_charge_limit_readback_does_not_trust_rest_report_time_when_metadata_fails(self):
+        optimizer = self.fixture._optimizer()
+        ha = RecordingHA()
+        optimizer.ha = ha
+        entity = optimizer.cfg.ess_max_charging_limit
+        now = self.fixture.WHEN
+        updated = now - timedelta(seconds=optimizer.cfg.hvac_solar_data_max_age_seconds + 60)
+        reported = now - timedelta(seconds=5)
+        iso = lambda value: value.astimezone(timezone.utc).isoformat()
+        ha.states[entity] = {
+            "state": "2.0",
+            "attributes": {},
+            "last_updated": iso(updated),
+            "last_reported": iso(reported),
+        }
+
+        async def failed_metadata(_entity_ids):
+            raise RuntimeError("metadata unavailable")
+
+        ha.get_state_report_metadata = failed_metadata
+        with self.fixture.optimizer_time(now):
+            state = asyncio.run(optimizer._read_state())
+
+        observation = state.current_ess_charge_limit_observation
+        self.assertTrue(observation.available)
+        self.assertFalse(observation.fresh)
+        self.assertEqual(updated.timestamp(), observation.observed_at_ts)
+        self.assertEqual(2.0, state.current_ess_charge_limit)
+
+    def test_charge_limit_readback_rejects_untrusted_metadata_rows(self):
+        optimizer = self.fixture._optimizer()
+        ha = RecordingHA()
+        optimizer.ha = ha
+        entity = optimizer.cfg.ess_max_charging_limit
+        now = self.fixture.WHEN
+        updated = now - timedelta(seconds=optimizer.cfg.hvac_solar_data_max_age_seconds + 60)
+        reported = now - timedelta(seconds=5)
+        iso = lambda value: value.astimezone(timezone.utc).isoformat()
+        ha.states[entity] = {
+            "state": "2.0", "attributes": {},
+            "last_updated": iso(updated), "last_reported": iso(reported),
+        }
+        cases = (
+            ("missing row", None, False, updated.timestamp()),
+            ("state mismatch", {"state": "2.1"}, False, None),
+            ("last_updated mismatch", {"last_updated": iso(updated + timedelta(seconds=1))}, False, None),
+            ("report before update", {"last_reported": iso(updated - timedelta(seconds=1))}, False, updated.timestamp()),
+            ("stale report", {"last_reported": iso(updated + timedelta(seconds=1))}, False, (updated + timedelta(seconds=1)).timestamp()),
+            ("future report", {"last_reported": iso(now + timedelta(seconds=10))}, False, (now + timedelta(seconds=10)).timestamp()),
+        )
+
+        for label, overrides, fresh, observed_at in cases:
+            with self.subTest(case=label):
+                async def metadata_reader(entity_ids, overrides=overrides):
+                    if entity not in entity_ids or overrides is None:
+                        return {}
+                    row = {
+                        "entity_id": entity,
+                        "state": "2.0",
+                        "last_updated": iso(updated),
+                        "last_reported": iso(reported),
+                    }
+                    row.update(overrides)
+                    return {entity: row}
+
+                ha.get_state_report_metadata = metadata_reader
+                with self.fixture.optimizer_time(now):
+                    state = asyncio.run(optimizer._read_state())
+
+                observation = state.current_ess_charge_limit_observation
+                self.assertTrue(observation.available)
+                self.assertFalse(observation.fresh)
+                self.assertEqual(fresh, observation.fresh)
+                self.assertEqual(observed_at, observation.observed_at_ts)
+                self.assertEqual(2.0, state.current_ess_charge_limit)
+
     def _set_flow(self, state, *, stamp: float, pv: float, load: float,
                   grid_import: float, grid_export: float, battery: float):
         state.pv_kw = pv

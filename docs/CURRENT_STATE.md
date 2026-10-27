@@ -1,6 +1,45 @@
 # Current State
 
-## Published 2.3.72-haos83 - 27 October 2026
+## Local candidate: charge readback report metadata — 28 October 2026
+
+The approved local branch `fix/charge-readback-report-metadata` at
+`C:\Projects\sigenergy_optimizer-charge-readback-metadata` is based on
+`3b10c7007f4a592a48ba92ec4fa0da291e3f385e`. Its narrow candidate adds
+`cfg.ess_max_charging_limit` to `_read_state` report entity IDs so unchanged
+charge-limit observations can use HA's `last_reported` time when
+`last_updated` stops advancing. Exact-state / `last_updated` correlation
+remains. Missing or malformed metadata may use the existing `last_updated`
+fallback; stale metadata remains subject to existing freshness checks.
+Conflicting state / `last_updated` metadata sets `_actuator_metadata_conflict`
+and rejects the observation timestamp. Existing age, post-command, matching,
+and coherent-flow rules remain unchanged, and no timestamps are synthesized.
+A failed metadata batch can reduce availability; the addition cannot help an
+integration that omits the entity.
+
+The supplied 448-row `.83` trace has every readback `fresh=false`, with report
+time fixed at `06:04:53.712060` AEDT. The supplied Morning partial-qualification
+export was not seen (maximum `3.557 kW` versus `14.5 kW`). This is the
+pre-fix supplied evidence, not live validation of the candidate. Supplied
+startup evidence identifies `.83` at 07:42:15 AEDT on 28 October, runtime
+`2.3.72-haos83`, source
+`51d370a559397e52e2b5f5012733b87fab7a8096`; physical acceptance remains
+unestablished. Boost’s 3,955 selected decision records on 27 October and recurring
+MSC failures remain separate open issues and are not fixed here.
+
+Validation: both initial regressions failed before the query addition. The final
+six-module guarded run passed 221 tests / 172 subtests (202 warnings, 43.24 s);
+StateStore guards allowed only isolated temporary storage (314 constructions),
+with dotenv disabled. One existing Solcast event-loop deadline test initially
+woke 9.441 ms early; isolated unchanged-.83 and candidate checks passed, then
+the complete applicable set passed on repeat. No timing assertions were changed.
+Independent source/test review: GO. No full-suite run or live access was performed.
+See [AI_HANDOVER](AI_HANDOVER.md) for monitor-only, offline dry-run and separately
+approved supervised acceptance steps. This input correction can enable existing
+Morning relief qualification, but its physical behavior remains unproven.
+Rollback, if later committed, is a scoped revert of the report-entity query addition. No HA query, installation, or live
+setting change was performed by this agent.
+
+## Historical .83 publication checkpoint - 27 October 2026
 
 Published at 04:13:16 UTC: [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.72-haos83).
 Tag/container source: `51d370a559397e52e2b5f5012733b87fab7a8096`; reviewed tree:
