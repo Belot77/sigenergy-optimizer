@@ -1,5 +1,27 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Preparing 2.3.71-haos82 - 27 October 2026
+
+The operator approved release preparation, publication and the final receipt.
+Source PR [#49](https://github.com/Belot77/sigenergy-optimizer/pull/49) normally
+merged at ce70f4ca41be0992ab899e56f2ba3d20ef0482f7, preserving reviewed tree
+3dbca50c9b014e181db6c1505f1b352523d438f9.
+
+This candidate combines the accepted unknown-cost advisory policy, O19's current
+Demand check before fallback import, and O21's bounded MSC house-supply recovery.
+Known finite import-price floors, current authority, fresh export-close/MSC proof
+and independent decision/capability limits remain. The original application
+stays failed even when separate fallback recovery succeeds.
+
+The guarded source suite passed 1,504 tests / 1,439 subtests, zero failures,
+206 warnings; independent source/test/docs reviews are GO. Release checks passed
+55 tests / 30 subtests, zero failures, 202 warnings, in 23.12 seconds.
+Image/source proof is pending. See [the .82 candidate and gates](docs/HAOS82_RELEASE_CANDIDATE.md).
+Solar allocation and recurring MSC errors remain unresolved. Values retain
+decision-time snapshot semantics; unpriced energy can export at a loss.
+HA installation, live settings and physical acceptance remain separate.
+The supplied 27 October startup identifies .80, not an installed .81 or .82.
+
 ## Current published release: 2.3.70-haos81
 
 Published 26 October 2026 at 07:24:39 UTC (18:24:39 Sydney):
@@ -26,7 +48,7 @@ and [evidence contract](docs/CONTROL_CONTRACT.md#passive-charge-allocation-evide
 No installed .81 identity or live acceptance is claimed.
 
 
-## Local O21 fallback correction - 27 October 2026
+## Historical premerge O21 fallback checkpoint - 27 October 2026
 
 A local, unreleased correction restores only bounded MSC house-serving ESS
 discharge after a failed battery-export attempt and verified fallback closure.
@@ -40,7 +62,7 @@ verified; publication and physical acceptance remain separate. Capability and
 policy values retain decision-time snapshot semantics; no after-await refresh
 is added. See docs/CURRENT_STATE.md for exact scope, results and approval boundaries.
 
-## Approved import-cost policy clarification - 27 October 2026
+## Historical premerge import-cost checkpoint - 27 October 2026
 
 Incomplete or unpriced import history alone is a warning and does not veto an
 otherwise-qualified automatic battery-backed export. A finite recorded highest

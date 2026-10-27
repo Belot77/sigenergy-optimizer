@@ -1,6 +1,28 @@
 # Roadmap
 
-## Local O21 fallback correction - 27 October 2026
+## Preparing 2.3.71-haos82 - 27 October 2026
+
+The operator approved release preparation, publication and the final receipt.
+Source PR [#49](https://github.com/Belot77/sigenergy-optimizer/pull/49) normally
+merged at ce70f4ca41be0992ab899e56f2ba3d20ef0482f7, preserving reviewed tree
+3dbca50c9b014e181db6c1505f1b352523d438f9.
+
+This candidate combines the accepted unknown-cost advisory policy, O19's current
+Demand check before fallback import, and O21's bounded MSC house-supply recovery.
+Known finite import-price floors, current authority, fresh export-close/MSC proof
+and independent decision/capability limits remain. The original application
+stays failed even when separate fallback recovery succeeds.
+
+The guarded source suite passed 1,504 tests / 1,439 subtests, zero failures,
+206 warnings; independent source/test/docs reviews are GO. Release checks passed
+55 tests / 30 subtests, zero failures, 202 warnings, in 23.12 seconds.
+Image/source proof is pending. See [the .82 candidate and gates](HAOS82_RELEASE_CANDIDATE.md).
+Solar allocation and recurring MSC errors remain unresolved. Values retain
+decision-time snapshot semantics; unpriced energy can export at a loss.
+HA installation, live settings and physical acceptance remain separate.
+The supplied 27 October startup identifies .80, not an installed .81 or .82.
+
+## Historical premerge O21 fallback checkpoint - 27 October 2026
 
 A local, unreleased correction restores only bounded MSC house-serving ESS
 discharge after a failed battery-export attempt and verified fallback closure.
@@ -17,7 +39,7 @@ is added. See CURRENT_STATE.md for exact scope, results and approval boundaries.
 
 This roadmap is ordered by dependency. Later work must not bypass safety, validation, release and live-proof gates except for an explicitly recorded scoped sequencing exception. The scoped `.68` trial and authorized four-tier development below do not waive inverter safety or accept Phase 1.
 
-## Approved cost-policy clarification - 2026-10-27
+## Historical cost-policy checkpoint - 2026-10-27
 
 Unknown or unpriced cost alone warns and does not veto otherwise-qualified
 automatic battery-backed export. Any finite recorded highest actual import
@@ -33,7 +55,7 @@ unpriced energy can be exported at a loss. A safe code rollback requires a
 separately reviewed scoped revert; this checkpoint authorizes no install,
 release or live action.
 
-## Local O19 fallback Demand Window correction - 2026-10-26
+## Historical O19 fallback checkpoint - 2026-10-26
 
 The combined integration candidate carries O19 from the preserved
 `fix/fallback-demand-revalidation` worktree, based on the same verified main.
@@ -50,7 +72,7 @@ standalone cost-policy validation passed 1,476 / 1,404. These are separate
 historical results, not combined validation. The combined offline run passed; local review was GO for integration/characterization only. O21 was unfixed and blocked release readiness at the historical integration checkpoint; details are in `CURRENT_STATE.md`. This candidate does not fix recurring MSC/application errors or Solar
 allocation. No commit, release, installation or live action is included.
 
-## Latest published checkpoint - 2026-10-26 (.81)
+## Historical published checkpoint - 2026-10-26 (.81)
 
 Version **2.3.70-haos81** is [published](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.70-haos81)
 at 07:24:39 UTC (18:24:39 Sydney). Tag/container source

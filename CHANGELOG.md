@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased - bounded MSC fallback recovery (O21) - 2026-10-27
+## 2.3.71-haos82 - release candidate - 2026-10-27
+
+- Include source PR #49: unknown/unpriced import history warns rather than
+  vetoing otherwise-qualified battery export; available finite actual import
+  prices retain their floor. Accounting coverage and retries remain unchanged.
+- Recheck current Demand before fallback import recovery (O19). Trusted OFF may
+  permit bounded recovery; ON/unknown/conflicting reports request the existing close.
+- Restore bounded MSC house-serving ESS discharge after fresh authority and
+  export-closure/MSC proof (O21), without requiring the old positive export
+  target. Ordinary export checks remain; primary failure stays failed.
+- Retained guarded source suite: 1,504 tests / 1,439 subtests passed, zero failures,
+  206 warnings. Release checks passed 55 tests / 30 subtests, zero failures,
+  202 warnings; image verification is pending.
+- Solar allocation, recurring MSC errors and physical acceptance remain open.
+  No HA installation or live settings change is included.
+
+## Historical premerge O21 checkpoint - 2026-10-27
 
 - Restore bounded MSC house-serving ESS discharge after a failed battery-export
   attempt only after current authority and fresh export-close/MSC proof.
@@ -14,7 +30,7 @@
   No commit, release, installation or physical acceptance is included.
 
 
-## Unreleased policy clarification - 2026-10-27
+## Historical premerge cost-policy checkpoint - 2026-10-27
 
 - Record the approved cost-policy boundary: incomplete or unpriced import
   history alone is advisory and does not veto otherwise-qualified automatic
@@ -29,7 +45,7 @@
   in `docs/CURRENT_STATE.md`; this does not claim release, installation or
   physical acceptance.
 
-## Unreleased - local O19 fallback Demand Window correction - 2026-10-26
+## Historical premerge O19 checkpoint - 2026-10-26
 
 - Recheck current Demand Window in the same final authority/settlement read
   before fallback can reopen grid import. ON or untrusted, malformed or

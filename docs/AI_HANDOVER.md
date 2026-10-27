@@ -1,8 +1,30 @@
 # SigEnergy Optimizer AI Handover
 
+## Preparing 2.3.71-haos82 - 27 October 2026
+
+The operator approved release preparation, publication and the final receipt.
+Source PR [#49](https://github.com/Belot77/sigenergy-optimizer/pull/49) normally
+merged at ce70f4ca41be0992ab899e56f2ba3d20ef0482f7, preserving reviewed tree
+3dbca50c9b014e181db6c1505f1b352523d438f9.
+
+This candidate combines the accepted unknown-cost advisory policy, O19's current
+Demand check before fallback import, and O21's bounded MSC house-supply recovery.
+Known finite import-price floors, current authority, fresh export-close/MSC proof
+and independent decision/capability limits remain. The original application
+stays failed even when separate fallback recovery succeeds.
+
+The guarded source suite passed 1,504 tests / 1,439 subtests, zero failures,
+206 warnings; independent source/test/docs reviews are GO. Release checks passed
+55 tests / 30 subtests, zero failures, 202 warnings, in 23.12 seconds.
+Image/source proof is pending. See [the .82 candidate and gates](HAOS82_RELEASE_CANDIDATE.md).
+Solar allocation and recurring MSC errors remain unresolved. Values retain
+decision-time snapshot semantics; unpriced energy can export at a loss.
+HA installation, live settings and physical acceptance remain separate.
+The supplied 27 October startup identifies .80, not an installed .81 or .82.
+
 Last consolidated: 2026-10-27
 
-## Local O21 correction - 27 October 2026
+## Historical premerge O21 correction - 27 October 2026
 
 Approved local branch: fix/fallback-house-supply-recovery in
 C:\Projects\sigenergy_optimizer-fallback-house-supply, based on verified
@@ -107,7 +129,7 @@ acceptance. Full live/physical verification remains open.
 
 Read `C:\Projects\AGENTS.md`, worktree `AGENTS.md`, this handover, `CURRENT_STATE.md` and relevant `CONTROL_CONTRACT.md` sections. Inspect only minimum relevant files. Git records repository identity; HA and operator evidence establish live state.
 
-## Current .81 publication and verification - 26 October 2026
+## Historical .81 publication and verification - 26 October 2026
 
 **2.3.70-haos81 is published.** [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.70-haos81)
 published 26 October at 18:24:39 Sydney (07:24:39 UTC). Tag/container source
