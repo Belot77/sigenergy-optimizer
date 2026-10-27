@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased local Morning Slow partial-relief candidate - 2026-10-27
+
+- Replace physical-relief-only full charge-cap restoration with bounded partial
+  relief. Retain independent forecast refill relief and existing policy priorities.
+- Track a separate Morning command/readback/flow epoch; unchanged target
+  reassertions do not restart it. No physical settlement is inferred from HTTP
+  success or a charge-setting report alone.
+- Add focused controller/dispatch regressions and reconcile obsolete binary-path
+  expectations. Final guarded validation passed 1,525 tests / 1,450 subtests,
+  zero failures, 206 warnings; final new-module checks passed 21 / 11. Independent
+  source/test and documentation reviews are GO for the local candidate only.
+- No configuration defaults, version markers, publication or live settings change.
+  See `docs/MORNING_SLOW_PARTIAL_RELIEF.md` for scope and remaining limits.
+
 ## 2.3.71-haos82 - published release - 2026-10-27
 
 - Published at 00:24:22 UTC: [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.71-haos82).

@@ -171,6 +171,25 @@ class _SolarPhysicalReliefState:
     normal_kw: Optional[float] = None
 
 
+@dataclass
+class _MorningSlowPhysicalReliefState:
+    """Process-local Morning charge feedback, independent of Solar relief."""
+
+    relief_kw: float = 0.0
+    proposed_relief_kw: Optional[float] = None
+    confirmations: int = 0
+    retry: bool = False
+    context: Optional[tuple] = None
+    command_kw: Optional[float] = None
+    previous_command_kw: Optional[float] = None
+    command_ts: Optional[float] = None
+    command_step_kw: float = 0.0
+    first_readback_ts: Optional[float] = None
+    readback_high_water_ts: Optional[float] = None
+    feedback_ts: Optional[tuple[float, ...]] = None
+    target_kw: Optional[float] = None
+
+
 def _solar_surplus_finite_number(name: str, value: object) -> float:
     """Return one finite numeric helper input without permissive coercion."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -598,6 +617,7 @@ class SigEnergyOptimizer:
         self._solar_provider_baselined = False
         self._solar_provider_urgent = False
         self._solar_relief = _SolarPhysicalReliefState()
+        self._morning_slow_relief = _MorningSlowPhysicalReliefState()
         self._solar_dip_proof: Optional[tuple[float, float]] = None
         self._solar_dip_high_water: Optional[tuple[float, float]] = None
         self._solar_dip_last_clock: Optional[float] = None
@@ -692,6 +712,7 @@ class SigEnergyOptimizer:
         self._last_decision = None
         self._last_published_hvac_solar_permission_result = None
         self._clear_solar_physical_relief()
+        self._clear_morning_slow_physical_relief()
         self._solar_dip_proof = None
         self._solar_dip_high_water = None
         self._solar_dip_last_clock = None
@@ -1177,6 +1198,284 @@ class SigEnergyOptimizer:
         state.retry = False
         return result("confirmed_saturation_increase")
 
+    def _clear_morning_slow_physical_relief(self) -> None:
+        self._morning_slow_relief = _MorningSlowPhysicalReliefState()
+
+    def _record_morning_slow_physical_relief_command(
+        self, *, applied_kw: float, command_ts: float,
+    ) -> None:
+        """A completed charge write starts feedback only when its target changed."""
+        state = self._morning_slow_relief
+        if state.target_kw is None or not math.isclose(
+            applied_kw, state.target_kw, rel_tol=0.0, abs_tol=0.001,
+        ):
+            self._clear_morning_slow_physical_relief()
+            return
+        if state.command_kw is None or not math.isclose(
+            state.command_kw, applied_kw, rel_tol=0.0, abs_tol=0.001,
+        ):
+            if state.proposed_relief_kw is not None:
+                state.relief_kw = state.proposed_relief_kw
+                state.proposed_relief_kw = None
+            state.previous_command_kw = state.command_kw
+            state.command_step_kw = (
+                max(0.0, applied_kw - state.command_kw)
+                if state.command_kw is not None else 0.0
+            )
+            state.command_kw = applied_kw
+            state.command_ts = command_ts
+            state.first_readback_ts = None
+            state.readback_high_water_ts = None
+            state.confirmations = 0
+
+    def _morning_slow_physical_feedback(
+        self, s: SolarState, now_ts: float,
+    ) -> tuple[Optional[float], Optional[float], Optional[float], Optional[tuple[float, ...]]]:
+        """Accept only live, fresh, coherent measured flows for Morning relief."""
+        export_kw, charge_kw, source = self._coherent_physical_relief_flows(s)
+        inputs = s.hvac_solar_inputs
+        observations = (inputs.pv_power, inputs.load_power,
+                        inputs.grid_import_power, inputs.grid_export_power)
+        timestamps = tuple(observation.observed_at_ts for observation in observations)
+        trusted = bool(
+            inputs.live_snapshot and source == "coherent_measured_grid_flow"
+            and all(
+                observation.available and observation.fresh
+                and isinstance(stamp, (int, float)) and not isinstance(stamp, bool)
+                and math.isfinite(stamp)
+                and 0.0 <= now_ts - stamp <= self.cfg.hvac_solar_data_max_age_seconds
+                for observation, stamp in zip(observations, timestamps)
+            )
+        )
+        if trusted:
+            discharge_kw, _ = self._battery_discharge_kw_for_pv_only_check(s)
+            trusted = bool(
+                max(timestamps) - min(timestamps) <= _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS
+                and float(inputs.pv_power.value) + float(inputs.grid_import_power.value)
+                - float(inputs.grid_export_power.value) - float(inputs.load_power.value) >= 0.0
+                and discharge_kw is not None and discharge_kw <= 0.1
+            )
+        return (
+            export_kw, charge_kw, float(inputs.grid_import_power.value), timestamps
+        ) if trusted else (None, None, None, None)
+
+    def _morning_slow_physical_export_relief(
+        self, s: SolarState, *, now_ts: float, slow_kw: float, normal_kw: float,
+        limit_kw: float, headroom_kw: float, owned: bool,
+    ) -> tuple[float, str, dict[str, Any]]:
+        """Raise Morning's slow cap in provisional, measured-excess-bounded steps."""
+        export_kw, charge_kw, import_kw, timestamps = self._morning_slow_physical_feedback(
+            s, now_ts,
+        )
+        state = self._morning_slow_relief
+
+        def result(reason: str) -> tuple[float, str, dict[str, Any]]:
+            requested_relief_kw = (
+                state.proposed_relief_kw
+                if state.proposed_relief_kw is not None else state.relief_kw
+            )
+            target_kw = self._bound_ess_request_kw(
+                min(normal_kw, slow_kw + requested_relief_kw), normal_kw,
+            )
+            state.target_kw = target_kw if state.context is not None else None
+            return target_kw, reason, {
+                "morning_slow_physical_relief_kw": state.relief_kw,
+                "morning_slow_physical_relief_proposed_kw": state.proposed_relief_kw,
+                "morning_slow_physical_relief_confirmations": state.confirmations,
+                "morning_slow_physical_relief_feedback_command_kw": state.command_kw,
+                "morning_slow_physical_relief_feedback_command_ts": state.command_ts,
+                "morning_slow_physical_relief_first_readback_ts": state.first_readback_ts,
+                "morning_slow_physical_relief_feedback_trusted": timestamps is not None,
+                "morning_slow_physical_relief_measured_import_kw": import_kw,
+                "morning_slow_physical_relief_measured_charge_kw": charge_kw,
+            }
+
+        if not owned or timestamps is None or normal_kw <= slow_kw:
+            self._clear_morning_slow_physical_relief()
+            state = self._morning_slow_relief
+            return result(
+                "morning_slow_not_owner" if not owned else
+                "physical_export_flow_untrusted" if timestamps is None else
+                "normal_charge_not_above_slow"
+            )
+        day = datetime.fromtimestamp(now_ts, self._tz).date()
+        context = (day, limit_kw, headroom_kw, slow_kw, normal_kw)
+        if state.context != context:
+            self._clear_morning_slow_physical_relief()
+            state = self._morning_slow_relief
+            state.context = context
+        state.relief_kw = min(state.relief_kw, normal_kw - slow_kw)
+        threshold_kw = limit_kw - headroom_kw
+        exit_gap_kw = min(headroom_kw / 2.0, 0.25)
+        hard_gap_kw = min(headroom_kw, 0.5)
+        if state.feedback_ts is not None and any(
+            stamp < old for stamp, old in zip(timestamps, state.feedback_ts)
+        ):
+            self._clear_morning_slow_physical_relief()
+            state = self._morning_slow_relief
+            return result("physical_feedback_regressed")
+        lagged_previous_readback = False
+        if state.command_ts is not None:
+            if state.first_readback_ts is None and not (
+                0.0 <= now_ts - state.command_ts
+                <= self.cfg.hvac_solar_data_max_age_seconds
+            ):
+                self._clear_morning_slow_physical_relief()
+                state = self._morning_slow_relief
+                return result("ess_charge_readback_timeout")
+            readback = s.current_ess_charge_limit_observation
+            readback_ts = readback.observed_at_ts
+            if not (
+                readback.available and readback.fresh
+                and isinstance(readback_ts, (int, float)) and not isinstance(readback_ts, bool)
+                and math.isfinite(readback_ts)
+                and 0.0 <= now_ts - readback_ts <= self.cfg.hvac_solar_data_max_age_seconds
+            ):
+                self._clear_morning_slow_physical_relief()
+                state = self._morning_slow_relief
+                return result("ess_charge_readback_untrusted")
+            if (
+                state.readback_high_water_ts is not None
+                and readback_ts < state.readback_high_water_ts
+            ):
+                self._clear_morning_slow_physical_relief()
+                state = self._morning_slow_relief
+                return result("ess_charge_readback_regressed")
+            state.readback_high_water_ts = readback_ts
+            if readback_ts > state.command_ts:
+                try:
+                    readback_kw = float(readback.value)
+                except (TypeError, ValueError, OverflowError):
+                    readback_kw = math.nan
+                if not math.isfinite(readback_kw) or not math.isclose(
+                    readback_kw, state.command_kw, rel_tol=0.0, abs_tol=0.001,
+                ):
+                    lagged_previous_readback = bool(
+                        state.first_readback_ts is None
+                        and state.previous_command_kw is not None
+                        and math.isclose(
+                            readback_kw, state.previous_command_kw,
+                            rel_tol=0.0, abs_tol=0.001,
+                        )
+                    )
+                    if not lagged_previous_readback:
+                        self._clear_morning_slow_physical_relief()
+                        state = self._morning_slow_relief
+                        return result("ess_charge_readback_mismatch")
+                elif state.first_readback_ts is None:
+                    state.first_readback_ts = readback_ts
+        if export_kw < threshold_kw - hard_gap_kw:
+            state.proposed_relief_kw = None
+            if state.relief_kw > 0.0:
+                state.retry = True
+            state.relief_kw = 0.0
+            state.confirmations = 0
+            state.feedback_ts = timestamps
+            return result("export_below_hard_reset_threshold")
+        if export_kw < threshold_kw - exit_gap_kw:
+            state.proposed_relief_kw = None
+            if state.feedback_ts is not None and timestamps[-1] <= state.feedback_ts[-1]:
+                return result("awaiting_fresh_export_feedback")
+            if state.relief_kw > 0.0:
+                state.relief_kw = max(0.0, self._floor_power_command_kw(
+                    state.relief_kw - min(state.relief_kw, threshold_kw - export_kw),
+                ))
+                state.retry = True
+            state.confirmations = 0
+            state.feedback_ts = timestamps
+            return result("export_fell_relief_reduced")
+        if lagged_previous_readback:
+            state.confirmations = 0
+            return result("awaiting_post_command_readback")
+        if import_kw > 0.0:
+            state.proposed_relief_kw = None
+            state.confirmations = 0
+            return result("measured_grid_import_pauses_increase")
+        reserve_kw = min(0.05, headroom_kw / 2.0)
+        if export_kw <= threshold_kw + reserve_kw:
+            state.proposed_relief_kw = None
+            state.confirmations = 0
+            return result("export_in_hysteresis_band")
+        if state.proposed_relief_kw is not None:
+            return result("awaiting_partial_charge_application")
+        if state.command_ts is None or state.command_kw is None:
+            return result("awaiting_successful_charge_command")
+        if state.first_readback_ts is None:
+            return result("awaiting_post_command_readback")
+        current_target_kw = self._bound_ess_request_kw(
+            min(normal_kw, slow_kw + state.relief_kw), normal_kw,
+        )
+        if not math.isclose(state.command_kw, current_target_kw,
+                            rel_tol=0.0, abs_tol=0.001):
+            return result("awaiting_changed_charge_command")
+        if min(timestamps) <= state.first_readback_ts:
+            return result("awaiting_post_readback_flows")
+        if state.feedback_ts is not None and not all(
+            stamp > old for stamp, old in zip(timestamps, state.feedback_ts)
+        ):
+            return result("awaiting_advancing_coherent_flows")
+        state.feedback_ts = timestamps
+        response_tolerance_kw = min(
+            0.05, state.command_step_kw / 4.0,
+        ) if state.command_step_kw > 0.0 else 0.05
+        if abs(charge_kw - state.command_kw) > response_tolerance_kw:
+            state.confirmations = 0
+            return result("awaiting_charge_response_to_current_cap")
+        rise_kw = self._floor_power_command_kw(min(
+            export_kw - threshold_kw - reserve_kw,
+            headroom_kw, 0.4, normal_kw - current_target_kw,
+        ))
+        if rise_kw <= 0.0:
+            state.confirmations = 0
+            return result("no_measured_export_excess")
+        state.confirmations += 1
+        if state.confirmations < (3 if state.retry else 2):
+            return result("confirming_saturation_retry" if state.retry else "confirming_saturation")
+        state.proposed_relief_kw = min(
+            normal_kw - slow_kw, round(state.relief_kw + rise_kw, 10),
+        )
+        state.confirmations = 0
+        state.retry = False
+        return result("confirmed_saturation_partial_increase")
+
+    def _recheck_morning_slow_physical_authority(
+        self, s: SolarState, d: Decision, now_ts: float,
+    ) -> None:
+        if not d.trace_gates.get("morning_slow_physical_export_relief"):
+            return
+        state = self._morning_slow_relief
+        trusted_cap_kw = self._trusted_charge_capability_kw(s)
+        slow_kw = self._bound_ess_request_kw(
+            max(0.0, float(self.cfg.morning_slow_charge_rate_kw)),
+            self.get_power_caps_kw(s)[0],
+        )
+        normal_kw = (
+            self._bound_ess_request_kw(
+                max(0.0, float(self.cfg.ess_charge_limit_value)), trusted_cap_kw,
+            ) if trusted_cap_kw is not None else None
+        )
+        expected_context = (
+            datetime.fromtimestamp(now_ts, self._tz).date(),
+            self.cfg.grid_connection_export_limit_kw,
+            self.cfg.morning_slow_physical_export_headroom_kw,
+            slow_kw, normal_kw,
+        )
+        _, _, _, timestamps = self._morning_slow_physical_feedback(s, now_ts)
+        if (
+            timestamps is None or normal_kw is None
+            or state.context != expected_context
+        ):
+            d.ess_charge_limit = slow_kw
+            d.trace_values["ess_charge_limit"] = slow_kw
+            d.trace_values["morning_slow_physical_export_reason"] = (
+                "physical_evidence_or_context_lost_before_apply"
+            )
+            d.trace_values["morning_slow_physical_relief_kw"] = 0.0
+            d.trace_gates["morning_slow_physical_export_relief"] = False
+            d.trace_gates["morning_slow_charge_relief_active"] = False
+            d.trace_gates["morning_slow_reentry_arm_candidate"] = False
+            self._clear_morning_slow_physical_relief()
+
     def _solar_provider_wait_seconds(self, now_ts: float) -> Optional[float]:
         if getattr(self, "_solar_provider_state", None) != "VALID":
             return None
@@ -1583,6 +1882,14 @@ class SigEnergyOptimizer:
                     state, decision, application_result,
                 )
                 self._finish_solar_reentry_application(state, decision, application_result)
+                if not (
+                    isinstance(application_result, _ActuatorApplicationResult)
+                    and application_result.succeeded
+                    and application_result.automatic_application_completed
+                    and not application_result.transition_pending
+                    and not application_result.fallback_attempted
+                ):
+                    self._clear_morning_slow_physical_relief()
                 self._record_application_trace(state, decision, application_result)
                 if (
                     isinstance(application_result, _ActuatorApplicationResult)
@@ -1644,6 +1951,7 @@ class SigEnergyOptimizer:
                 if application_attempted and not application_committed:
                     self._import_topup_ledger.invalidate(datetime.now(self._tz), "application_not_confirmed")
                 self._clear_solar_physical_relief()
+                self._clear_morning_slow_physical_relief()
                 self._solar_dip_proof = None
                 self._reset_evening_boost_reentry("cycle_cancelled")
                 self._reset_solar_reentry("cycle_cancelled")
@@ -1656,6 +1964,7 @@ class SigEnergyOptimizer:
                         self._reset_evening_boost_reentry("application_or_cycle_failed")
                     self._reset_solar_reentry("application_or_cycle_failed")
                     self._clear_solar_physical_relief()
+                    self._clear_morning_slow_physical_relief()
                     self._solar_dip_proof = None
                     if (
                         self._solar_dip_recheck_at is not None
@@ -4908,51 +5217,8 @@ class SigEnergyOptimizer:
                     0.0,
                 )
             )
-        previous_morning_slow_physical_export_relief = bool(
-            self._last_decision
-            and self._last_decision.trace_gates.get(
-                "morning_slow_physical_export_relief",
-                False,
-            )
-        )
-        morning_slow_physical_export_relief_candidate = False
-        if not morning_slow_charge_active:
-            morning_slow_physical_export_reason = "morning_slow_inactive"
-        elif morning_dump_active:
-            morning_slow_physical_export_reason = "morning_dump_has_priority"
-        elif not morning_slow_physical_export_configured:
-            morning_slow_physical_export_reason = "physical_export_relief_unconfigured"
-        elif not morning_slow_physical_export_flow_trusted:
-            morning_slow_physical_export_reason = "physical_export_flow_untrusted"
-        elif (
-            morning_slow_actual_grid_export_kw is not None
-            and morning_slow_physical_relief_threshold_kw is not None
-            and morning_slow_actual_grid_export_kw
-            >= morning_slow_physical_relief_threshold_kw
-        ):
-            morning_slow_physical_export_relief_candidate = True
-            morning_slow_physical_export_reason = "actual_export_at_or_above_threshold"
-        elif (
-            morning_slow_estimated_export_if_slow_cap_restored_kw is not None
-            and morning_slow_physical_relief_threshold_kw is not None
-            and morning_slow_actual_battery_charge_kw is not None
-            and morning_slow_actual_battery_charge_kw
-            > max(float(cfg.morning_slow_charge_rate_kw), 0.0)
-            and morning_slow_estimated_export_if_slow_cap_restored_kw
-            >= morning_slow_physical_relief_threshold_kw
-        ):
-            morning_slow_physical_export_relief_candidate = True
-            morning_slow_physical_export_reason = (
-                "counterfactual_export_unsafe_after_restart"
-                if not previous_morning_slow_physical_export_relief
-                else "counterfactual_export_still_unsafe"
-            )
-        else:
-            morning_slow_physical_export_reason = (
-                "counterfactual_export_safely_below_threshold"
-                if previous_morning_slow_physical_export_relief
-                else "actual_export_below_threshold"
-            )
+        # The static charge + export balance remains diagnostic only. It cannot
+        # prove unmeasured PV or grant the normal ESS charge limit.
         meaningful_grid_export_threshold_kw = float(cfg.min_grid_transfer_kw)
         ordinary_msc_flow_trusted = bool(
             battery_discharge_kw_for_pv_only is not None
@@ -5808,32 +6074,12 @@ class SigEnergyOptimizer:
             morning_slow_genuinely_owns_charging
             and morning_slow_forecast_refill_relief_candidate
         )
-        morning_slow_physical_export_relief = bool(
-            morning_slow_genuinely_owns_charging
-            and morning_slow_physical_export_relief_candidate
+        morning_slow_physical_export_relief = False
+        morning_slow_charge_relief_active = morning_slow_forecast_refill_relief
+        morning_slow_relief_reason = (
+            "forecast_refill" if morning_slow_forecast_refill_relief else "none"
         )
-        if (
-            morning_slow_physical_export_relief_candidate
-            and not morning_slow_genuinely_owns_charging
-        ):
-            morning_slow_physical_export_reason = (
-                "morning_slow_does_not_own_charging"
-            )
-        morning_slow_charge_relief_active = bool(
-            morning_slow_forecast_refill_relief
-            or morning_slow_physical_export_relief
-        )
-        if (
-            morning_slow_forecast_refill_relief
-            and morning_slow_physical_export_relief
-        ):
-            morning_slow_relief_reason = "forecast_refill_and_physical_export"
-        elif morning_slow_forecast_refill_relief:
-            morning_slow_relief_reason = "forecast_refill"
-        elif morning_slow_physical_export_relief:
-            morning_slow_relief_reason = "physical_export"
-        else:
-            morning_slow_relief_reason = "none"
+        morning_slow_physical_export_reason = "not_evaluated"
 
         # ---- Desired EMS mode ---------------------------------------
         desired_ems_mode = self._desired_ems_mode(
@@ -6056,10 +6302,77 @@ class SigEnergyOptimizer:
         # ---- ESS charge / discharge limits --------------------------
         provider_authority = self._update_solar_provider(s, now_ts)
         provider_gates, provider_values = self._solar_provider_trace(s, now_ts)
+        morning_slow_physical_trace_values: dict[str, Any] = {}
+        morning_slow_physical_target_kw: Optional[float] = None
+        morning_slow_slow_kw = self._bound_ess_request_kw(
+            max(0.0, float(cfg.morning_slow_charge_rate_kw)),
+            self.get_power_caps_kw(s)[0],
+        )
+        morning_slow_normal_kw = (
+            self._bound_ess_request_kw(
+                max(0.0, float(cfg.ess_charge_limit_value)),
+                trusted_charge_capability_kw,
+            )
+            if trusted_charge_capability_kw is not None else None
+        )
+        if (
+            morning_slow_physical_export_configured
+            and morning_slow_normal_kw is not None
+            and cfg.ess_max_charging_limit
+        ):
+            physical_owned = bool(
+                morning_slow_genuinely_owns_charging
+                and not morning_slow_forecast_refill_relief
+                and not morning_dump_active
+                and not msc_transition_pending
+                and observed_max_self_consumption
+                and desired_ems_mode == MODE_MAX_SELF
+                and d.export_intent == MSC_SURPLUS_CEILING
+                and battery_export_owner == "none"
+                and battery_soc_trusted and s.battery_soc < 100.0
+            )
+            (
+                morning_slow_physical_target_kw,
+                morning_slow_physical_export_reason,
+                morning_slow_physical_trace_values,
+            ) = self._morning_slow_physical_export_relief(
+                s, now_ts=now_ts, slow_kw=morning_slow_slow_kw,
+                normal_kw=morning_slow_normal_kw,
+                limit_kw=physical_export_limit_kw,
+                headroom_kw=physical_export_headroom_kw,
+                owned=physical_owned,
+            )
+            morning_slow_physical_export_flow_trusted = bool(
+                morning_slow_physical_trace_values.get(
+                    "morning_slow_physical_relief_feedback_trusted", False,
+                )
+            )
+        else:
+            self._clear_morning_slow_physical_relief()
+            morning_slow_physical_export_reason = (
+                "physical_export_relief_unconfigured"
+                if not morning_slow_physical_export_configured else
+                "trusted_charge_capability_unavailable"
+                if morning_slow_normal_kw is None else
+                "ess_charge_actuator_unconfigured"
+            )
+        morning_slow_physical_export_relief = bool(
+            not morning_slow_forecast_refill_relief
+            and morning_slow_physical_target_kw is not None
+            and morning_slow_physical_target_kw > morning_slow_slow_kw + 0.001
+        )
+        morning_slow_charge_relief_active = bool(
+            morning_slow_forecast_refill_relief or morning_slow_physical_export_relief
+        )
+        morning_slow_relief_reason = (
+            "forecast_refill" if morning_slow_forecast_refill_relief else
+            "physical_export" if morning_slow_physical_export_relief else "none"
+        )
         d.ess_charge_limit = self._desired_ess_charge_limit(
             s, desired_import_limit, morning_slow_charge_active,
             desired_export_limit, pv_surplus_actual,
-            morning_slow_charge_relief_active=morning_slow_charge_relief_active,
+            morning_slow_charge_relief_active=morning_slow_forecast_refill_relief,
+            morning_slow_physical_target_kw=morning_slow_physical_target_kw,
         )
         # Charge restriction is a separate, stricter authority than Solar's
         # export permission. Never derive it from pre-arbitration eligibility.
@@ -6718,6 +7031,7 @@ class SigEnergyOptimizer:
             "morning_slow_physical_export_reason": (
                 morning_slow_physical_export_reason
             ),
+            **morning_slow_physical_trace_values,
             "morning_slow_relief_reason": morning_slow_relief_reason,
             "morning_dump_refill_timing_reason": morning_dump_refill_timing[
                 "reason"
@@ -7148,6 +7462,7 @@ class SigEnergyOptimizer:
         def _authority_paused(*, fallback_attempted: bool = False) -> _ActuatorApplicationResult:
             self._msc_baseline_established = False
             self._clear_solar_physical_relief(d, "control_authority_lost")
+            self._clear_morning_slow_physical_relief()
             return _ActuatorApplicationResult(
                 succeeded=False, error="current Automated ownership or Remote EMS ON is unverified",
                 fallback_attempted=fallback_attempted,
@@ -7381,6 +7696,7 @@ class SigEnergyOptimizer:
             self._msc_baseline_established = False
             self._msc_transition = _MscTransition()
             self._clear_solar_physical_relief(d, "actuator_fallback")
+            self._clear_morning_slow_physical_relief()
             self._reset_solar_reentry("actuator_fallback")
             logger.error("Entering safe fallback: %s", reason)
             fallback_failures: list[str] = []
@@ -7543,6 +7859,7 @@ class SigEnergyOptimizer:
 
         async def _hold_msc_transition() -> _ActuatorApplicationResult:
             self._clear_solar_physical_relief(d, "msc_transition_pending")
+            self._clear_morning_slow_physical_relief()
             self._msc_baseline_established = False
             transition = self._msc_transition
             assert transition is not None
@@ -7622,6 +7939,7 @@ class SigEnergyOptimizer:
             self._msc_baseline_established = False
             self._msc_transition = None
             self._clear_solar_physical_relief(d, "operator_owned")
+            self._clear_morning_slow_physical_relief()
             if s.sigenergy_mode != effective_mode or not s.sigenergy_mode_observed:
                 return _authority_paused()
             manual_targets = self._manual_mode_targets(
@@ -7710,6 +8028,7 @@ class SigEnergyOptimizer:
         if cfg.auto_enable_ha_control and remote not in {"on", "off"}:
             self._msc_baseline_established = False
             self._clear_solar_physical_relief(d, "ha_control_unavailable")
+            self._clear_morning_slow_physical_relief()
             now_ts = datetime.now().timestamp()
             warning_key = (str(cfg.ha_control_switch), s.ha_control_switch_state)
             warning_due = (
@@ -7735,6 +8054,7 @@ class SigEnergyOptimizer:
         # Auto-enable an explicitly available HA control switch if needed.
         if d.needs_ha_control_switch and remote == "off":
             self._clear_solar_physical_relief(d, "ha_control_not_observed")
+            self._clear_morning_slow_physical_relief()
             now_ts = datetime.now().timestamp()
             last_attempt = self._last_ha_control_enable_attempt_at
             if (
@@ -7765,6 +8085,7 @@ class SigEnergyOptimizer:
 
         if not effective_ha_control:
             self._msc_baseline_established = False
+            self._clear_morning_slow_physical_relief()
             return _ActuatorApplicationResult(succeeded=True)
 
         had_automated_authority = True
@@ -7774,6 +8095,7 @@ class SigEnergyOptimizer:
             and str(effective_mode) == str(cfg.automated_option)
         ):
             self._msc_baseline_established = False
+            self._clear_morning_slow_physical_relief()
             logger.debug(
                 "Automatic inverter writes paused: SigEnergy Optimizer ownership "
                 "is not observed as %s",
@@ -8011,6 +8333,9 @@ class SigEnergyOptimizer:
             self._solar_dip_proof = None
             return await _safe_fallback("Solar measured-surplus hold expired before ESS application")
         self._recheck_solar_charge_authority(s, d, datetime.now(timezone.utc).timestamp())
+        self._recheck_morning_slow_physical_authority(
+            s, d, datetime.now(timezone.utc).timestamp(),
+        )
         charge_cap_kw, discharge_cap_kw = self.get_power_caps_kw(s)
         charge_limit = self._bound_ess_request_kw(
             d.ess_charge_limit,
@@ -8021,17 +8346,45 @@ class SigEnergyOptimizer:
             discharge_cap_kw,
         )
         solar_charge_command_ts = None
+        morning_slow_charge_command_ts = None
         if cfg.ess_max_charging_limit:
             solar_owned_before_write = d.trace_gates.get("solar_charge_ceiling_owned", False)
+            morning_physical_owned_before_write = d.trace_gates.get(
+                "morning_slow_physical_export_relief", False,
+            )
             ok_chg = await ha.set_number(cfg.ess_max_charging_limit, charge_limit)
             if not ok_chg:
                 self._clear_solar_physical_relief(d, "charge_command_failed")
+                self._clear_morning_slow_physical_relief()
                 logger.error("Failed setting ESS charge limit to %.2fkW", charge_limit)
                 application_failures.append(
                     f"failed setting ESS charge limit to {charge_limit:.2f}kW"
                 )
             else:
                 solar_charge_command_ts = datetime.now(timezone.utc).timestamp()
+                morning_slow_charge_command_ts = solar_charge_command_ts
+            if morning_physical_owned_before_write:
+                if not await _authority_permits():
+                    await _independent_restrictions()
+                    return _authority_paused()
+                self._recheck_morning_slow_physical_authority(
+                    s, d, datetime.now(timezone.utc).timestamp(),
+                )
+                if (
+                    not d.trace_gates.get("morning_slow_physical_export_relief")
+                    or d.ess_charge_limit != charge_limit
+                ):
+                    restored_charge = self._bound_ess_request_kw(
+                        d.ess_charge_limit, charge_cap_kw,
+                    )
+                    if not await ha.set_number(
+                        cfg.ess_max_charging_limit, restored_charge,
+                    ):
+                        application_failures.append(
+                            f"failed restoring Morning Slow ESS charge limit to {restored_charge:.2f}kW"
+                        )
+                    charge_limit = restored_charge
+                    morning_slow_charge_command_ts = None
             if solar_owned_before_write:
                 # A pending service request can itself cross D or an epoch
                 # boundary. Restore the selected normal request in this same
@@ -8092,6 +8445,7 @@ class SigEnergyOptimizer:
                 self._msc_transition = _MscTransition()
             self._msc_baseline_established = False
             self._clear_solar_physical_relief(d, "actuator_application_failed")
+            self._clear_morning_slow_physical_relief()
             return _ActuatorApplicationResult(
                 succeeded=False,
                 error="; ".join(application_failures),
@@ -8144,6 +8498,39 @@ class SigEnergyOptimizer:
                     return await _safe_fallback("Failed restoring expired Solar handoff charge restriction")
                 if not self._solar_reentry_dispatch_current(s, d, charge=False):
                     return await _safe_fallback("Solar budget re-entry expired during charge restoration")
+        if (
+            morning_slow_charge_command_ts is not None
+            and self._morning_slow_relief.target_kw is not None
+        ):
+            if not await _authority_permits():
+                await _independent_restrictions()
+                return _authority_paused()
+            self._recheck_morning_slow_physical_authority(
+                s, d, datetime.now(timezone.utc).timestamp(),
+            )
+            if d.ess_charge_limit != charge_limit:
+                restored_charge = self._bound_ess_request_kw(
+                    d.ess_charge_limit, charge_cap_kw,
+                )
+                if not await ha.set_number(
+                    cfg.ess_max_charging_limit, restored_charge,
+                ):
+                    return await _safe_fallback(
+                        "Failed restoring expired Morning Slow charge relief"
+                    )
+                charge_limit = restored_charge
+                morning_slow_charge_command_ts = None
+        if (
+            morning_slow_charge_command_ts is not None
+            and d.trace_values.get("ess_charge_limit_owner") == "morning_slow"
+            and d.morning_slow_charge_active
+            and not d.trace_gates.get("morning_slow_forecast_refill_relief")
+            and self._morning_slow_relief.target_kw is not None
+        ):
+            self._record_morning_slow_physical_relief_command(
+                applied_kw=charge_limit,
+                command_ts=morning_slow_charge_command_ts,
+            )
         return _ActuatorApplicationResult(
             succeeded=True, automatic_application_completed=True,
         )
@@ -10799,13 +11186,20 @@ class SigEnergyOptimizer:
     def _desired_ess_charge_limit(self, s: SolarState, desired_import: float,
                                    morning_slow_charge: bool, desired_export: float,
                                    pv_surplus: float, *,
-                                   morning_slow_charge_relief_active: bool = False) -> float:
+                                    morning_slow_charge_relief_active: bool = False,
+                                    morning_slow_physical_target_kw: Optional[float] = None) -> float:
         cfg = self.cfg
         hw_charge, _ = self.get_power_caps_kw(s)
         normal_request = max(0.0, float(cfg.ess_charge_limit_value))
         if desired_import > 0:
             return self._bound_ess_request_kw(desired_import, hw_charge)
-        if morning_slow_charge and not morning_slow_charge_relief_active:
+        if morning_slow_charge:
+            if morning_slow_charge_relief_active:
+                return self._bound_ess_request_kw(normal_request, hw_charge)
+            if morning_slow_physical_target_kw is not None:
+                return self._bound_ess_request_kw(
+                    morning_slow_physical_target_kw, hw_charge,
+                )
             slow = cfg.morning_slow_charge_rate_kw
             # Keep true slow-charge behavior; avoid charge spikes that collapse export.
             return self._bound_ess_request_kw(slow, hw_charge)

@@ -1,5 +1,14 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Local unreleased Morning Slow candidate
+
+Local development on `fix/morning-slow-partial-relief` replaces binary physical
+charge-cap relief with bounded partial relief and command/readback/flow feedback.
+Forecast refill and other policy priorities remain separate. The full guarded
+suite passed 1,525 tests / 1,450 subtests; independent reviews are GO for this local
+candidate. It is not published or physically accepted.
+See [scope, assumptions, validation and rollback](docs/MORNING_SLOW_PARTIAL_RELIEF.md).
+
 ## Current published release: 2.3.71-haos82
 
 Published 27 October 2026 at 00:24:22 UTC:
@@ -30,8 +39,9 @@ Retained guarded source suite: 1,504 tests / 1,439 subtests passed, zero failure
 was repeated for five marker substitutions or this documentation-only receipt.
 See [the full publication receipt and installation gates](docs/HAOS82_RELEASE_CANDIDATE.md).
 
-Installation and physical acceptance are unverified. Supplied 27 October startup
-identifies .80; auto update was last confirmed off on 26 October. No HA query,
+Installed .82 identity and physical acceptance remain unverified. Latest supplied
+27 October startup identifies .81 source 247095a4f9905932c3f5716f3d1be6cee7b3c7f8;
+auto update was last confirmed off on 26 October. No HA query,
 installation or live setting change was performed. Solar allocation and recurring
 MSC errors remain unresolved; limits and tariff/policy values remain decision-time
 snapshots. Accepted cost risk remains: unpriced energy can export at a loss.
