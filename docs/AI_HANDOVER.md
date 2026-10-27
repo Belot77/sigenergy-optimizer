@@ -1,5 +1,29 @@
 # SigEnergy Optimizer AI Handover
 
+## Local Morning Slow partial-relief candidate - 27 October 2026
+
+Approved local branch: `fix/morning-slow-partial-relief`, based on verified main
+`2c186bb78da9379e08aeb660583d22d5d918ce66`, in
+`C:/Projects/sigenergy_optimizer-morning-slow-partial-relief`.
+The separate tests-only worktree and all original unfinished work are preserved.
+
+The candidate replaces the physical-relief path's binary slow/normal request with
+bounded Morning-only partial relief. Independent forecast refill relief and
+import priority retain their existing behavior. A successful service response is
+not a charge-setting readback or physical settlement proof. Further increases
+require matching later setting reports and later coherent flow evidence.
+See [the candidate contract and validation plan](MORNING_SLOW_PARTIAL_RELIEF.md).
+
+Local validation passed 1,525 tests / 1,450 subtests, zero failures, 206 warnings,
+in 254.31 seconds. Strict guards disabled dotenv and recorded 75 in-memory and
+1,839 temporary-path StateStore constructions. Final new-module checks passed
+21 tests / 11 subtests in 1.25 seconds. Independent source/test and documentation
+reviews are GO for the local candidate; physical acceptance remains unverified.
+Source SHA-256: 74af93a57303a855f2feccbc080a0102d91d1f4e305ac032b71a2b4190cd5e53.
+This is not a published release. Nothing is staged or committed; no push, release,
+version change, installation or Home Assistant action occurred.
+Solar feedback allocation and recurring MSC errors remain separate open work.
+
 ## Current .82 publication and verification - 27 October 2026
 
 Published 27 October 2026 at 00:24:22 UTC:
@@ -30,8 +54,9 @@ Retained guarded source suite: 1,504 tests / 1,439 subtests passed, zero failure
 was repeated for five marker substitutions or this documentation-only receipt.
 See [the full publication receipt and installation gates](HAOS82_RELEASE_CANDIDATE.md).
 
-Installation and physical acceptance are unverified. Supplied 27 October startup
-identifies .80; auto update was last confirmed off on 26 October. No HA query,
+Installed .82 identity and physical acceptance remain unverified. Latest supplied
+27 October startup identifies .81 source 247095a4f9905932c3f5716f3d1be6cee7b3c7f8;
+auto update was last confirmed off on 26 October. No HA query,
 installation or live setting change was performed. Solar allocation and recurring
 MSC errors remain unresolved; limits and tariff/policy values remain decision-time
 snapshots. Accepted cost risk remains: unpriced energy can export at a loss.

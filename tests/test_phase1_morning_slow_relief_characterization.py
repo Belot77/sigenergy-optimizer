@@ -495,13 +495,13 @@ class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
         self.assertFalse(decision.trace_gates["morning_slow_physical_export_relief"])
         self.assertEqual(2.0, decision.ess_charge_limit)
 
-    def test_physical_entry_uses_trusted_actual_export_and_inclusive_threshold(self) -> None:
+    def test_measured_threshold_does_not_skip_post_command_feedback(self) -> None:
         cases = (
-            ("below", 14.49, False, 2.0),
-            ("at", 14.5, True, 10.0),
-            ("above", 14.51, True, 10.0),
+            ("below", 14.49),
+            ("at", 14.5),
+            ("above", 14.51),
         )
-        for name, export_kw, expected_relief, expected_charge_limit in cases:
+        for name, export_kw in cases:
             with self.subTest(case=name):
                 optimizer = self._optimizer()
                 state = self._morning_state(
@@ -516,21 +516,12 @@ class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
                     14.5,
                     decision.trace_values["morning_slow_physical_relief_threshold_kw"],
                 )
-                self.assertTrue(
-                    decision.trace_gates["morning_slow_physical_export_flow_trusted"]
-                )
-                self.assertEqual(
-                    expected_relief,
-                    decision.trace_gates["morning_slow_physical_export_relief"],
-                )
-                self.assertEqual(
-                    expected_relief,
-                    decision.trace_gates["morning_slow_charge_relief_active"],
-                )
+                self.assertFalse(decision.trace_gates["morning_slow_physical_export_relief"])
+                self.assertFalse(decision.trace_gates["morning_slow_charge_relief_active"])
                 self._assert_morning_slow_contract(
                     optimizer,
                     decision,
-                    expected_charge_limit_kw=expected_charge_limit,
+                    expected_charge_limit_kw=2.0,
                 )
 
     def test_live_physical_relief_requires_coherent_derived_flow(self) -> None:
@@ -577,9 +568,7 @@ class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
 
         decision = self.decide(optimizer, state, self.MORNING)
 
-        self.assertTrue(
-            decision.trace_gates["morning_slow_physical_export_flow_trusted"]
-        )
+        self.assertFalse(decision.trace_gates["morning_slow_physical_export_flow_trusted"])
         self.assertEqual(
             "coherent_measured_grid_flow",
             decision.trace_values["morning_slow_actual_grid_export_source"],
@@ -598,14 +587,14 @@ class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
                 "morning_slow_estimated_export_if_slow_cap_restored_kw"
             ],
         )
-        self.assertTrue(decision.trace_gates["morning_slow_physical_export_relief"])
+        self.assertFalse(decision.trace_gates["morning_slow_physical_export_relief"])
         self._assert_morning_slow_contract(
             optimizer,
             decision,
-            expected_charge_limit_kw=10.0,
+            expected_charge_limit_kw=2.0,
         )
 
-    def test_counterfactual_restoration_prevents_chatter_then_clears_below_threshold(
+    def test_counterfactual_is_diagnostic_without_post_command_feedback(
         self,
     ) -> None:
         optimizer = self._optimizer()
@@ -615,7 +604,7 @@ class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
             battery_charge_kw=2.0,
         )
         entry = self.decide(optimizer, entry_state, self.MORNING)
-        self.assertTrue(entry.trace_gates["morning_slow_physical_export_relief"])
+        self.assertFalse(entry.trace_gates["morning_slow_physical_export_relief"])
         optimizer._last_state = entry_state
         optimizer._last_decision = entry
 
@@ -631,10 +620,8 @@ class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
                 "morning_slow_estimated_export_if_slow_cap_restored_kw"
             ],
         )
-        self.assertTrue(
-            unsafe_restore.trace_gates["morning_slow_physical_export_relief"]
-        )
-        self.assertEqual(10.0, unsafe_restore.ess_charge_limit)
+        self.assertFalse(unsafe_restore.trace_gates["morning_slow_physical_export_relief"])
+        self.assertEqual(2.0, unsafe_restore.ess_charge_limit)
         optimizer._last_state = unsafe_restore_state
         optimizer._last_decision = unsafe_restore
 
@@ -650,7 +637,7 @@ class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
                 "morning_slow_estimated_export_if_slow_cap_restored_kw"
             ],
         )
-        self.assertTrue(exact_boundary.trace_gates["morning_slow_physical_export_relief"])
+        self.assertFalse(exact_boundary.trace_gates["morning_slow_physical_export_relief"])
         optimizer._last_state = exact_boundary_state
         optimizer._last_decision = exact_boundary
 
@@ -670,7 +657,7 @@ class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
         self.assertFalse(safe_restore.trace_gates["morning_slow_charge_relief_active"])
         self.assertEqual(2.0, safe_restore.ess_charge_limit)
 
-    def test_restart_reconstructs_relief_from_current_counterfactual_flow(self) -> None:
+    def test_restart_requires_new_command_feedback_despite_counterfactual(self) -> None:
         optimizer = self._optimizer()
         self.assertIsNone(optimizer.last_decision)
         state = self._morning_state(
@@ -687,9 +674,9 @@ class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
                 "morning_slow_estimated_export_if_slow_cap_restored_kw"
             ],
         )
-        self.assertTrue(decision.trace_gates["morning_slow_physical_export_relief"])
-        self.assertTrue(decision.trace_gates["morning_slow_charge_relief_active"])
-        self.assertEqual(10.0, decision.ess_charge_limit)
+        self.assertFalse(decision.trace_gates["morning_slow_physical_export_relief"])
+        self.assertFalse(decision.trace_gates["morning_slow_charge_relief_active"])
+        self.assertEqual(2.0, decision.ess_charge_limit)
 
     def test_untrusted_export_or_battery_flow_cannot_newly_activate_physical_relief(
         self,
@@ -746,15 +733,15 @@ class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
                     decision.trace_gates["morning_slow_forecast_refill_relief"],
                 )
                 self.assertEqual(
-                    physical_relief,
+                    False,
                     decision.trace_gates["morning_slow_physical_export_relief"],
                 )
                 self.assertEqual(
-                    forecast_relief or physical_relief,
+                    forecast_relief,
                     decision.trace_gates["morning_slow_charge_relief_active"],
                 )
                 self.assertEqual(
-                    10.0 if forecast_relief or physical_relief else 2.0,
+                    10.0 if forecast_relief else 2.0,
                     decision.ess_charge_limit,
                 )
 
@@ -789,7 +776,7 @@ class Phase1MorningSlowReliefCharacterizationTests(Haos49CharacterizationCase):
 
         decision = self.decide(optimizer, state, self.MORNING)
 
-        self.assertTrue(decision.trace_gates["morning_slow_physical_export_relief"])
+        self.assertFalse(decision.trace_gates["morning_slow_physical_export_relief"])
         self.assertTrue(decision.trace_gates["trusted_demand_window_active"])
         self.assertEqual(0.0, decision.import_limit)
         self.assertEqual("demand_window_block", decision.trace_values["import_branch"])
