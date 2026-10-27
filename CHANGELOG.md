@@ -1,7 +1,14 @@
 # Changelog
 
-## 2.3.71-haos82 - release candidate - 2026-10-27
+## 2.3.71-haos82 - published release - 2026-10-27
 
+- Published at 00:24:22 UTC: [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.71-haos82).
+  Tag/container source af174d2745f283e3f2e297d57e72d58fada62cb2, tree
+  f858b292fd4e6d8b9b67c044bb314cbb9f9455de. Metadata PR #50 merged normally at
+  4c3a2116d112f3eda97a950eb4893d32a0d77adf with the same tree.
+  Build 40425641785 passed. Version/latest index:
+  sha256:b286d224ee01bb54b5144cb6b3c642374d4e1c557df9c7074501f05179e51cb3.
+  Immutable .81 remains unchanged. See docs/HAOS82_RELEASE_CANDIDATE.md.
 - Include source PR #49: unknown/unpriced import history warns rather than
   vetoing otherwise-qualified battery export; available finite actual import
   prices retain their floor. Accounting coverage and retries remain unchanged.
@@ -12,7 +19,8 @@
   target. Ordinary export checks remain; primary failure stays failed.
 - Retained guarded source suite: 1,504 tests / 1,439 subtests passed, zero failures,
   206 warnings. Release checks passed 55 tests / 30 subtests, zero failures,
-  202 warnings; image verification is pending.
+  202 warnings. Both platforms passed all 22 layer/diff-ID checks and fourteen
+  target byte/mode checks each; independent proof review is GO.
 - Solar allocation, recurring MSC errors and physical acceptance remain open.
   No HA installation or live settings change is included.
 
