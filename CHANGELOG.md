@@ -1,18 +1,24 @@
 # Changelog
 
-## Unreleased local Morning Slow partial-relief candidate - 2026-10-27
+## 2.3.72-haos83 - local release candidate - 2026-10-27
 
-- Replace physical-relief-only full charge-cap restoration with bounded partial
-  relief. Retain independent forecast refill relief and existing policy priorities.
-- Track a separate Morning command/readback/flow epoch; unchanged target
-  reassertions do not restart it. No physical settlement is inferred from HTTP
-  success or a charge-setting report alone.
-- Add focused controller/dispatch regressions and reconcile obsolete binary-path
-  expectations. Final guarded validation passed 1,525 tests / 1,450 subtests,
-  zero failures, 206 warnings; final new-module checks passed 21 / 11. Independent
-  source/test and documentation reviews are GO for the local candidate only.
-- No configuration defaults, version markers, publication or live settings change.
-  See `docs/MORNING_SLOW_PARTIAL_RELIEF.md` for scope and remaining limits.
+- Include [PR #52](https://github.com/Belot77/sigenergy-optimizer/pull/52), normally
+  merged at `140ecf474253d520a503e4dbe1259b4c9c2e4bf4`: bounded Morning physical
+  relief replaces full normal-cap jumps. Matching ESS reports and later coherent
+  flow evidence gate additional increases; forecast refill and policy priorities
+  retain their independent behavior.
+- Preserve separate proposed/applied targets, unchanged-target epochs, current
+  authority and failure/reset rules. Morning readback matching distinguishes
+  adjacent 0.01 kW requests; physical settling and device precision are unproven.
+- Retain guarded source validation: 1,525 tests / 1,450 subtests passed, zero
+  failures, 206 warnings. New-module checks passed 21 / 11. These precede release
+  marker substitutions. Candidate release/source-pinning/Morning checks passed
+  37 tests / 11 subtests, zero failures, 202 warnings. Independent metadata/docs
+  review is GO for local preparation; no other production drift was found.
+- Update the five established version markers to 2.3.72-haos83 and reconcile
+  post-merge status docs. No additional control behavior, configuration defaults,
+  tests, dependencies or workflow changes. No commit, publication or HA action.
+  See `docs/HAOS83_RELEASE_CANDIDATE.md` for scope and remaining gates.
 
 ## 2.3.71-haos82 - published release - 2026-10-27
 
