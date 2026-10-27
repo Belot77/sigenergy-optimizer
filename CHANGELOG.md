@@ -1,24 +1,23 @@
 # Changelog
 
-## 2.3.72-haos83 - local release candidate - 2026-10-27
+## 2.3.72-haos83 - published release - 2026-10-27
 
-- Include [PR #52](https://github.com/Belot77/sigenergy-optimizer/pull/52), normally
-  merged at `140ecf474253d520a503e4dbe1259b4c9c2e4bf4`: bounded Morning physical
-  relief replaces full normal-cap jumps. Matching ESS reports and later coherent
-  flow evidence gate additional increases; forecast refill and policy priorities
-  retain their independent behavior.
-- Preserve separate proposed/applied targets, unchanged-target epochs, current
-  authority and failure/reset rules. Morning readback matching distinguishes
-  adjacent 0.01 kW requests; physical settling and device precision are unproven.
-- Retain guarded source validation: 1,525 tests / 1,450 subtests passed, zero
-  failures, 206 warnings. New-module checks passed 21 / 11. These precede release
-  marker substitutions. Candidate release/source-pinning/Morning checks passed
-  37 tests / 11 subtests, zero failures, 202 warnings. Independent metadata/docs
-  review is GO for local preparation; no other production drift was found.
-- Update the five established version markers to 2.3.72-haos83 and reconcile
-  post-merge status docs. No additional control behavior, configuration defaults,
-  tests, dependencies or workflow changes. No commit, publication or HA action.
-  See `docs/HAOS83_RELEASE_CANDIDATE.md` for scope and remaining gates.
+- [Published at 04:13:16 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.72-haos83).
+  Tag/container source `51d370a559397e52e2b5f5012733b87fab7a8096`, tree
+  `d0c370d71c1ac965c59de02901b6541b3e15fc96`. Metadata PR #53 merged normally at
+  `ba3642cf66019614da0265e0b62426c124d910a7` with exactly the tag tree.
+- Include source PR #52: bounded Morning physical charging relief replaces full
+  normal-cap jumps. Completed commands, distinct matching ESS reports and later
+  coherent flows gate increases; forecast refill and other priorities stay independent.
+  Current authority, failure/reset rules, MSC protections and independent limits remain.
+- Retain source validation: 1,525 tests / 1,450 subtests passed; release checks:
+  37 tests / 11 subtests passed, zero failures. Across both platforms, all 22
+  layer/diff-ID checks passed, plus fourteen final source-file byte/mode checks per platform.
+  Independent metadata/source proof comparison passed; previous .82 remains unchanged.
+- Five version markers and release/status documentation changed during preparation;
+  the final receipt is documentation only. No HA installation or live settings change.
+  Hundredth-kW device precision and physical stability remain unproven. Solar feedback
+  allocation and recurring MSC diagnosis remain open. See docs/HAOS83_RELEASE_CANDIDATE.md.
 
 ## 2.3.71-haos82 - published release - 2026-10-27
 

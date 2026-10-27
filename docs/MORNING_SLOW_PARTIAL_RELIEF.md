@@ -1,18 +1,20 @@
-# Morning Slow partial physical relief - merged source, unreleased
+# Morning Slow partial physical relief - published source, not physically accepted
 
 ## Scope and baseline
 
 The source change was reviewed and normally merged through PR #52 on 27 October
-2026. Reviewed source commit `57949e728a635fd1488f567d04ce8bd916b39fc8` is the
-second parent of merge commit `140ecf474253d520a503e4dbe1259b4c9c2e4bf4`; the
-merge tree is `25c8cd1f98a780be17a392b0a53a4a587a1ba086`. The original
-`fix/morning-slow-partial-relief` branch and worktree remain preserved as provenance.
-This release-preparation copy is on `release/2.3.72-haos83`, based on the merged
-main commit. Its marker/documentation work is local and unreleased: it has not been
-committed, pushed, tagged, built, published, installed or physically accepted.
-The published .82 remains latest. No HA query, settings change or live action is
-included or authorized here. The completed tests-only
-`test/morning-slow-physical-allocation` worktree remains preserved.
+2026. Reviewed commit `57949e728a635fd1488f567d04ce8bd916b39fc8` is the second
+parent of merge `140ecf474253d520a503e4dbe1259b4c9c2e4bf4`, tree
+`25c8cd1f98a780be17a392b0a53a4a587a1ba086`. Release metadata PR #53 normally
+merged as `ba3642cf66019614da0265e0b62426c124d910a7`. Version 2.3.72-haos83 was
+published from source `51d370a559397e52e2b5f5012733b87fab7a8096`, tree
+`d0c370d71c1ac965c59de02901b6541b3e15fc96`; annotated tag object
+`d4ef5e979767286b0e2a99b6fc735b2044f7943f`. Build 40448173242 succeeded.
+The .83 release is current; .82 remains immutable and is now historical. The
+original source branch/worktree and completed tests-only characterization worktree
+remain preserved. No Home Assistant installation, live setting change or physical
+acceptance is established. Device readback precision and physical stability remain
+unverified.
 
 ## Observed problem and change
 
@@ -96,29 +98,30 @@ zero failures, 206 warnings, in 254.31 seconds; guards recorded 75 in-memory and
 1,839 temporary-path constructions. Dotenv was disabled before application-test
 imports. Final source/test and documentation reviews are GO for local readiness.
 
-Reviewed pre-release-marker source SHA-256:
+Reviewed pre-release-marker implementation SHA-256:
 `74af93a57303a855f2feccbc080a0102d91d1f4e305ac032b71a2b4190cd5e53`.
-It identifies the reviewed implementation before the five proposed .83 marker
-substitutions; it is not the source identity of a release tag or image.
+It identifies the reviewed implementation before the five .83 marker
+substitutions; the published tag source is `51d370a559397e52e2b5f5012733b87fab7a8096`.
 Thirteen unaffected Solar, MSC observation, Morning eligibility, import/export,
 EMS, PV, discharge and completed-handoff functions remain byte-identical to the
 verified baseline. Existing eight-file unfinished work and the separate three-file
-characterization retain their original file-set hashes. Release-preparation
-validation and review are recorded below. Publication requires separate approval and
-image/source proof; installation and supervised live validation require separate
-approval after publication. Physical readback precision and stability remain
+characterization retain their original file-set hashes. Release preparation and
+publication validation are recorded below. The author and independent image
+verifications passed as stated in the release receipt; independent review did not
+redownload every compressed layer. Installation and supervised live validation
+still require separate approval. Physical readback precision and stability remain
 unverified.
 Dotenv must be disabled and StateStore construction limited to memory/system
 temporary paths before importing application tests. No runtime database contents,
 raw trace files, credentials or logs are added to the candidate.
 
-The separate .83 release-preparation checks passed 37 tests / 11 subtests,
+The .83 release-preparation checks passed 37 tests / 11 subtests,
 zero failures, 202 warnings, in 11.53 seconds. They cover release-version
 consistency, source pinning and this Morning controller, with dotenv disabled
 and StateStore guards recording 0 memory / 28 temporary-path constructions.
 The five marker files differ from merged main only by their version strings;
-independent metadata/docs review is GO for local preparation. No .83 image or
-physical acceptance is established.
+independent metadata/docs review was GO for preparation. The build and image proof
+are recorded in the current release receipt. No physical acceptance is established.
 
 ## Verification modes and rollback
 
@@ -136,9 +139,11 @@ physical acceptance is established.
   Morning-to-Solar transition. Stop on lost authority or repeated unsafe behavior.
   Passing software tests does not prove physical acceptance or a hard grid cap.
 
-Current rollback is to withhold this local branch; main and published .82 stay
-unchanged. Any later source rollback should use a separately reviewed scoped
-revert. No reset, cleanup, deletion, deployment or live rollback occurs here.
+Published .83 is the current code release; .82 remains the previous immutable
+release. No installed runtime identity or usable operational rollback method has
+been verified. Any source rollback requires a separately reviewed scoped revert;
+any installation rollback requires a separately approved, verified operator
+procedure. No live rollback or deployment action is included here.
 
 ## Remaining limits
 
@@ -146,4 +151,5 @@ Physical connection enforcement, inverter dynamics, sensor accuracy and exact
 settling time remain unproven. A maximum charging setting is not a guaranteed
 minimum charging rate. Static energy-balance arithmetic cannot guarantee export.
 Solar feedback allocation and recurring MSC settlement errors remain separate
-open investigations. The local candidate is not an installation recommendation.
+open investigations. Publication is not a physical acceptance or installation
+recommendation.
