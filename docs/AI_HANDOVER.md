@@ -1,28 +1,40 @@
 # SigEnergy Optimizer AI Handover
 
-## Preparing 2.3.71-haos82 - 27 October 2026
+## Current .82 publication and verification - 27 October 2026
 
-The operator approved release preparation, publication and the final receipt.
-Source PR [#49](https://github.com/Belot77/sigenergy-optimizer/pull/49) normally
-merged at ce70f4ca41be0992ab899e56f2ba3d20ef0482f7, preserving reviewed tree
-3dbca50c9b014e181db6c1505f1b352523d438f9.
+Published 27 October 2026 at 00:24:22 UTC:
+[GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.71-haos82).
+Tag/container source: af174d2745f283e3f2e297d57e72d58fada62cb2.
+Tag tree: f858b292fd4e6d8b9b67c044bb314cbb9f9455de.
+Metadata [PR #50](https://github.com/Belot77/sigenergy-optimizer/pull/50) normally
+merged at 4c3a2116d112f3eda97a950eb4893d32a0d77adf with exactly the tag tree.
+Source [PR #49](https://github.com/Belot77/sigenergy-optimizer/pull/49) contains
+the reviewed cost-advisory, O19 and O21 corrections.
 
-This candidate combines the accepted unknown-cost advisory policy, O19's current
-Demand check before fallback import, and O21's bounded MSC house-supply recovery.
-Known finite import-price floors, current authority, fresh export-close/MSC proof
-and independent decision/capability limits remain. The original application
-stays failed even when separate fallback recovery succeeds.
+[Build 40425641785](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40425641785)
+succeeded at the exact source. Version/latest OCI index:
+sha256:b286d224ee01bb54b5144cb6b3c642374d4e1c557df9c7074501f05179e51cb3.
+Both platforms passed all 22 compressed-layer hash/size and uncompressed diff-ID
+checks, plus fourteen final target byte/mode checks each. Author and independent
+verifier runs each passed 71 synthetic cases; independent image proof review is GO.
+Immutable .81 remains unchanged.
 
-The guarded source suite passed 1,504 tests / 1,439 subtests, zero failures,
-206 warnings; independent source/test/docs reviews are GO. Release checks passed
-55 tests / 30 subtests, zero failures, 202 warnings, in 23.12 seconds.
-Image/source proof is pending. See [the .82 candidate and gates](HAOS82_RELEASE_CANDIDATE.md).
-Solar allocation and recurring MSC errors remain unresolved. Values retain
-decision-time snapshot semantics; unpriced energy can export at a loss.
-HA installation, live settings and physical acceptance remain separate.
-The supplied 27 October startup identifies .80, not an installed .81 or .82.
+Unknown/unpriced import history alone warns; available finite actual import
+prices retain their floor. O19 requires current trusted Demand OFF before bounded
+fallback import recovery. O21 restores bounded MSC house-serving discharge after
+current authority and fresh export-close/MSC proof. Ordinary export-target checks,
+independent limits and failed-primary/separate-fallback status remain.
 
-Last consolidated: 2026-10-27
+Retained guarded source suite: 1,504 tests / 1,439 subtests passed, zero failures,
+206 warnings. Release checks: 55 / 30, zero failures, 202 warnings. No full suite
+was repeated for five marker substitutions or this documentation-only receipt.
+See [the full publication receipt and installation gates](HAOS82_RELEASE_CANDIDATE.md).
+
+Installation and physical acceptance are unverified. Supplied 27 October startup
+identifies .80; auto update was last confirmed off on 26 October. No HA query,
+installation or live setting change was performed. Solar allocation and recurring
+MSC errors remain unresolved; limits and tariff/policy values remain decision-time
+snapshots. Accepted cost risk remains: unpriced energy can export at a loss.
 
 ## Historical premerge O21 correction - 27 October 2026
 
