@@ -1,6 +1,8 @@
 # SigEnergy Optimizer Control Map
 
 Audit date: 2026-06-17  
+Policy supplement: 2026-10-27, unknown import-cost advisory boundary.
+O21 supplement: 2026-10-27, separate ordinary export dispatch from bounded MSC fallback recovery; retain current authority and fresh closure/MSC proof. See CONTROL_CONTRACT.md and CURRENT_STATE.md.
 Project version/reference: 2.3.14-haos25  
 Reference commit: ac57825 Add estimated PV surplus initiation
 HVAC permission supplement: 2026-08-06, branch `fix/hvac-measured-solar-permission`, based on live commit `3e33088767977da6ba6543074e4129ecf9705e87`.
@@ -17,7 +19,9 @@ This document records the sensor, helper, config, derived-signal, algorithm, act
 - For HVAC solar permission, Solcast and estimated opportunity are always diagnostic-only and must never be promoted to permission authority.
 - HVAC solar permission is advisory only and cannot directly operate HVAC, zones, targets, AC0, AirTouch, or inverter actuators.
 - Highest trusted actual optimizer import price is the source of truth for the actual import-cost export floor.
+- Unknown or unpriced cost alone is advisory; finite highest actual import prices available in the existing shared summary remain a floor even with incomplete history, including zero and negative values. That maximum is only a lower bound while coverage is incomplete. A cache/query miss can leave no price available; no last-known-price cache is added. Ledger coverage remains unknown when evidence is incomplete.
 - Manual and force modes must override automatic optimizer decisions.
+- O19 fallback recovery only reopens import after trusted current Demand OFF in the final authority/settlement read; ON or untrusted/conflicting evidence uses the existing 0.01 kW restrictive close with a fresh authority check. Initial Demand/Standby/Dump blocks remain binding.
 - Final actuator writes in a cycle are the source of truth for what the inverter is asked to do.
 - If Maximum Self Consumption is not already genuinely observed, the automatic full-battery PV-only policy first keeps export closed while commanding that mode, then waits for a later qualifying cycle. When genuine `Automated` and Maximum Self Consumption observations are already present together with the 100% top-off, known-safe battery flow, FiT `>= $0.01/kWh`, and daytime/live-PV safety gates, it can open `EXPORT_LIMIT_HIGH` directly. The high value is a ceiling, not a request for battery discharge.
 - The ordinary price-tier branch has no SoC-based cheap-FiT grant: SoC alone cannot make `_export_tier_limit` non-zero below `EXPORT_THRESHOLD_LOW` at 99%, 100%, or any other SoC. This removes only the implicit full-battery tier shortcut; independently gated spike/solar-override paths and configured policies such as `ALLOW_LOW_MEDIUM_EXPORT_POSITIVE_FIT` retain their own haos52 gates.
@@ -117,11 +121,11 @@ This document records the sensor, helper, config, derived-signal, algorithm, act
 | Legacy discovery traces | `pv_surplus_estimated_init_*`, `pv_surplus_breathe_probe_*`, `pv_only_discovery_*`, probe cap/source | mixed | decision trace | compatibility/status | Diagnostic-only | Active/state gates are always false, source is `none`, caps are zero, and they cannot affect live export. |
 | `stored_energy_value_floor` | Value Gate floor calculation | dollars/kWh | advisory | Value Gate | Advisory/enforced | Keep separate from actual import-cost floor. |
 | `today_import_topup_kwh` | sum optimizer import records for date | kWh | `StateStore` | UI/status, guard context | Guard context | May include house load during optimizer import window. |
-| `today_highest_actual_import_price` | max trusted actual import price in top-up records | dollars/kWh | `StateStore` | hard guard | Authoritative | Source of truth for actual import-cost floor. |
-| `import_cost_export_floor` | highest actual import price | dollars/kWh | advisory | hard guard/UI | Authoritative | Do not use weighted averages. |
+| `today_highest_actual_import_price` | max finite actual import price available in top-up records | dollars/kWh | `StateStore` | hard guard | Authoritative when present | Source of floor; incomplete coverage makes it only a lower bound. |
+| `import_cost_export_floor` | highest available actual import price | dollars/kWh | advisory | hard guard/UI | Authoritative when present | Do not use weighted averages; unknown-only cost warns. |
 | `effective_battery_export_floor` | max stored-energy floor, import-cost floor | dollars/kWh | advisory | Value Gate/hard guard UI | Authoritative mixed floor | Best UI floor for battery-backed export. |
-| `actual_import_cost_guard_active` | automatic mode with import-cost evidence/unknown floor | boolean | decision | hard guard | Live guard | Active independent of Value Gate enforcement flags. |
-| `actual_import_cost_guard_blocking` | active and below/unknown floor for battery-backed/mixed export | boolean | decision | export veto | Live guard | Source of truth for hard block status. |
+| `actual_import_cost_guard_active` | automatic context; may be true with unknown cost for PV-only clamp | boolean | decision | guard context | Live guard | Active independent of Value Gate enforcement flags; active alone is not a veto. |
+| `actual_import_cost_guard_blocking` | known finite floor is present and export value is below it for battery-backed/mixed export | boolean | decision | export veto | Live guard | Unknown-only cost is advisory; blocking denotes a known-priced-floor veto. |
 | `protected_reserve_soc` | reserve floor plus time/season adjustments | percent | advisory | export permission | Live/advisory | Battery protection source. |
 | `sunrise_soc_target` / `min_soc_to_sunrise` | forecast/load reserve calculation | percent | decision | import/export reserve | Live | Source of truth for overnight reserve. |
 | `desired_*_pre_value_gate` | desired outputs before guard changes | kW/string | trace values | diagnostics/tests | Diagnostic | Do not apply directly. |
@@ -148,7 +152,7 @@ This document records the sensor, helper, config, derived-signal, algorithm, act
 | Anti-curtailment/self-lock avoidance | morning slow-charge probe/ramp conditions | Solcast potential, measured PV/load | separate morning slow-charge export-limit adjustments | Conservative caps | Unchanged by the full-battery MSC ceiling policy; do not combine these paths. |
 | Spike export | spike thresholds/SoC | FiT, spike sensor, SoC | export limit/EMS | Value Gate spike override rules | Advisory tests present. |
 | Value Gate advisory/enforce | enabled/dry-run/enforce flags | stored energy value, reserve, FiT | status, optional export veto | Enforcement only when enabled and enforce true | Broad tests present. |
-| Hard actual import-cost guard | optimizer import/top-up today has trusted or untrusted cost and automatic battery-backed/mixed export requested | top-up store, FiT, export type | export limit block; safe EMS | Active even when Value Gate flags off; manual exempt | Tests present. |
+| Actual import-cost policy | finite recorded floor available in shared summary and automatic battery-backed/mixed export requested; unknown-only cost remains advisory | top-up store, FiT, export type | available known floor may block below-floor export; unknown status remains context/warning | Independent of Value Gate flags; Manual/Force exempt | Accounting truth and policy outcome tested separately. |
 | Forecast/sunrise reserve | sunrise, load, forecast, reserve configs | forecast/state | import/export decisions and helper | conservative reserve protection | Needs coverage before refactor. |
 | Notifications/session tracking | export/import transitions | daily kWh, helper state | helper input_numbers/texts and notifications | No inverter control | Not central to safety tests. |
 | UI/API status generation | `/status` and websocket | last state/decision trace | JSON/UI only | Manual display targets override shown values | Add snapshot tests if restructuring. |
@@ -266,7 +270,7 @@ Do not delete these without a dedicated cleanup branch and tests:
 | Hidden PV | `hidden_pv_surplus_kw = max(estimated - measured, 0)` | export permission by itself |
 | PV-only export permission | measured `pv_surplus_only_proven` for classifying an already-requested measured-supported limit, or explicit `pv_only_msc_high_ceiling_active` for the direct ceiling | stale discovery state, measured/estimated/breathe initiation, generic `pv_surplus`, or a generic high export limit |
 | Automatic MSC high-ceiling cap | downward-quantised `min(EXPORT_LIMIT_HIGH, valid GRID_EXPORT_LIMIT number-entity max when available)` | ESS charge/discharge power or upward rounding |
-| Actual import-cost floor | highest trusted actual optimizer import price today | weighted average import cost, estimated price |
+| Actual import-cost floor | highest finite actual optimizer import price available in shared summary, including zero/negative; during incomplete coverage it is only a lower bound | weighted average, estimated price; unknown-only cost is not a veto |
 | Battery-backed export floor | `effective_battery_export_floor` | UI-only cents strings |
 | Battery reserve/protection | protected reserve and sunrise reserve decision values | single SoC threshold without forecast context |
 | Manual override | mode helper plus optimizer manual override state | automatic branch conditions |

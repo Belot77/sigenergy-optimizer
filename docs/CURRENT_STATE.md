@@ -1,8 +1,110 @@
 # Current State
 
-Last consolidated: 2026-10-26
+Last consolidated: 2026-10-27
+
+## Local O21 correction - 27 October 2026
+
+Approved local branch: fix/fallback-house-supply-recovery in
+C:\Projects\sigenergy_optimizer-fallback-house-supply, based on verified
+origin/main at 623bd5d95f757de1074cabc4ee25570f2ef80cfd.
+It retains the cost-advisory and O19 corrections and adds the narrow O21 repair.
+Total scope: 26 files (one production file, 16 tests, nine documents).
+The integration and both original candidate worktrees remain unchanged.
+
+Ordinary deliberate battery-export dispatch is classified only when
+recovery is None. Fallback retains its non-None recovery context: every
+permissive recovery write still requires current Automated/Remote authority and
+fresh, request-correlated export-closure and exact MSC reports. It no longer
+requires the old positive export target to restore MSC house-serving discharge.
+The ESS request remains bounded by normal capability and the decision's ESS
+limit. Ordinary export-target and Boost qualification checks are unchanged.
+
+The original application stays failed (result.succeeded=False).
+fallback_succeeded=True means only that the separate fallback requirements and
+service requests succeeded. Missing proof, takeover or a failed write still
+leaves fallback incomplete. Demand ON/unknown keeps import closed independently;
+trusted OFF may permit bounded recovery. Scripted software dispatch results
+are not proof of physical inverter settlement.
+
+Capability, tariff and policy-owner values remain decision-time snapshots.
+This correction adds no after-await tariff or hardware-cap refresh.
+It does not establish the cause of recurring MSC errors or fix Solar allocation.
+Unpriced imported energy may still export at a loss under the accepted cost
+policy; available finite recorded import prices retain their floor.
+
+Final guarded full suite: **1,504 tests / 1,439 subtests passed**, zero failures,
+206 warnings, 256.19 seconds. Guards recorded 75 in-memory and 1,811
+temporary-path StateStore constructions (counts, not memory sizes).
+Dotenv loading was disabled. Final focused checks passed 24 tests / 30 subtests,
+202 warnings, 10.86 seconds, with 0 in-memory / 44 temporary-path constructions.
+The tests-first run reproduced seven failing recovery subcases before the fix.
+
+Independent source and strengthened-test reviews are GO for this local
+correction. Production SHA-256:
+f58f5501c9356b5defc231698c16563d9502050c05e095867482fed4be85721b.
+O21 is locally corrected and verified, not published or physically accepted.
+Nothing is staged or committed; no push, release, installation or live action
+has occurred. Supplied startup evidence identifies .80 source acb5767; .81 is
+the recorded published release, with no supplied .81 installation proof.
+
+Local rollback is to withhold this candidate; any later rollback needs a
+separately reviewed scoped revert. Monitor-only and dry-run observations must
+precede separately approved supervised live checks of requested limits, report
+times, actual flows and recovery. Stop on lost authority, unproven settlement
+or renewed unsafe behavior.
+
 
 **CURRENT TRUTH ONLY:** durable semantics live in `CONTROL_CONTRACT.md`; sequencing lives in `ROADMAP.md`; historical decisions remain in `DECISIONS.md`.
+
+## Retained cost policy and historical integration - 27 October 2026
+
+Incomplete history or unpriced import alone is a warning, not an automatic
+export veto. Finite actual import prices available in the existing shared
+summary remain the floor even when coverage is incomplete; zero and negative
+finite floors are valid, with no weighted average. That maximum is only a lower
+bound while history is incomplete, and a cache/query miss or storage failure
+may leave no known price available; this policy adds no last-known-price cache.
+Accounting remains unknown/sticky when history is missing, and payload
+retention, retries, checkpoint truth, and measured import accounting are
+unchanged. `actual_import_cost_guard_active` may remain true as
+context for PV-only clamping; `actual_import_cost_guard_blocking` means a known
+priced-floor veto. Existing UI reason text may surface the warning/context; no
+new setting or UI behavior is claimed.
+
+The supplied two-day trace reports unknown cost at 06:09 on 26 October with a
+Boost veto under the then-current cost policy; at midnight on 27 October
+coverage recovered, followed by a 07:00 pending MSC application that invalidated
+permission/history again. This is reported lifecycle evidence, not physical
+settlement proof. Under the integrated policy, unknown-only cost warns and must
+not itself veto Boost when independent authority, permission, settlement,
+reserve and flow gates pass. A pending application may independently leave
+permission unproven; the integrated lifecycle regression addresses this boundary.
+The known finite floor remains binding when available, with incomplete-history
+prices only a lower bound. Financial risk is accepted: unpriced energy may
+export at a loss. The policy does not repair recurring MSC/application errors
+or Solar allocation. .81 only added passive diagnostics; supplied 27 October
+startup identifies .80 source `acb576747e808e927bdd7d12346c507da9b188b6`, not an
+installed .81. Live behavior and physical acceptance remain unverified.
+
+Historical O21 integration baseline (superseded by the local correction): Three separate scripted cases exercise current Demand ON, unknown, and trusted OFF. In each, the positive BATTERY_EXPORT proposal fails; the post-request EXPORT close is 0.01 kW and exact MSC proof is present. ON and unknown keep import closed; trusted OFF permits the fixture's 13.25 kW import recovery. Independently, normal Automated ESS discharge-capability restoration is rejected because the original GRID-EXPORT target (25 kW in this fixture) does not match current EXPORT 0.01 kW. `result.succeeded` and `fallback_succeeded` are false, with error `normal Automated ESS discharge capability returned failure`; ESS discharge capability remains 0.01 kW. These fixture values are not site configuration or physical-operation evidence. That integration-only baseline contained no source correction. Track as O21 (Medium: incomplete ESS discharge recovery after failed battery export), which blocked release readiness at the integration checkpoint. This issue is not assigned to O5 overnight reserve or O9 obsolete/overlapping policies.
+
+Historical integration checkpoint: branch `fix/cost-fallback-integration` is in
+`C:\Projects\sigenergy_optimizer-cost-fallback`, based on verified remote main
+`623bd5d95f757de1074cabc4ee25570f2ef80cfd`. Union scope: 25 files (one
+production source, 15 tests, nine documents). Original cost and O19 candidate
+worktrees remain preserved. No files are staged or committed; no push, release,
+installation or live action is included. The combined offline suite passed 1,499 tests / 1,429 subtests, zero failures, 206 warnings, in 244.32 seconds; strict guards recorded 75 in-memory and 1,799 temporary-path StateStore constructions, with dotenv disabled. Final focused three-module validation passed 23 tests / 20 subtests, 202 warnings, in 4.87 seconds; guards recorded 4 and 32 constructions. Independent source/test review is GO for this local integration and characterization only. O21 was unfixed at that historical integration checkpoint; see the local correction for current status. Standalone cost validation passed 1,476 tests / 1,404
+subtests, zero failures, 206 warnings, 241.61 seconds; strict guards recorded
+72 in-memory and 1,762 temporary-path StateStore constructions, with dotenv
+disabled. Standalone O19 validation passed 1,477 tests / 1,426 subtests, zero
+failures, 206 warnings, 244.15 seconds; its per-run guards recorded 74 in-memory
+and 1,775 temporary-path constructions. These are separate historical results.
+The cost branch's final focused four-file run passed 69 tests / 35 subtests,
+202 warnings, 4.64 seconds; earlier related focused tests passed 219 / 254, 203
+warnings, 17.97 seconds, after a tests-first red of 14 failures / 1 pass, 202
+warnings, 1.80 seconds. Independent integrated source/test review was GO for this local change and characterization only; O21 was unfixed at that historical integration checkpoint; see the local correction for current status. Preserve the existing 120-second Boost minimum; a standalone fixture
+admitted at 121 seconds after both minimums were met. No timing rule is weakened.
+Offline scripted HA results do not establish physical operation or settlement.
 
 ## Current .81 publication and verification - 26 October 2026
 
@@ -35,8 +137,9 @@ This release adds passive evidence and retains the .80 UI log filter.
 It does not change allocation, targets, tolerances, authority, settlement or safe
 fallback. HA report times and setting/helper acknowledgments are not physical
 settlement proof. O18, O5/O9, broader O6, parked O11 and physical/Boost acceptance
-remain open. The operator last reported installed .79; exact installed .81
-identity is unverified. Auto update was last operator-confirmed off on 26 October;
+remain open. The supplied 27 October startup identifies .80 source
+`acb576747e808e927bdd7d12346c507da9b188b6`; exact installed .81 identity is
+unverified. Auto update was last operator-confirmed off on 26 October;
 no direct HA query, installation or live settings change was performed.
 
 ## Historical local passive evidence checkpoint - before PR #46 merge
@@ -635,6 +738,10 @@ The register distinguishes published code corrections from remaining engineering
 | O16 | Import-top-up ledger completeness and retry integrity | Medium; reproduced with synthetic store failures, without proof of physical dispatch or financial loss. The O16 correction is published in .77 from reviewed PR #34, preserving original interval evidence and exact retry while retaining unknown-coverage safeguards. Integration review added targeted accounting-only invalidation at relevant identity activation and validated direct Manual/ESS boundaries, including permission invalidation across midnight. Fifteen new boundary tests passed; a bounded 114-test / 101-subtest run passed before the last two midnight tests were added. Final .77 validation passed 1,275 tests / 1,305 subtests, zero failures, 206 existing warnings, 226.40 seconds; independent review was GO. O15 storage execution isolation is now integrated and published in .78; it retains the O16 accounting safeguards. HDD causation and physical acceptance remain unproven. |
 | O17 | Ingress trust and optional API-key bypass | Conditional authentication defect reproduced offline. The O17 correction is published in .78 from source PR #37 and requires actual Supervisor peer 172.30.32.2 plus X-Ingress-Path and disables proxy rewriting in both supported launchers. Combined validation passed 1,355 tests / 1,305 subtests; independent source/test/documentation review is GO, with no High/Medium blocker. Normal HA login, existing flags and public read-only/status policies remain separate. Actual installed exposure is unverified; no exploit or physical acceptance is claimed. See INGRESS_TRUST_BOUNDARY.md. |
 | O18 | Solar charging deferral and fill-strategy robustness | Investigation/operator-policy review. On 25 October, the morning-started session peaks at 73.3% SoC, is 69.6% at the 16:29:52 configured fill deadline, and ends at 65.8%. Normal charging consistently requests 21 kW after 13:09:53; Forecast Today is revised 79.325 to 66.6231 kWh at 14:08:27. Earlier zero requests are valid under the current future-opportunity calculation, but the fill objective was missed. Characterize forecast downgrades and assess the reliability/export/minimum-charge tradeoff; do not claim bypass caused the entire shortfall or infer exact forgone energy from sampled flows. A policy change requires separate approval and must preserve existing safety and authority gates. See the 25 October evidence above. |
+
+| O19 | Fallback Demand Window import race | The local integration correction rechecks current Demand in the final authority/settlement read: trusted OFF is required to reopen fallback import; ON or untrusted evidence requests the existing 0.01 kW close. Local only, unpublished, and not proof of zero physical transient import. See `CONTROL_LIFECYCLE_REVIEW.md`. |
+| O20 | Negative-price Morning Dump output conflict | Existing characterization records conflicting export intent/EMS and restricted ESS/PV outputs. The future non-positive-price Morning priority redesign remains parked; no production change is authorized. See `CONTROL_LIFECYCLE_REVIEW.md`. |
+| O21 | Incomplete ESS discharge recovery after failed battery export | **Locally corrected and verified; unreleased.** Restore bounded MSC house-serving discharge after current authority and fresh closure/MSC proof; ordinary export-target checks remain. Primary failure stays failed even when fallback succeeds. Full suite: 1,504 tests / 1,439 subtests, zero failures. Independent local review GO; physical acceptance remains open. See CONTROL_LIFECYCLE_REVIEW.md. |
 
 ### Historical O14 tests-only baseline characterization - 24 October 2026
 

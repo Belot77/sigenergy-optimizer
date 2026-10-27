@@ -227,7 +227,6 @@ class FourTierDecisionTests(Haos49CharacterizationCase):
             ({"soc": 20}, {}, "selected_soc_floor"),
             ({"grid_export_limit_entity_max_kw": 0.01}, {}, "high_price_or_spike"),
             ({}, {"today_highest_actual_import_price": 2}, "actual_import_cost"),
-            ({}, {"import_cost_floor_unknown": True}, "actual_import_cost"),
         )
         for spike in (False, True):
             for values, summary, reason in cases:
@@ -260,6 +259,31 @@ class FourTierDecisionTests(Haos49CharacterizationCase):
                     self.assertEqual(MODE_MAX_SELF, d.ems_mode)
                     expected_reason = "protected_soc_floor" if spike and values.get("soc") == 20 else reason
                     self.assertEqual(expected_reason, d.trace_values["battery_export_rejection"])
+
+    def test_unknown_cost_history_alone_does_not_prevent_qualified_morning_preemption(self):
+        for spike in (False, True):
+            with self.subTest(spike=spike):
+                optimizer = self.optimizer(
+                    export_spike_threshold=0.6,
+                    morning_slow_charge_enabled=True,
+                    morning_slow_charge_until="16:00",
+                    morning_slow_charge_rate_kw=3.7,
+                )
+                summary = {
+                    "import_cost_floor_unknown": True,
+                    "today_highest_actual_import_price": None,
+                }
+                with patch.object(optimizer, "_optimizer_import_topup_summary_today", return_value=summary):
+                    d = self.decision(
+                        optimizer, fit=1.1, price_spike_active=spike,
+                        forecast_remaining_observation_trusted=True,
+                        battery_capacity_trusted=True,
+                    )
+                self.assertTrue(d.trace_values["morning_preemption_requested"])
+                self.assertTrue(d.trace_values["morning_preempted"])
+                self.assertFalse(d.morning_slow_charge_active)
+                self.assertEqual(BATTERY_EXPORT, d.export_intent)
+                self.assertFalse(d.trace_gates["actual_import_cost_guard_blocking"])
 
     def test_untrusted_remaining_forecast_disables_morning_and_high_spike_use_independent_guards(self):
         for spike in (False, True):
@@ -404,7 +428,7 @@ class FourTierDecisionTests(Haos49CharacterizationCase):
                         owner = "evening_export_boost" if rejected else "export_spike" if spike else "high_price"
                         self.assertEqual(owner, d.trace_values["battery_export_owner"])
                         self.assertFalse(d.trace_values["morning_preempted"])
-                        if summary:
+                        if summary.get("today_highest_actual_import_price") is not None:
                             self.assertEqual("none", d.trace_values["battery_export_final_owner"])
                             self.assertEqual("EXPORT_BLOCKED", d.export_intent)
                             self.assertEqual(0.0, d.export_limit)
@@ -415,6 +439,9 @@ class FourTierDecisionTests(Haos49CharacterizationCase):
                             self.assertEqual(BATTERY_EXPORT, d.export_intent)
                             self.assertGreater(d.export_limit, 0.01)
                             self.assertEqual(MODE_CMD_DISCHARGE_PV, d.ems_mode)
+                            self.assertFalse(d.trace_gates["actual_import_cost_guard_blocking"])
+                            if summary.get("import_cost_floor_unknown"):
+                                self.assertTrue(d.trace_gates["actual_import_cost_guard_active"])
 
     def test_medium_cannot_preempt_morning_and_value_gate_stays_advisory(self):
         optimizer = self.optimizer(max_battery_soc=100, export_value_gate_enabled=True,

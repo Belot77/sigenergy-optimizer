@@ -25,6 +25,37 @@ See [the publication receipt and installation gates](docs/HAOS81_RELEASE_CANDIDA
 and [evidence contract](docs/CONTROL_CONTRACT.md#passive-charge-allocation-evidence).
 No installed .81 identity or live acceptance is claimed.
 
+
+## Local O21 fallback correction - 27 October 2026
+
+A local, unreleased correction restores only bounded MSC house-serving ESS
+discharge after a failed battery-export attempt and verified fallback closure.
+Current authority and fresh export-close/MSC proof remain mandatory. Ordinary
+export-target checks, independent decision limits and normal capability bounds
+remain. The original application stays failed even when fallback succeeds.
+
+The guarded full suite passed 1,504 tests / 1,439 subtests, zero failures.
+Independent source/test review is GO for the local correction. O21 is locally
+verified; publication and physical acceptance remain separate. Capability and
+policy values retain decision-time snapshot semantics; no after-await refresh
+is added. See docs/CURRENT_STATE.md for exact scope, results and approval boundaries.
+
+## Approved import-cost policy clarification - 27 October 2026
+
+Incomplete or unpriced import history alone is a warning and does not veto an
+otherwise-qualified automatic battery-backed export. A finite recorded highest
+actual import price still applies as the cost floor during incomplete history;
+zero and negative floors are valid, and the floor is not averaged. Accounting
+coverage remains unknown when evidence is incomplete, with existing sticky-day,
+retry and retained-record behavior unchanged. The local combined candidate also
+includes O19's final Demand Window check before permissive fallback import
+recovery; ON or untrusted/conflicting evidence requests the existing restrictive
+0.01 kW close after a current authority check. Both original candidate worktrees
+remain preserved. The combined offline suite passed 1,499 tests / 1,429 subtests with zero failures. Independent source/test review was GO for this local integration and characterization only; O21 was unfixed at that historical integration checkpoint; see the local correction for current status. No release, installation or physical acceptance is claimed. Existing authority, flow, reserve,
+Demand Window, PV-only protection, settlement and Evening Boost qualification
+rules remain in force. Financial risk accepted by this policy: energy with no
+known import price may be exported at a loss.
+
 ## Previous published release: 2.3.69-haos80
 
 Published 25 October 2026 at 23:20:09 UTC (26 October 10:20:09 Sydney):
@@ -426,15 +457,15 @@ Uninstall:
 
 Published .76 includes the PR #31 Standby Holdoff and active Morning Dump fallback import-blocking correction. Ordinary economic-zero recovery retains its existing behavior. O13 code is published, but physical behavior remains unverified. See [current status and remaining gates](docs/CURRENT_STATE.md).
 
-## Version
+## Historical .77 version checkpoint (superseded)
 
-Current published release: [**2.3.66-haos77**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.66-haos77), published 24 October 2026. Tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`; metadata PR #35 merged at `81c2752c4e031bb9786ec0d00f1dca4e22c59de9` with the tagged tree. O15/O17 are source changes in this integration candidate, not part of .77. See [the verified .77 receipt](docs/HAOS77_RELEASE_CANDIDATE.md) and [current development state](docs/CURRENT_STATE.md).
+At that checkpoint, the current published release was [**2.3.66-haos77**](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.66-haos77), published 24 October 2026. Tag/source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`; metadata PR #35 merged at `81c2752c4e031bb9786ec0d00f1dca4e22c59de9` with the tagged tree. O15/O17 are source changes in this integration candidate, not part of .77. The current published release is .81; the supplied 27 October startup identifies .80 source `acb5767`, not an installed .81. See [the verified .77 receipt](docs/HAOS77_RELEASE_CANDIDATE.md), [current release and evidence status](docs/CURRENT_STATE.md), and [current README release status](#current-published-release-2370-haos81).
 
 Historical .76 image verification, superseded as the current release by .77: OCI index: `sha256:b7df9f21fce7ef14e7b4f602235486e17b35b710907656dd0b43e796889a6e9a`; amd64 manifest `sha256:153257933183c42fa99afdd21a8ab0d48837eb64623e136d7d0a07b3db17269e`, arm64 manifest `sha256:8288d84e1bd41858d022caff8b91d11adab998b21f99ee7d1a92985c9be4b161`. The `.75` version-specific index remains unchanged at `sha256:ed2a984b457bfddb2b74050d437f98337944076e9144a8d1a19f577d8e82d898`.
 
-The latest supplied full installed startup/source proof remains `.75` / `413e1691bb58e0b942098ab43f44e873df157a2b` on 21 October. The operator reported .76 installed after replacement-SSD restoration on 24 October; neither the .77 release receipt nor the fresh trace establishes a newer exact runtime identity. No live settings change, Boost enablement or physical acceptance is claimed here; actual rollback remains unverified. O4/O5, the parked O11 investigation and applicable Phase 1/2 live gates remain open.
+Historical startup evidence available at that checkpoint identified `.75` / `413e1691bb58e0b942098ab43f44e873df157a2b` on 21 October as the latest full installed startup/source proof. The operator reported .76 installed after replacement-SSD restoration on 24 October; neither the .77 release receipt nor the fresh trace established a newer exact runtime identity. No live settings change, Boost enablement or physical acceptance was claimed there; actual rollback remained unverified. O4/O5, the parked O11 investigation and applicable Phase 1/2 live gates remained open.
 
-The operator initially reported `.74` installed, Evening Boost off and add-on auto-update off. Later startup evidence at 13:28:25 Sydney identifies runtime signature `.75` and exact source `413e1691bb58e0b942098ab43f44e873df157a2b`. The excerpt shows pending-close then pending-MSC states through 13:28:29 and HTTP 200 service/reads through 13:28:50; it does not prove physical settlement or later recovery. This is the latest full startup/source proof; the earlier `.73` evidence is historical. No rollback method was supplied; supervised acceptance remains unverified.
+Historical startup evidence records the operator initially reporting `.74` installed, Evening Boost off and add-on auto-update off. Later evidence at 13:28:25 Sydney identified runtime signature `.75` and exact source `413e1691bb58e0b942098ab43f44e873df157a2b`. The excerpt shows pending-close then pending-MSC states through 13:28:29 and HTTP 200 service/reads through 13:28:50; it does not prove physical settlement or later recovery. This was the latest full startup/source proof at that checkpoint; the earlier `.73` evidence is historical. No rollback method was supplied; supervised acceptance remained unverified.
 
 `.73` includes version/source-pinned builds and resolved full-SHA recording, while carrying `.72` optimizer control behavior unchanged. The `.72` corrections cover Solar Override selected/protected floors, Morning Dump discharge intent and blocked-Dump MSC fallback, application-outcome trace recording, and precise positive sub-1-cent FiT explanations. The frozen `.72` tag/image exclude the Dockerfile source-pinning fix.
 

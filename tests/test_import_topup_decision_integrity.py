@@ -79,6 +79,16 @@ def test_final_expensive_import_is_accounted_before_real_export_arbitration(cont
         optimizer._state_store._conn = FaultConnection(optimizer._state_store._conn, fault)
     decision = tick(case, optimizer, measured(case, when, total=12, price=0.40), when,
                     _ActuatorApplicationResult(succeeded=True, automatic_application_completed=True))
+    if fault in {"insert", "commit-before"}:
+        # The failed 40c write is retained for exact retry, but this decision
+        # can only enforce the already acknowledged 5c price. Coverage warns.
+        assert decision.trace_gates["import_cost_floor_unknown"]
+        assert not decision.trace_gates["actual_import_cost_guard_blocking"]
+        assert decision.export_intent == BATTERY_EXPORT
+        later = when + timedelta(seconds=10)
+        decision = tick(case, optimizer, measured(case, later, total=12, price=0.40), later,
+                        _ActuatorApplicationResult(succeeded=True, automatic_application_completed=True))
+        assert decision.trace_gates["actual_import_cost_guard_blocking"]
     assert decision.export_intent != BATTERY_EXPORT
     assert decision.export_limit == 0.0
     assert not decision.trace_values["battery_export_actual_import_cost_permitted"]
@@ -147,7 +157,18 @@ def test_unretained_snapshot_failure_before_decision_cannot_leave_trusted_floor(
     with patch.object(optimizer._import_topup_ledger, "_persist_interval", side_effect=ValueError("synthetic capture failure")):
         decision = tick(case, optimizer, measured(case, when, total=12, price=0.40), when,
                         _ActuatorApplicationResult(succeeded=True, automatic_application_completed=True))
-    assert decision.export_intent != BATTERY_EXPORT
     assert decision.trace_gates["import_cost_floor_unknown"]
+    assert not decision.trace_gates["actual_import_cost_guard_blocking"]
+    assert decision.export_intent == BATTERY_EXPORT
     with case.optimizer_time(when):
         assert optimizer._optimizer_import_topup_summary_today()["import_cost_floor_unknown"]
+    # The next retained measurement identifies the 40c interval; its finite
+    # price must bind even though this day's coverage stays unknown.
+    later = when + timedelta(seconds=10)
+    after = tick(case, optimizer, measured(case, later, total=13, price=0.40), later,
+                 _ActuatorApplicationResult(succeeded=True, automatic_application_completed=True))
+    assert after.trace_gates["import_cost_floor_unknown"]
+    assert after.trace_gates["actual_import_cost_guard_blocking"]
+    assert after.export_intent != BATTERY_EXPORT
+    assert optimizer._state_store.optimizer_import_topup_summary(
+        later.date().isoformat())["today_highest_actual_import_price"] == 0.40

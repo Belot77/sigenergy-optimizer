@@ -311,14 +311,33 @@ class EveningBoostReentryStabilityTests(unittest.TestCase):
         self.decide(0)
         self.decide(30)
         with patch.object(self.optimizer, "_optimizer_import_topup_summary_today",
-                          return_value={"import_cost_floor_unknown": True}):
+                          return_value={"import_cost_floor_unknown": True,
+                                        "today_highest_actual_import_price": 1.0}):
             _state, blocked = self.decide(60)
+        self.assertTrue(blocked.trace_gates["actual_import_cost_guard_blocking"])
         self.assert_waiting(blocked)
         for elapsed in (90, 120, 150, 180):
             _state, decision = self.decide(elapsed)
             self.assert_waiting(decision)
         _state, admitted = self.decide(210)
         self.assertEqual(BATTERY_EXPORT, admitted.export_intent)
+
+    def test_unknown_history_without_known_price_keeps_boost_qualification(self) -> None:
+        self.decide(0)
+        self.decide(30)
+        with patch.object(self.optimizer, "_optimizer_import_topup_summary_today",
+                          return_value={"import_cost_floor_unknown": True,
+                                        "today_highest_actual_import_price": None}):
+            _state, warning = self.decide(60)
+        self.assertTrue(warning.trace_gates["import_cost_floor_unknown"])
+        self.assertTrue(warning.trace_gates["actual_import_cost_guard_active"])
+        self.assertFalse(warning.trace_gates["actual_import_cost_guard_blocking"])
+        self.assertTrue(warning.trace_gates["evening_boost_reentry_candidate"])
+        self.assert_waiting(warning)
+        self.decide(90)
+        _state, admitted = self.decide(120)
+        self.assertEqual(BATTERY_EXPORT, admitted.export_intent)
+        self.assertTrue(admitted.trace_gates["evening_boost_reentry_allowed"])
 
     def test_monotonic_regression_discards_previous_qualification(self) -> None:
         self.decide(0, clock=0)
