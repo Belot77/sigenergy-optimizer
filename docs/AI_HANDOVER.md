@@ -1,28 +1,37 @@
 # SigEnergy Optimizer AI Handover
 
-## Local Morning Slow partial-relief candidate - 27 October 2026
+## Local release candidate 2.3.72-haos83 - 27 October 2026
 
-Approved local branch: `fix/morning-slow-partial-relief`, based on verified main
-`2c186bb78da9379e08aeb660583d22d5d918ce66`, in
-`C:/Projects/sigenergy_optimizer-morning-slow-partial-relief`.
-The separate tests-only worktree and all original unfinished work are preserved.
+Approved local preparation: `release/2.3.72-haos83` in
+`C:/Projects/sigenergy_optimizer-release-haos83`, based on verified main
+`140ecf474253d520a503e4dbe1259b4c9c2e4bf4`, tree
+`25c8cd1f98a780be17a392b0a53a4a587a1ba086`.
+[PR #52](https://github.com/Belot77/sigenergy-optimizer/pull/52) merged normally
+from reviewed head `57949e728a635fd1488f567d04ce8bd916b39fc8` with exactly that tree.
+The source fix is committed, pushed and merged. This separate release candidate
+updates only five version markers plus release/status documentation; control
+behavior, tests, dependencies, workflows and permanent instructions are unchanged.
 
-The candidate replaces the physical-relief path's binary slow/normal request with
-bounded Morning-only partial relief. Independent forecast refill relief and
-import priority retain their existing behavior. A successful service response is
-not a charge-setting readback or physical settlement proof. Further increases
-require matching later setting reports and later coherent flow evidence.
-See [the candidate contract and validation plan](MORNING_SLOW_PARTIAL_RELIEF.md).
+Morning physical relief now uses bounded partial charging with separate completed
+command, setting-readback and later coherent-flow evidence. Forecast refill,
+import priority, other policy owners and MSC protections remain separate.
+Retained source validation passed 1,525 tests / 1,450 subtests, zero failures,
+206 warnings, in 254.31 seconds; final new-module checks passed 21 / 11.
+Those results precede the mechanical release-marker substitutions. Final candidate
+release/source-pinning/Morning checks passed 37 tests / 11 subtests, zero failures,
+202 warnings, in 11.53 seconds; guards recorded 0 memory and 28 temporary-path
+StateStore constructions with dotenv disabled. Independent metadata/docs review is
+GO for local preparation. Canonical Git comparison proves exactly one version
+substitution in each of five markers and no other production drift; no full suite
+was repeated for these mechanical changes.
+See [the .83 preparation record](HAOS83_RELEASE_CANDIDATE.md) and
+[Morning policy and verification](MORNING_SLOW_PARTIAL_RELIEF.md).
 
-Local validation passed 1,525 tests / 1,450 subtests, zero failures, 206 warnings,
-in 254.31 seconds. Strict guards disabled dotenv and recorded 75 in-memory and
-1,839 temporary-path StateStore constructions. Final new-module checks passed
-21 tests / 11 subtests in 1.25 seconds. Independent source/test and documentation
-reviews are GO for the local candidate; physical acceptance remains unverified.
-Source SHA-256: 74af93a57303a855f2feccbc080a0102d91d1f4e305ac032b71a2b4190cd5e53.
-This is not a published release. Nothing is staged or committed; no push, release,
-version change, installation or Home Assistant action occurred.
-Solar feedback allocation and recurring MSC errors remain separate open work.
+The latest published release remains 2.3.71-haos82. No .83 commit, push, tag,
+image, GitHub release, installation or live HA action is included in this local
+preparation. Original unfinished and tests-only worktrees remain preserved.
+HA setting precision at hundredths of a kW and physical stability remain unproven.
+Solar feedback allocation and recurring MSC diagnosis remain separate open work.
 
 ## Current .82 publication and verification - 27 October 2026
 

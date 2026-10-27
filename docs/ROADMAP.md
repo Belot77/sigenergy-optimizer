@@ -1,5 +1,30 @@
 # Roadmap
 
+## Local 2.3.72-haos83 release-preparation candidate - 27 October 2026
+
+The Morning Slow partial-relief source change was reviewed and merged normally
+as PR #52 at `140ecf474253d520a503e4dbe1259b4c9c2e4bf4`, with tree
+`25c8cd1f98a780be17a392b0a53a4a587a1ba086`. This fresh local release-preparation
+branch starts from that merged main commit and changes no control behavior; it is
+preparing version metadata for a proposed `2.3.72-haos83` candidate. The .82
+release remains the latest published release. This candidate is not yet committed,
+pushed, tagged, built, published, installed or physically accepted. No HA or live
+setting action is authorized by this checkpoint.
+
+The retained local validation for the merged source passed 1,525 tests / 1,450
+subtests, zero failures, 206 warnings; focused new-module checks passed 21 tests /
+11 subtests. Those results predate this release-preparation branch and do not
+validate any build/image. Candidate release/source-pinning/Morning checks passed
+37 tests / 11 subtests, zero failures, 202 warnings, in 11.53 seconds with dotenv
+disabled and memory/temporary-only StateStore guards (0 memory / 28 temporary
+constructions). Canonical Git comparison proves exactly one version substitution
+per marker and no other production drift. Independent metadata/docs review is GO
+for local preparation. Next: seek separate approval for publication and image
+proof. Installation and supervised live
+acceptance require separate approval after publication; verify identity and use
+monitor-only observations before considering controlled live checks. Device
+readback precision, physical response and stability remain unverified.
+
 ## Published checkpoint - 27 October 2026 (.82)
 
 Published 27 October 2026 at 00:24:22 UTC:
@@ -30,8 +55,9 @@ Retained guarded source suite: 1,504 tests / 1,439 subtests passed, zero failure
 was repeated for five marker substitutions or this documentation-only receipt.
 See [the full publication receipt and installation gates](HAOS82_RELEASE_CANDIDATE.md).
 
-Installation and physical acceptance are unverified. Supplied 27 October startup
-identifies .80; auto update was last confirmed off on 26 October. No HA query,
+Installation and physical acceptance are unverified. Latest supplied 27 October
+startup identifies .81 source `247095a4f9905932c3f5716f3d1be6cee7b3c7f8`;
+auto update was last confirmed off on 26 October. No HA query,
 installation or live setting change was performed. Solar allocation and recurring
 MSC errors remain unresolved; limits and tariff/policy values remain decision-time
 snapshots. Accepted cost risk remains: unpriced energy can export at a loss.

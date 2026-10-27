@@ -1,13 +1,19 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Local unreleased Morning Slow candidate
+## Local release candidate: 2.3.72-haos83
 
-Local development on `fix/morning-slow-partial-relief` replaces binary physical
-charge-cap relief with bounded partial relief and command/readback/flow feedback.
-Forecast refill and other policy priorities remain separate. The full guarded
-suite passed 1,525 tests / 1,450 subtests; independent reviews are GO for this local
-candidate. It is not published or physically accepted.
-See [scope, assumptions, validation and rollback](docs/MORNING_SLOW_PARTIAL_RELIEF.md).
+Morning Slow partial relief from [PR #52](https://github.com/Belot77/sigenergy-optimizer/pull/52)
+is merged at `140ecf474253d520a503e4dbe1259b4c9c2e4bf4`. It replaces binary physical
+charge-cap release with bounded partial charging and command/readback/flow feedback.
+Forecast refill and other policy priorities remain separate.
+
+Local `release/2.3.72-haos83` preparation changes five version markers and status
+docs. Retained source validation passed 1,525 tests / 1,450 subtests. Candidate
+checks passed 37 tests / 11 subtests; independent metadata/docs review is GO for
+local preparation. The candidate is not committed, published, installed or
+physically accepted. Latest published release remains .82.
+See [the release preparation record](docs/HAOS83_RELEASE_CANDIDATE.md) and
+[policy assumptions and validation](docs/MORNING_SLOW_PARTIAL_RELIEF.md).
 
 ## Current published release: 2.3.71-haos82
 
