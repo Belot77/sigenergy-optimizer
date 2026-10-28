@@ -1,5 +1,19 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Local release candidate: 2.3.75-haos86 - not published
+
+Source [PR #63](https://github.com/Belot77/sigenergy-optimizer/pull/63) merged
+normally at `b294f463e9fd4a2cbb6e1266e7d922422067e318`, retaining the reviewed tree.
+It repairs the .85 failed-close recovery loop by renewing restrictive close-command
+provenance before later close/MSC proof. Source suite: **1,643 tests / 1,630 subtests**,
+zero failures; independent reviews GO. Dashboard snapshot publication is unchanged.
+
+Local preparation aligns five version markers and documentation only. Disjoint
+release checks passed **58 tests / 61 subtests**, zero failures; independent release
+review is GO. .85 remains published and installed; .86 has no metadata
+commit, tag, build, digest or installed identity yet. Publication and HA actions
+are separate approvals. See [preparation and acceptance gates](docs/HAOS86_RELEASE_CANDIDATE.md).
+
 ## Current published release: 2.3.74-haos85
 
 [Published 28 October 2026 at 06:39:02 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.74-haos85). Metadata PR #61 merged normally at `ca569f1b8b44e892f2eec471cae573c175f36ad5`; its parents are the source PR #60 merge `aefba54dddcaace1e3b318bbf6cca2a282d6c3a3` and release metadata commit `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`. The release tag points to that metadata commit and tree `3ed6e5a677f1af72cfac503be91fe725375ea15b`; annotated tag object `8fc43ef082498766561acb15157175e48906adb3`.
@@ -8,7 +22,7 @@ Build 40644593573 succeeded. The amd64 and arm64 images each passed 11 layer/dif
 
 The merged source suite passed **1,632 tests / 1,606 subtests**. The disjoint release checks passed **16 tests** and **72 tests / 175 subtests**; no full-suite rerun was done for version markers and documentation. Automatic updates were confirmed off on 28 October. The supplied 29 October 07:25:16 app log confirms runtime signature 2.3.74-haos85 and source commit 72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1; ongoing physical acceptance remains unverified. A charge allowance may reduce immediate export; it does not guarantee battery absorption, full SoC or physical stability. See [the publication receipt and remaining live checks](docs/HAOS85_RELEASE_CANDIDATE.md) and [current state](docs/CURRENT_STATE.md).
 
-## Local unreleased fix checkpoint: failed export-close recovery - 29 October 2026
+## Historical pre-merge recovery checkpoint - merged by PR #63 - 29 October 2026
 
 The supplied 500-row excerpt covers 07:46:40-08:25:03 AEDT: 113 succeeded, one failed and 386 pending. At 07:55-07:56, HA commands failed and restrictive fallback reported export-close acceptance False, with request boundary 1793220936.620536. Later observations reported exact MSC and current export limit 0.01 with fresh/accepted evidence, but the application remained stuck: the current .85 close epoch retained close_accepted=False, and the pending handler retried MSC only (up to 15 times). This documents the supplied trace summary; it does not establish a broader network cause.
 
