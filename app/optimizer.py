@@ -8421,7 +8421,14 @@ class SigEnergyOptimizer:
                 and self._msc_report_is_current(s, ems=True, after=transition.msc_requested_at)
             )
 
-            if not self._msc_export_closed(s):
+            unaccepted_close_needs_retry = bool(
+                transition.identity is not None
+                and transition.close_requested_at is not None
+                and not transition.close_accepted
+            )
+            if not self._msc_export_closed(s) or unaccepted_close_needs_retry:
+                # A closed report cannot acknowledge a failed close command.
+                # Renew its request boundary before requesting/proving MSC.
                 # Reopening or loss of closure evidence cancels MSC proof.
                 if transition.phase != "close":
                     transition = self._msc_transition = _MscTransition()
