@@ -1,23 +1,14 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Local release candidate: 2.3.74-haos85 - not published
+## Current published release: 2.3.74-haos85
 
-Merged [source PR #60](https://github.com/Belot77/sigenergy-optimizer/pull/60)
-adds the approved Solar fill-progress allowance and completion-only relief rebase,
-Solar Dip helper correction, bounded MSC pending epochs/waiting logs and passive
-reserve explanations. Source suite: 1,632 tests / 1,606 subtests, zero failures;
-independent reviews GO. Physical charging, stable export and fill remain unproven.
+[Published 28 October 2026 at 06:39:02 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.74-haos85). Metadata PR #61 merged normally at `ca569f1b8b44e892f2eec471cae573c175f36ad5`; its parents are the source PR #60 merge `aefba54dddcaace1e3b318bbf6cca2a282d6c3a3` and release metadata commit `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`. The release tag points to that metadata commit and tree `3ed6e5a677f1af72cfac503be91fe725375ea15b`; annotated tag object `8fc43ef082498766561acb15157175e48906adb3`.
 
-Local preparation changes five version markers plus release/status docs on
-`release/2.3.74-haos85`. Version/source-pinning checks passed 16 tests; runtime-
-focused checks passed 72 tests / 175 subtests, all zero failures. Canonical review
-confirms only five version substitutions. Independent metadata/docs/scope review is GO; local preparation is ready.
-No publication or
-installation is authorized yet. Latest published and operator-confirmed installed
-version remains .84. See [candidate record and remaining gates](docs/HAOS85_RELEASE_CANDIDATE.md)
-and [current state](docs/CURRENT_STATE.md).
+Build 40644593573 succeeded. The amd64 and arm64 images each passed 11 layer/diff-ID checks and 15 source byte/mode checks. Version and `latest` share index `sha256:68a15730cd18592d153a27f29e4e801c5581c28680e86c299cdd9f478c120329`; platform manifests are amd64 `sha256:033e75f038393164f0d856925dd2da8c2ded84d8dc324e388b49b391eb79a37f` and arm64 `sha256:4345a9faed15a000144b529e83713adbe951de820dc72520376a195e5412d494`. The expected source fingerprint is `sha256:ad811c36d2a1f6708cbc9e5a6badfd53f4bdea73221e7df205f438db8e44d4be`. Independent registry metadata and source byte/mode expectations are GO; the independent reviewer did not redownload full layer bodies. The author-run OCI verifier checked all 22 layers, and 73 synthetic verifier cases passed. The previous .84 index remains `sha256:ce9f9c1abf04effd9ef33a0bfccc29282f9f81356f617cebd8a6b61e3c36f112`.
 
-## Historical reviewed source checkpoint - merged by PR #60
+The merged source suite passed **1,632 tests / 1,606 subtests**. The disjoint release checks passed **16 tests** and **72 tests / 175 subtests**; no full-suite rerun was done for version markers and documentation. Automatic updates were confirmed off on 28 October. Only .84 startup identity is evidenced: .85 installation, runtime/source identity, settings and physical acceptance remain unverified. A charge allowance may reduce immediate export; it does not guarantee battery absorption, full SoC or physical stability. See [the publication receipt and remaining live checks](docs/HAOS85_RELEASE_CANDIDATE.md) and [current state](docs/CURRENT_STATE.md).
+
+## Historical pre-publication source integration checkpoint - merged by PR #60
 
 Approved branch `fix/solar-msc-planning-integration` in
 `C:/Projects/sigenergy_optimizer-solar-msc-planning` combines five reviewed local
@@ -32,29 +23,15 @@ tests / 495 subtests; eight new interaction methods passed 8 / 16. The final
 guarded full suite passed **1,632 tests / 1,606 subtests**, zero failures.
 Independent documentation/scope review is GO. See
 [CURRENT_STATE.md](docs/CURRENT_STATE.md) for combined and standalone evidence. See [policy, risk and rollback](docs/SOLAR_FILL_PROGRESS_TRAJECTORY.md)
-and the [control contract](docs/CONTROL_CONTRACT.md). No commit, push, publication,
-installation or live setting change is authorized. A charge cap permits charging;
+and the [control contract](docs/CONTROL_CONTRACT.md). At this pre-merge checkpoint no commit,
+push, publication, installation or live setting change had occurred. A charge cap permits charging;
 it does not guarantee battery absorption, full SoC or physical stability.
 
-## Current published release: 2.3.73-haos84
+## Previous published release: 2.3.73-haos84
 
-[Published 28 October 2026, 03:51:01 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.73-haos84).
-Includes charge-readback metadata, Evening Boost persistent-helper currentness,
-proven pending-MSC epoch reuse, qualified unchanged-open-ceiling maintenance and
-bounded passive settlement evidence. Missing/conflicting device reports still
-block safely; pending retry/latest-request and timeout rules remain unchanged.
+[Published 28 October 2026 at 03:51:01 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.73-haos84). This prior release included charge-readback metadata, Evening Boost persistent-helper currentness, proven pending-MSC epoch reuse, qualified unchanged-open-ceiling maintenance and bounded passive settlement evidence. Build 40628165315 passed. Immutable .84 version index `sha256:ce9f9c1abf04effd9ef33a0bfccc29282f9f81356f617cebd8a6b61e3c36f112` remains unchanged. See [the .84 publication proof and live checks](docs/HAOS84_RELEASE_CANDIDATE.md).
 
-Tag/container source: `bc1439120ab6c68d5983768ffd678bb62fedefb8`.
-Build 40628165315 passed. Both platforms passed all 22 layer/diff-ID checks and
-15 source-file byte/mode checks each; independent image/source review GO.
-Version/latest index: `sha256:ce9f9c1abf04effd9ef33a0bfccc29282f9f81356f617cebd8a6b61e3c36f112`.
-Source suite: 1,574 tests / 1,520 subtests; release checks: 93 / 104, zero failures.
-Previous immutable .83 remains unchanged. See [publication proof and live checks](docs/HAOS84_RELEASE_CANDIDATE.md).
-
-No HA installation or live settings change was performed here. Later operator
-startup evidence confirms installed .84 source `bc1439120ab6c68d5983768ffd678bb62fedefb8`
-at 15:00:56 AEDT on 28 October. Ongoing physical acceptance and remaining historical
-MSC causes are unverified. The local candidate above is not installed.
+Operator startup evidence identifies installed .84 source `bc1439120ab6c68d5983768ffd678bb62fedefb8` at 15:00:56 AEDT on 28 October. No .85 installation or ongoing physical acceptance is established.
 
 ## Previous published release: 2.3.72-haos83
 

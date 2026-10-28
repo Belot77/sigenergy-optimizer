@@ -7,8 +7,10 @@ The original nine-test characterization stage remains preserved in
 fill-progress policy and MSC request epochs. No original stage is modified.
 
 Source full validation passed 1,632 tests / 1,606 subtests; independent reviews GO.
-Local .85 release preparation is not publication, installation or physical
-acceptance. See HAOS85_RELEASE_CANDIDATE.md for release-specific checks and gates.
+Release .85 was published at 2026-10-28T06:39:02Z; the published source retains
+this reviewed characterization. Automatic updates were confirmed off on 28 October.
+Installation, runtime identity and physical acceptance remain unverified. See
+HAOS85_RELEASE_CANDIDATE.md for the receipt and remaining live checks.
 
 ## Evidence and scope
 

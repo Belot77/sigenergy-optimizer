@@ -1,144 +1,41 @@
-# HAOS .85 local release candidate
+# HAOS 2.3.74-haos85 publication receipt
 
-**2.3.74-haos85 is not published.** This is local preparation on
-`release/2.3.74-haos85` in `C:/Projects/sigenergy_optimizer-release-haos85`.
-No metadata commit, tag, build, image digest, GitHub release or installation is
-claimed. Publication requires separate approval of the final reviewed tree.
+## Published source and build
 
-## Verified source and merge
+The [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.74-haos85) was published at **2026-10-28T06:39:02Z** (17:39:02 AEDT). Build **40644593573** succeeded.
 
-Repository: https://github.com/Belot77/sigenergy-optimizer.
-Source [PR #60](https://github.com/Belot77/sigenergy-optimizer/pull/60), reviewed
-head `a5286581f402038be06375e45b62b525e65eb3e1`, merged normally on 28 October
-2026 at 06:10:42 UTC / 17:10:42 AEDT. Merge commit:
-`aefba54dddcaace1e3b318bbf6cca2a282d6c3a3`. Its parents are
-`556cca8c040e3eea52029a8ac055a5c81f411018` and the reviewed head.
-Merge tree `7bbc4d998081bf8fa606c71a9392930bba09a0b4` exactly equals the reviewed
-source tree. Remote main and GitHub merge/parent/tree proof were verified.
-The source branch remains clean and preserved; all nine original/unfinished
-worktrees were preserved. Protected database metadata remained unchanged;
-contents were never read.
+Source PR #60 merged normally at `aefba54dddcaace1e3b318bbf6cca2a282d6c3a3`, tree `7bbc4d998081bf8fa606c71a9392930bba09a0b4`. Metadata PR #61 merged normally at `ca569f1b8b44e892f2eec471cae573c175f36ad5`; parents are the source merge and release commit `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`. The metadata tree is `3ed6e5a677f1af72cfac503be91fe725375ea15b`. The annotated `v2.3.74-haos85` tag object `8fc43ef082498766561acb15157175e48906adb3` points to source commit `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1` and that tree.
 
-The future tag/container source must be the separately approved metadata commit,
-not this source baseline. The final candidate tree belongs in the publication
-approval/proof. Do not invent a future commit, digest, build result or install.
+The successful build produced linux/amd64 manifest `sha256:033e75f038393164f0d856925dd2da8c2ded84d8dc324e388b49b391eb79a37f` and linux/arm64 manifest `sha256:4345a9faed15a000144b529e83713adbe951de820dc72520376a195e5412d494`. Each platform has 11 verified layers and 15 source byte/mode checks. Both platform proofs match source fingerprint `sha256:ad811c36d2a1f6708cbc9e5a6badfd53f4bdea73221e7df205f438db8e44d4be`.
 
-## Behavior included
+At publication and post-publication checks, the version and `latest` tags resolved to index `sha256:68a15730cd18592d153a27f29e4e801c5581c28680e86c299cdd9f478c120329`. The previous .84 index remained `sha256:ce9f9c1abf04effd9ef33a0bfccc29282f9f81356f617cebd8a6b61e3c36f112`. Independent registry metadata and expected source bytes/modes review is GO. The independent reviewer did not redownload full layer bodies; the author-run OCI verifier checked all 22 layers and final source bytes/modes. Its offline synthetic suite passed **73 cases**, zero failures.
 
-- Solar requests a protected-fill-energy/time-to-existing-deadline allowance,
-  retaining a higher urgent-current-interval need, trusted normal capability
-  and upward 0.01 kW precision. Fill progress has the approved priority when
-  available PV cannot support both that allowance and desired export. This is
-  a maximum-charging permission, not a forced minimum or a full-battery guarantee.
-- A separate completed-total receipt permits only a retain-only same-context
-  baseline rebase. Proposed/accepted individual writes, failed/pending/no-op/
-  fallback/cancelled outcomes cannot mint it. Downward feedback retires/clips
-  old permission before it can resurrect; changed commands require later
-  feedback. Extra proof awaits retain final authority/provider/dip checks.
-- Solar Dip permits a current-read unchanged persistent mode input_select with
-  an old nonfuture report, while device/Remote EMS/flow limits stay binding.
-- Accepted unchanged pending MSC/close epochs omit redundant writes only in
-  the same actual-reader/control/source context and existing freshness lease.
-  Expiry, contradiction, request replacement or lost continuity requires a new
-  latest-boundary dispatch. Pending is uncommitted; intentional waiting logs
-  separately from genuine errors. Passive diagnostics never grant authority.
-- Reserve diagnostics explain required nominal energy and full-capacity
-  shortfall. A 113% estimate is not a charge-above-100 command; raw reserve
-  floors, the existing bounded HA helper and load/price policy remain unchanged.
+Proof records were retained at `C:/Users/belot/AppData/Local/Temp/sigenergy-haos85-proof-a49jks85`: `oci-proof.json`, `independent-proof.json` and `postpublication-proof.json`.
 
-Provider startup baseline/credible advance and expiry remain unchanged. Missing,
-conflicting or genuinely stale proof may still block safely. This does not claim
-all historical MSC failures share one cause. Morning priorities/handoffs,
-Manual/Force, Demand Window, independent restrictions and existing physical
-limits remain binding. Detailed source contracts and evidence are in
-[CONTROL_CONTRACT.md](CONTROL_CONTRACT.md),
-[SOLAR_FILL_PROGRESS_TRAJECTORY.md](SOLAR_FILL_PROGRESS_TRAJECTORY.md) and
-[SOLAR_ALLOCATION_LIFECYCLE_PLANNING.md](SOLAR_ALLOCATION_LIFECYCLE_PLANNING.md).
+## Source changes and validation
 
-## Local metadata scope
+PR #60 integrates these reviewed changes:
 
-Exactly one version substitution per established marker, .84 to .85:
+- Solar fill progress can receive a bounded charging allowance ahead of immediate export, subject to existing ownership, provider, coverage, deadline and safe-capability gates. The allowance is not a physical minimum.
+- Only a completed total in the same trusted context can survive a pure time/SoC baseline rebase. Proposed, pending, failed, fallback, cancelled or invalidated work cannot create that receipt; downward feedback remains binding.
+- Solar Dip accepts a current-read unchanged persistent mode helper with an old nonfuture report. Availability, freshness, expected value, finite chronology, device/Remote EMS and flow limits remain required.
+- Accepted unchanged pending MSC/close epochs avoid duplicate writes only while the original reader, control/source identity and freshness lease remain valid. Expiry, contradiction or replacement requires a new latest-boundary dispatch. Pending stays uncommitted and intentional waiting remains distinct from genuine errors.
+- Reserve diagnostics explain nominal-energy shortfalls. Raw reserve floors, current-load model, bounded HA helper and price policy are unchanged. Passive diagnostics grant no authority.
 
-| File | Marker |
-| --- | --- |
-| app/main.py | FastAPI version |
-| app/optimizer.py | runtime signature |
-| sigenergy_optimizer_addon/config.yaml | add-on version |
-| sigenergy_optimizer_addon/build.yaml | io.hass.version label |
-| sigenergy_optimizer_addon/buildstamp.txt | clone-layer build stamp |
+The five release markers were updated in `app/main.py`, `app/optimizer.py`, `sigenergy_optimizer_addon/config.yaml`, `sigenergy_optimizer_addon/build.yaml` and `sigenergy_optimizer_addon/buildstamp.txt`. No additional control behavior, runtime setting, dependency or workflow changed.
 
-Seven release/status/design documents reconcile the normal merge and pending
-publication. No tests, dependencies, workflows, packaging recipes, permanent
-instructions, actual configuration settings or control behavior change in this
-preparation. Independent root canonical review proved reversing those five
-single substitutions recreates the exact baseline bytes after Git line-ending
-normalization. All 12 changed files retain CRLF; the working index is unstaged.
-Do not use release.sh. No staging or commit is needed to claim preparation ready.
+The source full suite passed **1,632 tests / 1,606 subtests**, zero failures. Independent source/test and documentation/scope reviews were GO.
 
-## Validation and independent review
+Release validation used two disjoint guarded runs: **16 version/source-pinning tests** and **72 runtime-focused tests / 175 subtests**, all passing. The runtime run had 202 warnings and used 195 isolated temporary stores. A full suite was not repeated for the five metadata literals and receipt documents. The metadata commit changed the five established version markers from .84 to .85 and status documents; it added no further control behavior, setting, dependency or workflow change.
 
-The exact merged source passed **1,632 tests / 1,606 subtests**, zero failures
-(206 warnings, 274.24 seconds), with source/test/docs/scope independent GO.
-Those are source-stage results; no new .85 full-suite run is claimed.
+A charging allowance can reduce immediate export, but it is not a physical minimum and cannot guarantee absorption, deadline fill, full SoC or stable export. Provider baseline/advance and expiry, ownership, Manual/Force and independent restrictions remain binding. The changes do not establish a universal fix for historical MSC errors.
 
-Two disjoint guarded release runs passed:
+## Installation and acceptance status
 
-- Version consistency and Docker source-pinning fixtures: **16 tests**, zero
-  failures, 9.21 seconds. Local Git fixtures reject missing/invalid/mismatched
-  source and stop on clone/fetch/checkout failure. No settings or StateStore
-  constructions occurred in these static tests.
-- Solar/MSC integration, fill trajectory, pending epochs, Dip and reserve runtime
-  modules: **72 tests / 175 subtests**, zero failures (202 existing warnings,
-  37.73 seconds). Dotenv was disabled; settings forced `_env_file=None` before
-  application imports. StateStore guards allowed 195 isolated temporary
-  constructions and zero memory/runtime-database paths.
+Automatic updates were explicitly confirmed off on 28 October. Available operator startup evidence identifies installed .84 at 15:00:56 AEDT on 28 October. The expected .85 runtime identity is signature `2.3.74-haos85` with container source commit `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`; this matches the published tag/source pin and still requires startup verification. No .85 startup/source identity, settings change, HA query or physical acceptance is established by this receipt.
 
-Total: 88 tests across the two disjoint runs, plus 175 subtests. A full suite was
-not repeated for version literals/docs. Independent metadata/docs/scope review
-is GO, with no remaining findings; reviewers did not rerun tests. This establishes
-local release-preparation readiness only. Passing offline tests
-cannot prove physical charging, export stability, sensor calibration or fill.
+Before treating .85 as operationally accepted, obtain the actual runtime/source identity and supervised charging, export, MSC, Boost and provider evidence with defined stop conditions. Monitor requested caps and owners alongside independent setting reports, advancing coherent flows, provider/command chronology and outcomes. Service-call success and offline tests do not prove physical settlement. The immutable .84 index is retained, but an operator backup/reinstall rollback path has not been demonstrated.
 
-## Publication gates - not authorized by local preparation
+## Risk and rollback
 
-If separately approved, use the reviewed candidate tree for one metadata commit,
-branch push/PR and exact annotated `v2.3.74-haos85` tag. The tag triggers the
-existing workflow; do not alter that workflow. Verify both linux/amd64 and
-linux/arm64 images against the actual metadata source commit, all compressed/
-uncompressed layers, normalized source bytes/modes, runtime/API versions and
-generated source pin. Check version/latest registry digests and retain previous
-.84 integrity. Then normally merge the metadata PR with identical tree, publish
-the GitHub release, and prepare a separately authorized final receipt branch.
-Do not claim any of these future steps complete in this candidate record.
-
-Auto update was last reported off on 26 October; it is not reverified here.
-Confirm current status before publication, because publication changes the
-available version/latest image. Installation and live settings need their own
-approval, actual startup identity, rollback readiness and supervised evidence.
-
-## Prior release, acceptance and rollback
-
-Latest verified GitHub release remains `v2.3.73-haos84`, published at
-2026-10-28T03:51:01Z. Tag/container source:
-`bc1439120ab6c68d5983768ffd678bb62fedefb8`. Last verified version/latest index:
-`sha256:ce9f9c1abf04effd9ef33a0bfccc29282f9f81356f617cebd8a6b61e3c36f112`.
-Revalidate immutable .84 image integrity during any approved publication.
-Operator startup identifies installed .84 at 15:00:56 AEDT on 28 October.
-No .85 installation or physical acceptance is established.
-
-Risks: less immediate export and dependence on existing load/forecast/sensor
-assumptions. The ten-minute trajectory assumes measured absorption and sufficient
-PV; it is not a hardware model or proof under PV deficit. Monitor-only review
-must correlate requested allowances/owners, independent setting reports,
-advancing coherent flows, source/provider/command boundaries and outcomes.
-Offline dry-run uses fake HA and isolated storage. Supervised live acceptance
-requires separately approved installation/settings, exact runtime signature and
-actual container source, effective limits, stop conditions and a usable operator
-backup/reinstall method. A service-call success is not physical settlement.
-
-Rollback now: withhold publication and preserve the candidate. After publication,
-retain the prior immutable .84 identity, but do not claim a live rollback method
-or backup has been demonstrated. Any source rollback requires a reviewed scoped
-revert preserving unrelated work. Never reset/clean originals or remove runtime
-archives/databases. No HA query, production write or Windows security change was
-performed during preparation.
+The Solar policy can allow less immediate export and relies on existing sensor, forecast, load, capability and deadline assumptions. The simulated trajectory is not a hardware model or proof under PV deficit. Preserve the current source and immutable .84 image while live acceptance remains open. Any source rollback requires a reviewed scoped revert that preserves unrelated work; do not claim a live reinstall path until it is demonstrated. All nine original/unfinished worktrees matched their recorded canonical hashes after publication. Protected database size and modification time also matched; contents were never read. Runtime databases and archives must remain untouched.
