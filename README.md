@@ -1,5 +1,21 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release candidate: 2.3.73-haos84
+
+The reviewed MSC corrections retain proven pending requests and qualify unchanged
+open-ceiling maintenance from later current report evidence, reducing redundant
+MSC requests that could trigger fallback. Charge-setting report metadata and
+Evening Boost persistent-helper currentness corrections are included. Bounded
+passive settlement evidence improves future error attribution.
+
+Full source suite: 1,574 tests / 1,520 subtests passed; independent safety/docs
+reviews GO. Release checks: 93 tests / 104 subtests passed. Source PR #57 merged
+normally. Publication and exact image proof
+are in preparation; [the .84 receipt](docs/HAOS84_RELEASE_CANDIDATE.md) records
+status. Genuine missing/conflicting data still blocks safely. Pending retry and
+timeout rules remain unchanged; physical acceptance is unverified.
+
+
 ## Current published release: 2.3.72-haos83
 
 [Published 27 October 2026, 04:13:16 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.72-haos83).

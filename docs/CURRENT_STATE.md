@@ -1,6 +1,20 @@
 # Current State
 
-## MSC source candidate for .84 - 28 October 2026
+## Release candidate: 2.3.73-haos84 - 28 October 2026
+
+Publication is authorized and in preparation. Source [PR #57](https://github.com/Belot77/sigenergy-optimizer/pull/57)
+merged normally at `61f17278499467ee79c7c4a4e1c7733517154400`, retaining the reviewed
+source head `4b71f54a66fd4556675b9289f6f003463de4d971`. This release also includes
+charge-readback PR #55 and Boost-helper PR #56. Five version markers change;
+control behavior is unchanged by release preparation.
+
+Full source validation passed 1,574 tests / 1,520 subtests; independent safety
+and docs reviews are GO. Release/version/source-pinning and focused control checks
+passed 93 tests / 104 subtests, zero failures. Exact image proof follows in
+[the .84 receipt](HAOS84_RELEASE_CANDIDATE.md). No install,
+live HA access or settings change is authorized by publication.
+
+## Historical source candidate for .84 - 28 October 2026
 
 Branch `fix/msc-maintenance-proof` at
 `C:\Projects\sigenergy_optimizer-msc-maintenance-proof` starts at
