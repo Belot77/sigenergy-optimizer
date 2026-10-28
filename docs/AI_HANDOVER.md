@@ -1,41 +1,49 @@
 # SigEnergy Optimizer AI Handover
 
-## Local release candidate: 2.3.75-haos86 - 29 October 2026
+## Current published release: 2.3.75-haos86 - 29 October 2026
 
-Source [PR #63](https://github.com/Belot77/sigenergy-optimizer/pull/63) merged
-normally at `b294f463e9fd4a2cbb6e1266e7d922422067e318`, 21:55:56 UTC on
-28 October / 08:55:56 AEDT on 29 October. Parents are
-`4ba817315f45fdbf47077d1095f1f0a2033a7316` and reviewed head
-`bdf4108e11f7c04b3811f12bcb54e6fff9504403`; merge tree
-`35c9b314047dc77da08af366e469a1be723b840a` exactly matches the reviewed fix.
+[GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.75-haos86)
+was published at 2026-10-28T22:53:02Z (29 October 09:53:02 AEDT).
+Metadata [PR #64](https://github.com/Belot77/sigenergy-optimizer/pull/64) merged
+normally at `3f94c6a86b0f7163d6f7762cddf123a509644be2` with parents
+`b294f463e9fd4a2cbb6e1266e7d922422067e318` and metadata/tag source
+`74f21875e9a30e561d78644c4a5b0791becccc83`. Merge tree
+`711fe705180524edf12bbc45d790541ae120a724` equals the reviewed preparation tree;
+annotated tag object `901b75918082666f2ade9027c222d14ffc709819` resolves to that source.
 
-The fix repairs a .85 pending-recovery deadlock after a failed export-close
-response. An identity-bound unaccepted close is dispatched again even when HA
-already reports closure. A new close boundary and later closure report precede
-a new MSC request and later exact-MSC report. All authority, identity, independent
-restriction and accepted-request proof checks remain. The separate dashboard
-snapshot policy is unchanged; passing tests does not prove physical acceptance.
-
-Approved preparation uses `release/2.3.75-haos86` at
-`C:/Projects/sigenergy_optimizer-release-haos86`. Exactly five established version
-markers change; release/status documentation is reconciled. No additional control,
-test, setting, dependency, workflow or permanent-instruction change is included.
-Source validation passed 1,643 tests / 1,630 subtests, zero failures, with independent
-source/test/docs/scope review GO. Disjoint release checks passed 16 static tests and
-42 runtime tests / 61 subtests, zero failures; independent release review is GO.
-
-At this local preparation checkpoint .86 is not committed or published. It has
-no tag, build, image digest or installed identity. Latest published and
-operator-confirmed installed version is .85, source
-`72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`. Its immutable image index is
+Build [40782770509](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40782770509)
+succeeded. Version and latest resolve to index
+`sha256:68ae9242488169b25525c53ef106eae92197a3f398aa3210344a43c6601b9359`. Both runtime platforms passed
+11 layer/diff-ID checks and 15 source byte/mode checks each, including the exact
+source pin. Source fingerprint: `sha256:d362aad0e623fdd6a63134cdee0803bdcd8d23a6d9228690149ec40ffec05bba`.
+Independent registry metadata/source expectations are GO; full layer bodies were
+verified by the author, not independently redownloaded. The offline verifier passed
+73 cases. Previous immutable .85 index remains
 `sha256:68a15730cd18592d153a27f29e4e801c5581c28680e86c299cdd9f478c120329`.
-Publication requires separate approval of the reviewed preparation tree and exact
-source/image verification. Auto update was last reported off on 28 October;
-reconfirm before publication. Installation/settings remain separate. Preserve
-unfinished work and runtime data; no HA action occurred. Do not use release.sh.
-See [release preparation record](HAOS86_RELEASE_CANDIDATE.md).
+Post-publication checks confirmed release, tag/source, exact merge parents/tree and
+version/latest/previous indexes.
 
-## Current published release: 2.3.74-haos85 - 28 October 2026
+Normally merged source PR #63 repairs the .85 failed-close recovery deadlock:
+renew an identity-bound unaccepted restrictive close, require later closure proof,
+then a new MSC request and later exact-MSC proof. Authority, Manual/Force, request
+identity and independent restrictions remain. The separate retained dashboard
+snapshot policy is unchanged; this does not resolve every historical MSC failure.
+
+Retained source validation: **1,643 tests / 1,630 subtests**, zero failures.
+Disjoint guarded release checks: **16 static tests** and **42 runtime tests /
+61 subtests**, zero failures. Independent source, tests, release docs/scope and
+image-proof reviews are GO. No full suite was repeated for version literals/docs.
+
+Auto update was confirmed off on 29 October. Latest supplied installed identity
+remains .85 at 07:25:16 AEDT, source `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`.
+No .86 installation, HA access or live setting change occurred in this work.
+Future startup evidence must show runtime `2.3.75-haos86` and source `74f21875e9a30e561d78644c4a5b0791becccc83`;
+physical recovery, current reports, effective limits and supervised behavior remain
+unverified. Keep a usable operator backup/reinstall path; none is demonstrated
+here. Preserve unfinished work and runtime data. Do not use release.sh.
+See [publication receipt and acceptance limits](HAOS86_RELEASE_CANDIDATE.md).
+
+## Historical published release: 2.3.74-haos85 - 28 October 2026
 
 [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.74-haos85) was published at 2026-10-28T06:39:02Z (17:39:02 AEDT). Metadata PR #61 merged normally at `ca569f1b8b44e892f2eec471cae573c175f36ad5`, with parents `aefba54dddcaace1e3b318bbf6cca2a282d6c3a3` and `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`; merge tree `3ed6e5a677f1af72cfac503be91fe725375ea15b` matches the published metadata tree. Annotated tag object `8fc43ef082498766561acb15157175e48906adb3` resolves to source/tag commit `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1` and that tree.
 
