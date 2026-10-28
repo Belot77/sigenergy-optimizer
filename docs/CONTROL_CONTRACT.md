@@ -145,6 +145,30 @@ successful automatic completion. Failure under retained authority requests the
 existing restrictive fallback; takeover/cancellation cannot consume proof and
 introduce no new immediate-close guarantee after automatic authority is lost.
 
+An accepted unchanged command may also remain pending without redundant
+re-dispatch, retaining its original boundary only within the current actual-reader
+and opaque source/control epoch, strictly before the existing actuator-report
+freshness horizon expires (`0 <= request age < hvac_solar_data_max_age_seconds`).
+Expiry re-dispatches and renews the latest-request boundary; service acceptance
+cannot suppress retries indefinitely. Export-close retention additionally requires the
+same bounded numeric request. All independent restrictive writes still run. A
+fresh later contradictory report, replaced numeric request or genuinely changed
+command requires a new dispatch and latest request boundary; delayed feedback
+from before that dispatch cannot satisfy it. Missing or untrusted evidence grants
+no completion. Retired config/source/authority epochs and failure/cancellation
+retain the unfinished barrier and require new correlated closure. An already
+trusted closed initial startup retains its absent close boundary. Relevant awaits
+must preserve object/phase/boundaries, acceptance, identity and authority before
+permissive dispatch or completion.
+
+Pending continues through the existing unsuccessful-application cleanup and never
+commits the decision or calls normal completion hooks. Only verified automatic
+intentional pending without fallback raises the internal typed RuntimeError that
+the scheduler and startup classify as waiting. Direct tick callers still receive
+a RuntimeError; actuator errors, fallback and unverified authority remain failures.
+The pending trace records bounded allowlisted observations from its existing
+snapshot without extra reads. Diagnostic failure cannot change control behavior.
+
 Maintenance applies only to an unchanged, already-open bounded `MSC_SURPLUS_CEILING`.
 A completed application creates only a command candidate. Later actual-reader
 provenance and current joint authority/mode/export reads must prove exact fresh
@@ -163,8 +187,8 @@ contradictory evidence retire maintenance permission. Capture reader identity
 before awaits and verify it after them. Recheck charging owners after any added
 proof await and before a charge write. A baseline boolean or synthetic live flag
 cannot replace this provenance. Deliberate `BATTERY_EXPORT`, independent owners,
-pending retry/latest-request semantics, timeouts and fallback ordering remain
-unchanged. Bounded allowlisted diagnostics use existing reads, grant no authority,
+latest-request semantics for actual dispatches, timeouts and fallback ordering
+remain unchanged. Bounded allowlisted diagnostics use existing reads, grant no authority,
 and cannot change control behavior or prove physical settlement.
 
 ## Automated baseline
@@ -254,7 +278,7 @@ An already active Solar MSC permission may bridge a short measured-surplus dip u
 
 Both PV and load report timestamps must advance before new strong measured evidence renews that permission. A held decision, cached report, ordinary `0.2-0.5 kW` continuation, forecast potential or elapsed time cannot renew it. Proof is process-local, begins absent after restart, and cannot be granted by decision calculation alone or a successful application completed after the source evidence expires.
 
-Every normal non-surplus Solar eligibility gate remains mandatory. In addition, the hold requires current provenance-bearing Automated, exact MSC and Remote EMS ON observations, no pending MSC transition, directly observed battery discharge at most `0.1 kW`, grid import at most `0.1 kW`, and finite fresh measured PV/load/battery/import/export reports within five seconds of each other and younger than 15 seconds. Missing or future timestamps, regressions, ownership loss, unsafe flow, failed/pending/cancelled application and Manual/Force invalidate proof. Advancing physical evidence and successful final Solar application are required to rearm it.
+Every normal non-surplus Solar eligibility gate remains mandatory. In addition, the hold requires current provenance-bearing Automated, exact MSC and Remote EMS ON observations, no pending MSC transition, directly observed battery discharge at most `0.1 kW`, grid import at most `0.1 kW`, and finite fresh measured PV/load/battery/import/export reports within five seconds of each other and younger than 15 seconds. Missing or future timestamps, regressions, ownership loss, unsafe flow, failed/pending/cancelled application and Manual/Force invalidate proof. Advancing physical evidence and successful final Solar application are required to rearm it. For Automated control mode configured as a persistent `input_select.*` helper, the current read may remain usable when its report timestamp is older than the HVAC age limit; availability, freshness, expected value, finite timestamp and non-future chronology remain mandatory (`0 <= age`). Device-backed control selectors, observed EMS mode, Remote EMS control and all flow reports retain their existing age limits.
 
 The observed export ceiling must already be positive and at least the prior successful Solar request within `0.01 kW`. Held permission is bounded by that previous request, the current observed ceiling and current authoritative capability. Immediately before any positive held export write, the existing joint authority read must also prove a fresh finite positive actual export limit at least that requested write, within `0.001 kW` command tolerance. It cannot reopen a closed or independently reduced actuator, raise its previous ceiling, select discharge EMS or manufacture battery-export ownership. The daytime zero-surplus exception is scoped only to this qualified hold. Existing import, PV, ESS, competing-owner, dispatch and settlement restrictions retain authority.
 
@@ -361,10 +385,12 @@ For each detailed interval, subtract trusted current load from forecast PV, floo
 protected_fill_need_kwh = K x energy_needed_to_reach_100_percent
 future_opportunity_kwh = sum of bounded charge opportunity after the current interval
 required_now_kwh = max(0, protected_fill_need_kwh - future_opportunity_kwh)
-requested_charge_kw = required_now_kwh / remaining current-interval overlap hours
+urgent_current_kw = required_now_kwh / remaining current-interval overlap hours
+fill_progress_floor_kw = protected_fill_need_kwh / hours to effective fill deadline
+requested_charge_kw = max(urgent_current_kw, fill_progress_floor_kw)
 ```
 
-Clamp the request between zero and the existing normal safe/trusted capability/request. Round a positive request UP to 0.01 kW without exceeding that normal bound, retaining its existing safe command precision. Abundant future opportunity may request `0.00 kW`. Recalculate each decision without a timer; this changes only ESS charging authority and cannot authorize stored-battery export.
+For the approved local `fix/solar-fill-progress-trajectory` candidate, this formula supersedes the published .84 zero-baseline allocation: fill progress takes priority when available PV cannot provide both the desired export and charging progress. Clamp the request between zero and the existing normal safe/trusted capability/request. Round a positive request UP to 0.01 kW without exceeding that normal bound, retaining its existing safe command precision. While partial and all existing ownership/trust/coverage gates pass, ample future forecast opportunity alone cannot make the request zero. Exact-full retains zero protected fill need. Recalculate from current SoC and time without a new timer or fixed-rate setting; this changes only ESS charging authority and cannot authorize stored-battery export or guarantee actual charging/full SoC. Higher urgent present need remains binding.
 
 Missing, expired, gapped, invalid, or untrusted charge evidence immediately relinquishes only the Solar charge restriction and restores the normal charge request. This stricter authority does not redefine Solar eligibility: complete current-day detailed intervals may still support the existing Solar policy despite old parent Forecast Today metadata. Provider-verified evidence may also authorize the dynamic charge restriction in that case; absent provider authority reports `solcast_provider_authority_untrusted`. Solar's independent eligibility and safety gates still apply.
 
@@ -386,11 +412,37 @@ The approved fixed Solar policy has no additional operator tuning settings:
 - Entry/upward confirmation requires actual export **>= physical limit - 0.2 kW**. Each increase is at most **0.4 kW**, after **two** fresh coherent post-command observations. Every relevant timestamp must advance; telemetry reuse cannot stack increases. A successfully applied changed charge target starts its feedback epoch, while reasserting the same target does not erase a valid first observation. Further increases require measured battery charging above the baseline ceiling.
 - One new coherent export observation **< physical limit - 0.5 kW** reduces active relief immediately by **1.2 kW**, floored at zero. The other flow observations must remain trusted/coherent but need not all advance to permit this restrictive response. The interval between exit and entry holds relief and resets upward confirmations; exact exit does not reduce.
 - Actual trusted export **< physical limit - 1.0 kW** hard-resets relief to baseline. Any export-driven downward adjustment imposes **three** fresh coherent observations at/above entry before another increase; afterward the ordinary two-observation rule resumes.
-- Relevant flow trust/freshness/coherence loss, regressing feedback, loss of Solar/Automated/MSC ownership, Manual/Force/Morning Slow, exact-full, disabled/invalid limit or actuator application failure resets relief. Baseline or normal-cap changes clear relief and start a fresh command/feedback epoch, retaining an existing retry requirement for the same physical limit.
+- Relevant flow trust/freshness/coherence loss, regressing feedback, loss of Solar/Automated/MSC ownership, Manual/Force/Morning Slow, exact-full, disabled/invalid limit or actuator application failure resets relief. Normal-cap/context changes and legacy/static baseline changes clear relief and start a fresh command/feedback epoch, retaining an existing retry requirement for the same physical limit. The approved local fill-progress candidate adds only the bounded completed-total exception below for a pure time/SoC baseline rebase.
 
 At a 15 kW configured site the entry, exit and hard-reset boundaries are 14.8, 14.5 and 14.0 kW respectively. This asymmetry permits cautious discovery and faster export restoration. Application rechecks restore the baseline if physical evidence expires, and restore the normal safe request if provider/fill-deadline authority expires, including during an in-flight charge write. Service-call success arms later feedback only; it is not observed export preservation or actuator settlement.
 
 Morning Slow uses the separate partial physical-relief contract below in this local candidate; its state and tuning do not control Solar. Demand Window continues to own import blocking. This relief does not redesign export ownership or Phase 2 settlement.
+
+#### Local fill-progress completed-total rebase
+
+This candidate requires a separate process-local receipt from real successful
+automatic application completion, not a decision, accepted individual service
+call, mocked completion flag, no-op, pending or fallback outcome. It binds the
+actual bounded completed total and command epoch to opaque control/source
+continuity, provider generation/deadline, effective fill deadline, day, capacity,
+normal charge capability and physical-reference context. Time/SoC/baseline alone
+may vary; source/ownership changes cannot carry a receipt.
+
+A pure baseline rebase may retain at most the earlier completed total:
+`new_total = min(current_normal, max(current_baseline, prior_completed_total))`.
+The rebase grants no increment; its relief is only the difference above current
+baseline. It consumes the present cohort and clears upward confirmations while
+preserving same-command timing, report high-water and retry penalty. A changed
+total requires an actual successful changed command and later fresh feedback.
+Downward feedback retires or clips the candidate immediately, before a lower
+command completes, so an older higher total cannot resurrect. Every hard reset,
+trust/authority/provider/context loss and failed/pending/cancelled or uncommitted
+application retires it. Final checks after awaits retain request-correlated MSC,
+export, dip/reentry and owner protections. Rejecting proof cannot leave an old
+receipt available. This proves software completion only, not inverter settlement. ESS charge-setting
+readback remains passive evidence; the receipt does not assert that the device
+physically adopted or obeyed the requested cap.
+
 
 ### Near-full safeguard arbitration
 
@@ -457,6 +509,25 @@ Keep the qualified proposal (tier/source, selected and protected SoC floors, bou
 `battery_export_final_owner` is `none` when final export is blocked. A vetoed candidate must have zero export limit, `EXPORT_BLOCKED` intent, no commanded discharge through that candidate and no Morning preemption. Normal ESS discharge capability for MSC load service is a separate protection; a cost veto must not be repurposed into an unrelated discharge-cap clamp.
 
 The authoritative actual import-cost snapshot is shared by arbitration and advisory calculation. A finite highest price present in that snapshot can veto applicable automatic battery-backed/mixed export only when FiT is below its floor; equality or a higher FiT does not fail this cost comparison. Unknown actual-cost evidence alone warns and does not veto. When history is incomplete, the known maximum is only a lower bound, and a summary/cache miss or storage/query failure may leave no known price; no last-known-price cache is added. Independently proven PV-only MSC and Manual/Force retain their established separate semantics. Value Gate remains advisory-only, including with enforcement configured; stored-energy/reserve analysis and known-price comparisons continue. Preserve qualified proposals for advisory calculation when operator authority prevents execution, without granting actuator permission. `effective_battery_export_floor` remains a monetary value, never a SoC field.
+
+### Passive reserve-planning diagnostics (approved local candidate)
+
+`reserve_planning_*` fields describe the existing advisory reserve estimate:
+required nominal kWh, kWh beyond a full nominal battery, whether the requirement
+exceeds nominal capacity, calculation basis and reason. A raw requirement above
+100% is possible when projected demand exceeds full capacity; it is not a command
+to charge above 100%. Preserve the original reserve/export-surplus calculations
+and existing bounded HA helper write. These fields never grant charging or export
+permission and do not change actuator targets.
+
+The estimate uses existing current-load extrapolation, safety factors and floors;
+it is not proof of future demand, usable energy, grid import or a refill guarantee.
+Disabled advisory returns null estimates with `not_evaluated`. Invalid/nonfinite/
+boolean inputs, unavailable capacity and arithmetic overflow return explicit
+unavailable diagnostics rather than false zero shortfalls or nonfinite JSON.
+These reserve diagnostics introduce no charging rule, forecast model or
+reserve/price policy; the separately approved Solar fill-progress allowance is
+defined above and does not use these passive reserve estimates.
 
 ### Import-cost ledger completeness (approved local O16 candidate)
 

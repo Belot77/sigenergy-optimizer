@@ -225,7 +225,7 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
             opt = self._optimizer()
             ha = ClockedRecordingHA()
             await establish_observed_msc_baseline(self, opt, ha, self.WHEN - timedelta(seconds=1))
-            baseline = 0.81
+            baseline = 1.81
 
             def decide(second, **flow):
                 state, decision = self._decision(opt, second - 0.001, battery_soc=55.0, **flow)
@@ -240,7 +240,7 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
 
             # Establish actual Solar ownership and earn relief through two
             # post-command observations, then apply the resulting probe.
-            for second, expected in ((1, baseline), (2, baseline), (3, 1.21)):
+            for second, expected in ((1, baseline), (2, baseline), (3, 2.21)):
                 state, decision = decide(second, charge=baseline)
                 self.assertAlmostEqual(expected, decision.ess_charge_limit)
                 await apply(second, state, decision)
@@ -248,7 +248,7 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
             self.assertEqual(0.4, decision.trace_values["solar_physical_relief_kw"])
             self.assertEqual(self.WHEN.timestamp() + 3, opt._solar_relief.command_ts)
 
-            _, decision = decide(4, charge=1.21)
+            _, decision = decide(4, charge=2.21)
             self.assertEqual(1, decision.trace_values["solar_physical_relief_confirmations"])
             _, decision = decide(5, charge=baseline, feedback_seconds=2)
             self.assertTrue(decision.trace_gates["solar_physical_relief_flow_trusted"])
@@ -272,7 +272,7 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
             self.assertEqual(baseline, decision.ess_charge_limit)
             self.assertEqual(1, decision.trace_values["solar_physical_relief_confirmations"])
             _, decision = decide(8, charge=baseline)
-            self.assertAlmostEqual(1.21, decision.ess_charge_limit)
+            self.assertAlmostEqual(2.21, decision.ess_charge_limit)
 
         asyncio.run(run())
 
@@ -518,10 +518,15 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
         opt = self._optimizer()
         _, initial = self._decision(opt, 0, demand_window_active=True)
         self._assert_solar_controls(opt, initial)
-        self.assertEqual(0.0, initial.ess_charge_limit)
-        self._command(opt, 0.0, 0)
-        for second, expected in ((1, 0.0), (2, 0.4)):
-            _, decision = self._decision(opt, second, demand_window_active=True)
+        self.assertEqual(1.6, initial.ess_charge_limit)
+        self._command(opt, 1.6, 0)
+        # The rounded progress floor changes once; apply that baseline before
+        # requiring the same two fresh saturation cohorts for the 0.4 kW step.
+        _, changed = self._decision(opt, 1, demand_window_active=True, charge=1.6)
+        self.assertEqual(1.61, changed.ess_charge_limit)
+        self._command(opt, 1.61, 1)
+        for second, expected in ((2, 1.61), (3, 2.01)):
+            _, decision = self._decision(opt, second, demand_window_active=True, charge=1.61)
             self._assert_solar_controls(opt, decision)
             self.assertAlmostEqual(expected, decision.ess_charge_limit)
             self.assertEqual(0.0, decision.import_limit)
@@ -556,10 +561,13 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
             with later_msc_report_clock(ha, self.WHEN):
                 result = await opt._apply(state, decision)
             self.assertTrue(result.succeeded, result.error)
-            self.assertIn(("set_number", "number.test_charge", 0.0), ha.calls)
-            for second, expected in ((1, 0.0), (2, 0.4)):
-                _, next_decision = self._decision(opt, second)
+            self.assertIn(("set_number", "number.test_charge", 1.6), ha.calls)
+            for second, expected in ((1, 1.61), (2, 1.61), (3, 2.01)):
+                next_state, next_decision = self._decision(opt, second, charge=1.61)
                 self.assertAlmostEqual(expected, next_decision.ess_charge_limit)
+                with later_msc_report_clock(ha, next_state.timestamp):
+                    applied = await opt._apply(next_state, next_decision)
+                self.assertTrue(applied.automatic_application_completed, applied.error)
         asyncio.run(run())
 
     def test_startup_and_restart_with_open_export_defer_solar_charge_until_settlement(self):
@@ -578,7 +586,11 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
                         ha._record_state_value(opt.cfg.ems_mode_select, MODE_MAX_SELF)
                         ha._record_state_value(opt.cfg.grid_export_limit, 25.0)
                         ha.calls.clear()
-                        result = await opt._apply(state, decision)
+                        # Application evidence must come from the real reader;
+                        # the separate policy fixture above supplies the plan.
+                        application_state = await opt._read_state()
+                        self.assertEqual(opt._msc_maintenance_identity(), application_state._msc_read_identity)
+                        result = await opt._apply(application_state, decision)
 
                     self.assertFalse(result.succeeded)
                     self.assertTrue(decision.trace_gates["msc_transition_pending"])
@@ -618,7 +630,9 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
             self.assertFalse(result.succeeded)
             for second in range(1, 4):
                 _, next_decision = self._decision(opt, second, current_export_limit=float(ha.state_values[opt.cfg.grid_export_limit]))
-                self.assertEqual(0.0, next_decision.ess_charge_limit)
+                self.assertEqual(1.61, next_decision.ess_charge_limit)
+                self.assertEqual(0.0, next_decision.trace_values["solar_physical_relief_kw"])
+                self.assertIsNone(opt._solar_relief.command_ts)
         asyncio.run(run())
 
     def test_flow_expiry_during_pre_charge_await_removes_relief_before_write(self):
@@ -633,12 +647,14 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
             ha = ClockedRecordingHA()
             await establish_observed_msc_baseline(self, opt, ha, self.WHEN - timedelta(seconds=1))
             self._decision(opt, 0)
-            self._command(opt, 0.0, 0)
+            self._command(opt, 1.6, 0)
             self._decision(opt, 1)
-            state, decision = self._decision(opt, 2)
-            self.assertEqual(0.4, decision.ess_charge_limit)
+            self._command(opt, 1.61, 1)
+            self._decision(opt, 2, charge=1.61)
+            state, decision = self._decision(opt, 3, charge=1.61)
+            self.assertEqual(2.01, decision.ess_charge_limit)
             state.current_import_limit = 1.0
-            moment = [self.WHEN.timestamp() + 2]
+            moment = [self.WHEN.timestamp() + 3]
 
             class AdvancingDateTime(datetime):
                 @classmethod
@@ -658,6 +674,14 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
                 return result
 
             ha.set_number = cross_flow_age
+            original_bulk = ha.bulk_states
+            async def fresh_live_msc_after_flow_expiry(entities):
+                # Keep this test focused on expired flow evidence. Independently
+                # supply current exact MSC on later reads; never refresh flows.
+                if crossed and opt.cfg.ems_mode_select in entities:
+                    ha._record_state_value(opt.cfg.ems_mode_select, MODE_MAX_SELF)
+                return await original_bulk(entities)
+            ha.bulk_states = fresh_live_msc_after_flow_expiry
             with patch("app.optimizer.datetime", AdvancingDateTime), post_request_select_reports(
                 ha, lambda: moment.__setitem__(0, moment[0] + 0.001),
             ):
@@ -666,9 +690,9 @@ class SolarPhysicalReliefCharacterizationTests(Haos49CharacterizationCase):
             self.assertTrue(result.succeeded, result.error)
             writes = [value for action, entity, value in ha.calls
                       if action == "set_number" and entity == "number.test_charge"]
-            self.assertEqual([0.4, 0.0] if during_charge else [0.0], writes)
+            self.assertEqual([2.01, 1.61] if during_charge else [1.61], writes)
             self.assertTrue(decision.trace_gates["solar_charge_ceiling_owned"])
             self.assertFalse(decision.trace_gates["solar_physical_relief_active"])
-            self.assertEqual(0.0, decision.ess_charge_limit)
-            self.assertEqual(0.0, decision.trace_values["solar_charge_ceiling_requested_kw"])
+            self.assertEqual(1.61, decision.ess_charge_limit)
+            self.assertEqual(1.61, decision.trace_values["solar_charge_ceiling_requested_kw"])
         asyncio.run(run())

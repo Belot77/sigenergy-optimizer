@@ -1,5 +1,91 @@
 # Current State
 
+## Local integration: Solar / MSC / planning - 28 October 2026
+
+The operator approved local integration, tests, independent review and docs on
+`fix/solar-msc-planning-integration` at
+`C:/Projects/sigenergy_optimizer-solar-msc-planning`. Verified base and remote main:
+`556cca8c040e3eea52029a8ac055a5c81f411018`. The destination was absent before creation;
+its initial branch/HEAD and clean status were verified. No original branch or
+unfinished work is modified. No commit, push, GitHub merge, version bump,
+publication, installation, HA query or live setting change is authorized.
+
+Included changes:
+
+- Solar fill progress takes priority over immediate export, subject to existing
+  ownership/provider/coverage/deadline/capability gates. Retain any higher urgent
+  current-interval request. A charging-cap allowance is not a physical minimum.
+- Same-context completed-total-only rebasing prevents tiny time/SoC baseline
+  movements from discarding earned relief. It cannot donate upward confirmations,
+  preserve a proposed/failed target or resurrect an older total after downward
+  feedback. ESS setting readback remains passive evidence.
+- Solar Dip accepts a current-read unchanged persistent mode helper without an
+  upper report-age veto. Finite nonfuture metadata, availability/freshness/value,
+  actual device/Remote EMS and flow limits remain mandatory.
+- MSC accepted pending epochs omit duplicate requests only while their original
+  reader/control/request identity and finite freshness lease remain valid.
+  Actual new dispatches retain latest-boundary semantics. Typed intentional
+  pending remains uncommitted and logs waiting; genuine errors remain errors.
+- Passive reserve diagnostics explain nominal-capacity shortfalls. Raw reserve
+  floors, existing current-load model and bounded HA helper are unchanged.
+
+Original isolated stages remain preserved, unstaged and uncommitted:
+
+| Worktree under C:/Projects | Branch | Standalone validation |
+| --- | --- | --- |
+| sigenergy_optimizer-solar-allocation-planning | test/solar-allocation-planning-haos84 | 196 tests / 221 subtests; tests/docs-only GO |
+| sigenergy_optimizer-solar-dip-helper-currentness | fix/solar-dip-helper-currentness | 64 / 129; independent safety GO |
+| sigenergy_optimizer-msc-pending-request-epoch | fix/msc-pending-request-epoch | final full 1,588 / 1,533; independent safety/fixture/docs GO |
+| sigenergy_optimizer-battery-planning-diagnostics | fix/battery-planning-diagnostics | 132 / 140; passive source/tests/docs GO |
+| sigenergy_optimizer-solar-fill-progress-trajectory | fix/solar-fill-progress-trajectory | final full 1,593 / 1,544; source/adversarial/expectation/docs GO |
+
+Integrated production source matches the exact union of the four approved code
+patches; independent source review is provisionally GO at optimizer SHA-256
+`44e70ab7c83c2b4f26e80f1c92f5cbc8c5344e1cbba5cd7ce330d659fc7553f6`.
+The first affected-module run exposed old lifecycle zero-cap/cohort/expiry-trigger
+assumptions. Scoped expectation updates retained the strict rejection, provenance,
+owner, fallback and Manual checks. Root validation of all 19 affected modules
+passed **365 tests / 495 subtests**, zero failures (202 warnings, 80.60 seconds;
+three memory / 615 isolated temporary stores). Eight new actual-reader interaction
+methods passed **8 tests / 16 subtests** (202 warnings, 1.20 seconds; 22 isolated
+temporary stores, zero memory/rejected paths). They cover original pending MSC
+boundaries through Solar receipt/relief, typed-pending tick cleanup, replaced/
+stale/regressed/cancelled final proof, earned-receipt/maintenance retirement,
+diagnostic sink isolation, an old persistent helper with the original 15-second
+dip expiry, provider-deadline expiry during the final read, and passive 113%
+reserve projection with an actual helper write bounded at 100%.
+Initial new-fixture corrections concerned helper timestamp coherence, the retired
+identity sentinel and competing synthetic reserve estimates; production stayed
+unchanged. Final independent source/test review is GO with no High/Medium
+findings; reviewers did not execute tests. The final guarded full suite passed
+**1,632 tests / 1,606 subtests**, zero failures (206 warnings, 274.24 seconds).
+Dotenv stayed disabled; StateStore guards allowed only 75 memory / 2,018 isolated
+temporary constructions. Source/tests stayed frozen. Scope is 32 files: one
+production module, 23 test/runner files and eight documents. Independent documentation/scope review is GO. This is local software readiness, not installation,
+physical charging, stable export or deadline-fill acceptance. Combined module SHA-256:
+`0e778560214b30c9acce85bcb0818932e8cbd93d385e5a25999e2bce06c8ebdd`.
+Dotenv must remain disabled and every StateStore construction restricted to
+memory or isolated temporary storage; protected database contents are never read.
+
+Operator startup evidence confirms installed `.84`, source
+`bc1439120ab6c68d5983768ffd678bb62fedefb8`, at 15:00:56 AEDT on 28 October.
+The supplied 16-row startup sample has four pending then twelve successes.
+It does not prove ongoing physical acceptance. Provider authority was still
+unverified pending a new credible provider generation; startup baseline/advance
+and expiry rules remain unchanged. No supplied post-update recovery is invented.
+
+Risks: less immediate export and dependence on existing sensor/forecast/load
+assumptions; missing or contradictory proof still blocks permission. Monitor-only
+acceptance must compare requested caps, setting reports, advancing coherent flows,
+provider/command boundaries and outcomes. Offline dry-run uses simulated HA and
+isolated storage; it does not calibrate sensors or model physical acceptance.
+Installation/settings and supervised live acceptance require separate approval.
+Rollback: withhold this uncommitted candidate or later review a scoped revert;
+never reset/clean originals or remove runtime archives/databases. See
+[Solar policy and validation limits](SOLAR_FILL_PROGRESS_TRAJECTORY.md),
+[lifecycle characterization](SOLAR_ALLOCATION_LIFECYCLE_PLANNING.md) and
+[CONTROL_CONTRACT.md](CONTROL_CONTRACT.md).
+
 ## Published: 2.3.73-haos84 - 28 October 2026
 
 [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.73-haos84)
@@ -21,8 +107,10 @@ See [the complete publication receipt](HAOS84_RELEASE_CANDIDATE.md). Final recei
 worktree `C:/Projects/sigenergy_optimizer-haos84-publication-proof`, branch
 `docs/haos84-publication-proof`, changes only five documents. Unfinished work and
 protected database metadata remain unchanged. No HA access, installation or live
-settings changes were performed. Installed .84 identity and physical acceptance
-remain unverified. Genuine unavailable/conflicting reports can still block;
+settings changes were performed. Later operator startup evidence confirms installed
+.84 source `bc1439120ab6c68d5983768ffd678bb62fedefb8` at 15:00:56 AEDT on
+28 October; ongoing physical acceptance remains unverified. Genuine
+unavailable/conflicting reports can still block;
 pending retry/latest-request and timeout rules, Solar allocation and provider
 recovery remain separate. Do not claim every historical MSC error is fixed.
 
@@ -977,23 +1065,23 @@ The register distinguishes published code corrections from remaining engineering
 | ID | Issue | Classification and outstanding disposition |
 | --- | --- | --- |
 | O1 | Medium versus Evening Boost | Narrow priority defect corrected in published .71. Supervised live acceptance remains outstanding; broader Boost stability is O4. |
-| O2 | Unexpected export interruptions/cycling | The 25 October trace confirms 53 Solar-to-normal exits and 52 returns after Morning Slow is last observed; 47 exits fail the load-sensitive aggregate budget. Source PR #40, published in .79, qualifies Solar reacquisition after a strict budget exit, with immediate failure closure. Unsafe battery flow, independent winners and closed capability cannot donate qualification time. First admission and existing priorities remain unchanged. Full validation and independent peer review pass; physical acceptance remains open. Exact installed source, sensor causes and lost energy remain unproven. See the publication receipt and `SOLAR_REENTRY_STABILITY.md`. |
+| O2 | Unexpected export interruptions/cycling | Local 28 October integration adds the separately approved fill-progress floor and completed-total-only rebase; local combined full validation passed 1,632 tests / 1,606 subtests; no physical resolution is claimed. The 25 October trace confirms 53 Solar-to-normal exits and 52 returns after Morning Slow is last observed; 47 exits fail the load-sensitive aggregate budget. Source PR #40, published in .79, qualifies Solar reacquisition after a strict budget exit, with immediate failure closure. Unsafe battery flow, independent winners and closed capability cannot donate qualification time. First admission and existing priorities remain unchanged. Full validation and independent peer review pass; physical acceptance remains open. Exact installed source, sensor causes and lost energy remain unproven. See the publication receipt and `SOLAR_REENTRY_STABILITY.md`. |
 | O3 | Solar Override | Selected/protected-floor bypass corrected in merged PR #21 and published .72, preserving separately qualified PV-only MSC. Historical physical reports and supervised live acceptance remain unresolved; related 27 September threshold-switching evidence is retained in ROADMAP.md section 3. |
 | O4 | Evening Boost oscillation and re-entry | Observed unstable switching and SoC requirements remain open. Published .75 requires fresh qualifying load-report timestamps spanning at least 120 seconds and at least 120 seconds of local monotonic elapsed time, monotonic report timestamps and no load-report gap over 60 seconds. Sunrise uses its existing trusted-future-horizon check and need not advance. Cached load reports cannot mature qualification; a gap over 60 seconds, wall-clock or monotonic-clock rollback, or failed gate resets qualification and Boost context. Closed / Qualifying / Admitted distinguishes permission from physical operation; successful automatic application completion or verified MSC-pending state is required to retain qualification, and generic no-op success is insufficient. Existing failure closures remain immediate; higher-priority owners and permissions are unaffected. This is not live acceptance or proof of settlement. Supervised live stability and settlement remain unverified; the qualification gate does not redesign overnight reserve policy (O5). The 27 September proposal is superseded. Retained Phase 1 follow-up: ROADMAP.md sections 3-4. |
-| O5 | Overnight battery reserve | Operator-policy decision pending: Medium/High thresholds, tomorrow-PV awareness and enough battery until solar takes over. Proposed 30-cent tuning is not approved; no threshold changes authorised. The 25 October trace also exposes a calculated 113% overnight export floor. This is a planning-derived requirement, not a command to charge above 100%; review its load extrapolation and diagnostic wording with O9. O18 separately tracks daytime fill-strategy robustness. |
-| O6 | Morning Dump / Morning Slow | The merged Dump discharge guard and explicit MSC fallback shipped in .72. Floor cycling and other depletion reports remain open. The 25 October six-second Morning Slow/Solar charge alternation is reproduced. Source PR #40, published in .79, qualifies only restrictive Solar charging after completed genuinely owned relieved Morning operation at its normal bound. The eight-row fixture retains 25 kW export permission and commands 0 followed by seven 21 kW requests, preserving raw Morning priority and genuine slow charging. Full validation and independent peer review pass; physical acceptance remains open. Exact settings and sensor cause remain unproven. See `SOLAR_REENTRY_STABILITY.md`. |
+| O5 | Overnight battery reserve | Local integration adds only passive required-energy/full-capacity-shortfall explanations; the existing load model and reserve/price policy remain unchanged. Operator-policy decision pending: Medium/High thresholds, tomorrow-PV awareness and enough battery until solar takes over. Proposed 30-cent tuning is not approved; no threshold changes authorised. The 25 October trace also exposes a calculated 113% overnight export floor. This is a planning-derived requirement, not a command to charge above 100%; review its load extrapolation and diagnostic wording with O9. O18 separately tracks daytime fill-strategy robustness. |
+| O6 | Morning Dump / Morning Slow | Published .83 bounded Morning partial relief and .84 charge-readback metadata remain included. Local integration preserves Morning priority/handoff qualification while updating Solar cap expectations to the approved fill-progress policy; physical stability remains open. The merged Dump discharge guard and explicit MSC fallback shipped in .72. Floor cycling and other depletion reports remain open. The 25 October six-second Morning Slow/Solar charge alternation is reproduced. Source PR #40, published in .79, qualifies only restrictive Solar charging after completed genuinely owned relieved Morning operation at its normal bound. The historical .79 eight-row fixture retains 25 kW export permission and commands 0 followed by seven 21 kW requests, preserving raw Morning priority and genuine slow charging. Full validation and independent peer review pass; physical acceptance remains open. Exact settings and sensor cause remain unproven. See `SOLAR_REENTRY_STABILITY.md`. |
 | O7 | Demand Window at exact-full SoC | Live-acceptance requirement: prove PV-only surplus export without deliberate battery export or grid import. Retain hotfix evidence below and ROADMAP.md section 4B; automated tests do not prove physical outcome. |
 | O8 | Historical 13-second transition observation gap | Remains unresolved and cannot be reconstructed from later records. The trace component records pending/error application outcomes but cannot recover missing historical records or prove physical settlement. Scoped .68 acceptance cannot fill the gap or establish unexercised cases; see ROADMAP.md section 4. |
-| O9 | Obsolete, overlapping or misleading policies/settings | Queued short control-ownership/configuration audit, including Solar Override and configuration ownership. Include the 25 October overnight reserve message above 100%: distinguish raw planning need, export permission and actual charging targets. No removal, redesign, reserve-policy change or broad audit is authorized by this documentation intake. See ROADMAP.md section 5. |
+| O9 | Obsolete, overlapping or misleading policies/settings | The approved local reserve wording correction is included for combined validation; the broader ownership/settings audit remains queued. Queued short control-ownership/configuration audit, including Solar Override and configuration ownership. Include the 25 October overnight reserve message above 100%: distinguish raw planning need, export permission and actual charging targets. No removal, redesign, reserve-policy change or broad audit is authorized by this documentation intake. See ROADMAP.md section 5. |
 | O10 | Stale trace archive and clock recovery | The 20 October downloads were demonstrably stale/inconsistent, but snapshot identity, cause and HDD involvement remain unverified. The operator parked the original archive/MSC incident investigation. O10 clock recovery is corrected in published .77 (source `7aa712f72ca2c0467e6740e3cb0f2191ba8d077e`): dual fixed-HTTPS time corroboration and immutable atomic snapshot of old segments/status before normal active-window pruning. Implemented and independently reviewed; combined offline validation passed 1,275 tests / 1,305 subtests. Failure retains evidence and keeps the guard closed. No historical cause is established. |
-| O11 | Intermittent MSC observations | Operator parked follow-up and paused the reminder. Supplied observations do not establish whether HA, hardware, application or evidence timing caused the behavior. The 25 October afternoon adds six isolated normal-charge application failures, each followed by helper success in 9–10 seconds; that does not identify the cause or prove physical settlement. This evidence does not reopen the parked investigation or establish a fix. |
+| O11 | Intermittent MSC observations | The separately approved local MSC request-epoch/waiting-log correction addresses reproduced software cases, with local combined full validation passing; it does not establish every historical observation failure or reopen unrelated parked causation. Operator parked follow-up and paused the reminder. Supplied observations do not establish whether HA, hardware, application or evidence timing caused the behavior. The 25 October afternoon adds six isolated normal-charge application failures, each followed by helper success in 9–10 seconds; that does not identify the cause or prove physical settlement. This evidence does not reopen the parked investigation or establish a fix. |
 | O12 | Evening Boost reserve-trust provenance | Code defect corrected in published .75: Boost now requires existing trusted load and sunrise observations before using them in the overnight reserve calculation. The standalone regression checkpoint passed 41 tests / 55 subtests and 1,112 full-suite tests / 1,247 subtests. The combined .75 control checkpoint passed 1,142 tests / 1,287 subtests; 16 release/source-pinning checks also passed. Operator-supplied startup at 13:28:25 Sydney identifies .75 at exact tag source 413e1691bb58e0b942098ab43f44e873df157a2b. Publication and installed identity are established; physical acceptance remains unverified. O12 itself changes no prices, SoC/power thresholds or durations; O4 adds the separate qualification timing, and O5 reserve policy remains open. |
 | O13 | Standby/Morning Dump fallback grid-import ownership | Reproduced in .75 with trusted Demand OFF: fallback omitted either active owner's import close before settlement and could restore normal import capability afterward. Corrected in fix commit `bcfdb75b33c8ae1db3c7f534cb8952f144d9c3cd`, normally merged by PR #31 at `632a42081d9ff93b270ffcca048604031ec4fed1` and published in .76 source `e70d9ff016a546615367b6d69f4ac4602da7b23c`. Seven focused regressions and the full 1,149-test / 1,287-subtest suite pass, with no High/Medium blocker in independent review. Code is published; physical behavior remains unverified. Ordinary economic-zero recovery and genuine Morning preemption are preserved. |
 | O14 | Configuration activation across awaited control operations | Medium; reproduced offline on unchanged .76 source. The correction is published in .77 from reviewed PR #34 and uses the existing lock, rechecks queued authority, and retires identity-bound evidence. O14/O16 integration hardening also covers configuration A→B→A activation and direct-control boundaries that can otherwise lose accounting ownership; all 15 boundary tests and the 1,275-test / 1,305-subtest combined suite pass, with independent review GO. No physical behavior or historical-incident cause is established. |
 | O15 | Synchronous storage on async control/API paths | Medium; reproduced offline with synthetic lock contention. The O15 correction is published in .78 from source PR #37 and isolates runtime database execution on one bounded worker while retaining event-loop-owned accounting, exact retries and unknown-cost safeguards. On-disk combined validation passed 1,355 tests / 1,305 subtests; focused checks passed 126 / 8. Independent source/test/documentation review is GO, with no High/Medium blocker. Publication and exact image/source identity are verified; installation, physical acceptance and historical HDD/trace/MSC causation remain unverified. See STORAGE_EXECUTION_ISOLATION.md. |
 | O16 | Import-top-up ledger completeness and retry integrity | Medium; reproduced with synthetic store failures, without proof of physical dispatch or financial loss. The O16 correction is published in .77 from reviewed PR #34, preserving original interval evidence and exact retry while retaining unknown-coverage safeguards. Integration review added targeted accounting-only invalidation at relevant identity activation and validated direct Manual/ESS boundaries, including permission invalidation across midnight. Fifteen new boundary tests passed; a bounded 114-test / 101-subtest run passed before the last two midnight tests were added. Final .77 validation passed 1,275 tests / 1,305 subtests, zero failures, 206 existing warnings, 226.40 seconds; independent review was GO. O15 storage execution isolation is now integrated and published in .78; it retains the O16 accounting safeguards. HDD causation and physical acceptance remain unproven. |
 | O17 | Ingress trust and optional API-key bypass | Conditional authentication defect reproduced offline. The O17 correction is published in .78 from source PR #37 and requires actual Supervisor peer 172.30.32.2 plus X-Ingress-Path and disables proxy rewriting in both supported launchers. Combined validation passed 1,355 tests / 1,305 subtests; independent source/test/documentation review is GO, with no High/Medium blocker. Normal HA login, existing flags and public read-only/status policies remain separate. Actual installed exposure is unverified; no exploit or physical acceptance is claimed. See INGRESS_TRUST_BOUNDARY.md. |
-| O18 | Solar charging deferral and fill-strategy robustness | Investigation/operator-policy review. On 25 October, the morning-started session peaks at 73.3% SoC, is 69.6% at the 16:29:52 configured fill deadline, and ends at 65.8%. Normal charging consistently requests 21 kW after 13:09:53; Forecast Today is revised 79.325 to 66.6231 kWh at 14:08:27. Earlier zero requests are valid under the current future-opportunity calculation, but the fill objective was missed. Characterize forecast downgrades and assess the reliability/export/minimum-charge tradeoff; do not claim bypass caused the entire shortfall or infer exact forgone energy from sampled flows. A policy change requires separate approval and must preserve existing safety and authority gates. See the 25 October evidence above. |
+| O18 | Solar charging deferral and fill-strategy robustness | Operator chose fill progress on 28 October and approved its local integration. Dynamic protected-fill-energy/time-to-existing-deadline allowance, higher urgent need and trusted normal capability replace forecast-only zero deferral under valid authority; no guaranteed actual charging/full SoC. Local combined full validation passed; live acceptance remains open. Historical evidence: On 25 October, the morning-started session peaks at 73.3% SoC, is 69.6% at the 16:29:52 configured fill deadline, and ends at 65.8%. Normal charging consistently requests 21 kW after 13:09:53; Forecast Today is revised 79.325 to 66.6231 kWh at 14:08:27. Earlier zero requests followed the then-current future-opportunity calculation, but the fill objective was missed. Characterize forecast downgrades and assess the reliability/export/minimum-charge tradeoff; do not claim bypass caused the entire shortfall or infer exact forgone energy from sampled flows. The approved local policy retains existing safety and authority gates; its implementation does not establish the historical shortfall cause. See the 25 October evidence above. |
 
 | O19 | Fallback Demand Window import race | Published in .82 via PR #49. Recheck current Demand in the final authority/settlement read: trusted OFF is required to reopen fallback import; ON or untrusted evidence requests the existing 0.01 kW close. Physical acceptance and transient-import evidence remain open. See CONTROL_LIFECYCLE_REVIEW.md and HAOS82_RELEASE_CANDIDATE.md. |
 | O20 | Negative-price Morning Dump output conflict | Existing characterization records conflicting export intent/EMS and restricted ESS/PV outputs. The future non-positive-price Morning priority redesign remains parked; no production change is authorized. See `CONTROL_LIFECYCLE_REVIEW.md`. |

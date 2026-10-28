@@ -525,7 +525,7 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
             original = ha.set_number
             async def cross_deadline(entity, value):
                 result = await original(entity, value)
-                if entity == "number.test_charge" and value == 0.0:
+                if entity == "number.test_charge" and value == 1.2:
                     opt._solar_provider_deadline = self.WHEN.timestamp()
                 return result
             ha.set_number = cross_deadline
@@ -533,7 +533,7 @@ class SolcastProviderFreshnessTests(Haos49CharacterizationCase):
                 result = await opt._apply(state, d)
             self.assertTrue(result.succeeded, result.error)
             writes = [value for action, entity, value in ha.calls if action == "set_number" and entity == "number.test_charge"]
-            self.assertEqual([0.0, self.NORMAL_CHARGE_KW], writes)
+            self.assertEqual([1.2, self.NORMAL_CHARGE_KW], writes)
             self.assertFalse(d.trace_gates["solar_charge_ceiling_owned"])
         asyncio.run(check())
 

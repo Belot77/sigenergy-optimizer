@@ -262,6 +262,85 @@ class SolarSurplusDipHoldTests(SolarDynamicChargeFixture):
                     self.assertEqual(0.0, self.tick(optimizer, state).export_limit)
                     self.assertIsNone(optimizer._solar_dip_proof)
 
+    def test_persistent_control_helper_age_is_exempt_but_device_reports_remain_aged(self):
+        optimizer = self.optimizer_for_ticks()
+        self.arm(optimizer)
+        self.assertTrue(optimizer.cfg.sigenergy_mode_select.startswith("input_select."))
+        state = self.report_state(6)
+        stale = self.WHEN.timestamp() - optimizer.cfg.hvac_solar_data_max_age_seconds - 1
+        state.hvac_solar_inputs = replace(
+            state.hvac_solar_inputs,
+            control_mode=replace(state.hvac_solar_inputs.control_mode, observed_at_ts=stale),
+        )
+        decision = self.tick(optimizer, state)
+        self.assert_hold(decision)
+        self.assertIsNotNone(optimizer._solar_dip_proof)
+
+        for field in ("observed_ems_mode", "remote_ems_control"):
+            with self.subTest(field=field):
+                optimizer = self.optimizer_for_ticks()
+                self.arm(optimizer)
+                state = self.report_state(6)
+                observation = getattr(state.hvac_solar_inputs, field)
+                state.hvac_solar_inputs = replace(
+                    state.hvac_solar_inputs,
+                    **{field: replace(observation, observed_at_ts=stale)},
+                )
+                decision = self.tick(optimizer, state)
+                self.assertFalse(decision.trace_gates["solar_surplus_dip_hold_active"])
+                self.assertEqual(0.0, decision.export_limit)
+                self.assertIsNone(optimizer._solar_dip_proof)
+
+        optimizer = self.optimizer_for_ticks()
+        optimizer.cfg.sigenergy_mode_select = "select.device_mode"
+        self.arm(optimizer)
+        state = self.report_state(6)
+        state.hvac_solar_inputs = replace(
+            state.hvac_solar_inputs,
+            control_mode=replace(state.hvac_solar_inputs.control_mode, observed_at_ts=stale),
+        )
+        decision = self.tick(optimizer, state)
+        self.assertFalse(decision.trace_gates["solar_surplus_dip_hold_active"])
+        self.assertEqual(0.0, decision.export_limit)
+        self.assertIsNone(optimizer._solar_dip_proof)
+        invalid = (
+            {"observed_at_ts": None},
+            {"observed_at_ts": True},
+            {"observed_at_ts": self.WHEN.timestamp() + 7},
+            {"available": False},
+            {"fresh": False},
+            {"value": "Manual"},
+        )
+        for changes in invalid:
+            with self.subTest(helper_observation=changes):
+                optimizer = self.optimizer_for_ticks()
+                self.arm(optimizer)
+                state = self.report_state(6)
+                observation = state.hvac_solar_inputs.control_mode
+                state.hvac_solar_inputs = replace(
+                    state.hvac_solar_inputs,
+                    control_mode=replace(observation, **changes),
+                )
+                decision = self.tick(optimizer, state)
+                self.assertFalse(decision.trace_gates["solar_surplus_dip_hold_active"])
+                self.assertEqual(0.0, decision.export_limit)
+                self.assertIsNone(optimizer._solar_dip_proof)
+
+        optimizer = self.optimizer_for_ticks()
+        self.arm(optimizer)
+        state = self.report_state(6)
+        state.hvac_solar_inputs = replace(
+            state.hvac_solar_inputs,
+            live_snapshot=False,
+            control_mode=replace(
+                state.hvac_solar_inputs.control_mode,
+                observed_at_ts=stale,
+            ),
+        )
+        decision = self.tick(optimizer, state)
+        self.assertFalse(decision.trace_gates["solar_surplus_dip_hold_active"])
+        self.assertEqual(0.0, decision.export_limit)
+        self.assertIsNone(optimizer._solar_dip_proof)
     def test_only_advancing_paired_reports_can_rearm_after_invalidation(self):
         optimizer = self.optimizer_for_ticks()
         self.arm(optimizer)

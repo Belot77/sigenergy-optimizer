@@ -279,8 +279,11 @@ class CrossPolicyControlLifecycleTests(Haos49CharacterizationCase):
             self.assertGreater(reported_at, requested_at, (entity, value))
         _, solar, _ = self.tick(self.START.replace(hour=12), pv=6.0)
         self.assertTrue(solar.solar_surplus_policy_active)
+        # Protected fill = 1.2 * 30 * 20% = 7.2 kWh. Scripted reports
+        # advance just past noon: just under 5 h to the 17:00 deadline
+        # rounds the approved progress floor upward to 1.45 kW.
         self.assert_outputs(solar, owner="none", intent=MSC_SURPLUS_CEILING,
-                            ems=MODE_MAX_SELF, export=25.0, charge=0.0)
+                            ems=MODE_MAX_SELF, export=25.0, charge=1.45)
         self.assertTrue(solar.trace_gates["solar_charge_ceiling_owned"])
         evening = self.START.replace(hour=19, minute=18)
         for elapsed in (0, 30, 60, 90, 120, 121):

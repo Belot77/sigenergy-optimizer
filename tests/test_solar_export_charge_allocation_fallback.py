@@ -44,7 +44,7 @@ class SolarAllocationFallbackTests(unittest.TestCase):
             with later_msc_report_clock(ha, fixture.WHEN):
                 initial_result = await optimizer._apply(previous_state, previous_decision)
             self.assertTrue(initial_result.succeeded, initial_result.error)
-            self.assertEqual(0.0, previous_decision.ess_charge_limit)
+            self.assertEqual(1.6, previous_decision.ess_charge_limit)
             optimizer._last_state = previous_state
             optimizer._last_decision = previous_decision
             ha.calls.clear()
@@ -127,7 +127,7 @@ class SolarAllocationFallbackTests(unittest.TestCase):
             self.assertIn(("select_option", cfg.ems_mode_select, MODE_MAX_SELF), ha.calls)
             charge_requests = [value for action, entity, value in ha.calls
                                if action == "set_number" and entity == cfg.ess_max_charging_limit]
-            self.assertEqual([0.0, 21.0] if fresh_msc else [0.0], charge_requests)
+            self.assertEqual([1.61, 21.0] if fresh_msc else [1.61], charge_requests)
             if fresh_msc:
                 close_index = ha.calls.index(("set_number", cfg.grid_export_limit, 0.01))
                 mode_index = ha.calls.index(("select_option", cfg.ems_mode_select, MODE_MAX_SELF))

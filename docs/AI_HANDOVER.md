@@ -1,5 +1,91 @@
 # SigEnergy Optimizer AI Handover
 
+## Local integration: Solar / MSC / planning - 28 October 2026
+
+The operator approved local integration, tests, independent review and docs on
+`fix/solar-msc-planning-integration` at
+`C:/Projects/sigenergy_optimizer-solar-msc-planning`. Verified base and remote main:
+`556cca8c040e3eea52029a8ac055a5c81f411018`. The destination was absent before creation;
+its initial branch/HEAD and clean status were verified. No original branch or
+unfinished work is modified. No commit, push, GitHub merge, version bump,
+publication, installation, HA query or live setting change is authorized.
+
+Included changes:
+
+- Solar fill progress takes priority over immediate export, subject to existing
+  ownership/provider/coverage/deadline/capability gates. Retain any higher urgent
+  current-interval request. A charging-cap allowance is not a physical minimum.
+- Same-context completed-total-only rebasing prevents tiny time/SoC baseline
+  movements from discarding earned relief. It cannot donate upward confirmations,
+  preserve a proposed/failed target or resurrect an older total after downward
+  feedback. ESS setting readback remains passive evidence.
+- Solar Dip accepts a current-read unchanged persistent mode helper without an
+  upper report-age veto. Finite nonfuture metadata, availability/freshness/value,
+  actual device/Remote EMS and flow limits remain mandatory.
+- MSC accepted pending epochs omit duplicate requests only while their original
+  reader/control/request identity and finite freshness lease remain valid.
+  Actual new dispatches retain latest-boundary semantics. Typed intentional
+  pending remains uncommitted and logs waiting; genuine errors remain errors.
+- Passive reserve diagnostics explain nominal-capacity shortfalls. Raw reserve
+  floors, existing current-load model and bounded HA helper are unchanged.
+
+Original isolated stages remain preserved, unstaged and uncommitted:
+
+| Worktree under C:/Projects | Branch | Standalone validation |
+| --- | --- | --- |
+| sigenergy_optimizer-solar-allocation-planning | test/solar-allocation-planning-haos84 | 196 tests / 221 subtests; tests/docs-only GO |
+| sigenergy_optimizer-solar-dip-helper-currentness | fix/solar-dip-helper-currentness | 64 / 129; independent safety GO |
+| sigenergy_optimizer-msc-pending-request-epoch | fix/msc-pending-request-epoch | final full 1,588 / 1,533; independent safety/fixture/docs GO |
+| sigenergy_optimizer-battery-planning-diagnostics | fix/battery-planning-diagnostics | 132 / 140; passive source/tests/docs GO |
+| sigenergy_optimizer-solar-fill-progress-trajectory | fix/solar-fill-progress-trajectory | final full 1,593 / 1,544; source/adversarial/expectation/docs GO |
+
+Integrated production source matches the exact union of the four approved code
+patches; independent source review is provisionally GO at optimizer SHA-256
+`44e70ab7c83c2b4f26e80f1c92f5cbc8c5344e1cbba5cd7ce330d659fc7553f6`.
+The first affected-module run exposed old lifecycle zero-cap/cohort/expiry-trigger
+assumptions. Scoped expectation updates retained the strict rejection, provenance,
+owner, fallback and Manual checks. Root validation of all 19 affected modules
+passed **365 tests / 495 subtests**, zero failures (202 warnings, 80.60 seconds;
+three memory / 615 isolated temporary stores). Eight new actual-reader interaction
+methods passed **8 tests / 16 subtests** (202 warnings, 1.20 seconds; 22 isolated
+temporary stores, zero memory/rejected paths). They cover original pending MSC
+boundaries through Solar receipt/relief, typed-pending tick cleanup, replaced/
+stale/regressed/cancelled final proof, earned-receipt/maintenance retirement,
+diagnostic sink isolation, an old persistent helper with the original 15-second
+dip expiry, provider-deadline expiry during the final read, and passive 113%
+reserve projection with an actual helper write bounded at 100%.
+Initial new-fixture corrections concerned helper timestamp coherence, the retired
+identity sentinel and competing synthetic reserve estimates; production stayed
+unchanged. Final independent source/test review is GO with no High/Medium
+findings; reviewers did not execute tests. The final guarded full suite passed
+**1,632 tests / 1,606 subtests**, zero failures (206 warnings, 274.24 seconds).
+Dotenv stayed disabled; StateStore guards allowed only 75 memory / 2,018 isolated
+temporary constructions. Source/tests stayed frozen. Scope is 32 files: one
+production module, 23 test/runner files and eight documents. Independent documentation/scope review is GO. This is local software readiness, not installation,
+physical charging, stable export or deadline-fill acceptance. Combined module SHA-256:
+`0e778560214b30c9acce85bcb0818932e8cbd93d385e5a25999e2bce06c8ebdd`.
+Dotenv must remain disabled and every StateStore construction restricted to
+memory or isolated temporary storage; protected database contents are never read.
+
+Operator startup evidence confirms installed `.84`, source
+`bc1439120ab6c68d5983768ffd678bb62fedefb8`, at 15:00:56 AEDT on 28 October.
+The supplied 16-row startup sample has four pending then twelve successes.
+It does not prove ongoing physical acceptance. Provider authority was still
+unverified pending a new credible provider generation; startup baseline/advance
+and expiry rules remain unchanged. No supplied post-update recovery is invented.
+
+Risks: less immediate export and dependence on existing sensor/forecast/load
+assumptions; missing or contradictory proof still blocks permission. Monitor-only
+acceptance must compare requested caps, setting reports, advancing coherent flows,
+provider/command boundaries and outcomes. Offline dry-run uses simulated HA and
+isolated storage; it does not calibrate sensors or model physical acceptance.
+Installation/settings and supervised live acceptance require separate approval.
+Rollback: withhold this uncommitted candidate or later review a scoped revert;
+never reset/clean originals or remove runtime archives/databases. See
+[Solar policy and validation limits](SOLAR_FILL_PROGRESS_TRAJECTORY.md),
+[lifecycle characterization](SOLAR_ALLOCATION_LIFECYCLE_PLANNING.md) and
+[CONTROL_CONTRACT.md](CONTROL_CONTRACT.md).
+
 ## Published: 2.3.73-haos84 - 28 October 2026
 
 [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.73-haos84)
@@ -21,8 +107,10 @@ See [the complete publication receipt](HAOS84_RELEASE_CANDIDATE.md). Final recei
 worktree `C:/Projects/sigenergy_optimizer-haos84-publication-proof`, branch
 `docs/haos84-publication-proof`, changes only five documents. Unfinished work and
 protected database metadata remain unchanged. No HA access, installation or live
-settings changes were performed. Installed .84 identity and physical acceptance
-remain unverified. Genuine unavailable/conflicting reports can still block;
+settings changes were performed. Later operator startup evidence confirms installed
+.84 source `bc1439120ab6c68d5983768ffd678bb62fedefb8` at 15:00:56 AEDT on
+28 October; ongoing physical acceptance remains unverified. Genuine
+unavailable/conflicting reports can still block;
 pending retry/latest-request and timeout rules, Solar allocation and provider
 recovery remain separate. Do not claim every historical MSC error is fixed.
 

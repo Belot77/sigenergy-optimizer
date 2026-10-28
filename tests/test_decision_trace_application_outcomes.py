@@ -222,3 +222,47 @@ class DecisionTraceApplicationOutcomeTests(Haos49CharacterizationCase):
         optimizer._record_decision_trace(state, requested)
         self.assertEqual({"ts", "summary", "state", "gates", "values", "charge_allocation"},
                          set(self.only_row(optimizer)))
+
+
+    def test_scheduler_pending_has_no_error_log_and_keeps_cleanup_and_uncommitted_state(self):
+        optimizer, _, _, previous, previous_state = self.cycle(
+            _ActuatorApplicationResult(succeeded=False, transition_pending=True,
+                                       automatic_transition_pending=True, error="waiting"),
+        )
+        optimizer._reset_solar_reentry = Mock()
+        optimizer._last_cycle_error = "previous error"
+        with patch("app.optimizer.logger.exception") as error_log:
+            asyncio.run(optimizer._safe_tick())
+        error_log.assert_not_called()
+        self.assertEqual("", optimizer._last_cycle_error)
+        self.assertIsNotNone(optimizer._last_cycle_completed)
+        self.assert_not_committed(optimizer, previous, previous_state)
+        optimizer._reset_solar_reentry.assert_called()
+        self.assertEqual("pending", self.only_row(optimizer)["application"]["status"])
+
+    def test_scheduler_genuine_failure_still_logs_error(self):
+        optimizer, _, _, previous, previous_state = self.cycle(
+            _ActuatorApplicationResult(succeeded=False, error="genuine failure"),
+        )
+        with patch("app.optimizer.logger.exception") as error_log:
+            asyncio.run(optimizer._safe_tick())
+        error_log.assert_called_once()
+        self.assertEqual("genuine failure", optimizer._last_cycle_error)
+        self.assert_not_committed(optimizer, previous, previous_state)
+
+
+    def test_startup_pending_has_no_error_log_and_does_not_commit(self):
+        optimizer, _, _, previous, previous_state = self.cycle(
+            _ActuatorApplicationResult(succeeded=False, transition_pending=True,
+                                       automatic_transition_pending=True, error="waiting"),
+        )
+        def stop_after_startup(message, *args):
+            if message.startswith("Startup awaiting"):
+                optimizer._running = False
+        with patch("app.optimizer.logger.exception") as error_log, patch(
+            "app.optimizer.logger.info", side_effect=stop_after_startup,
+        ):
+            asyncio.run(optimizer.run_forever())
+        error_log.assert_not_called()
+        self.assert_not_committed(optimizer, previous, previous_state)
+        self.assertEqual("pending", self.only_row(optimizer)["application"]["status"])

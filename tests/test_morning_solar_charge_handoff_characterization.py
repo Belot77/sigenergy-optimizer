@@ -177,13 +177,13 @@ class MorningSolarChargeHandoffCharacterizationTests(SolarDynamicChargeFixture):
                     self.assertTrue(decision.trace_gates["solar_provider_authority_trusted"])
                     if index == 0:
                         self.assertTrue(decision.trace_gates["solar_charge_ceiling_owned"])
-                        self.assertLessEqual(decision.ess_charge_limit, 2.82)
+                        self.assertEqual(3.45 if index < 4 else 3.46, decision.ess_charge_limit)
                     else:
                         self.assertFalse(decision.trace_gates["solar_charge_ceiling_owned"])
                         self.assertEqual("normal", decision.trace_values["ess_charge_limit_owner"])
                         self.assertEqual(self.NORMAL_CHARGE_KW, decision.ess_charge_limit)
         self.assertEqual(
-            [0.0] + [self.NORMAL_CHARGE_KW] * 7,
+            [3.45] + [self.NORMAL_CHARGE_KW] * 7,
             [decision.ess_charge_limit for decision in decisions],
         )
 
@@ -200,7 +200,7 @@ class MorningSolarChargeHandoffCharacterizationTests(SolarDynamicChargeFixture):
                     if morning:
                         self.assertEqual(self.NORMAL_CHARGE_KW, decision.ess_charge_limit)
                     else:
-                        self.assertLessEqual(decision.ess_charge_limit, 2.82)
+                        self.assertEqual(3.45 if index < 4 else 3.46, decision.ess_charge_limit)
 
     def test_real_forecast_deficit_releases_both_owners_and_restores_normal_charge(self) -> None:
         optimizer = self._optimizer()
@@ -245,7 +245,7 @@ class MorningSolarChargeHandoffCharacterizationTests(SolarDynamicChargeFixture):
             )
         self.assertTrue(decision.solar_surplus_policy_active)
         self.assertTrue(decision.trace_gates["solar_charge_ceiling_owned"])
-        self.assertLessEqual(decision.ess_charge_limit, 2.82)
+        self.assertEqual(3.45 if index < 4 else 3.46, decision.ess_charge_limit)
 
     def test_detailed_source_loss_removes_only_the_authority_it_supplied(self) -> None:
         for available, morning in ((21.29, False), (21.68, True)):
@@ -279,7 +279,7 @@ class MorningSolarChargeHandoffCharacterizationTests(SolarDynamicChargeFixture):
             self.assertTrue(decision.solar_surplus_policy_active)
             self.assertEqual(25.0, decision.export_limit)
             self.assertEqual(index == 6, decision.trace_gates["solar_charge_ceiling_owned"])
-            self.assertEqual(0.0 if index == 6 else 21.0, decision.ess_charge_limit)
+            self.assertEqual(3.46 if index == 6 else 21.0, decision.ess_charge_limit)
 
     def test_generic_failed_pending_or_fallback_application_cannot_arm_handoff(self) -> None:
         outcomes = (
@@ -301,7 +301,7 @@ class MorningSolarChargeHandoffCharacterizationTests(SolarDynamicChargeFixture):
                 self.assertFalse(optimizer._solar_charge_reentry.required)
                 decision = self._tick(optimizer, 1, 21.29)
                 self.assertTrue(decision.trace_gates["solar_charge_ceiling_owned"])
-                self.assertEqual(0.0, decision.ess_charge_limit)
+                self.assertEqual(3.45, decision.ess_charge_limit)
 
     def test_decision_without_application_does_not_arm_handoff(self) -> None:
         optimizer = self._optimizer()
@@ -320,7 +320,7 @@ class MorningSolarChargeHandoffCharacterizationTests(SolarDynamicChargeFixture):
         solar = self._tick(optimizer, 1, 21.29)
         self.assertTrue(solar.solar_surplus_policy_active)
         self.assertTrue(solar.trace_gates["solar_charge_ceiling_owned"])
-        self.assertEqual(0.0, solar.ess_charge_limit)
+        self.assertEqual(3.45, solar.ess_charge_limit)
 
     def test_cached_reports_cannot_qualify_even_after_thirty_seconds(self) -> None:
         optimizer = self._optimizer()
@@ -372,7 +372,7 @@ class MorningSolarChargeHandoffCharacterizationTests(SolarDynamicChargeFixture):
         # Successful completion retired this handoff latch. A later trust loss
         # must close immediately without creating a new Morning episode.
         self.assertTrue(fresh.trace_gates["solar_charge_ceiling_owned"])
-        self.assertEqual(0.0, fresh.ess_charge_limit)
+        self.assertEqual(3.46, fresh.ess_charge_limit)
 
     def test_grid_import_keeps_charge_ownership_and_cannot_arm_morning_handoff(self) -> None:
         optimizer = self._optimizer()

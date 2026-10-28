@@ -1380,32 +1380,22 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         # during an awaited command. Missing actuator evidence remains missing.
         report(cfg.sigenergy_mode_select, control_mode, second)
         report(cfg.ha_control_switch, "on", second)
-        state = self._ordinary_state(
-            95.7, when=when,
-            sigenergy_mode=control_mode,
-            current_ems_mode=ems or "unavailable",
-            ems_mode_observed=ems_report.available and ems_report.fresh,
-            current_export_limit=export if export is not None else 0.0,
-            current_export_limit_observed=export_report.available and export_report.fresh,
-            current_import_limit=0.01,
-            current_import_limit_observed=True,
-            demand_window_active=True,
-            demand_window_observed=True,
-            current_pv_max_power_limit=25.0,
-            current_price=-0.10 if owner == "negative" else 0.30,
-            price_is_negative=owner == "negative",
-        )
-        state.hvac_solar_inputs = HVACSolarInputContext(
-            live_snapshot=True,
-            control_mode=HVACObservedValue(
-                value=control_mode, available=True, fresh=True,
-                observed_at_ts=when.replace(tzinfo=timezone.utc).timestamp(),
-            ),
-            observed_ems_mode=ems_report,
-            observed_export_limit=export_report,
-        )
-        # This is observation metadata populated by _read_state, not a latch.
-        state._msc_ems_reported_at = ems_report.observed_at_ts
+        # Exercise actual reader provenance instead of a hand-built live flag.
+        # These explicit fake reports retain the original actuator scenario.
+        for entity, value in (
+            (cfg.grid_import_limit, 0.01), (cfg.pv_max_power_limit, 25.0),
+            (cfg.ess_max_charging_limit, 25.0), (cfg.ess_max_discharging_limit, 25.0),
+            (cfg.ess_rated_charge_power_sensor, 25.0), (cfg.ess_rated_discharge_power_sensor, 25.0),
+            (cfg.battery_soc_sensor, 95.7), (cfg.rated_capacity_sensor, 30.0),
+            (cfg.available_discharge_sensor, 28.71), (cfg.pv_power_sensor, 4.0),
+            (cfg.consumed_power_sensor, 1.0), (cfg.battery_power_sensor, 0.0),
+            (cfg.grid_import_power_sensor, 0.0), (cfg.grid_export_power_sensor, 0.0),
+            (cfg.demand_window_sensor, "on"),
+            (cfg.price_sensor, -0.10 if owner == "negative" else 0.30),
+            (cfg.feedin_sensor, 0.15),
+        ):
+            if entity:
+                report(entity, value, second)
         pv_limit = 2.0 if owner == "standby" else 0.1 if owner == "negative" else 25.0
         decision = Decision(
             ems_mode=MODE_CMD_DISCHARGE_PV if discharge else MODE_MAX_SELF,
@@ -1427,17 +1417,19 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                 return cls.fromtimestamp(ha.clock_utc.timestamp(), tz)
 
         with patch("app.optimizer.datetime", ObservedDateTime):
+            state = await optimizer._read_state()
+            self.assertEqual(optimizer._msc_maintenance_identity(), state._msc_read_identity)
             result = await optimizer._apply(state, decision)
         self.assertTrue(state.hvac_solar_inputs.live_snapshot)
         return result, list(ha.calls)
 
-    def _assert_live_transition_restrictive(self, optimizer, result, calls, *, msc):
+    def _assert_live_transition_restrictive(self, optimizer, result, calls, *, msc, close=None):
         cfg = optimizer.cfg
         self.assertFalse(result.succeeded)
         self.assertFalse(result.fallback_attempted)
         self.assertEqual(msc, ("select_option", cfg.ems_mode_select, MODE_MAX_SELF) in calls)
-        if not msc:
-            self.assertIn(("set_number", cfg.grid_export_limit, 0.01), calls)
+        expected_close = not msc if close is None else close
+        self.assertEqual(expected_close, ("set_number", cfg.grid_export_limit, 0.01) in calls)
         self.assertIn(("set_number", cfg.grid_import_limit, 0.01), calls)
         self.assertIn(("set_number", cfg.ess_max_discharging_limit, 0.01), calls)
         for method, entity_id, value in calls:
@@ -1456,22 +1448,22 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             )
             self.assertTrue(result.succeeded, result.error)
             stages = (
-                (0, MODE_CMD_DISCHARGE_PV, 12.0, {}, False),
-                (1, MODE_CMD_DISCHARGE_PV, 0.01, {"export_second": 0}, False),
-                (2, MODE_CMD_DISCHARGE_PV, 0.01, {}, True),
-                (3, MODE_MAX_SELF, 0.01, {"ems_second": 2}, True),
-                (4, None, 0.01, {}, True),
-                (5, MODE_MAX_SELF, None, {}, False),
-                (6, MODE_MAX_SELF, 0.01, {"export_second": 5}, False),
-                (7, MODE_MAX_SELF, 0.01, {}, True),
-                (8, MODE_MAX_SELF, 0.01, {"ems_second": -200}, True),
-                (9, MODE_MAX_SELF, 0.01, {"ems_second": 7}, True),
+                (0, MODE_CMD_DISCHARGE_PV, 12.0, {}, False, True),
+                (1, MODE_CMD_DISCHARGE_PV, 0.01, {"export_second": 0}, False, False),
+                (2, MODE_CMD_DISCHARGE_PV, 0.01, {}, True, False),
+                (3, MODE_MAX_SELF, 0.01, {"ems_second": 2}, False, False),
+                (4, None, 0.01, {}, False, False),
+                (5, MODE_MAX_SELF, None, {}, False, True),
+                (6, MODE_MAX_SELF, 0.01, {"export_second": 5}, False, False),
+                (7, MODE_MAX_SELF, 0.01, {}, True, False),
+                (8, MODE_MAX_SELF, 0.01, {"ems_second": -200}, False, False),
+                (9, MODE_MAX_SELF, 0.01, {"ems_second": 7}, False, False),
             )
-            for second, ems, export, metadata, msc in stages:
+            for second, ems, export, metadata, msc, close in stages:
                 result, calls = await self._live_transition_cycle(
                     optimizer, ha, second, ems, export, **metadata,
                 )
-                self._assert_live_transition_restrictive(optimizer, result, calls, msc=msc)
+                self._assert_live_transition_restrictive(optimizer, result, calls, msc=msc, close=close)
             ha.report_after_select = (optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
             result, calls = await self._live_transition_cycle(optimizer, ha, 10, MODE_MAX_SELF, 0.01)
             self.assertTrue(result.succeeded, result.error)
@@ -1504,7 +1496,7 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             result, calls = await self._live_transition_cycle(
                 optimizer, ha, 4, MODE_MAX_SELF, 0.01, ems_second=request_second,
             )
-            self._assert_live_transition_restrictive(optimizer, result, calls, msc=True)
+            self._assert_live_transition_restrictive(optimizer, result, calls, msc=False, close=False)
             ha.report_after_select = (optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
             result, calls = await self._live_transition_cycle(optimizer, ha, 5, MODE_MAX_SELF, 0.01)
             self.assertTrue(result.succeeded, result.error)
@@ -1519,16 +1511,16 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             ha = LiveTransitionHA()
             optimizer = self._live_transition_optimizer(ha)
             await self._live_transition_cycle(optimizer, ha, -1, MODE_CMD_DISCHARGE_PV, 12.0, discharge=True)
-            for second, ems, export, msc in (
-                (0, MODE_CMD_DISCHARGE_PV, 12.0, False),
-                (1, MODE_CMD_DISCHARGE_PV, None, False),
-                (2, MODE_CMD_DISCHARGE_PV, 0.01, True),
-                (3, None, 0.01, True),
-                (4, MODE_MAX_SELF, 0.01, True),
+            for second, ems, export, msc, close in (
+                (0, MODE_CMD_DISCHARGE_PV, 12.0, False, True),
+                (1, MODE_CMD_DISCHARGE_PV, None, False, False),
+                (2, MODE_CMD_DISCHARGE_PV, 0.01, True, False),
+                (3, None, 0.01, False, False),
+                (4, MODE_MAX_SELF, 0.01, False, False),
             ):
                 result, calls = await self._live_transition_cycle(optimizer, ha, second, ems, export, owner=owner)
                 if second < 4:
-                    self._assert_live_transition_restrictive(optimizer, result, calls, msc=msc)
+                    self._assert_live_transition_restrictive(optimizer, result, calls, msc=msc, close=close)
                 else:
                     self.assertTrue(result.succeeded, result.error)
                 limit = 2.0 if owner == "standby" else 0.1

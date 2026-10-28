@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased local integration - Solar / MSC / planning - 2026-10-28
+
+- Prioritize present Solar fill progress: protected remaining fill energy divided by time to the existing deadline, retaining higher urgent charging need, trusted normal capability and upward 0.01 kW precision. This may reduce immediate export; it cannot guarantee charging or a full battery.
+- Retain only a genuinely completed total through pure time/SoC floor movement in the same trusted context. Preserve downward feedback, retry penalties, command epochs, final proof and all ownership/safety restrictions; proposed, pending, failed or invalidated targets cannot grant retained permission.
+- Correct only the persistent `input_select.*` Automated helper upper-age test for Solar Dip. Finite nonfuture current-read provenance remains mandatory; device, Remote EMS and flow age limits stay unchanged.
+- Preserve accepted unchanged pending close/MSC request boundaries only within the same actual-reader/source/control epoch and existing report horizon. Expiry, contradiction, replacement or invalidation requires a new dispatch/latest boundary. Pending stays uncommitted; scheduler/startup report intentional waiting without ERROR stack traces. Genuine failures remain errors. Bounded passive observations grant no permission.
+- Add passive reserve-energy/full-capacity-shortfall explanations while preserving raw reserve floors, export-surplus calculations, the 100% HA-helper bound and all actuator targets. No new load model or reserve/price policy.
+- Combine lifecycle and interaction regressions with guarded temporary/memory storage. Integrated source/test independent review GO; 365 affected tests / 495 subtests and 8 new interaction tests / 16 subtests passed. Final guarded full suite passed 1,632 tests / 1,606 subtests, zero failures (206 warnings, 274.24 seconds; 75 memory / 2,018 isolated temporary stores). Independent documentation/scope review GO; standalone results remain evidence for their original stages only. No release/version bump, commit, push or live action. Rollback is withholding this candidate or a later reviewed scoped revert. See docs/CURRENT_STATE.md.
+
 ## 2.3.73-haos84 - published release - 2026-10-28
 
 - [Published at 03:51:01 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.73-haos84). Tag/container source `bc1439120ab6c68d5983768ffd678bb62fedefb8`, tree `8ae40a1ef597ce3e07578e1fddb2483910337d35`. Metadata PR #58 merged normally at `f7025eac808534428035d8dd7d842661da1ae18e` with the exact tagged tree. Build 40628165315 passed; all 22 layer/diff-ID checks and 15 source byte/mode checks per platform passed. Independent proof GO; previous immutable .83 remains unchanged. See docs/HAOS84_RELEASE_CANDIDATE.md.
