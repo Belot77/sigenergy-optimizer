@@ -1,6 +1,66 @@
 # SigEnergy Optimizer AI Handover
 
-## Local integration: Solar / MSC / planning - 28 October 2026
+## Local release candidate: 2.3.74-haos85 - 28 October 2026
+
+Source [PR #60](https://github.com/Belot77/sigenergy-optimizer/pull/60) merged
+normally at `aefba54dddcaace1e3b318bbf6cca2a282d6c3a3`, 06:10:42 UTC
+(17:10:42 AEDT). Parents are `556cca8c040e3eea52029a8ac055a5c81f411018`
+and reviewed head `a5286581f402038be06375e45b62b525e65eb3e1`; merge tree
+`7bbc4d998081bf8fa606c71a9392930bba09a0b4` exactly matches that reviewed head.
+
+The operator approved local release preparation on `release/2.3.74-haos85` at
+`C:/Projects/sigenergy_optimizer-release-haos85`, based on the merge above.
+Exactly five established version markers change from .84 to .85; post-merge
+status and release documents are reconciled. No new control behavior, settings,
+workflow, dependency, permanent instruction, test or runtime-data change is part
+of release preparation. Original source and unfinished worktrees remain preserved.
+No commit, push, tag, image publication, GitHub release, installation or live HA
+query/settings change is authorized by this preparation stage. Do not use release.sh.
+
+The merged source includes the approved fill-progress cap floor and completed-
+total rebase, narrow Solar Dip helper currentness, bounded accepted-pending MSC
+request epochs/waiting logs, passive reserve explanations and combined regressions.
+A charging allowance may reduce immediate export and cannot guarantee absorption,
+full SoC or physical stability. Provider baseline/advance, expiry, authority,
+Manual/Force and independent restrictions remain binding. O5 reserve/price policy
+and the existing current-load model remain separate.
+
+Source full suite passed **1,632 tests / 1,606 subtests**, zero failures;
+independent source/test and documentation/scope reviews are GO. Release checks:
+**16 version/source-pinning tests passed**, zero failures (9.21 seconds).
+Guarded runtime-focused checks passed **72 tests / 175 subtests**, zero failures
+(202 warnings, 37.73 seconds; 195 isolated temporary stores, zero memory paths).
+Together the two disjoint release runs cover 88 tests and 175 subtests. Canonical
+review proved exactly one substitution per marker and no other baseline byte
+change after Git line-ending normalization. Scope: 12 files, five version markers
+and seven documents. Independent metadata/docs/scope review is GO with no
+remaining findings; reviewers did not rerun the tests. This is local release-
+preparation readiness, not publication or physical acceptance. The source full
+suite is not repeated for version
+literals/docs. Runtime imports keep dotenv disabled and StateStore restricted to
+memory/isolated temp paths.
+
+**Not published.** Latest verified published release remains `2.3.73-haos84`,
+tag/container source `bc1439120ab6c68d5983768ffd678bb62fedefb8`, index
+`sha256:ce9f9c1abf04effd9ef33a0bfccc29282f9f81356f617cebd8a6b61e3c36f112`.
+Operator startup confirms installed .84 at 15:00:56 AEDT on 28 October.
+Candidate .85 has no metadata commit, tag, build, image digest or release yet.
+The reviewed source baseline above is not a future container source identifier;
+the eventual metadata/tag commit must be verified separately if publication is approved.
+
+Publication must be separately authorized against the reviewed candidate tree.
+Verify exact tag/build/source, both platform images, immutable source bytes/modes
+and version/latest digest; retain the previous immutable .84 image. Automatic
+updates were last reported off on 26 October and are not reverified here.
+Installation/settings remain separately approved work, requiring actual build
+identity, rollback readiness and supervised evidence. Monitor-only acceptance
+must compare requests, independent reports, advancing coherent flows and provider/
+command chronology. Offline dry-run uses fake HA; passing tests or successful
+calls do not establish physical settlement or fill. Rollback now is withholding
+publication; later code rollback requires a reviewed scoped revert, preserving
+other work. See [release preparation record](HAOS85_RELEASE_CANDIDATE.md).
+
+## Historical pre-commit source checkpoint - 28 October 2026
 
 The operator approved local integration, tests, independent review and docs on
 `fix/solar-msc-planning-integration` at

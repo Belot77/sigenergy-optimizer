@@ -1,15 +1,17 @@
 # Solar fill-progress trajectory - approved local integration
 
-28 October 2026. Integration branch `fix/solar-msc-planning-integration`, worktree
-`C:/Projects/sigenergy_optimizer-solar-msc-planning`, baseline
-`556cca8c040e3eea52029a8ac055a5c81f411018`. The operator separately approved local
-integration of five reviewed stages, combined tests, independent review and docs.
-No commit, push, GitHub merge, publication, installation or live HA/inverter action
-is authorized. Existing work remains preserved. The standalone results and source
-hash recorded below belong to the original `fix/solar-fill-progress-trajectory`
-stage. Integrated source/test review is GO and the guarded full suite passed
-1,632 tests / 1,606 subtests; final documentation/scope review is GO.
-See AI_HANDOVER.md and CURRENT_STATE.md for current integration status.
+Source [PR #60](https://github.com/Belot77/sigenergy-optimizer/pull/60), head
+`a5286581f402038be06375e45b62b525e65eb3e1`, merged normally at
+`aefba54dddcaace1e3b318bbf6cca2a282d6c3a3` on 28 October 2026.
+The exact reviewed tree passed 1,632 tests / 1,606 subtests and independent
+source/test/docs/scope review. This document defines the reviewed policy and
+retains its original standalone validation history; those historical source hashes
+are not the future .85 container source identifier.
+
+Local `2.3.74-haos85` preparation changes only five version markers and status
+records. It is not published or installed. See HAOS85_RELEASE_CANDIDATE.md and
+CURRENT_STATE.md for current release checks and remaining approval gates.
+Existing work remains preserved; physical acceptance is unproven.
 
 ## Operator choice and formula
 

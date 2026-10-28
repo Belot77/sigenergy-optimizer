@@ -1,11 +1,14 @@
 # Solar allocation lifecycle and planning - integrated offline characterization
 
-28 October 2026. Branch `fix/solar-msc-planning-integration`, worktree
-`C:/Projects/sigenergy_optimizer-solar-msc-planning`, baseline
-`556cca8c040e3eea52029a8ac055a5c81f411018`. The original nine-test characterization
-stage remains preserved in `test/solar-allocation-planning-haos84`. This integrated
-copy follows the separately approved fill-progress policy and MSC request epochs.
-No original stage is modified. No commit, push, release, installation or live action.
+Reviewed source [PR #60](https://github.com/Belot77/sigenergy-optimizer/pull/60)
+merged normally at `aefba54dddcaace1e3b318bbf6cca2a282d6c3a3` on 28 October 2026.
+The original nine-test characterization stage remains preserved in
+`test/solar-allocation-planning-haos84`; its integrated copy follows the approved
+fill-progress policy and MSC request epochs. No original stage is modified.
+
+Source full validation passed 1,632 tests / 1,606 subtests; independent reviews GO.
+Local .85 release preparation is not publication, installation or physical
+acceptance. See HAOS85_RELEASE_CANDIDATE.md for release-specific checks and gates.
 
 ## Evidence and scope
 
