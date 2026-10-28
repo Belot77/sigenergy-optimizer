@@ -1,6 +1,23 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Local Solar / MSC / planning integration - not published
+## Local release candidate: 2.3.74-haos85 - not published
+
+Merged [source PR #60](https://github.com/Belot77/sigenergy-optimizer/pull/60)
+adds the approved Solar fill-progress allowance and completion-only relief rebase,
+Solar Dip helper correction, bounded MSC pending epochs/waiting logs and passive
+reserve explanations. Source suite: 1,632 tests / 1,606 subtests, zero failures;
+independent reviews GO. Physical charging, stable export and fill remain unproven.
+
+Local preparation changes five version markers plus release/status docs on
+`release/2.3.74-haos85`. Version/source-pinning checks passed 16 tests; runtime-
+focused checks passed 72 tests / 175 subtests, all zero failures. Canonical review
+confirms only five version substitutions. Independent metadata/docs/scope review is GO; local preparation is ready.
+No publication or
+installation is authorized yet. Latest published and operator-confirmed installed
+version remains .84. See [candidate record and remaining gates](docs/HAOS85_RELEASE_CANDIDATE.md)
+and [current state](docs/CURRENT_STATE.md).
+
+## Historical reviewed source checkpoint - merged by PR #60
 
 Approved branch `fix/solar-msc-planning-integration` in
 `C:/Projects/sigenergy_optimizer-solar-msc-planning` combines five reviewed local

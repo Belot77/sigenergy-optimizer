@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased local integration - Solar / MSC / planning - 2026-10-28
+## 2.3.74-haos85 - local release candidate - 2026-10-28
+
+- Prepare the normally merged PR #60 source: present Solar fill-progress allowance, completed-total-only rebase, narrow persistent-helper currentness, bounded MSC pending request timing/waiting classification and passive reserve-capacity explanations. Less immediate export is possible; actual charging, fill and physical stability are unproven.
+- Align only the five established version markers and reconcile post-merge documentation. Source full validation passed 1,632 tests / 1,606 subtests, zero failures; independent source/test/docs/scope reviews GO. Version/source-pinning checks passed 16 tests; guarded runtime-focused checks passed 72 tests / 175 subtests, zero failures (202 warnings, 37.73 seconds; 195 isolated temporary stores). Canonical review proved five literal substitutions only. Independent metadata/docs/scope review GO; local preparation ready.
+- Local and not published. No tag, build, image digest, release or installation is claimed; .84 remains latest verified published. No new control, test, configuration-setting, workflow or dependency change. Publication, auto-update status confirmation, installation and live acceptance remain separate. See docs/HAOS85_RELEASE_CANDIDATE.md.
+
+## Historical reviewed source candidate - merged by PR #60 - 2026-10-28
 
 - Prioritize present Solar fill progress: protected remaining fill energy divided by time to the existing deadline, retaining higher urgent charging need, trusted normal capability and upward 0.01 kW precision. This may reduce immediate export; it cannot guarantee charging or a full battery.
 - Retain only a genuinely completed total through pure time/SoC floor movement in the same trusted context. Preserve downward feedback, retry penalties, command epochs, final proof and all ownership/safety restrictions; proposed, pending, failed or invalidated targets cannot grant retained permission.
