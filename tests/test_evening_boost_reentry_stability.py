@@ -4,6 +4,7 @@ import asyncio
 import unittest
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -187,6 +188,120 @@ class EveningBoostReentryStabilityTests(unittest.TestCase):
         self.assertEqual(0.0, decision.export_limit)
         self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
         self.assertEqual("none", decision.trace_values.get("battery_export_final_owner"))
+
+    def unchanged_mode_helper(self, states, cfg, when):
+        old = (self.START - timedelta(days=30)).astimezone(timezone.utc).isoformat()
+        for key in ("last_changed", "last_updated", "last_reported"):
+            states[cfg.sigenergy_mode_select][key] = old
+
+    def test_old_persistent_helper_qualifies_and_remains_admitted(self) -> None:
+        state, first = self.decide(0, mutate=self.unchanged_mode_helper)
+        mode = state.hvac_solar_inputs.control_mode
+        self.assertTrue(mode.available and mode.fresh)
+        self.assertEqual(self.optimizer.cfg.automated_option, mode.value)
+        self.assertGreater(self.START.timestamp() - mode.observed_at_ts, 86400)
+        self.assert_waiting(first)
+        self.assertEqual("qualifying", first.trace_values["evening_boost_reentry_state"])
+        for elapsed in (30, 60, 90, 119.999):
+            with self.subTest(before_admission=elapsed):
+                self.assert_waiting(self.tick(elapsed, mutate=self.unchanged_mode_helper))
+        for elapsed in (120, 150):
+            with self.subTest(admitted_at=elapsed):
+                decision = self.tick(elapsed, mutate=self.unchanged_mode_helper)
+                self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+                self.assertEqual("evening_export_boost",
+                                 decision.trace_values["battery_export_final_owner"])
+                self.assertTrue(decision.trace_gates["evening_boost_reentry_allowed"])
+                self.assertEqual("admitted", self.optimizer._evening_boost_reentry.phase)
+
+    def test_old_helper_cannot_replace_advancing_load_or_report_gap_proof(self) -> None:
+        def cached_load(states, cfg, when):
+            self.unchanged_mode_helper(states, cfg, when)
+            old = self.START.astimezone(timezone.utc).isoformat()
+            states[cfg.consumed_power_sensor].update(last_updated=old, last_reported=old)
+
+        for elapsed in (0, 30, 60, 90, 120):
+            with self.subTest(cached_at=elapsed):
+                self.assert_waiting(self.tick(elapsed, mutate=cached_load))
+        self.optimizer = self.new_optimizer()
+        self.optimizer._tz = timezone(self.START.astimezone().utcoffset() or timedelta())
+        for elapsed in (0, 30, 60, 90, 151, 211):
+            self.assert_waiting(self.tick(elapsed, mutate=self.unchanged_mode_helper))
+        decision = self.tick(271, mutate=self.unchanged_mode_helper)
+        self.assertEqual(BATTERY_EXPORT, decision.export_intent)
+
+    def test_current_helper_with_future_timestamp_still_fails_boost_evidence(self) -> None:
+        def future_helper(states, cfg, when):
+            future = (when + timedelta(seconds=1)).astimezone(timezone.utc).isoformat()
+            states[cfg.sigenergy_mode_select].update(last_updated=future, last_reported=future)
+
+        state, decision = self.decide(0, mutate=future_helper)
+        # The shared current-read reader allows up to five seconds of skew.
+        # Boost retains its stricter nonfuture requirement.
+        self.assertTrue(state.hvac_solar_inputs.control_mode.fresh)
+        self.assertIsNone(self.optimizer._evening_boost_reentry_evidence(
+            state, self.START.timestamp()))
+        self.assert_waiting(decision)
+
+    def test_helper_exception_does_not_extend_remote_or_device_selector_age(self) -> None:
+        for kind in ("remote_ems", "device_selector"):
+            with self.subTest(kind=kind):
+                self.optimizer = self.new_optimizer()
+                self.optimizer._tz = timezone(self.START.astimezone().utcoffset() or timedelta())
+                if kind == "device_selector":
+                    self.optimizer.cfg.sigenergy_mode_select = "select.test_device_mode"
+
+                def old_authority(states, cfg, when):
+                    self.unchanged_mode_helper(states, cfg, when)
+                    if kind == "remote_ems":
+                        old = (when - timedelta(seconds=cfg.hvac_solar_data_max_age_seconds + 1)).astimezone(timezone.utc).isoformat()
+                        states[cfg.ha_control_switch].update(last_updated=old, last_reported=old)
+
+                state, decision = self.decide(0, mutate=old_authority)
+                observation = (state.hvac_solar_inputs.remote_ems_control if kind == "remote_ems"
+                               else state.hvac_solar_inputs.control_mode)
+                self.assertFalse(observation.fresh)
+                self.assertIsNone(self.optimizer._evening_boost_reentry_evidence(
+                    state, self.START.timestamp()))
+                self.assert_waiting(decision)
+
+    def test_old_helper_exception_requires_valid_current_authority_evidence(self) -> None:
+        state, _decision = self.decide(0, mutate=self.unchanged_mode_helper)
+        original = state.hvac_solar_inputs
+        mode = original.control_mode
+        cases = [("missing timestamp", {"observed_at_ts": None}),
+                 ("boolean timestamp", {"observed_at_ts": True}),
+                 ("NaN timestamp", {"observed_at_ts": float("nan")}),
+                 ("infinite timestamp", {"observed_at_ts": float("inf")}),
+                 ("string timestamp", {"observed_at_ts": "invalid"}),
+                 ("unavailable", {"available": False}),
+                 ("untrusted", {"fresh": False}),
+                 ("wrong mode", {"value": self.optimizer.cfg.manual_option})]
+        for label, changes in cases:
+            with self.subTest(case=label):
+                state.hvac_solar_inputs = replace(original, control_mode=replace(mode, **changes))
+                self.assertIsNone(self.optimizer._evening_boost_reentry_evidence(
+                    state, self.START.timestamp()))
+        state.hvac_solar_inputs = replace(original, live_snapshot=False)
+        self.assertIsNone(self.optimizer._evening_boost_reentry_evidence(
+            state, self.START.timestamp()))
+        state.hvac_solar_inputs = original
+        for override in (self.optimizer.cfg.manual_option, self.optimizer.cfg.full_export_option):
+            with self.subTest(operator_override=override), patch.object(
+                self.optimizer, "_manual_mode_override", override
+            ):
+                self.assertIsNone(self.optimizer._evening_boost_reentry_evidence(
+                    state, self.START.timestamp()))
+
+    def test_old_helper_does_not_override_pending_authenticated_manual_request(self) -> None:
+        self.optimizer._manual_mode_override = self.optimizer.cfg.manual_option
+        self.optimizer._manual_mode_requested_at = self.START.timestamp() - 1
+        state, decision = self.decide(0, mutate=self.unchanged_mode_helper)
+        self.assertTrue(state.hvac_solar_inputs.control_mode.fresh)
+        self.assertEqual(self.optimizer.cfg.manual_option, self.optimizer._manual_mode_override)
+        self.assertFalse(decision.trace_gates["evening_boost_reentry_allowed"])
+        self.assertIsNone(self.optimizer._evening_boost_reentry_evidence(
+            state, self.START.timestamp()))
 
     def test_initial_qualification_withholds_boost_export(self) -> None:
         state, decision = self.decide(0)
@@ -580,10 +695,10 @@ class EveningBoostReentryStabilityTests(unittest.TestCase):
             self.assertIn(("select_option", self.optimizer.cfg.ems_mode_select,
                            optimizer_module.MODE_CMD_DISCHARGE_PV), ha.calls)
 
-    def apply_with_settlement_race(self, scenario):
+    def apply_with_settlement_race(self, scenario, *, mutate=None):
         # Real admission and application, with an awaited actuator boundary.
         for elapsed in (0, 30, 60, 90, 120):
-            state, decision = self.decide(elapsed)
+            state, decision = self.decide(elapsed, mutate=mutate)
         self.assertTrue(decision.trace_gates["evening_boost_reentry_allowed"])
         cfg = self.optimizer.cfg
         clock = [self.START + timedelta(seconds=120)]
@@ -644,6 +759,15 @@ class EveningBoostReentryStabilityTests(unittest.TestCase):
             and call[2] > 0.011 for call in self.optimizer.ha.calls
         ))
         return result
+
+    def test_old_helper_keeps_dispatch_expiry_and_manual_takeover_protection(self) -> None:
+        for scenario in ("expiry", "manual_takeover"):
+            with self.subTest(scenario=scenario):
+                self.optimizer = self.new_optimizer()
+                self.optimizer._tz = timezone(self.START.astimezone().utcoffset() or timedelta())
+                self.apply_with_settlement_race(scenario, mutate=self.unchanged_mode_helper)
+                if scenario == "manual_takeover":
+                    self.assertEqual(1, len(self.optimizer.ha.calls))
 
     def test_expiry_during_awaited_export_settlement_prevents_discharge(self) -> None:
         result = self.apply_with_settlement_race("expiry")

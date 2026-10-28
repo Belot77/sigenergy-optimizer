@@ -10296,16 +10296,21 @@ class SigEnergyOptimizer:
             or s.sunrise_observation_trusted is not True
         ):
             return None
-        for observation, expected in (
-            (inputs.control_mode, self.cfg.automated_option),
-            (inputs.remote_ems_control, "on"),
+        # A persistent mode helper proves current ownership through its live
+        # read, not periodic value changes. Device reports retain their age cap.
+        for observation, expected, persistent_helper in (
+            (inputs.control_mode, self.cfg.automated_option,
+             str(self.cfg.sigenergy_mode_select).startswith("input_select.")),
+            (inputs.remote_ems_control, "on", False),
         ):
             stamp = observation.observed_at_ts
             if not (
                 observation.available and observation.fresh
                 and observation.value == expected
-                and isinstance(stamp, (int, float)) and math.isfinite(stamp)
-                and 0.0 <= now_ts - stamp <= self.cfg.hvac_solar_data_max_age_seconds
+                and isinstance(stamp, (int, float)) and not isinstance(stamp, bool)
+                and math.isfinite(stamp) and 0.0 <= now_ts - stamp
+                and (persistent_helper or
+                     now_ts - stamp <= self.cfg.hvac_solar_data_max_age_seconds)
             ):
                 return None
         observation = inputs.load_power

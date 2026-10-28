@@ -1,6 +1,44 @@
 # Current State
 
-## Local candidate: charge readback report metadata — 28 October 2026
+## Local candidate: Evening Boost helper currentness — 28 October 2026
+
+The approved local branch `fix/evening-boost-helper-currentness` at
+`C:\Projects\sigenergy_optimizer-boost-helper-currentness` is based on
+`223ac22356fcb0fc3e8f21aaa639b2fc013165c1`. It skips only the duplicate
+upper-age check for a current-read trusted mode `input_select` in Evening Boost
+re-entry. Availability, freshness, expected value, finite non-boolean timestamp and
+non-future chronology remain required (`0 <= age`; a report one second in the
+future is rejected). Remote EMS/device age limits and existing qualification,
+Manual/Force, dispatch authority, limits, reserve/price, MSC and immediate
+failure-closure protections remain unchanged.
+
+The supplied 3,955 closed live decision records are consistent with the
+helper-age gate, but raw rejected timestamps are absent from the supplied evidence and live
+causation is not established. SolarDip helper-age follow-up and recurring MSC
+failures remain separate open issues.
+
+Validation: the tests-first run reproduced four reported failures, including
+two dispatch subcases that could not reach admission. After the correction,
+all seven new test methods passed with 25 subtests. The seven-module applicable
+run passed 247 tests / 190 subtests (202 warnings, 45.08 seconds). The full suite
+passed 1,535 tests / 1,481 subtests (206 warnings, 260.16 seconds), zero failures.
+Dotenv was disabled; full-suite StateStore guards allowed only memory (75) or
+isolated temporary paths (1,854 constructions). Independent safety and
+documentation reviews are GO. These checks do not prove physical acceptance.
+
+This is a local uncommitted change only: no release, installation, or live action. Rollback is
+a scoped revert of the helper-age exception. See [AI_HANDOVER](AI_HANDOVER.md)
+for verification steps.
+
+## Merged checkpoint: charge readback report metadata — PR #55 — 28 October 2026
+
+The charge-readback candidate below later merged normally in
+[PR #55](https://github.com/Belot77/sigenergy-optimizer/pull/55), source head
+`f6eb5ef1080b10e07aa40d2e5f07850f1ecd54a2`, merge
+`223ac22356fcb0fc3e8f21aaa639b2fc013165c1`. It remains unverified in an
+installation and has no physical acceptance claim.
+
+## Historical pre-merge charge-candidate context — 28 October 2026
 
 The approved local branch `fix/charge-readback-report-metadata` at
 `C:\Projects\sigenergy_optimizer-charge-readback-metadata` is based on
