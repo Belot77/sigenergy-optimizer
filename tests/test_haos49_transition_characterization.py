@@ -166,8 +166,40 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
                     )
                     decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
 
+                    # Capture a real-reader MSC snapshot, then independently
+                    # report drift before application. The planned decision
+                    # and current actuator evidence remain separate.
+                    ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
+                    for entity, value in (
+                        (optimizer.cfg.ess_rated_charge_power_sensor, 25.0),
+                        (optimizer.cfg.ess_rated_discharge_power_sensor, 25.0),
+                        (optimizer.cfg.ess_max_charging_limit, 25.0),
+                        (optimizer.cfg.ess_max_discharging_limit, 25.0),
+                        (optimizer.cfg.grid_import_limit, 0.01),
+                        (optimizer.cfg.pv_max_power_limit, 25.0),
+                        (optimizer.cfg.battery_soc_sensor, 100.0),
+                        (optimizer.cfg.rated_capacity_sensor, 30.0),
+                        (optimizer.cfg.available_discharge_sensor, 30.0),
+                        (optimizer.cfg.pv_power_sensor, 6.0),
+                        (optimizer.cfg.solar_power_now_sensor, 6.0),
+                        (optimizer.cfg.consumed_power_sensor, 1.0),
+                        (optimizer.cfg.battery_power_sensor, 0.0),
+                        (optimizer.cfg.grid_import_power_sensor, 0.0),
+                        (optimizer.cfg.grid_export_power_sensor, 0.0),
+                        (optimizer.cfg.forecast_remaining_sensor, 100.0),
+                        (optimizer.cfg.forecast_today_sensor, 100.0),
+                        (optimizer.cfg.forecast_tomorrow_sensor, 100.0),
+                        (optimizer.cfg.price_sensor, 0.30),
+                        (optimizer.cfg.feedin_sensor, 0.15),
+                        (optimizer.cfg.demand_window_sensor, "off"),
+                    ):
+                        if entity:
+                            ha._record_state_value(entity, value)
                     self._supply_current_authority(optimizer, ha)
-                    asyncio.run(optimizer._apply(state, decision))
+                    application_state = asyncio.run(optimizer._read_state())
+                    self.assertEqual(optimizer._msc_maintenance_identity(), application_state._msc_read_identity)
+                    ha._record_state_value(optimizer.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)
+                    asyncio.run(optimizer._apply(application_state, decision))
 
                     mode_call = ("select_option", optimizer.cfg.ems_mode_select, MODE_MAX_SELF)
                     read_call = ("get_state_value", optimizer.cfg.ems_mode_select, "")
@@ -194,6 +226,8 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
                     closed_decision = self.decide(optimizer, closed_state, self.FIXED_AFTERNOON)
                     second_cycle_start = len(ha.calls)
                     self._supply_current_authority(optimizer, ha)
+                    closed_state = asyncio.run(optimizer._read_state())
+                    self.assertEqual(optimizer._msc_maintenance_identity(), closed_state._msc_read_identity)
                     asyncio.run(optimizer._apply(closed_state, closed_decision))
                     second_cycle_calls = ha.calls[second_cycle_start:]
 
@@ -231,36 +265,19 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
                                 states[entity] = report
                         return states
 
-                    settled_state = self._full_battery_opportunity(
-                        current_ems_mode=MODE_MAX_SELF,
-                        current_export_limit=0.01,
+                    # Qualify the positive plan from genuine valid reader
+                    # evidence before the independent dispatch matrix replaces
+                    # selected reports with equal/older/stale/missing metadata.
+                    settled_state = asyncio.run(optimizer._read_state())
+                    settled_decision = self.decide(
+                        optimizer, settled_state, datetime.fromtimestamp(clock_now.timestamp()),
                     )
-                    settled_decision = self.decide(optimizer, settled_state, self.FIXED_AFTERNOON)
                     self.assertEqual("MSC_SURPLUS_CEILING", settled_decision.export_intent)
                     self.assertEqual(25.0, settled_decision.export_limit)
                     self.assertEqual(MODE_MAX_SELF, settled_decision.ems_mode)
                     self.assertEqual("none", settled_decision.trace_values["battery_export_final_owner"])
-                    # Snapshot and live reads describe the same scripted report.
-                    # Without live provenance a hand-built snapshot opts out of
-                    # the very request-boundary checks this matrix characterizes.
-                    reports = asyncio.run(observed_states([
-                        optimizer.cfg.ems_mode_select, optimizer.cfg.grid_export_limit,
-                    ]))
-                    def report_timestamp(entity):
-                        raw = reports[entity].get("last_reported")
-                        return datetime.fromisoformat(raw).timestamp() if raw else None
-
-                    settled_state._msc_ems_reported_at = report_timestamp(optimizer.cfg.ems_mode_select)
-                    export_reported_at = report_timestamp(optimizer.cfg.grid_export_limit)
-                    settled_state.hvac_solar_inputs = replace(
-                        settled_state.hvac_solar_inputs, live_snapshot=True,
-                        observed_export_limit=HVACObservedValue(
-                            value=0.01, available=export_reported_at is not None,
-                            fresh=export_reported_at is not None and
-                            0 <= clock_now.timestamp() - export_reported_at <= optimizer.cfg.hvac_solar_data_max_age_seconds,
-                            observed_at_ts=export_reported_at,
-                        ),
-                    )
+                    # The real reader and joint dispatch reads consume the
+                    # same independently scripted invalid/valid metadata.
                     third_cycle_start = len(ha.calls)
                     original_select = ha.select_option
 
@@ -274,6 +291,8 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
                         if evidence == "later":
                             ha.select_option = later_reassertion
                         self._supply_current_authority(optimizer, ha)
+                        settled_state = asyncio.run(optimizer._read_state())
+                        self.assertEqual(optimizer._msc_maintenance_identity(), settled_state._msc_read_identity)
                         application_result = asyncio.run(optimizer._apply(settled_state, settled_decision))
                     third_cycle_calls = ha.calls[third_cycle_start:]
 
@@ -293,7 +312,10 @@ class Haos49TransitionCharacterizationTests(Haos49CharacterizationCase):
                             self.assertFalse(optimizer._msc_transition_observed(settled_state))
                             self.assertFalse(optimizer._msc_baseline_established)
                             self.assertEqual("msc", optimizer._msc_transition.phase)
-                            self.assertIn(mode_call, third_cycle_calls)
+                            # Within the original freshness horizon, missing,
+                            # equal, older or stale reports keep the accepted
+                            # MSC request pending without a redundant dispatch.
+                            self.assertNotIn(mode_call, third_cycle_calls)
                             self.assertNotIn(close_call, third_cycle_calls)
                             self.assertEqual(0.01, ha.state_values[optimizer.cfg.grid_export_limit])
                             for entity in (optimizer.cfg.grid_import_limit,

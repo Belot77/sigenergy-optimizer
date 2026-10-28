@@ -60,7 +60,7 @@ class SolarExportChargeAllocationHandoffTests(unittest.TestCase):
         self.assertTrue(qualified.solar_surplus_policy_active)
         self.assertTrue(qualified.trace_gates["solar_charge_ceiling_owned"])
         self.assertFalse(optimizer._solar_charge_reentry.required)
-        self.assertEqual(0.0, qualified.ess_charge_limit)
+        self.assertEqual(3.46, qualified.ess_charge_limit)
         # This fixture uses unchanged readback values; it has not applied the
         # final decision to or observed settlement from an inverter.
         self.assertEqual(21.0, self.fixture._fixture_state.current_ess_charge_limit)

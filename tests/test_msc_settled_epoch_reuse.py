@@ -525,3 +525,307 @@ class MscSettledEpochReuseTests(unittest.TestCase):
         for kind in ("manual", "remote_off"):
             with self.subTest(late_takeover=kind):
                 asyncio.run(run(kind))
+
+
+    def test_pending_msc_keeps_accepted_origin_until_independent_later_report(self):
+        async def run():
+            clock, ha, opt = self.scenario(first_ems=1000.0)
+            ha._report(ha.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV, -1.0)
+            ha.plant[ha.cfg.ems_mode_select] = MODE_CMD_DISCHARGE_PV
+            with clock.active():
+                _, _, first = await self.cycle(opt, ha, clock)
+                self.assertTrue(first.transition_pending)
+                epoch = opt._msc_transition
+                origin = epoch.msc_requested_at
+                for at in (1.0, 2.0):
+                    before = len(ha.requests)
+                    _, _, pending = await self.cycle(opt, ha, clock, at=at)
+                    self.assertTrue(pending.transition_pending)
+                    self.assertIs(epoch, opt._msc_transition)
+                    self.assertEqual(origin, epoch.msc_requested_at)
+                    self.assertFalse(any(r[1] == "select_option" for r in ha.requests[before:]))
+                    self.assertTrue(any(r[2] == ha.cfg.grid_import_limit for r in ha.requests[before:]))
+                    self.assertTrue(any(r[2] == ha.cfg.ess_max_discharging_limit for r in ha.requests[before:]))
+                # Arrival is later than several cycles; report time is between
+                # the original accepted command and those cycles.
+                ha._report(ha.cfg.ems_mode_select, MODE_MAX_SELF, 0.5)
+                _, _, done = await self.cycle(opt, ha, clock, at=2.5)
+                self.assertTrue(done.automatic_application_completed, done.error)
+                self.assertEqual(origin, epoch.msc_requested_at)
+        asyncio.run(run())
+
+    def test_pending_close_keeps_origin_and_records_existing_snapshot_rejections(self):
+        async def run():
+            clock, ha, opt = self.scenario(first_ems=1000.0)
+            ha.next_fast = 1000.0
+            for entity, value in ((ha.cfg.grid_export_limit, "25.0"),
+                                  (ha.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV)):
+                ha.plant[entity] = value
+                ha._report(entity, value, -1.0)
+            with clock.active():
+                _, _, first = await self.cycle(opt, ha, clock)
+                self.assertTrue(first.transition_pending)
+                epoch = opt._msc_transition
+                origin = epoch.close_requested_at
+                before = len(ha.requests)
+                _, _, pending = await self.cycle(opt, ha, clock, at=1.0)
+                self.assertTrue(pending.transition_pending)
+                self.assertEqual(origin, epoch.close_requested_at)
+                self.assertFalse(any(r[2] == ha.cfg.grid_export_limit for r in ha.requests[before:]))
+                evidence = opt._msc_settlement_evidence.snapshot()
+                self.assertGreaterEqual(evidence["observation_count"], 2)
+                self.assertTrue(any(o["reason"] == "pre_request" for o in evidence["observations"]))
+                ha._report(ha.cfg.grid_export_limit, "0.01", 0.5)
+                _, _, msc = await self.cycle(opt, ha, clock, at=1.5)
+                self.assertTrue(msc.transition_pending)
+                self.assertEqual("msc", opt._msc_transition.phase)
+                self.assertEqual(origin, epoch.close_requested_at)
+        asyncio.run(run())
+
+    def test_pending_epoch_is_retired_by_reconnect_and_cancelled_command(self):
+        async def run():
+            for boundary in ("reconnect", "cancel"):
+                with self.subTest(boundary=boundary):
+                    clock, ha, opt = self.scenario(first_ems=1000.0)
+                    ha._report(ha.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV, -1.0)
+                    ha.plant[ha.cfg.ems_mode_select] = MODE_CMD_DISCHARGE_PV
+                    with clock.active():
+                        _, _, pending = await self.cycle(opt, ha, clock)
+                        self.assertTrue(pending.transition_pending)
+                        epoch = opt._msc_transition
+                        if boundary == "reconnect":
+                            opt.on_ws_disconnect()
+                            opt.on_ws_connect()
+                        else:
+                            opt._apply_with_msc_proof = unittest.mock.AsyncMock(side_effect=asyncio.CancelledError)
+                            with self.assertRaises(asyncio.CancelledError):
+                                await opt._apply(await opt._read_state(), Decision())
+                            del opt._apply_with_msc_proof
+                        clock.elapsed = 1.0
+                        ha._report(ha.cfg.ems_mode_select, MODE_MAX_SELF, 0.5)
+                        before = len(ha.requests)
+                        _, _, next_result = await self.cycle(opt, ha, clock)
+                        self.assertFalse(next_result.automatic_application_completed)
+                        self.assertIsNot(epoch, opt._msc_transition)
+                        self.assertFalse(any(r[2] == ha.cfg.grid_export_limit and r[3] > 0.011
+                                             for r in ha.requests[before:]))
+        asyncio.run(run())
+
+
+    def test_later_contradictory_msc_requires_new_latest_request_barrier(self):
+        async def run():
+            clock, ha, opt = self.scenario(first_ems=1000.0)
+            ha._report(ha.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV, -1.0)
+            ha.plant[ha.cfg.ems_mode_select] = MODE_CMD_DISCHARGE_PV
+            with clock.active():
+                await self.cycle(opt, ha, clock)
+                ha._report(ha.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV, 0.5)
+                before = len(ha.requests)
+                _, _, pending = await self.cycle(opt, ha, clock, at=1.0)
+                self.assertTrue(pending.transition_pending)
+                self.assertTrue(any(r[1] == "select_option" for r in ha.requests[before:]))
+                self.assertEqual(clock.at(1.0).timestamp(), opt._msc_transition.msc_requested_at)
+                # Matching feedback from before the actual second dispatch
+                # cannot satisfy the latest-request barrier.
+                ha._report(ha.cfg.ems_mode_select, MODE_MAX_SELF, 0.7)
+                _, _, pending = await self.cycle(opt, ha, clock, at=1.5)
+                self.assertTrue(pending.transition_pending)
+                self.assertFalse(pending.automatic_application_completed)
+                ha._report(ha.cfg.ems_mode_select, MODE_MAX_SELF, 1.1)
+                _, _, done = await self.cycle(opt, ha, clock, at=2.0)
+                self.assertTrue(done.automatic_application_completed, done.error)
+        asyncio.run(run())
+
+    def test_replaced_numeric_request_is_not_retained_as_original_close(self):
+        async def run():
+            clock, ha, opt = self.scenario(first_ems=1000.0)
+            ha.next_fast = 1000.0
+            ha._report(ha.cfg.grid_export_limit, "25.0", -1.0)
+            ha.plant[ha.cfg.grid_export_limit] = "25.0"
+            with clock.active():
+                await self.cycle(opt, ha, clock)
+                opt._number_settlement_requests[ha.cfg.grid_export_limit] = (0.01, clock.at(0.2).timestamp(), False)
+                before = len(ha.requests)
+                _, _, pending = await self.cycle(opt, ha, clock, at=1.0)
+                self.assertTrue(pending.transition_pending)
+                self.assertEqual(clock.at(1.0).timestamp(), opt._msc_transition.close_requested_at)
+                self.assertTrue(any(r[2] == ha.cfg.grid_export_limit and r[3] <= 0.011
+                                    for r in ha.requests[before:]))
+                self.assert_no_permissive_export(ha)
+        asyncio.run(run())
+
+    def test_continuity_change_during_pending_restriction_or_proven_joint_read_blocks_completion(self):
+        async def run():
+            for boundary in ("restriction", "joint"):
+                with self.subTest(boundary=boundary):
+                    clock, ha, opt = self.scenario(first_ems=1000.0)
+                    with clock.active():
+                        if boundary == "restriction":
+                            ha._report(ha.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV, -1.0)
+                            ha.plant[ha.cfg.ems_mode_select] = MODE_CMD_DISCHARGE_PV
+                            await self.cycle(opt, ha, clock)
+                            clock.elapsed = 1.0
+                        else:
+                            ha.next_ems = 4.5
+                            ha.ems_period = 5.0
+                            await self.qualified_epoch(opt, ha, clock)
+                        fired = []
+                        def invalidate(*args):
+                            if not fired:
+                                fired.append(True)
+                                opt.on_ws_disconnect()
+                                opt.on_ws_connect()
+                        def install(state, decision):
+                            if boundary == "restriction":
+                                ha.write_hook = lambda entity, value: invalidate() if entity == ha.cfg.grid_import_limit else None
+                            else:
+                                ha.metadata_hook = lambda entities: invalidate() if {
+                                    ha.cfg.ems_mode_select, ha.cfg.grid_export_limit, ha.cfg.sigenergy_mode_select,
+                                }.issubset(entities) else None
+                        before = len(ha.requests)
+                        _, _, result = await self.cycle(opt, ha, clock, before_apply=install)
+                        self.assertTrue(fired)
+                        self.assertFalse(result.automatic_application_completed)
+                        self.assertFalse(any(r[2] == ha.cfg.grid_export_limit and r[3] > 0.011
+                                             for r in ha.requests[before:]))
+        asyncio.run(run())
+
+
+    def test_retained_pending_never_accepts_equal_pre_future_stale_or_conflicting_reports(self):
+        async def run():
+            for kind, stamp in (("equal", 0.0), ("pre", -1.0), ("future", 100.0),
+                                ("stale", -61.0), ("conflict", 0.5)):
+                with self.subTest(kind=kind):
+                    clock, ha, opt = self.scenario(first_ems=1000.0)
+                    ha._report(ha.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV, -1.0)
+                    ha.plant[ha.cfg.ems_mode_select] = MODE_CMD_DISCHARGE_PV
+                    with clock.active():
+                        await self.cycle(opt, ha, clock)
+                        ha._report(ha.cfg.ems_mode_select, MODE_MAX_SELF, stamp)
+                        if kind == "conflict":
+                            ha.metadata_policy = "conflict"
+                        before = len(ha.requests)
+                        _, _, pending = await self.cycle(opt, ha, clock, at=1.0)
+                        self.assertFalse(pending.automatic_application_completed)
+                        self.assertTrue(pending.transition_pending)
+                        self.assertFalse(any(r[2] == ha.cfg.grid_export_limit and r[3] > 0.011
+                                             for r in ha.requests[before:]))
+        asyncio.run(run())
+
+
+    def test_missing_reports_expire_pending_omission_at_existing_freshness_horizon(self):
+        async def run():
+            for phase in ("close", "msc"):
+                with self.subTest(phase=phase):
+                    clock, ha, opt = self.scenario(first_ems=1e9)
+                    if phase == "close":
+                        ha.next_fast = 1e9
+                        ha._report(ha.cfg.grid_export_limit, "25.0", -1.0)
+                        ha.plant[ha.cfg.grid_export_limit] = "25.0"
+                    ha._report(ha.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV, -1.0)
+                    ha.plant[ha.cfg.ems_mode_select] = MODE_CMD_DISCHARGE_PV
+                    with clock.active():
+                        await self.cycle(opt, ha, clock)
+                        horizon = opt.cfg.hvac_solar_data_max_age_seconds
+                        entity = ha.cfg.grid_export_limit if phase == "close" else ha.cfg.ems_mode_select
+                        before = len(ha.requests)
+                        _, _, pending = await self.cycle(opt, ha, clock, at=horizon - 0.1)
+                        self.assertTrue(pending.transition_pending)
+                        self.assertFalse(any(r[2] == entity for r in ha.requests[before:]))
+                        before = len(ha.requests)
+                        _, _, pending = await self.cycle(opt, ha, clock, at=horizon)
+                        self.assertTrue(pending.transition_pending)
+                        self.assertTrue(any(r[2] == entity for r in ha.requests[before:]))
+                        epoch = opt._msc_transition
+                        boundary = epoch.close_requested_at if phase == "close" else epoch.msc_requested_at
+                        self.assertEqual(clock.at(horizon).timestamp(), boundary)
+                        ha._report(entity, "0.01" if phase == "close" else MODE_MAX_SELF, horizon - 0.05)
+                        _, _, pending = await self.cycle(opt, ha, clock, at=horizon + 0.1)
+                        self.assertTrue(pending.transition_pending)
+                        self.assertEqual(phase, opt._msc_transition.phase)
+                        self.assertFalse(pending.automatic_application_completed)
+        asyncio.run(run())
+
+
+    def test_unbound_legacy_epoch_cannot_use_actual_read_invalidated_during_reconnect(self):
+        async def run():
+            clock, ha, opt = self.scenario(first_ems=4.5, ems_period=5.0)
+            with clock.active():
+                epoch = await self.qualified_epoch(opt, ha, clock)
+                epoch.identity = None
+                fired = []
+                def reconnect(entities):
+                    if not fired:
+                        fired.append(True)
+                        opt.on_ws_disconnect()
+                        opt.on_ws_connect()
+                ha.metadata_hook = reconnect
+                state = await opt._read_state()
+                self.assertTrue(state.hvac_solar_inputs.live_snapshot)
+                self.assertIsNone(state._msc_read_identity)
+                self.assertFalse(opt._msc_transition_observed(state))
+                before = len(ha.requests)
+                decision = Decision(ems_mode=MODE_MAX_SELF, export_limit=25.0,
+                                    export_intent=MSC_SURPLUS_CEILING,
+                                    requires_verified_msc_before_export=True)
+                result = await opt._apply(state, decision)
+                self.assertFalse(result.automatic_application_completed)
+                self.assertFalse(result.automatic_transition_pending)
+                self.assertFalse(any(r[2] == ha.cfg.grid_export_limit and r[3] > 0.011
+                                     for r in ha.requests[before:]))
+        asyncio.run(run())
+
+
+    def test_numeric_request_replacement_cannot_qualify_or_consume_proven_epoch(self):
+        async def run():
+            for boundary in ("before_proof", "after_open"):
+                with self.subTest(boundary=boundary):
+                    clock, ha, opt = self.scenario(first_ems=4.5, ems_period=5.0)
+                    with clock.active():
+                        await self.qualified_epoch(opt, ha, clock)
+                        def replace_request():
+                            opt._number_settlement_requests[ha.cfg.grid_export_limit] = (
+                                0.01, clock.at(9.0).timestamp(), False,
+                            )
+                        if boundary == "before_proof":
+                            replace_request()
+                        else:
+                            ha.helper_hook = replace_request
+                        before = len(ha.requests)
+                        _, _, result = await self.cycle(opt, ha, clock)
+                        self.assertFalse(result.automatic_application_completed)
+                        if boundary == "before_proof":
+                            self.assertFalse(any(r[2] == ha.cfg.grid_export_limit and r[3] > 0.011
+                                                 for r in ha.requests[before:]))
+                        else:
+                            self.assertTrue(result.fallback_attempted)
+                            export_requests = [r[3] for r in ha.requests[before:]
+                                               if r[2] == ha.cfg.grid_export_limit]
+                            self.assertLessEqual(export_requests[-1], 0.011)
+        asyncio.run(run())
+
+
+    def test_pending_diagnostic_accepts_exact_mode_independently_of_unproven_closure(self):
+        async def run():
+            clock, ha, opt = self.scenario(first_ems=1e9)
+            ha.next_fast = 1e9
+            ha._report(ha.cfg.ems_mode_select, MODE_CMD_DISCHARGE_PV, -1.0)
+            ha.plant[ha.cfg.ems_mode_select] = MODE_CMD_DISCHARGE_PV
+            with clock.active():
+                await self.cycle(opt, ha, clock)
+                ha._report(ha.cfg.ems_mode_select, MODE_MAX_SELF, 0.5)
+                stale_at = -opt.cfg.hvac_solar_data_max_age_seconds - 1
+                ha._report(ha.cfg.grid_export_limit, "0.01", stale_at)
+                ha._state_value_metadata[ha.cfg.grid_export_limit]["last_updated"] = clock.at(stale_at).isoformat()
+                _, _, pending = await self.cycle(opt, ha, clock, at=1.0)
+                self.assertTrue(pending.transition_pending, pending.error)
+                self.assertFalse(pending.automatic_application_completed)
+                observations = opt._msc_settlement_evidence.snapshot()["observations"]
+                msc = next(o for o in observations if o["label"] == "msc")
+                export = next(o for o in observations if o["label"] == "export")
+                self.assertEqual("accepted", msc["reason"])
+                self.assertIs(True, msc["outcome"])
+                self.assertEqual("stale", export["reason"])
+                self.assertIs(False, export["outcome"])
+                self.assert_no_permissive_export(ha)
+        asyncio.run(run())

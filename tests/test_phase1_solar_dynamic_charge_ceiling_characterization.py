@@ -158,7 +158,7 @@ class SolarDynamicChargeFixture(Haos49CharacterizationCase):
 class Phase1SolarDynamicChargeCeilingCharacterizationTests(SolarDynamicChargeFixture):
     """Desired Solar charge ownership before the production implementation."""
 
-    def test_active_solar_owns_zero_ceiling_when_future_opportunity_is_abundant(
+    def test_active_solar_keeps_fill_progress_when_future_opportunity_is_abundant(
         self,
     ) -> None:
         decision = self._decide(
@@ -173,7 +173,7 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(SolarDynamicChargeFix
         self.assertEqual("none", decision.trace_values["battery_export_owner"])
         self.assertEqual(25.0, decision.export_limit)
         self.assertEqual(25.0, decision.pv_max_power_limit)
-        self.assertEqual(0.0, decision.ess_charge_limit)
+        self.assertEqual(1.2, decision.ess_charge_limit)
 
     def test_future_opportunity_recomputes_the_ceiling_without_a_timer(self) -> None:
         optimizer = self._optimizer()
@@ -193,10 +193,10 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(SolarDynamicChargeFix
             forecast_pv_kw=[6.0] + [1.8] * 7,
         )
 
-        self.assertAlmostEqual(0.0, abundant.ess_charge_limit, places=2)
+        self.assertAlmostEqual(1.2, abundant.ess_charge_limit, places=2)
         self.assertAlmostEqual(1.2, moderate.ess_charge_limit, places=2)
         self.assertAlmostEqual(4.0, limited.ess_charge_limit, places=2)
-        self.assertLess(abundant.ess_charge_limit, moderate.ess_charge_limit)
+        self.assertEqual(abundant.ess_charge_limit, moderate.ess_charge_limit)
         self.assertLess(moderate.ess_charge_limit, limited.ess_charge_limit)
 
     def test_approaching_deadline_raises_ceiling_toward_required_rate(self) -> None:
@@ -244,10 +244,10 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(SolarDynamicChargeFix
         self.assertEqual(self.NORMAL_CHARGE_KW, inactive.ess_charge_limit)
         self.assertEqual("normal", inactive.trace_values["ess_charge_limit_owner"])
         self.assertFalse(inactive.trace_gates.get("solar_charge_ceiling_owned", False))
-        self.assertEqual(0.0, active.ess_charge_limit)
+        self.assertEqual(1.2, active.ess_charge_limit)
 
-    def test_grid_import_charge_owner_outranks_zero_and_positive_solar_requests(self) -> None:
-        for import_kw, future_pv_kw, solar_kw in ((2.0, 3.0, 0.0), (3.5, 2.6, 2.0)):
+    def test_grid_import_charge_owner_outranks_fill_progress_and_urgent_solar_requests(self) -> None:
+        for import_kw, future_pv_kw, solar_kw in ((2.0, 3.0, 1.65), (3.5, 2.6, 2.0)):
             with self.subTest(import_kw=import_kw, solar_kw=solar_kw):
                 optimizer = self._optimizer(target_battery_charge=import_kw)
                 state_values = {
@@ -263,8 +263,8 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(SolarDynamicChargeFix
                     current_price=0.01, current_price_cents=1.0,
                 )
 
-                # With no import owner, the same forecast permits zero or a
-                # reduced charge ceiling. Numeric equality cannot identify owner.
+                # With no import owner, the approved fill-progress floor or
+                # urgent trajectory applies. Numeric equality cannot identify owner.
                 self.assertEqual(0.0, solar.import_limit)
                 self.assertEqual(solar_kw, solar.ess_charge_limit)
                 self.assertEqual("solar_surplus", solar.trace_values["ess_charge_limit_owner"])
@@ -302,14 +302,14 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(SolarDynamicChargeFix
             current_ess_charge_limit=importing.ess_charge_limit,
         )
 
-        self.assertEqual(0.0, solar.ess_charge_limit)
+        self.assertEqual(1.65, solar.ess_charge_limit)
         self.assertEqual(2.0, importing.import_limit)
         self.assertEqual(2.0, importing.ess_charge_limit)
         self.assertEqual("grid_import", importing.trace_values["ess_charge_limit_owner"])
         self.assertFalse(importing.trace_gates["solar_charge_ceiling_owned"])
         self.assertIsNone(importing.trace_values["solar_charge_ceiling_requested_kw"])
         self.assertEqual(0.0, released.import_limit)
-        self.assertEqual(0.0, released.ess_charge_limit)
+        self.assertEqual(1.65, released.ess_charge_limit)
         self.assertTrue(released.solar_surplus_policy_active)
         self.assertTrue(released.trace_gates["solar_charge_ceiling_owned"])
         self.assertEqual("solar_surplus", released.trace_values["ess_charge_limit_owner"])
@@ -419,7 +419,7 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(SolarDynamicChargeFix
         # Parent observation trust remains false, while verified provider
         # freshness controls only the separate dynamic charge authority.
         self.assertTrue(decision.solar_surplus_policy_active)
-        self.assertEqual(0.0, decision.ess_charge_limit)
+        self.assertEqual(1.2, decision.ess_charge_limit)
         self.assertTrue(decision.trace_gates["solar_charge_ceiling_owned"])
         self.assertFalse(decision.trace_gates["forecast_today_observation_trusted"])
 
@@ -435,7 +435,7 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(SolarDynamicChargeFix
         self.assertTrue(decision.solar_surplus_policy_active)
         self.assertEqual(0.0, decision.import_limit)
         self.assertEqual("demand_window_block", decision.trace_values["import_branch"])
-        self.assertEqual(0.0, decision.ess_charge_limit)
+        self.assertEqual(1.2, decision.ess_charge_limit)
         self.assertEqual("none", decision.trace_values["battery_export_owner"])
 
     def test_trace_explains_the_dynamic_charge_request(self) -> None:
@@ -473,7 +473,7 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(SolarDynamicChargeFix
             places=2,
         )
         self.assertEqual(
-            "present_charging_required_for_fill_trajectory",
+            "fill_progress_floor_for_protected_fill",
             decision.trace_values["solar_charge_ceiling_reason"],
         )
 

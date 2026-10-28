@@ -339,3 +339,38 @@ Decision: pending authenticated Force requests yield to verified post-request se
 Record the completed narrow Medium-over-Evening Boost priority correction without extending it to a Boost stability/reserve redesign. Overnight reserve policy, Medium/High threshold changes and proposed 30-cent tuning remain undecided; unexplained export/Solar/Morning observations retain no asserted root cause. The operational register is `CURRENT_STATE.md` O1-O9.
 
 Stage B implementation and supplied independent focused A/B/C review are complete; live acceptance is not. Stage B remains **NO-GO for deployment**. Documentation review, separate staging/commit approval, separate publication/release/installation approval and supervised evidence with .65 rollback ready remain required in the sequence recorded in `CURRENT_STATE.md`. No roadmap phase is advanced; Climate Manager broadly works and is not the current priority.
+
+
+## 2026-10-28 - Prioritize present Solar fill progress in the approved local candidate
+
+Decision: the operator selected fill progress when available PV cannot satisfy
+both near-15 kW export and charging progress. On `fix/solar-fill-progress-trajectory`,
+use the remaining protected fill energy divided by time to the existing fill
+deadline as a dynamic charging-cap floor. Retain any higher urgent-current-bin
+requirement and bound by current normal trusted capability/request. Reuse the
+existing safety factor, deadline margin and command precision; introduce no new
+fixed charging rate, price threshold or stored-battery-export authority.
+
+Rationale: forecast-only deferral can leave insufficient time to recover from a
+late forecast downgrade. A present charging allowance reduces that reliance but
+may reduce immediate export; it cannot guarantee available PV, physical charging
+or a full battery. The existing instantaneous-load reserve model remains unchanged.
+
+Coordinate the time-varying floor with retain-only completed-total feedback in
+the same trusted context, never extra upward permission or retained stale proof.
+Downward responses, fallback, current authority and all independent safety guards
+remain binding. Tests-first local development, independent review and docs are
+authorized; no commit, integration, publication, installation or live change is
+authorized by this decision. Phase/live-acceptance gates remain open.
+
+
+## 2026-10-28 - Integrate reviewed Solar / MSC / planning stages locally
+
+The operator separately approved `fix/solar-msc-planning-integration` in
+`C:/Projects/sigenergy_optimizer-solar-msc-planning`, based on verified main
+`556cca8c040e3eea52029a8ac055a5c81f411018`. Combine the five reviewed local stages,
+reconcile shared source and policy expectations, add combined regressions, run
+focused/full guarded checks and independent safety review, and update docs.
+Original stages remain preserved. This approval does not authorize commits,
+pushes, GitHub merges, publication, installation or live changes. Earlier
+standalone passes do not substitute for combined validation or physical evidence.

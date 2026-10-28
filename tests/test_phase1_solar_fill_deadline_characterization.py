@@ -79,7 +79,7 @@ class SolarFillDeadlineCharacterizationTests(SolarDynamicChargeFixture):
                 self.assertEqual(at_sunset.trace_values[key], earlier.trace_values[key])
         self.assertEqual(1.20, earlier.trace_values["solar_forecast_safety_factor"])
 
-    def test_margin_starts_positive_charging_earlier(self) -> None:
+    def test_margin_raises_progress_floor_and_preserves_urgent_requirement(self) -> None:
         forecast = [6.0] + [2.4] * 7
         no_margin = self._decide(
             self._optimizer(solar_surplus_fill_deadline_margin_minutes=0),
@@ -87,7 +87,7 @@ class SolarFillDeadlineCharacterizationTests(SolarDynamicChargeFixture):
         )
         margin = self._decide(self._optimizer(), forecast_pv_kw=forecast)
 
-        self.assertEqual(0.0, no_margin.ess_charge_limit)
+        self.assertEqual(1.2, no_margin.ess_charge_limit)
         self.assertEqual(2.6, margin.ess_charge_limit)
         self.assertTrue(margin.trace_gates["solar_charge_ceiling_owned"])
         self.assertEqual("present_charging_required_for_fill_trajectory", margin.trace_values["solar_charge_ceiling_reason"])

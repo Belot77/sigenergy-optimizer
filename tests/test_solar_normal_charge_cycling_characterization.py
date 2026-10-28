@@ -1,8 +1,8 @@
 """O2 re-entry protection, with trace-inspired inputs and synthetic detail.
 
 The supplied trace does not serialize detailed Solcast intervals. These tests
-therefore exercise the approved re-entry guard, not an exact trace replay or a
-minimum-charge policy. All decisions use the real energy budget, final ownership
+therefore exercise the approved re-entry guard and fill-progress cap, not an
+exact trace replay or proof of physical charging. All decisions use the real energy budget, final ownership
 arbitration and dynamic charge calculation. Live report provenance is synthetic;
 there are no HA calls or claims of physical application.
 """
@@ -62,8 +62,8 @@ class SolarNormalChargeCyclingCharacterizationTests(SolarDynamicChargeFixture):
             "next_sunset_ts": self.SUNSET_TS,
             "hours_to_sunset": (self.SUNSET_TS - at.timestamp()) / 3600.0,
             # Fixed, complete half-hour intervals through the fixed sunset.
-            # This synthetic shape produces positive then zero Solar charge
-            # requests as load changes; the trace's exact 1.52 kW is not replayed.
+            # This synthetic shape produces urgent then progress-floor Solar
+            # caps as load changes; the trace's exact 1.52 kW is not replayed.
             "solcast_detailed": self._detailed_forecast([15.7] + [4.4] * 14),
             "solcast_provider_polled": datetime.fromtimestamp(
                 self.WHEN.timestamp() - 1, timezone.utc,
@@ -164,7 +164,7 @@ class SolarNormalChargeCyclingCharacterizationTests(SolarDynamicChargeFixture):
         self._assert_normal_charge(pending)
         for decision in decisions[2:-1]:
             self._assert_normal_charge(decision)
-        self.assertEqual(0.0, decisions[-1].ess_charge_limit)
+        self.assertEqual(2.42, decisions[-1].ess_charge_limit)
         self.assertTrue(decisions[-1].trace_gates["solar_charge_ceiling_owned"])
         self.assertEqual("energy_budget_not_positive", deficit.trace_values["solar_surplus_fail_reason"])
         self.assertAlmostEqual(13.73, deficit.trace_values["solar_measured_pv_surplus_kw"])
@@ -219,19 +219,22 @@ class SolarNormalChargeCyclingCharacterizationTests(SolarDynamicChargeFixture):
         self.assertLess(decisions[0].ess_charge_limit, self.NORMAL_CHARGE_KW)
         self._assert_pv_only_without_import(decisions)
 
-    def test_safe_load_changes_keep_zero_charge_when_future_covers_fill(self):
+    def test_safe_load_changes_keep_fill_progress_when_future_covers_fill(self):
+        # Protected fill = 1.2 * 40.3 * (1 - 0.626) = 18.08664 kWh.
+        # The fixed deadline leaves about 7.495..7.475 h across these
+        # 0..72 s fixtures; upward 0.01 kW rounding gives 2.42 kW.
         decisions = self._sequence([1.7, 1.75, 1.6, 1.7])
 
         for decision in decisions:
             self.assertTrue(decision.solar_surplus_policy_active)
             self.assertTrue(decision.trace_gates["solar_charge_ceiling_owned"])
-            self.assertEqual(0.0, decision.ess_charge_limit)
+            self.assertEqual(2.42, decision.ess_charge_limit)
             self.assertEqual(0.0, decision.trace_values["solar_charge_ceiling_required_now_kwh"])
             self.assertGreaterEqual(
                 decision.trace_values["solar_charge_ceiling_future_opportunity_kwh"],
                 decision.trace_values["solar_charge_ceiling_protected_fill_need_kwh"],
             )
-            self.assertEqual("future_opportunity_covers_protected_fill", decision.trace_values["solar_charge_ceiling_reason"])
+            self.assertEqual("fill_progress_floor_for_protected_fill", decision.trace_values["solar_charge_ceiling_reason"])
         self._assert_pv_only_without_import(decisions)
 
     def test_persistently_failed_budget_keeps_normal_charging(self):
@@ -262,20 +265,20 @@ class SolarNormalChargeCyclingCharacterizationTests(SolarDynamicChargeFixture):
                 self.assertTrue(decisions[2].solar_surplus_policy_active)
                 self._assert_pv_only_without_import(decisions)
 
-    def test_forecast_downgrade_releases_zero_charge_without_minimum_policy(self):
+    def test_forecast_downgrade_releases_then_reacquires_fill_progress(self):
         decisions = self._sequence(
             [1.536] * 8,
             per_step={1: {"forecast_remaining_kwh": 4.8182}},
         )
 
-        self.assertEqual(0.0, decisions[0].ess_charge_limit)
+        self.assertEqual(2.42, decisions[0].ess_charge_limit)
         self._assert_normal_charge(decisions[1])
         self.assertEqual("energy_budget_not_positive", decisions[1].trace_values["solar_surplus_fail_reason"])
         self.assertEqual(4.8182, decisions[1].trace_values["solar_remaining_forecast_kwh"])
         for decision in decisions[2:-1]:
             self._assert_normal_charge(decision)
         self.assertTrue(decisions[-1].solar_surplus_policy_active)
-        self.assertEqual(0.0, decisions[-1].ess_charge_limit)
+        self.assertEqual(2.42, decisions[-1].ess_charge_limit)
         self._assert_pv_only_without_import(decisions)
 
     def test_trust_loss_during_qualification_requires_a_new_full_interval(self):
@@ -289,7 +292,7 @@ class SolarNormalChargeCyclingCharacterizationTests(SolarDynamicChargeFixture):
             self._assert_normal_charge(decision)
         self.assertEqual("load_power_untrusted_or_invalid", decisions[4].trace_values["solar_surplus_fail_reason"])
         self.assertTrue(decisions[-1].solar_surplus_policy_active)
-        self.assertEqual(0.0, decisions[-1].ess_charge_limit)
+        self.assertEqual(2.42, decisions[-1].ess_charge_limit)
         self._assert_pv_only_without_import(decisions)
 
     def test_cached_load_at_thirty_second_boundary_cannot_complete_reentry(self):
@@ -305,7 +308,7 @@ class SolarNormalChargeCyclingCharacterizationTests(SolarDynamicChargeFixture):
         for decision in decisions[1:-1]:
             self._assert_normal_charge(decision)
         self.assertTrue(decisions[-1].solar_surplus_policy_active)
-        self.assertEqual(0.0, decisions[-1].ess_charge_limit)
+        self.assertEqual(2.42, decisions[-1].ess_charge_limit)
         self._assert_pv_only_without_import(decisions)
 
     def test_unsafe_battery_flow_cannot_accrue_budget_reentry_qualification(self):
@@ -327,7 +330,7 @@ class SolarNormalChargeCyclingCharacterizationTests(SolarDynamicChargeFixture):
         # starts a new full interval; 72 s is the earliest permitted readmission.
         self.assertEqual("qualifying", decisions[7].trace_values["solar_budget_reentry_state"])
         self.assertTrue(decisions[-1].solar_surplus_policy_active)
-        self.assertEqual(0.0, decisions[-1].ess_charge_limit)
+        self.assertEqual(2.42, decisions[-1].ess_charge_limit)
         self._assert_pv_only_without_import(decisions)
 
     def test_independent_high_owner_cannot_donate_budget_reentry_time(self):
@@ -355,5 +358,5 @@ class SolarNormalChargeCyclingCharacterizationTests(SolarDynamicChargeFixture):
         for decision in decisions[7:-1]:
             self._assert_normal_charge(decision)
         self.assertTrue(decisions[-1].solar_surplus_policy_active)
-        self.assertEqual(0.0, decisions[-1].ess_charge_limit)
+        self.assertEqual(2.42, decisions[-1].ess_charge_limit)
         self._assert_pv_only_without_import([decisions[0], decisions[1]] + decisions[7:])

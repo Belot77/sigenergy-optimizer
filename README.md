@@ -1,5 +1,24 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Local Solar / MSC / planning integration - not published
+
+Approved branch `fix/solar-msc-planning-integration` in
+`C:/Projects/sigenergy_optimizer-solar-msc-planning` combines five reviewed local
+stages at main `556cca8c040e3eea52029a8ac055a5c81f411018`. Solar prioritizes present
+fill progress using the existing deadline and bounded normal charge capability;
+less immediate export is possible. Retain-only completed-total rebasing prevents
+tiny floor changes from discarding earned relief. Persistent mode-helper currentness,
+MSC pending request timing/waiting logs and passive reserve explanations are included.
+
+Integrated source/test independent review is GO. Affected modules passed 365
+tests / 495 subtests; eight new interaction methods passed 8 / 16. The final
+guarded full suite passed **1,632 tests / 1,606 subtests**, zero failures.
+Independent documentation/scope review is GO. See
+[CURRENT_STATE.md](docs/CURRENT_STATE.md) for combined and standalone evidence. See [policy, risk and rollback](docs/SOLAR_FILL_PROGRESS_TRAJECTORY.md)
+and the [control contract](docs/CONTROL_CONTRACT.md). No commit, push, publication,
+installation or live setting change is authorized. A charge cap permits charging;
+it does not guarantee battery absorption, full SoC or physical stability.
+
 ## Current published release: 2.3.73-haos84
 
 [Published 28 October 2026, 03:51:01 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.73-haos84).
@@ -15,9 +34,10 @@ Version/latest index: `sha256:ce9f9c1abf04effd9ef33a0bfccc29282f9f81356f617cebd8
 Source suite: 1,574 tests / 1,520 subtests; release checks: 93 / 104, zero failures.
 Previous immutable .83 remains unchanged. See [publication proof and live checks](docs/HAOS84_RELEASE_CANDIDATE.md).
 
-No HA installation or live settings change was performed. Installed .84 identity,
-physical acceptance and remaining historical MSC causes are unverified. Solar
-feedback allocation and provider recovery remain separate work.
+No HA installation or live settings change was performed here. Later operator
+startup evidence confirms installed .84 source `bc1439120ab6c68d5983768ffd678bb62fedefb8`
+at 15:00:56 AEDT on 28 October. Ongoing physical acceptance and remaining historical
+MSC causes are unverified. The local candidate above is not installed.
 
 ## Previous published release: 2.3.72-haos83
 

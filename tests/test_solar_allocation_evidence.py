@@ -212,9 +212,11 @@ class SolarAllocationEvidenceTests(unittest.TestCase):
     def test_trace_keeps_request_readback_and_physical_feedback_evidence_separate(self):
         fixture = self.fixture
         optimizer = fixture._optimizer()
+        # Establish provider evidence before arming the synthetic preceding
+        # command; a real decision with the new baseline would reset old relief.
+        fixture._decision(optimizer, 0)
         fixture._ramp(optimizer, 2)
-        # Establish the provider fixture and a first current-time decision.
-        state, _ = fixture._decision(optimizer, 5)
+        state = fixture._flow_state(5)
 
         # A synthetic strict-balance rejection follows an acknowledged 0.8 kW
         # relief command. The direct battery sensor is separately reported.
@@ -231,7 +233,7 @@ class SolarAllocationEvidenceTests(unittest.TestCase):
             optimizer, state, fixture.WHEN + timedelta(seconds=5),
         )
 
-        self.assertEqual(0.0, decision.ess_charge_limit)
+        self.assertEqual(1.61, decision.ess_charge_limit)
         self.assertEqual([], optimizer.ha.calls)
         optimizer._record_application_trace(state, decision)
         row = optimizer.decision_trace(limit=1)[0]
@@ -239,7 +241,7 @@ class SolarAllocationEvidenceTests(unittest.TestCase):
 
         self.assertEqual("pre_application", allocation["snapshot_phase"])
         self.assertEqual(state.timestamp.isoformat(), allocation["snapshot_timestamp"])
-        self.assertEqual(0.0, row["summary"]["ess_charge_limit_kw"])
+        self.assertEqual(1.61, row["summary"]["ess_charge_limit_kw"])
         readback = allocation["ess_charge_limit_readback"]
         self.assertEqual(21.0, readback["value_kw"])
         self.assertTrue(readback["available"])

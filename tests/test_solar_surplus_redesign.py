@@ -576,7 +576,7 @@ class SolarSurplusControlWiringTests(Haos49CharacterizationCase):
         self.assertEqual("none", decision.trace_values["battery_export_owner"])
         self.assertEqual(25.0, decision.export_limit)
         self.assertEqual(25.0, decision.pv_max_power_limit)
-        self.assertEqual(0.0, decision.ess_charge_limit)
+        self.assertEqual(0.6, decision.ess_charge_limit)
         self.assertTrue(decision.trace_gates["solar_charge_ceiling_owned"])
 
     def test_below_one_cent_blocks_solar(self) -> None:
@@ -673,7 +673,7 @@ class SolarSurplusControlWiringTests(Haos49CharacterizationCase):
         self.assertFalse(conservative.solar_surplus_policy_active)
         self.assertEqual(baseline.import_limit, conservative.import_limit)
         self.assertEqual(baseline.pv_max_power_limit, conservative.pv_max_power_limit)
-        self.assertEqual(0.0, baseline.ess_charge_limit)
+        self.assertEqual(0.6, baseline.ess_charge_limit)
         self.assertEqual(5.0, conservative.ess_charge_limit)
         self.assertFalse(conservative.trace_gates["solar_charge_ceiling_owned"])
         self.assertEqual(baseline.ess_discharge_limit, conservative.ess_discharge_limit)
@@ -687,9 +687,10 @@ class SolarSurplusControlWiringTests(Haos49CharacterizationCase):
         )
 
         # Protected fill = 2.4 kWh; only 0.25 h * 5 kW is after
-        # the current interval, leaving 1.15 kWh / 0.25 h = 4.6 kW now.
+        # the current interval, leaving an urgent 1.15 / 0.25 = 4.6 kW.
+        # The approved progress floor is higher: 2.4 / 0.5 h = 4.8 kW.
         self.assertTrue(decision.solar_surplus_policy_active)
-        self.assertEqual(4.6, decision.ess_charge_limit)
+        self.assertEqual(4.8, decision.ess_charge_limit)
         self.assertEqual(0.25, decision.trace_values["solar_charge_ceiling_current_window_hours"])
         self.assertEqual(1.25, decision.trace_values["solar_charge_ceiling_future_opportunity_kwh"])
 
@@ -748,7 +749,8 @@ class SolarSurplusControlWiringTests(Haos49CharacterizationCase):
         optimizer = self._optimizer()
         state = self._state(current_ess_charge_limit=None)
         decision = self.decide(optimizer, state, self.WHEN)
-        self.assertEqual(0.0, decision.ess_charge_limit)
+        # Automated fill floor before Manual freeze: 1.2 x 2 kWh / 4 h.
+        self.assertEqual(0.6, decision.ess_charge_limit)
 
         optimizer._freeze_decision_to_live_mode(state, decision, optimizer.cfg.manual_option)
 
