@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased local fix candidate: failed export-close recovery - 2026-10-29
+## 2.3.75-haos86 - local release candidate - 2026-10-29
+
+- Prepare normally merged PR #63, source merge `b294f463e9fd4a2cbb6e1266e7d922422067e318`: repair identity-bound failed-close recovery without weakening later report, authority or independent restriction checks. The separate dashboard snapshot policy remains unchanged.
+- Align the five established version markers and post-merge status/release documents only. Source full validation: 1,643 tests / 1,630 subtests, zero failures; independent source/test/docs/scope review GO. Disjoint release checks passed 58 tests / 61 subtests, zero failures; independent release review is GO.
+- Local preparation only: no .86 metadata commit, tag, build, digest, release, installation or live settings action. Latest published and operator-confirmed installed version remains .85. See docs/HAOS86_RELEASE_CANDIDATE.md.
+
+## Historical pre-merge recovery checkpoint - merged by PR #63 - 2026-10-29
 
 - Supplied recent trace summary: 500 rows from 07:46:40 to 08:25:03 AEDT; 113 succeeded, one failed, 386 pending. HA commands failed at 07:55-07:56; fallback export-close acceptance was false. Later exact-MSC/current-export-close reports were fresh and accepted, but the close epoch remained unaccepted and pending recovery retried MSC only.
 - Local recovery implementation: for an actual identity-bound pending epoch with an existing close boundary and close_accepted=False, renew the restrictive close even if current state reads closed. Retire the retained MSC phase, require a later closing report, then dispatch MSC and require a later exact-MSC report. Readback alone does not establish acceptance. A successful fallback close can be accepted for this sequence without converting the overall application to success.

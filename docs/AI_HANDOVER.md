@@ -1,5 +1,40 @@
 # SigEnergy Optimizer AI Handover
 
+## Local release candidate: 2.3.75-haos86 - 29 October 2026
+
+Source [PR #63](https://github.com/Belot77/sigenergy-optimizer/pull/63) merged
+normally at `b294f463e9fd4a2cbb6e1266e7d922422067e318`, 21:55:56 UTC on
+28 October / 08:55:56 AEDT on 29 October. Parents are
+`4ba817315f45fdbf47077d1095f1f0a2033a7316` and reviewed head
+`bdf4108e11f7c04b3811f12bcb54e6fff9504403`; merge tree
+`35c9b314047dc77da08af366e469a1be723b840a` exactly matches the reviewed fix.
+
+The fix repairs a .85 pending-recovery deadlock after a failed export-close
+response. An identity-bound unaccepted close is dispatched again even when HA
+already reports closure. A new close boundary and later closure report precede
+a new MSC request and later exact-MSC report. All authority, identity, independent
+restriction and accepted-request proof checks remain. The separate dashboard
+snapshot policy is unchanged; passing tests does not prove physical acceptance.
+
+Approved preparation uses `release/2.3.75-haos86` at
+`C:/Projects/sigenergy_optimizer-release-haos86`. Exactly five established version
+markers change; release/status documentation is reconciled. No additional control,
+test, setting, dependency, workflow or permanent-instruction change is included.
+Source validation passed 1,643 tests / 1,630 subtests, zero failures, with independent
+source/test/docs/scope review GO. Disjoint release checks passed 16 static tests and
+42 runtime tests / 61 subtests, zero failures; independent release review is GO.
+
+At this local preparation checkpoint .86 is not committed or published. It has
+no tag, build, image digest or installed identity. Latest published and
+operator-confirmed installed version is .85, source
+`72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`. Its immutable image index is
+`sha256:68a15730cd18592d153a27f29e4e801c5581c28680e86c299cdd9f478c120329`.
+Publication requires separate approval of the reviewed preparation tree and exact
+source/image verification. Auto update was last reported off on 28 October;
+reconfirm before publication. Installation/settings remain separate. Preserve
+unfinished work and runtime data; no HA action occurred. Do not use release.sh.
+See [release preparation record](HAOS86_RELEASE_CANDIDATE.md).
+
 ## Current published release: 2.3.74-haos85 - 28 October 2026
 
 [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.74-haos85) was published at 2026-10-28T06:39:02Z (17:39:02 AEDT). Metadata PR #61 merged normally at `ca569f1b8b44e892f2eec471cae573c175f36ad5`, with parents `aefba54dddcaace1e3b318bbf6cca2a282d6c3a3` and `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`; merge tree `3ed6e5a677f1af72cfac503be91fe725375ea15b` matches the published metadata tree. Annotated tag object `8fc43ef082498766561acb15157175e48906adb3` resolves to source/tag commit `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1` and that tree.
@@ -10,7 +45,7 @@ The merged source full suite passed **1,632 tests / 1,606 subtests**, zero failu
 
 Automatic updates were explicitly confirmed off on 28 October. Earlier operator evidence identifies installed .84 at 15:00:56 AEDT that day. The supplied 29 October 07:25:16 app log confirms runtime signature `2.3.74-haos85` and container source commit `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`; this confirms process identity at that time, not ongoing physical acceptance. Supervised charging/export/MSC/Boost/provider evidence remains outstanding. Do not claim universal resolution of historical MSC errors or guarantee battery absorption, deadline fill or physical stability. Keep .84 immutable; backup/reinstall rollback readiness has not been demonstrated. See [the publication receipt](HAOS85_RELEASE_CANDIDATE.md) and [fill policy and limits](SOLAR_FILL_PROGRESS_TRAJECTORY.md).
 
-## Local unreleased fix checkpoint: failed export-close recovery - 29 October 2026
+## Historical pre-merge recovery checkpoint - merged by PR #63 - 29 October 2026
 
 The supplied 500-row excerpt covers 07:46:40-08:25:03 AEDT: 113 succeeded, one failed and 386 pending. At 07:55-07:56, HA commands failed and restrictive fallback reported export-close acceptance False, with request boundary 1793220936.620536. Later observations reported exact MSC and current export limit 0.01 with fresh/accepted evidence, but the application remained stuck: the current .85 close epoch retained close_accepted=False, and the pending handler retried MSC only (up to 15 times). This documents the supplied trace summary; it does not establish a broader network cause.
 
