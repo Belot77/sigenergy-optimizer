@@ -1615,7 +1615,6 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                 super().__init__(settle_numbers=False, settle_selects=False)
                 self.msc_requests = []
                 self.authority_reads = []
-                self.reassert_reported_at = None
 
             def _record_state_value(self, entity_id, value):
                 reported = moment[0].isoformat()
@@ -1632,15 +1631,6 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             async def bulk_states(self, entity_ids):
                 if {cfg.sigenergy_mode_select, cfg.ha_control_switch}.issubset(entity_ids):
                     self.authority_reads.append((len(self.calls), moment[0].timestamp()))
-                if (
-                    cfg.ems_mode_select in entity_ids and len(self.msc_requests) == 2
-                    and self.reassert_reported_at is None
-                ):
-                    # Explicit unchanged-MSC telemetry arrives on a later read
-                    # after the reopening reassertion, never from service success.
-                    moment[0] += timedelta(milliseconds=1)
-                    self._record_state_value(cfg.ems_mode_select, MODE_MAX_SELF)
-                    self.reassert_reported_at = moment[0].timestamp()
                 return await super().bulk_states(entity_ids)
 
         ha = ReopeningObservationHA()
@@ -1697,7 +1687,11 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
             export_ceiling=25.0,
         )
         second_cycle_start = len(ha.calls)
-        apply(verified, second)
+        proven_epoch = optimizer._msc_transition
+        original_boundaries = (proven_epoch.close_requested_at, proven_epoch.msc_requested_at)
+        completed = apply(verified, second)
+        self.assertTrue(completed.succeeded, completed.error)
+        self.assertTrue(completed.automatic_application_completed)
         second_cycle_calls = ha.calls[second_cycle_start:]
 
         high_export_call = (
@@ -1722,9 +1716,14 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
         self.assertGreater(closure_reported_at, close_requested_at)
         self.assertGreaterEqual(ha.msc_requests[0], closure_reported_at)
         self.assertGreater(msc_reported_at, ha.msc_requests[0])
-        self.assertGreater(ha.reassert_reported_at, ha.msc_requests[1])
+        # The separately reported exact MSC proves the original request; a
+        # same-value reassertion must not discard that completed proof interval.
+        self.assertEqual(1, len(ha.msc_requests))
+        self.assertNotIn(msc_call, second_cycle_calls)
+        self.assertEqual(original_boundaries, (proven_epoch.close_requested_at, proven_epoch.msc_requested_at))
+        self.assertIsNone(optimizer._msc_transition)
         self.assertIn(
-            (second_cycle_start + high_export_index, ha.reassert_reported_at),
+            (second_cycle_start + high_export_index, msc_reported_at),
             ha.authority_reads,
         )
 

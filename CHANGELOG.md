@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased — Evening Boost helper currentness — 2026-10-28
+## Unreleased - MSC epoch and maintenance proof - 2026-10-28
+
+- Retain an already-proven pending MSC request before PV-only reopening instead of resetting its proof with an identical command. Fresh exact MSC, request-correlated export closure, epoch identity/boundaries and current authority remain mandatory; consume only after successful automatic completion.
+- Qualify repeated maintenance only for an unchanged already-open bounded `MSC_SURPLUS_CEILING`, using later real-reader/joint proof after the original MSC and export-opening requests. Completed commands and baseline booleans alone grant no permission. Preserve target/request identity, continuity generation, owner checks and restrictive fallback. A one-time same-setting startup anchor requires a final live exact-target check and later post-write report; it never reopens a reduced ceiling.
+- Add bounded passive request/report evidence and error codes to application traces, with existing reads only, scalar allowlists and recorder failure isolation. Pending retry/latest-request rules, three-second waits, independent protections and Manual/Force remain unchanged. Historical errors and physical behavior still require evidence.
+- Validation: final focused 56 tests / 41 subtests and full guarded suite 1,574 tests / 1,520 subtests passed, zero failures (206 warnings). Independent source/safety and docs review GO. Publication receipt follows separately. Installation/settings remain separate. Rollback is a scoped revert of this candidate.
+
+## Historical local candidate — Evening Boost helper currentness — 2026-10-28
 
 - A current, trusted persistent mode `input_select` can have valid current chronology despite an old `last_reported` (or `last_updated` fallback); the duplicate Boost re-entry upper-age cap could still reject it and reset qualification. This candidate skips only that upper-age cap for the current-read trusted mode observation. Availability, freshness, expected value, finite non-boolean timestamp, and non-future chronology remain required (`0 <= age`; even one second in the future is rejected).
 - Remote EMS and device age limits, trusted load/sunrise evidence, 120-second advancing load-report span and monotonic qualification, 60-second report-gap reset, Manual/Force ownership, dispatch authority, current limits, reserve/price and MSC protections, and immediate failure closures remain unchanged. No separate safety hold or Boost redesign is added.

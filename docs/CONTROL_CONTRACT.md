@@ -134,6 +134,39 @@ Trace persistence is diagnostic only and must never delay control on the event l
 
 A new epoch after unresolved clock discontinuity requires bounded corroboration from two independent certificate-verified HTTPS origins with coherent Date, wall and monotonic timing. Before adopting that epoch, preserve full prior decision-segment bytes and the status captured by the completed preservation attempt in a verified durable history snapshot outside active retention. Missing evidence or failed preservation/status publication leaves writes and age-based deletion suspended. Historical gap flags remain sticky; recovery cannot reconstruct missing decisions. See [the recovery and preservation details](TRACE_CLOCK_RECOVERY.md).
 
+## Reuse of proven MSC settlement for unchanged surplus permission
+
+An already-proven pending MSC epoch may retain its original request when reopening
+PV-only permission. Fresh exact MSC strictly after that MSC request and fresh
+export closure strictly after an existing close request remain mandatory; preserve
+an absent close boundary for already-trusted closed startup. Recheck epoch object,
+phase, both boundaries and current authority after awaits. Consume only after
+successful automatic completion. Failure under retained authority requests the
+existing restrictive fallback; takeover/cancellation cannot consume proof and
+introduce no new immediate-close guarantee after automatic authority is lost.
+
+Maintenance applies only to an unchanged, already-open bounded `MSC_SURPLUS_CEILING`.
+A completed application creates only a command candidate. Later actual-reader
+provenance and current joint authority/mode/export reads must prove exact fresh
+MSC strictly after its original request, matching fresh export readback strictly
+after its original opening/anchor request, stable identity/generation and unchanged
+numeric-request identity. Maintain non-regressing proof through relevant awaits.
+Repeated maintenance may omit the redundant MSC command only while all checks
+hold. This path never reopens a reduced/closed ceiling or increases the target.
+
+When a local opening anchor is absent, a one-time same-setting request is allowed
+only after the final joint live read confirms the positive ceiling still exactly
+matches the bounded target. Later matching post-request readback remains required;
+the request itself grants no maintenance proof. Restart, continuity/config/source
+changes, pending/fallback state, failed/cancelled applications, authority loss or
+contradictory evidence retire maintenance permission. Capture reader identity
+before awaits and verify it after them. Recheck charging owners after any added
+proof await and before a charge write. A baseline boolean or synthetic live flag
+cannot replace this provenance. Deliberate `BATTERY_EXPORT`, independent owners,
+pending retry/latest-request semantics, timeouts and fallback ordering remain
+unchanged. Bounded allowlisted diagnostics use existing reads, grant no authority,
+and cannot change control behavior or prove physical settlement.
+
 ## Automated baseline
 
 Normal Automated operation is deliberately uneventful:

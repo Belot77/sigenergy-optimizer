@@ -1,6 +1,82 @@
 # Current State
 
-## Local candidate: Evening Boost helper currentness — 28 October 2026
+## MSC source candidate for .84 - 28 October 2026
+
+Branch `fix/msc-maintenance-proof` at
+`C:\Projects\sigenergy_optimizer-msc-maintenance-proof` starts at
+`de29a8754c6707cc8ead0497d12290ddaf31aa57`, the normal merge of
+[Boost PR #56](https://github.com/Belot77/sigenergy-optimizer/pull/56)
+at 02:57:31 UTC. Charge-readback [PR #55](https://github.com/Belot77/sigenergy-optimizer/pull/55)
+is already included through merge `223ac22356fcb0fc3e8f21aaa639b2fc013165c1`.
+This source candidate carries the separately reviewed pending-MSC epoch fix and
+adds qualified maintenance plus passive settlement evidence. Publication is
+explicitly authorized; installation and live settings remain separate.
+
+The pending-transition correction retains an already-proven original MSC
+request instead of resetting its proof interval with an identical command.
+Fresh exact MSC must remain strictly post-request; fresh closed-export proof
+must remain strictly post-close where a close boundary exists. Already-trusted
+closed startup retains its absent close boundary. Object identity, phase, both
+boundaries and current authority remain checked before reopening and completion.
+
+Maintenance is a separate path for an unchanged, already-open bounded
+`MSC_SURPLUS_CEILING`. Completed application creates only a command candidate.
+A later real-reader snapshot and joint live read must prove fresh exact MSC
+strictly after its original MSC request and matching export-setting readback
+strictly after its original opening/anchor request. Current authority, exact
+bounded target, numeric-request identity and opaque control/source generation
+must remain valid after relevant awaits. A baseline boolean or hand-built live
+flag cannot grant reuse. Maintenance may repeat while all proof stays valid;
+it cannot reopen a reduced/closed ceiling or increase the target.
+
+When startup has no process-local numeric request anchor, one same-setting
+request may establish it only after the final joint read confirms that the
+live positive ceiling already equals the bounded target. This is not observed
+settlement: a later matching report is still required. Failure, cancellation,
+pending/fallback state, authority/config/source changes and lost continuity
+retire maintenance evidence. Reader identity is captured before HA awaits;
+reconnect during a read or application cannot label old data as a new epoch.
+Solar/Morning charging ownership is rechecked after any added charge-proof
+await. Independent restrictions and Manual/Force behavior remain binding.
+
+Pending retry boundaries, latest-request semantics, existing three-second waits
+and fallback ordering are unchanged. Slow, missing, conflicting or genuinely
+wrong device reports can still block operation safely. This fixes the reproduced
+software cases; it does not establish every historical error's cause or physical
+acceptance.
+
+Passive `application.msc_settlement` evidence uses existing reads only. It stores
+allowlisted request boundaries/outcomes, normalized mode/limit values, correlated
+report/update times, metadata status and rejection codes. Lists retain at most
+12 requests and 12 observations per application; counters preserve totals.
+No raw HA payloads, URLs, configuration identities or credentials are emitted.
+Recorder failures do not change control decisions. Existing application status
+and fallback outcomes remain; a bounded error code improves classification.
+
+Validation: final focused run passed 56 tests / 41 subtests. The final guarded
+full suite passed 1,574 tests / 1,520 subtests, zero failures (206 warnings,
+268.32 seconds). Dotenv was disabled; StateStore guards permitted only 75 memory
+and 1,914 isolated temporary constructions. Initial broader validation exposed
+lightweight fixture initialization and synthetic-live provenance issues. The
+candidate now requires actual-reader identity; existing Solar and event-loop
+assertions were retained. Independent source/safety and documentation reviews
+are GO, with no remaining High/Medium findings; reviewers did not rerun the
+application suite. Author and independent OCI-verifier synthetic runs each
+passed 73 offline checks. Exact publication identity/receipt follows separately.
+
+Rollback is to withhold or scoped-revert this candidate; preserved original
+worktrees remain untouched. Before separately approved live acceptance:
+
+- Monitor-only: compare command boundaries, later state/report metadata,
+  application/fallback outcomes and requested versus measured flows.
+- Offline dry-run: use simulated HA and isolated storage to exercise epoch reuse,
+  unchanged maintenance, anchor initialization, drift, failure, continuity and
+  takeover. No global runtime no-write switch is claimed.
+- Supervised live control: separately approve installation/settings, verify the
+  exact runtime/source build, and retain existing stop conditions. Successful
+  calls and passing tests do not establish physical settlement or stability.
+
+## Historical local candidate: Evening Boost helper currentness — 28 October 2026
 
 The approved local branch `fix/evening-boost-helper-currentness` at
 `C:\Projects\sigenergy_optimizer-boost-helper-currentness` is based on
