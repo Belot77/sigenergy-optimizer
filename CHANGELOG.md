@@ -1,11 +1,13 @@
 # Changelog
 
-## 2.3.73-haos84 - release candidate - 2026-10-28
+## 2.3.73-haos84 - published release - 2026-10-28
 
+- [Published at 03:51:01 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.73-haos84). Tag/container source `bc1439120ab6c68d5983768ffd678bb62fedefb8`, tree `8ae40a1ef597ce3e07578e1fddb2483910337d35`. Metadata PR #58 merged normally at `f7025eac808534428035d8dd7d842661da1ae18e` with the exact tagged tree. Build 40628165315 passed; all 22 layer/diff-ID checks and 15 source byte/mode checks per platform passed. Independent proof GO; previous immutable .83 remains unchanged. See docs/HAOS84_RELEASE_CANDIDATE.md.
+- Include merged PR #55 charge-readback report metadata and PR #56 Evening Boost helper currentness: unchanged currently read trusted mode helpers no longer need a new value/report timestamp every 120 seconds; device freshness and advancing load qualification remain enforced.
 - Retain an already-proven pending MSC request before PV-only reopening instead of resetting its proof with an identical command. Fresh exact MSC, request-correlated export closure, epoch identity/boundaries and current authority remain mandatory; consume only after successful automatic completion.
 - Qualify repeated maintenance only for an unchanged already-open bounded `MSC_SURPLUS_CEILING`, using later real-reader/joint proof after the original MSC and export-opening requests. Completed commands and baseline booleans alone grant no permission. Preserve target/request identity, continuity generation, owner checks and restrictive fallback. A one-time same-setting startup anchor requires a final live exact-target check and later post-write report; it never reopens a reduced ceiling.
 - Add bounded passive request/report evidence and error codes to application traces, with existing reads only, scalar allowlists and recorder failure isolation. Pending retry/latest-request rules, three-second waits, independent protections and Manual/Force remain unchanged. Historical errors and physical behavior still require evidence.
-- Validation: final focused 56 tests / 41 subtests and full guarded suite 1,574 tests / 1,520 subtests passed, zero failures (206 warnings). Release checks passed 93 tests / 104 subtests. Independent source/safety and docs review GO. Publication receipt follows separately. Installation/settings remain separate. Rollback is a scoped revert of this candidate.
+- Validation: final focused 56 tests / 41 subtests and full guarded suite 1,574 tests / 1,520 subtests passed, zero failures (206 warnings). Release checks passed 93 tests / 104 subtests. Independent source/safety, docs and image-proof reviews GO. Installation/settings and physical acceptance remain separate. Rollback is a reviewed scoped revert; live rollback needs a verified backup/reinstall path.
 
 ## Historical local candidate — Evening Boost helper currentness — 2026-10-28
 
