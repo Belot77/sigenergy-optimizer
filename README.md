@@ -1,20 +1,25 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Local release candidate: 2.3.75-haos86 - not published
+## Current published release: 2.3.75-haos86
 
-Source [PR #63](https://github.com/Belot77/sigenergy-optimizer/pull/63) merged
-normally at `b294f463e9fd4a2cbb6e1266e7d922422067e318`, retaining the reviewed tree.
-It repairs the .85 failed-close recovery loop by renewing restrictive close-command
-provenance before later close/MSC proof. Source suite: **1,643 tests / 1,630 subtests**,
-zero failures; independent reviews GO. Dashboard snapshot publication is unchanged.
+[Published 29 October 2026 at 09:53:02 AEDT](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.75-haos86).
+Repairs the .85 failed-close recovery deadlock by renewing an unaccepted restrictive
+close before requiring later close/MSC proof. Manual/Force, authority and independent
+restrictions remain. The separate dashboard snapshot policy is unchanged.
 
-Local preparation aligns five version markers and documentation only. Disjoint
-release checks passed **58 tests / 61 subtests**, zero failures; independent release
-review is GO. .85 remains published and installed; .86 has no metadata
-commit, tag, build, digest or installed identity yet. Publication and HA actions
-are separate approvals. See [preparation and acceptance gates](docs/HAOS86_RELEASE_CANDIDATE.md).
+Build 40782770509 verified both platforms: 22 layers total and 15 source byte/mode
+checks each. Version/latest index: `sha256:68ae9242488169b25525c53ef106eae92197a3f398aa3210344a43c6601b9359`.
+Metadata PR #64 merged normally at `3f94c6a86b0f7163d6f7762cddf123a509644be2`;
+tag/container source: `74f21875e9a30e561d78644c4a5b0791becccc83`.
+Independent image-proof review is GO, with full layer bodies checked by the author.
+Source suite: **1,643 tests / 1,630 subtests**; disjoint release checks:
+**58 tests / 61 subtests**, zero failures. Offline verifier: 73 cases passed.
 
-## Current published release: 2.3.74-haos85
+Auto update was confirmed off on 29 October. Latest supplied installed identity
+remains .85; .86 installation and physical acceptance remain unverified.
+See [publication receipt and live checks](docs/HAOS86_RELEASE_CANDIDATE.md).
+
+## Historical published release: 2.3.74-haos85
 
 [Published 28 October 2026 at 06:39:02 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.74-haos85). Metadata PR #61 merged normally at `ca569f1b8b44e892f2eec471cae573c175f36ad5`; its parents are the source PR #60 merge `aefba54dddcaace1e3b318bbf6cca2a282d6c3a3` and release metadata commit `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`. The release tag points to that metadata commit and tree `3ed6e5a677f1af72cfac503be91fe725375ea15b`; annotated tag object `8fc43ef082498766561acb15157175e48906adb3`.
 

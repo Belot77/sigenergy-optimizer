@@ -1,9 +1,41 @@
-# HAOS .86 local release candidate
+# HAOS .86 publication receipt
 
-**2.3.75-haos86 is not published.** Local preparation branch:
-`release/2.3.75-haos86`, `C:/Projects/sigenergy_optimizer-release-haos86`.
-No metadata commit, tag, image build/digest, release or installation is claimed.
-Do not use release.sh. Publication requires separate authorization of the final tree.
+**2.3.75-haos86 is published**, 2026-10-28T22:53:02Z / 29 October 09:53:02 AEDT.
+[GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.75-haos86).
+The operator approved publication and this documentation receipt, and confirmed
+Auto update off on 29 October. No HA installation, query or live settings change
+was made. Do not use release.sh.
+
+Metadata source/tag commit: `74f21875e9a30e561d78644c4a5b0791becccc83`.
+Reviewed metadata tree: `711fe705180524edf12bbc45d790541ae120a724`.
+Annotated tag object: `901b75918082666f2ade9027c222d14ffc709819`.
+Metadata [PR #64](https://github.com/Belot77/sigenergy-optimizer/pull/64) merged
+normally at `3f94c6a86b0f7163d6f7762cddf123a509644be2` on 28 October 22:52:30 UTC /
+29 October 09:52:30 AEDT. Exact parents are
+`b294f463e9fd4a2cbb6e1266e7d922422067e318` and the metadata source; merge tree
+matches the reviewed tree. Receipt documentation does not change the tagged image.
+
+## Image publication proof
+
+Build [40782770509](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40782770509)
+succeeded at the exact source. Version and latest share index:
+`sha256:68ae9242488169b25525c53ef106eae92197a3f398aa3210344a43c6601b9359`.
+
+| Platform | Runtime manifest | Checked layers | Checked source files |
+| --- | --- | --- | --- |
+| linux/amd64 | `sha256:0aacd1a0ac078735a4ead9d6ad87362e3f4dbd3b2af74b8db3a60fcf938a2d1e` | 11 | 15 |
+| linux/arm64 | `sha256:3d2cf0a0f482e70718cb7cd63831dc8d6acf62ffeebc7ead4aa21b5db694d3c0` | 11 | 15 |
+
+The author verifier checked index/manifest/config integrity, labels and launch
+command, every compressed-layer digest and uncompressed diff ID, overlay paths,
+source bytes/modes and exact generated source pin. Fingerprint:
+`sha256:d362aad0e623fdd6a63134cdee0803bdcd8d23a6d9228690149ec40ffec05bba`.
+Independent registry metadata and source byte/mode expectations are GO; the reviewer
+did not redownload full layer bodies. Offline verifier: 73 cases passed, zero failures.
+Immutable .85 index remains
+`sha256:68a15730cd18592d153a27f29e4e801c5581c28680e86c299cdd9f478c120329`.
+Post-publication verification confirmed release identity, remote annotated tag,
+source/tree, exact normal merge parents and version/latest/previous indexes.
 
 ## Verified source
 
@@ -13,7 +45,7 @@ Do not use release.sh. Publication requires separate authorization of the final 
 (28 October 21:55:56 UTC). Parents are
 `4ba817315f45fdbf47077d1095f1f0a2033a7316` and the reviewed head. Merge tree
 `35c9b314047dc77da08af366e469a1be723b840a` equals the reviewed source tree.
-The eventual container source must be the future verified metadata/tag commit,
+The published container source is metadata/tag commit `74f21875e9a30e561d78644c4a5b0791becccc83`,
 not this source-merge SHA.
 
 ## Problem and repair
@@ -61,30 +93,35 @@ no stores. Dotenv remained disabled in both runs. Independent metadata/docs/scop
 review is GO; final candidate binding is recorded outside the candidate tree.
 No future commit or image digest is claimed.
 
-## Publication and live acceptance gates
+## Installation and live acceptance
 
-Latest published release is .85, tag `v2.3.74-haos85`, source
-`72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`, index
-`sha256:68a15730cd18592d153a27f29e4e801c5581c28680e86c299cdd9f478c120329`.
-Supplied startup logs confirm that installed identity at 07:25:16 AEDT on
-29 October. No .86 installation or physical recovery evidence exists.
+Latest published release is .86. Latest supplied installed identity remains .85,
+source `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`, at 07:25:16 AEDT on
+29 October. No .86 startup or physical recovery evidence has been supplied.
+Expected startup lines after a separately authorized installation are:
 
-After separate publication approval, bind the exact metadata/tag source, existing
-image workflow, both amd64/arm64 images, version/latest digest, layer integrity,
-source bytes/modes and generated source pin. Revalidate retained immutable .85
-integrity; merge metadata normally and publish the release only after proof.
-Auto update was last reported off on 28 October and must be reconfirmed before
-publication. Installation and live settings require separate authority.
+```text
+Runtime signature=2.3.75-haos86
+Container source commit=74f21875e9a30e561d78644c4a5b0791becccc83
+```
 
 Monitor-only review must compare report timestamps, accepted close/MSC requests,
 application outcomes and coherent flows. Offline dry-run uses fake HA and isolated
-storage. Supervised installation needs actual runtime/source identity, effective
-limits, stop conditions and a usable operator backup/reinstall path. No such live
-rollback path is demonstrated by retaining an immutable image alone.
+storage. Supervised live verification must show later accepted close/MSC proof,
+recovery from pending to successful application, fresh status and effective
+independent limits. Service success alone does not prove physical settlement.
+Do not deliberately induce a communication fault on the live system for this check.
+
+Keep Manual/Force and existing physical protections available. Stop the supervised
+trial on unexpected ownership, failed restrictions, untrusted settlement, repeated
+command failure or renewed oscillation. Retain operator control and capture logs/
+trace without changing physical limits. A usable operator backup/reinstall path
+is required for live rollback; retaining an immutable image does not prove one.
+Installation and settings remain separate authority. Auto update was confirmed off
+on 29 October and was not changed by this work.
 
 Risk is an extra restrictive close and renewed evidence wait after a failed close.
 Repeated command/report failure must still prevent automatic permission recovery.
-Rollback now is withholding publication; later source rollback is a reviewed scoped
-revert preserving unrelated work. Preserve all unfinished worktrees and runtime
-data. Protected database contents were never read; no HA query or setting change
-was performed during preparation.
+Source rollback is a reviewed scoped revert preserving unrelated work. Preserve all
+unfinished worktrees and runtime data. Protected database contents were never read;
+no HA query or setting change was performed during publication or receipt work.
