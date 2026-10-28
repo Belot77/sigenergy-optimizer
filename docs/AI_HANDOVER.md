@@ -1,6 +1,66 @@
 # SigEnergy Optimizer AI Handover
 
-## Local candidate: charge readback report metadata — 28 October 2026
+## Local candidate: Evening Boost helper currentness — 28 October 2026
+
+Approved local branch `fix/evening-boost-helper-currentness` at
+`C:\Projects\sigenergy_optimizer-boost-helper-currentness`, based on
+`223ac22356fcb0fc3e8f21aaa639b2fc013165c1`, contains a narrow eligibility
+correction. A current read of the trusted persistent mode `input_select` can
+remain current even when its `last_reported` or fallback `last_updated` is old.
+Before this candidate, the separate upper-age check in Evening Boost re-entry could still
+reject that observation and reset qualification. The candidate skips only that
+upper-age cap for a current-read, available, fresh, trusted `input_select` mode
+observation with the expected value and a finite, non-boolean, non-future timestamp. The
+existing `0 <= age` condition remains strict: even a timestamp one second in
+the future is rejected. Remote EMS and device age limits remain unchanged.
+
+All other re-entry and dispatch gates remain: trusted load and sunrise evidence,
+120 seconds of advancing load-report span and local monotonic qualification,
+report monotonicity and the 60-second gap reset, Manual/Force ownership,
+current dispatch authority and limits, forecast/reserve/price checks, MSC
+protections, and immediate failure closures. This changes only the helper age
+check; it adds no independent safety hold or Boost redesign.
+
+The supplied 3,955 closed live decision records are consistent with this
+helper-age gate, but raw rejected timestamps are absent from the supplied evidence, so no live cause
+is established. SolarDip helper-age follow-up is separate; recurring MSC
+failures remain open.
+
+Validation: the tests-first run reproduced four reported failures, including
+two dispatch subcases that could not reach admission. After the correction,
+all seven new test methods passed with 25 subtests. The seven-module applicable
+run passed 247 tests / 190 subtests (202 warnings, 45.08 seconds). The full suite
+passed 1,535 tests / 1,481 subtests (206 warnings, 260.16 seconds), zero failures.
+Dotenv was disabled; full-suite StateStore guards allowed only memory (75) or
+isolated temporary paths (1,854 constructions). Independent safety and
+documentation reviews are GO. These checks do not prove physical acceptance.
+
+This is a local uncommitted candidate with no release, installation, or live change. Rollback is a scoped
+revert of the helper-age exception.
+
+Verification sequence for separately approved installation:
+
+- Monitor-only: observe current mode chronology, old report/update timestamps, and the
+  associated Remote EMS, load and sunrise report times without changing
+  settings; confirm qualification resets and failures remain immediate.
+- Offline dry-run: use fake HA and isolated storage to cover a current mode read
+  with old report/update timestamps, future mode timestamps, independent Remote EMS/device
+  age, report-span and gap resets, and unchanged authority/limit/price/reserve/
+  MSC gates. This does not claim a global dry-run switch or suppression of all
+  writes.
+- Supervised live control: only after separate approval, compare requested,
+  observed and settled behavior under existing limits and stop conditions.
+  Local tests do not establish physical operation.
+
+## Merged checkpoint: charge readback report metadata — PR #55 — 28 October 2026
+
+The charge-readback candidate below later merged normally in
+[PR #55](https://github.com/Belot77/sigenergy-optimizer/pull/55), source head
+`f6eb5ef1080b10e07aa40d2e5f07850f1ecd54a2`, merge
+`223ac22356fcb0fc3e8f21aaa639b2fc013165c1`. It remains unverified in an
+installation and has no physical acceptance claim.
+
+## Historical pre-merge charge-candidate context — 28 October 2026
 
 Approved local branch `fix/charge-readback-report-metadata` at
 `C:\Projects\sigenergy_optimizer-charge-readback-metadata`, based on

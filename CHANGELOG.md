@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased — charge readback report metadata — 2026-10-28
+## Unreleased — Evening Boost helper currentness — 2026-10-28
+
+- A current, trusted persistent mode `input_select` can have valid current chronology despite an old `last_reported` (or `last_updated` fallback); the duplicate Boost re-entry upper-age cap could still reject it and reset qualification. This candidate skips only that upper-age cap for the current-read trusted mode observation. Availability, freshness, expected value, finite non-boolean timestamp, and non-future chronology remain required (`0 <= age`; even one second in the future is rejected).
+- Remote EMS and device age limits, trusted load/sunrise evidence, 120-second advancing load-report span and monotonic qualification, 60-second report-gap reset, Manual/Force ownership, dispatch authority, current limits, reserve/price and MSC protections, and immediate failure closures remain unchanged. No separate safety hold or Boost redesign is added.
+- Validation: four reported tests-first failures reproduced; the seven new methods then passed with 25 subtests. Applicable checks passed 247 tests / 190 subtests; full suite passed 1,535 tests / 1,481 subtests (206 warnings, 260.16 seconds), zero failures. Dotenv disabled; full-suite database guards allowed only 75 memory / 1,854 isolated temporary constructions. Independent safety and documentation reviews GO. The supplied 3,955 closed live decision records are consistent with this helper-age gate, but raw rejected timestamps are absent from the supplied evidence, so no live cause is established. SolarDip helper-age follow-up and recurring MSC failures remain separate open issues. Local only: no release, installation, or live change. Rollback is a scoped revert of the helper-age exception.
+
+## Historical pre-merge charge readback candidate — merged in PR #55 — 2026-10-28
+
+This candidate later merged normally in [PR #55](https://github.com/Belot77/sigenergy-optimizer/pull/55), source head `f6eb5ef1080b10e07aa40d2e5f07850f1ecd54a2`, merge `223ac22356fcb0fc3e8f21aaa639b2fc013165c1`. The following entry records its pre-merge context.
 
 - Add `cfg.ess_max_charging_limit` to `_read_state` report entity IDs so unchanged charge-limit observations can use HA's `last_reported` timestamp when establishing freshness. Exact-state / `last_updated` correlation remains. Missing or malformed metadata may use the existing `last_updated` fallback; stale metadata remains subject to existing freshness checks. Conflicting state / `last_updated` metadata sets `_actuator_metadata_conflict` and rejects the observation timestamp. Existing age, post-command, matching, and coherent-flow rules are unchanged.
 - No timestamps are synthesized. An HA metadata batch failure can reduce readback availability, and this cannot compensate for an integration that does not report the entity.
