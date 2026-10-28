@@ -1,74 +1,25 @@
 # Current State
 
-## Local release candidate: 2.3.74-haos85 - 28 October 2026
+## Current published release: 2.3.74-haos85 - 28 October 2026
 
-Source [PR #60](https://github.com/Belot77/sigenergy-optimizer/pull/60) merged
-normally at `aefba54dddcaace1e3b318bbf6cca2a282d6c3a3`, 06:10:42 UTC
-(17:10:42 AEDT). Parents are `556cca8c040e3eea52029a8ac055a5c81f411018`
-and reviewed head `a5286581f402038be06375e45b62b525e65eb3e1`; merge tree
-`7bbc4d998081bf8fa606c71a9392930bba09a0b4` exactly matches that reviewed head.
+[GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.74-haos85) was published at 2026-10-28T06:39:02Z (17:39:02 AEDT). Metadata PR #61 merged normally at `ca569f1b8b44e892f2eec471cae573c175f36ad5`, with parents `aefba54dddcaace1e3b318bbf6cca2a282d6c3a3` and `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`; merge tree `3ed6e5a677f1af72cfac503be91fe725375ea15b` matches the published metadata tree. Annotated tag object `8fc43ef082498766561acb15157175e48906adb3` resolves to source/tag commit `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1` and that tree.
 
-The operator approved local release preparation on `release/2.3.74-haos85` at
-`C:/Projects/sigenergy_optimizer-release-haos85`, based on the merge above.
-Exactly five established version markers change from .84 to .85; post-merge
-status and release documents are reconciled. No new control behavior, settings,
-workflow, dependency, permanent instruction, test or runtime-data change is part
-of release preparation. Original source and unfinished worktrees remain preserved.
-No commit, push, tag, image publication, GitHub release, installation or live HA
-query/settings change is authorized by this preparation stage. Do not use release.sh.
+Build 40644593573 succeeded. Version and `latest` resolve to the same OCI index, `sha256:68a15730cd18592d153a27f29e4e801c5581c28680e86c299cdd9f478c120329`. The linux/amd64 manifest is `sha256:033e75f038393164f0d856925dd2da8c2ded84d8dc324e388b49b391eb79a37f`; linux/arm64 is `sha256:4345a9faed15a000144b529e83713adbe951de820dc72520376a195e5412d494`. The author-run verifier checked 11 layers and 15 pinned source files per platform, including the expected source fingerprint `sha256:ad811c36d2a1f6708cbc9e5a6badfd53f4bdea73221e7df205f438db8e44d4be`. Independent registry metadata and expected source byte/mode checks are GO; the independent reviewer did not redownload full layer bodies. The offline synthetic verifier passed 73 cases. Previous immutable .84 index `sha256:ce9f9c1abf04effd9ef33a0bfccc29282f9f81356f617cebd8a6b61e3c36f112` remains unchanged.
 
-The merged source includes the approved fill-progress cap floor and completed-
-total rebase, narrow Solar Dip helper currentness, bounded accepted-pending MSC
-request epochs/waiting logs, passive reserve explanations and combined regressions.
-A charging allowance may reduce immediate export and cannot guarantee absorption,
-full SoC or physical stability. Provider baseline/advance, expiry, authority,
-Manual/Force and independent restrictions remain binding. O5 reserve/price policy
-and the existing current-load model remain separate.
+The merged source full suite passed **1,632 tests / 1,606 subtests**, zero failures. Disjoint guarded release runs passed **16 version/source-pinning tests** and **72 runtime-focused tests / 175 subtests**, zero failures; the full suite was not repeated for version literals and documentation. No control behavior changed in the release metadata.
 
-Source full suite passed **1,632 tests / 1,606 subtests**, zero failures;
-independent source/test and documentation/scope reviews are GO. Release checks:
-**16 version/source-pinning tests passed**, zero failures (9.21 seconds).
-Guarded runtime-focused checks passed **72 tests / 175 subtests**, zero failures
-(202 warnings, 37.73 seconds; 195 isolated temporary stores, zero memory paths).
-Together the two disjoint release runs cover 88 tests and 175 subtests. Canonical
-review proved exactly one substitution per marker and no other baseline byte
-change after Git line-ending normalization. Scope: 12 files, five version markers
-and seven documents. Independent metadata/docs/scope review is GO with no
-remaining findings; reviewers did not rerun the tests. This is local release-
-preparation readiness, not publication or physical acceptance. The source full
-suite is not repeated for version
-literals/docs. Runtime imports keep dotenv disabled and StateStore restricted to
-memory/isolated temp paths.
+Automatic updates were explicitly confirmed off on 28 October. Operator evidence identifies installed .84 at 15:00:56 AEDT on 28 October. No .85 startup/source identity, settings change, HA query or physical acceptance is established. Expected identity is runtime signature `2.3.74-haos85` and container source commit `72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`; verify both at startup. Next operational work needs supervised charging/export/MSC/Boost/provider evidence, with clear stop conditions. Do not claim universal resolution of historical MSC errors or guarantee battery absorption, deadline fill or physical stability. Keep .84 immutable; backup/reinstall rollback readiness has not been demonstrated. See [the publication receipt](HAOS85_RELEASE_CANDIDATE.md) and [fill policy and limits](SOLAR_FILL_PROGRESS_TRAJECTORY.md).
 
-**Not published.** Latest verified published release remains `2.3.73-haos84`,
-tag/container source `bc1439120ab6c68d5983768ffd678bb62fedefb8`, index
-`sha256:ce9f9c1abf04effd9ef33a0bfccc29282f9f81356f617cebd8a6b61e3c36f112`.
-Operator startup confirms installed .84 at 15:00:56 AEDT on 28 October.
-Candidate .85 has no metadata commit, tag, build, image digest or release yet.
-The reviewed source baseline above is not a future container source identifier;
-the eventual metadata/tag commit must be verified separately if publication is approved.
+## Historical pre-merge source integration checkpoint - 28 October 2026
 
-Publication must be separately authorized against the reviewed candidate tree.
-Verify exact tag/build/source, both platform images, immutable source bytes/modes
-and version/latest digest; retain the previous immutable .84 image. Automatic
-updates were last reported off on 26 October and are not reverified here.
-Installation/settings remain separately approved work, requiring actual build
-identity, rollback readiness and supervised evidence. Monitor-only acceptance
-must compare requests, independent reports, advancing coherent flows and provider/
-command chronology. Offline dry-run uses fake HA; passing tests or successful
-calls do not establish physical settlement or fill. Rollback now is withholding
-publication; later code rollback requires a reviewed scoped revert, preserving
-other work. See [release preparation record](HAOS85_RELEASE_CANDIDATE.md).
-
-## Historical pre-commit source checkpoint - 28 October 2026
-
-The operator approved local integration, tests, independent review and docs on
+At this historical pre-merge checkpoint, the operator approved local integration, tests, independent review and docs on
 `fix/solar-msc-planning-integration` at
 `C:/Projects/sigenergy_optimizer-solar-msc-planning`. Verified base and remote main:
 `556cca8c040e3eea52029a8ac055a5c81f411018`. The destination was absent before creation;
-its initial branch/HEAD and clean status were verified. No original branch or
-unfinished work is modified. No commit, push, GitHub merge, version bump,
-publication, installation, HA query or live setting change is authorized.
+its initial branch/HEAD and clean status were verified. No original branch or unfinished worktree was modified at that checkpoint. No
+commit, push, GitHub merge, version bump, publication, installation, HA query or
+live setting change had been authorized at that stage; later source integration and
+publication are recorded above. Installation and live acceptance remain unverified.
 
 Included changes:
 

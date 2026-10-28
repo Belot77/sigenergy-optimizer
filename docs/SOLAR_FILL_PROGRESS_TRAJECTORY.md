@@ -6,12 +6,15 @@ Source [PR #60](https://github.com/Belot77/sigenergy-optimizer/pull/60), head
 The exact reviewed tree passed 1,632 tests / 1,606 subtests and independent
 source/test/docs/scope review. This document defines the reviewed policy and
 retains its original standalone validation history; those historical source hashes
-are not the future .85 container source identifier.
+are not the published .85 container source identifier.
 
-Local `2.3.74-haos85` preparation changes only five version markers and status
-records. It is not published or installed. See HAOS85_RELEASE_CANDIDATE.md and
-CURRENT_STATE.md for current release checks and remaining approval gates.
-Existing work remains preserved; physical acceptance is unproven.
+`2.3.74-haos85` was published at 2026-10-28T06:39:02Z from source commit
+`72bd1fdfdc824b019a5eba43f991e3ef0ee5bbe1`. Release preparation changed only the five
+version markers and status documents around this reviewed policy. Automatic updates were confirmed off
+on 28 October. .85 installation and physical acceptance remain unverified; only
+.84 startup identity is evidenced. See HAOS85_RELEASE_CANDIDATE.md and
+CURRENT_STATE.md for the publication receipt and remaining live checks. Existing
+work remains preserved.
 
 ## Operator choice and formula
 
