@@ -15,6 +15,8 @@ class OptimizerEventLoopResponsivenessTests(unittest.IsolatedAsyncioTestCase):
         optimizer = object.__new__(SigEnergyOptimizer)
         optimizer.trigger_queue = asyncio.Queue(maxsize=64)
         optimizer._running = False
+        optimizer._msc_maintenance_generation = 0
+        optimizer._msc_maintenance_epoch = None
         optimizer._ws_connected = True
         optimizer._evening_boost_reentry = _EveningBoostReentry()
         optimizer._tick = AsyncMock()

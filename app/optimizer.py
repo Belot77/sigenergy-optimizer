@@ -14,6 +14,8 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -36,6 +38,7 @@ from .forecast_utils import (
 )
 from .ha_client import HAClient
 from .import_topup_ledger import ImportTopupLedger
+from .msc_settlement_evidence import MscSettlementEvidence
 from .models import (
     BATTERY_EXPORT,
     Decision,
@@ -522,6 +525,20 @@ class _MscTransition:
     msc_request_state: Optional[SolarState] = None
 
 
+@dataclass
+class _MscMaintenanceEpoch:
+    """Completed commands, not permission; later matching reports must qualify."""
+
+    identity: tuple
+    target_kw: float
+    msc_requested_at: float
+    export_requested_at: float
+    export_exact: bool = False
+    last_ems_reported_at: Optional[float] = None
+    last_export_reported_at: Optional[float] = None
+    last_checked_at: Optional[float] = None
+
+
 class SigEnergyOptimizer:
     def __init__(self, ha: HAClient, cfg: Settings, *, storage_worker: StorageWorker | None = None) -> None:
         self.ha = ha
@@ -624,8 +641,14 @@ class SigEnergyOptimizer:
         self._solar_dip_recheck_at: Optional[float] = None
         self._solar_budget_reentry = SolarReentryGuard()
         self._solar_charge_reentry = SolarReentryGuard()
+        self._msc_maintenance_generation = 0
+        self._msc_settlement_evidence = MscSettlementEvidence()
+        self._msc_diagnostic_phase = "primary"
+        self._msc_diagnostic_context: dict[str, Any] = {}
+        self._msc_last_number_observation: dict[str, Any] = {}
         self._msc_transition: Optional[_MscTransition] = None
         self._msc_baseline_established = False
+        self._msc_maintenance_epoch = None
 
     # ------------------------------------------------------------------
     # Public accessors for the web UI
@@ -697,8 +720,10 @@ class SigEnergyOptimizer:
             self.invalidate_import_accounting("configuration_import_identity_changed")
         if changed.intersection(_CONFIG_OWNER_IDENTITY_ATTRS):
             self._control_identity_activated_at = datetime.now(timezone.utc).timestamp()
+        self._msc_maintenance_generation += 1
         self._number_settlement_requests.clear()
         self._msc_baseline_established = False
+        self._msc_maintenance_epoch = None
         if self._msc_transition is not None:
             # Keep the pending close/MSC barrier; its old request proof is invalid.
             self._msc_transition = _MscTransition()
@@ -1703,12 +1728,16 @@ class SigEnergyOptimizer:
         return self._watch_entities
 
     def on_ws_connect(self) -> None:
+        self._msc_maintenance_generation += 1
+        self._msc_maintenance_epoch = None
         self._solar_dip_proof = None
         self._ws_connected = True
         self._invalidate_solar_provider("ha_websocket_connected_new_epoch")
         logger.info("WebSocket connected — event-driven mode active")
 
     def on_ws_disconnect(self) -> None:
+        self._msc_maintenance_generation += 1
+        self._msc_maintenance_epoch = None
         self._solar_dip_proof = None
         self._ws_connected = False
         self._invalidate_solar_provider("ha_websocket_disconnected")
@@ -1732,6 +1761,8 @@ class SigEnergyOptimizer:
         is disconnected — no separate code path needed.
         """
         self._reset_evening_boost_reentry("optimizer_start_requires_qualification")
+        self._msc_maintenance_generation += 1
+        self._msc_maintenance_epoch = None
         self._running = True
         last_tick_ts = 0.0
         last_heartbeat_ts = 0.0
@@ -1948,6 +1979,8 @@ class SigEnergyOptimizer:
                 self._accumulate_history(state, decision)
                 self._record_price_tracking(state, decision)
             except asyncio.CancelledError:
+                if not application_committed:
+                    self._msc_maintenance_epoch = None
                 if application_attempted and not application_committed:
                     self._import_topup_ledger.invalidate(datetime.now(self._tz), "application_not_confirmed")
                 self._clear_solar_physical_relief()
@@ -1958,6 +1991,7 @@ class SigEnergyOptimizer:
                 raise
             except Exception:
                 if not application_committed:
+                    self._msc_maintenance_epoch = None
                     if application_attempted:
                         self._import_topup_ledger.invalidate(datetime.now(self._tz), "application_not_confirmed")
                     if not verified_evening_pending:
@@ -2509,6 +2543,20 @@ class SigEnergyOptimizer:
                     application["transition_phase"] = (
                         phase if phase in ("close", "msc") else "unknown"
                     )
+            error = result.error if isinstance(result, _ActuatorApplicationResult) else ""
+            application["error_code"] = (
+                "application_exception" if application_raised else
+                "pending_msc" if isinstance(result, _ActuatorApplicationResult) and result.transition_pending and application["transition_phase"] == "msc" else
+                "pending_close" if isinstance(result, _ActuatorApplicationResult) and result.transition_pending else
+                "maintenance_proof_changed" if "maintenance proof changed" in error else
+                "msc_report_unproven" if "Maximum Self Consumption" in error and ("settle" in error or "settlement" in error) else
+                "authority_unverified" if "ownership" in error or "Remote EMS" in error else
+                "actuator_application_failed" if error else None
+            )
+            evidence = self._msc_diagnostic("snapshot")
+            if isinstance(evidence, dict):
+                evidence["context"] = dict(self._msc_diagnostic_context)
+                application["msc_settlement"] = evidence
             self._record_decision_trace(s, d, application=application)
         except Exception:
             # Diagnostic failures must not mask application failures or stop control.
@@ -2737,6 +2785,7 @@ class SigEnergyOptimizer:
             if isinstance(snapshot, dict):
                 sanitized = dict(snapshot)
                 sanitized.pop("last_reported", None)
+                sanitized["_msc_metadata_status"] = "missing"
                 bulk[entity_id] = sanitized
 
         try:
@@ -2744,6 +2793,9 @@ class SigEnergyOptimizer:
         except Exception as exc:
             logger.warning("State report metadata enrichment failed: %s", exc)
             report_metadata = {}
+            for entity_id in report_entity_ids:
+                if isinstance(bulk.get(entity_id), dict):
+                    bulk[entity_id]["_msc_metadata_status"] = "read_failed"
         if not isinstance(report_metadata, dict):
             report_metadata = {}
 
@@ -2766,6 +2818,7 @@ class SigEnergyOptimizer:
             if snapshot.get("state") != metadata.get("state") or (
                 snapshot_updated_at != metadata_updated_at
             ):
+                snapshot["_msc_metadata_status"] = "metadata_conflict"
                 if entity_id in {
                     self.cfg.grid_export_limit, self.cfg.grid_import_limit,
                     self.cfg.ems_mode_select, self.cfg.pv_max_power_limit,
@@ -2798,8 +2851,10 @@ class SigEnergyOptimizer:
                 or snapshot_updated_at != metadata_updated_at
                 or metadata_reported_at < metadata_updated_at
             ):
+                snapshot["_msc_metadata_status"] = "invalid_timestamp"
                 continue
             enriched = dict(snapshot)
+            enriched["_msc_metadata_status"] = "accepted"
             enriched["last_reported"] = metadata_reported_at.isoformat()
             bulk[entity_id] = enriched
         return bulk
@@ -2846,6 +2901,13 @@ class SigEnergyOptimizer:
         bulk = await self.ha.bulk_states([entity_id])
         bulk = await self._enrich_state_report_metadata(bulk, [entity_id])
         obj = bulk.get(entity_id)
+        if entity_id == self.cfg.grid_export_limit:
+            self._msc_last_number_observation = {
+                key: obj[key] for key in (
+                    "state", "last_updated", "last_reported",
+                    "_actuator_metadata_conflict", "_msc_metadata_status",
+                ) if isinstance(obj, dict) and key in obj
+            }
         if not isinstance(obj, dict):
             return None, False
         raw_value = obj.get("state", "")
@@ -2962,6 +3024,7 @@ class SigEnergyOptimizer:
 
     async def _read_state(self) -> SolarState:
         cfg = self.cfg
+        msc_read_identity = self._msc_maintenance_identity()
         s = SolarState()
         self._refresh_solar_provider_source()
         s.solcast_provider_epoch = self._solar_provider_epoch
@@ -3872,6 +3935,7 @@ class SigEnergyOptimizer:
             s.sigenergy_mode = self._manual_mode_override
             s.sigenergy_mode_observed = False
 
+        setattr(s, "_msc_read_identity", msc_read_identity if msc_read_identity == self._msc_maintenance_identity() else None)
         return s
 
     # ------------------------------------------------------------------
@@ -7350,17 +7414,21 @@ class SigEnergyOptimizer:
                 bulk = await self.ha.bulk_states([entity_id])
                 bulk = await self._enrich_state_report_metadata(bulk, [entity_id])
                 obj = bulk.get(entity_id)
+                accepted = False
                 if isinstance(obj, dict) and obj.get("state") == expected:
                     reported_at = self._state_metadata_timestamp(obj)
-                    if (
+                    accepted = bool(
                         reported_at is not None
                         and reported_at.timestamp() > observed_after
                         and self._state_metadata_is_fresh(
                             obj, self.cfg.hvac_solar_data_max_age_seconds,
                             observed_at=datetime.now(timezone.utc),
                         )
-                    ):
-                        return True
+                    )
+                if entity_id == self.cfg.ems_mode_select:
+                    self._msc_note_observation("msc", expected, observed_after, obj, accepted)
+                if accepted:
+                    return True
             await asyncio.sleep(0.3)
         return False
 
@@ -7384,12 +7452,18 @@ class SigEnergyOptimizer:
             numeric_value, trusted = await self._read_trusted_live_number(
                 entity_id, observed_after=observed_after,
             )
-            if (
+            accepted = bool(
                 trusted
                 and numeric_value is not None
                 and numeric_value <= maximum + tolerance
                 and (not exact_target or abs(numeric_value - maximum) <= tolerance)
-            ):
+            )
+            if entity_id == self.cfg.grid_export_limit:
+                self._msc_note_observation(
+                    "export", maximum, observed_after,
+                    self._msc_last_number_observation, accepted,
+                )
+            if accepted:
                 return True
             await asyncio.sleep(0.3)
         return False
@@ -7407,7 +7481,83 @@ class SigEnergyOptimizer:
         # that intentionally model a live readback must opt in explicitly.
         return observed is True and math.isfinite(numeric_value) and numeric_value >= 0.0
 
+    def _msc_diagnostic(self, method: str, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return getattr(self._msc_settlement_evidence, method)(*args, **kwargs)
+        except Exception:
+            return None
+
+    def _msc_note_observation(
+        self, label: str, expected: Any, after: Optional[float],
+        obj: Any, accepted: bool,
+    ) -> None:
+        try:
+            now = datetime.now(timezone.utc)
+            reason = "accepted" if accepted else "state_mismatch"
+            if not isinstance(obj, dict):
+                reason = "missing"
+            elif str(obj.get("state", "")).strip().lower() in {"unknown", "unavailable", "none", ""}:
+                reason = "unavailable"
+            elif obj.get("_actuator_metadata_conflict"):
+                reason = "metadata_conflict"
+            else:
+                reported = self._state_metadata_timestamp(obj)
+                if reported is None:
+                    reason = "invalid_timestamp"
+                elif reported.timestamp() > now.timestamp() + 5.0:
+                    reason = "future"
+                elif not self._state_metadata_is_fresh(
+                    obj, self.cfg.hvac_solar_data_max_age_seconds, observed_at=now,
+                ):
+                    reason = "stale"
+                elif after is not None and reported.timestamp() <= after:
+                    reason = "equal_request" if reported.timestamp() == after else "pre_request"
+                elif not accepted and label == "export":
+                    reason = "target_mismatch"
+            self._msc_diagnostic(
+                "record_observation", label, self._msc_diagnostic_phase,
+                expected, after, obj, now.isoformat(), accepted, reason,
+            )
+        except Exception:
+            pass
+
+    def _msc_maintenance_identity(self) -> tuple:
+        # Kept in process memory only; never serialize credential-bearing config.
+        context = tuple(
+            (name, getattr(self.cfg, name))
+            for name in sorted(set(_CONFIG_EVIDENCE_IDENTITY_ATTRS))
+        )
+        digest = hashlib.sha256(json.dumps(context, separators=(",", ":"), ensure_ascii=True).encode("utf-8")).digest()
+        return (id(self.ha), self._msc_maintenance_generation, self._control_identity_activated_at, digest)
+
     async def _apply(
+        self, s: SolarState, d: Decision,
+    ) -> _ActuatorApplicationResult:
+        self._msc_diagnostic("start")
+        self._msc_diagnostic_phase = "primary"
+        self._msc_diagnostic_context = {
+            "runtime_signature": _RUNTIME_SIGNATURE,
+            "phase_before": self._msc_transition.phase if self._msc_transition else "idle",
+            "original_close_requested_at": self._msc_transition.close_requested_at if self._msc_transition else None,
+            "original_msc_requested_at": self._msc_transition.msc_requested_at if self._msc_transition else None,
+        }
+        self._msc_last_number_observation = {}
+        try:
+            result = await self._apply_with_msc_proof(s, d)
+        except (Exception, asyncio.CancelledError) as exc:
+            self._msc_maintenance_epoch = None
+            self._msc_diagnostic("finish", "cancelled" if isinstance(exc, asyncio.CancelledError) else "exception")
+            raise
+        if not (
+            result.succeeded and result.automatic_application_completed
+            and not result.fallback_attempted and not result.transition_pending
+        ):
+            self._msc_maintenance_epoch = None
+        self._msc_diagnostic_context["phase_after"] = self._msc_transition.phase if self._msc_transition else "idle"
+        self._msc_diagnostic("finish", "succeeded" if result.succeeded else "pending" if result.transition_pending else "failed")
+        return result
+
+    async def _apply_with_msc_proof(
         self,
         s: SolarState,
         d: Decision,
@@ -7459,9 +7609,84 @@ class SigEnergyOptimizer:
         authority_revoked = False
         had_automated_authority = False
         last_mode_requested_at: Optional[float] = None
+        application_identity = self._msc_maintenance_identity()
+        maintenance_epoch: Optional[_MscMaintenanceEpoch] = None
+        maintenance_key: Optional[tuple] = None
+        initialize_export_anchor = False
+
+        def _maintenance_current() -> bool:
+            epoch = maintenance_epoch
+            return bool(
+                epoch is not None and self._msc_maintenance_epoch is epoch
+                and self._msc_transition is None
+                and self._msc_baseline_established
+                and self._msc_maintenance_identity() == application_identity == epoch.identity
+                and maintenance_key == (
+                    epoch.identity, epoch.target_kw, epoch.msc_requested_at,
+                    epoch.export_requested_at, epoch.export_exact,
+                )
+                and self._number_settlement_requests.get(cfg.grid_export_limit)
+                == (epoch.target_kw, epoch.export_requested_at, epoch.export_exact)
+            )
+
+        def _maintenance_evidence_current(evidence: dict[str, dict[str, Any]]) -> bool:
+            if not _maintenance_current():
+                return False
+            epoch = maintenance_epoch
+            ems_obj = evidence.get(cfg.ems_mode_select, {})
+            export_obj = evidence.get(cfg.grid_export_limit, {})
+            ems_ok = _msc_matches(ems_obj, epoch.msc_requested_at)
+            export_ok = _number_matches(export_obj, epoch.target_kw, epoch.export_requested_at, exact=True)
+            if not (ems_ok and export_ok):
+                self._msc_note_observation("msc", MODE_MAX_SELF, epoch.msc_requested_at, ems_obj, ems_ok)
+                self._msc_note_observation("export", epoch.target_kw, epoch.export_requested_at, export_obj, export_ok)
+                return False
+            ems_ts = self._state_metadata_timestamp(ems_obj).timestamp()
+            export_ts = self._state_metadata_timestamp(export_obj).timestamp()
+            now_ts = datetime.now(timezone.utc).timestamp()
+            if not (
+                abs(float(export_obj['state']) - epoch.target_kw) <= 0.001
+                and ems_ts <= now_ts and export_ts <= now_ts
+                and (epoch.last_checked_at is None or now_ts >= epoch.last_checked_at)
+                and (epoch.last_ems_reported_at is None or ems_ts >= epoch.last_ems_reported_at)
+                and (epoch.last_export_reported_at is None or export_ts >= epoch.last_export_reported_at)
+            ):
+                reason = (
+                    "future" if ems_ts > now_ts or export_ts > now_ts else
+                    "clock_regression" if epoch.last_checked_at is not None and now_ts < epoch.last_checked_at else
+                    "target_mismatch" if abs(float(export_obj['state']) - epoch.target_kw) > 0.001 else
+                    "report_regression"
+                )
+                self._msc_diagnostic_context["maintenance_rejection"] = reason
+                for label, expected, boundary, obj in (
+                    ("msc", MODE_MAX_SELF, epoch.msc_requested_at, ems_obj),
+                    ("export", epoch.target_kw, epoch.export_requested_at, export_obj),
+                ):
+                    self._msc_diagnostic("record_observation", label, "maintenance", expected, boundary,
+                                         obj, datetime.now(timezone.utc).isoformat(), False, reason)
+                return False
+            self._msc_note_observation("msc", MODE_MAX_SELF, epoch.msc_requested_at, ems_obj, True)
+            self._msc_note_observation("export", epoch.target_kw, epoch.export_requested_at, export_obj, True)
+            epoch.last_ems_reported_at = ems_ts
+            epoch.last_export_reported_at = export_ts
+            epoch.last_checked_at = now_ts
+            return True
+        reused_msc_epoch: Optional[_MscTransition] = None
+        reused_close_requested_at: Optional[float] = None
+        reused_msc_requested_at: Optional[float] = None
+
+        def _reused_msc_epoch_current() -> bool:
+            return bool(
+                reused_msc_epoch is not None
+                and self._msc_transition is reused_msc_epoch
+                and reused_msc_epoch.phase == "msc"
+                and reused_msc_epoch.close_requested_at == reused_close_requested_at
+                and reused_msc_epoch.msc_requested_at == reused_msc_requested_at
+            )
 
         def _authority_paused(*, fallback_attempted: bool = False) -> _ActuatorApplicationResult:
             self._msc_baseline_established = False
+            self._msc_maintenance_epoch = None
             self._clear_solar_physical_relief(d, "control_authority_lost")
             self._clear_morning_slow_physical_relief()
             return _ActuatorApplicationResult(
@@ -7537,6 +7762,9 @@ class SigEnergyOptimizer:
             if recovery is not None or (entity == cfg.grid_export_limit and value > 0.011 and d.requires_verified_msc_before_export):
                 evidence[cfg.ems_mode_select] = {}
                 evidence[cfg.grid_export_limit] = {}
+            if maintenance_epoch is not None and recovery is None and not restrictive:
+                evidence[cfg.ems_mode_select] = {}
+                evidence[cfg.grid_export_limit] = {}
             if fallback_import_recovery:
                 evidence[cfg.demand_window_sensor] = {}
             # Fallback restores house-serving capability under MSC, using its
@@ -7550,6 +7778,24 @@ class SigEnergyOptimizer:
                 evidence[cfg.grid_export_limit] = {}
             if not await _authority_permits(restrictive=restrictive, evidence=evidence):
                 return False
+            if (
+                maintenance_epoch is not None and recovery is None and not restrictive
+                and not _maintenance_evidence_current(evidence)
+            ):
+                return False
+            if (
+                initialize_export_anchor and recovery is None
+                and entity == cfg.grid_export_limit and value > 0.011
+                and not restrictive
+            ):
+                current = evidence.get(cfg.grid_export_limit, {})
+                if not (
+                    self._msc_transition is None
+                    and self._msc_maintenance_identity() == application_identity
+                    and _number_matches(current, value, None, exact=True)
+                    and abs(float(current['state']) - value) <= 0.001
+                ):
+                    return False
             if fallback_import_recovery:
                 # Use the same final read as authority and settlement. A late
                 # Demand Window veto requires a close even before settlement;
@@ -7621,6 +7867,10 @@ class SigEnergyOptimizer:
                 ):
                     return False
             elif cfg.ems_mode_select in evidence:
+                # This joint authority/readback await must not turn a replaced
+                # or changed transition into permission under the old proof.
+                if reused_msc_epoch is not None and not _reused_msc_epoch_current():
+                    return False
                 if not _msc_matches(evidence[cfg.ems_mode_select], last_mode_requested_at):
                     return False
                 if self._msc_transition is not None and not _number_matches(
@@ -7634,12 +7884,42 @@ class SigEnergyOptimizer:
                 after = request[1] if request is not None and abs(request[0] - intended) <= 0.001 else None
                 if not _number_matches(evidence[cfg.grid_export_limit], intended, after, exact=True):
                     return False
+            if (
+                maintenance_epoch is not None and recovery is None
+                and entity == cfg.ess_max_charging_limit
+            ):
+                # The added joint read is an await: refresh charging ownership
+                # after it, before dispatching a previously selected cap.
+                self._recheck_solar_charge_authority(s, d, datetime.now(timezone.utc).timestamp())
+                self._recheck_morning_slow_physical_authority(s, d, datetime.now(timezone.utc).timestamp())
+                if (
+                    not self._solar_reentry_dispatch_current(s, d, charge=False)
+                    or (d.trace_gates.get("solar_surplus_dip_hold_active") and not self._solar_dip_dispatch_current(s))
+                    or abs(value - self._bound_ess_request_kw(d.ess_charge_limit, self.get_power_caps_kw(s)[0])) > 0.001
+                ):
+                    return False
             requested_at = datetime.now(timezone.utc).timestamp()
             self._number_settlement_requests[entity] = (value, requested_at, exact)
             if entity == cfg.grid_export_limit and value <= 0.011 and self._msc_transition is not None:
                 self._msc_transition.close_requested_at = requested_at
                 self._msc_transition.close_request_state = s
-            return await ha.set_number(entity, value)
+            try:
+                result = await ha.set_number(entity, value)
+            except (Exception, asyncio.CancelledError) as exc:
+                if entity == cfg.grid_export_limit:
+                    self._msc_diagnostic("record_request", "export", self._msc_diagnostic_phase, value, requested_at,
+                                         "cancelled" if isinstance(exc, asyncio.CancelledError) else "exception")
+                raise
+            if entity == cfg.grid_export_limit:
+                self._msc_diagnostic("record_request", "export", self._msc_diagnostic_phase, value, requested_at, result)
+            return result
+
+        async def _automatic_charge(value: float) -> bool:
+            if maintenance_epoch is not None:
+                return await _automatic_number(
+                    cfg.ess_max_charging_limit, value, restrictive=value <= 0.011,
+                )
+            return await ha.set_number(cfg.ess_max_charging_limit, value)
 
         async def _automatic_mode(mode: str, *, restrictive: bool = False) -> bool:
             nonlocal last_mode_requested_at
@@ -7659,11 +7939,19 @@ class SigEnergyOptimizer:
                     evidence[cfg.grid_export_limit], request[0], request[1], exact=True,
                 ):
                     return False
+            self._msc_maintenance_epoch = None
             last_mode_requested_at = datetime.now(timezone.utc).timestamp()
             if mode == MODE_MAX_SELF and self._msc_transition is not None:
                 self._msc_transition.msc_requested_at = last_mode_requested_at
                 self._msc_transition.msc_request_state = s
-            return await ha.select_option(cfg.ems_mode_select, mode)
+            try:
+                result = await ha.select_option(cfg.ems_mode_select, mode)
+            except (Exception, asyncio.CancelledError) as exc:
+                self._msc_diagnostic("record_request", "msc", self._msc_diagnostic_phase, mode, last_mode_requested_at,
+                                     "cancelled" if isinstance(exc, asyncio.CancelledError) else "exception")
+                raise
+            self._msc_diagnostic("record_request", "msc", self._msc_diagnostic_phase, mode, last_mode_requested_at, result)
+            return result
 
         async def _independent_restrictions() -> list[str]:
             requests = [("grid import safety close", cfg.grid_import_limit, 0.01)]
@@ -7695,10 +7983,12 @@ class SigEnergyOptimizer:
             # Fallback owns its existing emergency sequence. Its service results
             # must not discharge the later automatic export-reopening barrier.
             self._msc_baseline_established = False
+            self._msc_maintenance_epoch = None
             self._msc_transition = _MscTransition()
             self._clear_solar_physical_relief(d, "actuator_fallback")
             self._clear_morning_slow_physical_relief()
             self._reset_solar_reentry("actuator_fallback")
+            self._msc_diagnostic_phase = "fallback"
             logger.error("Entering safe fallback: %s", reason)
             fallback_failures: list[str] = []
 
@@ -7862,8 +8152,10 @@ class SigEnergyOptimizer:
             self._clear_solar_physical_relief(d, "msc_transition_pending")
             self._clear_morning_slow_physical_relief()
             self._msc_baseline_established = False
+            self._msc_maintenance_epoch = None
             transition = self._msc_transition
             assert transition is not None
+            self._msc_diagnostic_phase = transition.phase
 
             if not self._msc_export_closed(s):
                 # Reopening or loss of closure evidence cancels MSC proof.
@@ -7885,6 +8177,7 @@ class SigEnergyOptimizer:
                     MODE_MAX_SELF, restrictive=True,
                 ))]
 
+            self._msc_diagnostic_phase = transition.phase
             # Attempt every independent restriction even if another actuator
             # fails. None of these writes restore normal permissive capability.
             requests.append(("import close", lambda: _automatic_number(cfg.grid_import_limit, 0.01, restrictive=True)))
@@ -7938,6 +8231,7 @@ class SigEnergyOptimizer:
         # them (e.g. morning slow-charge branch in other automations).
         if effective_mode not in {cfg.automated_option, ""}:
             self._msc_baseline_established = False
+            self._msc_maintenance_epoch = None
             self._msc_transition = None
             self._clear_solar_physical_relief(d, "operator_owned")
             self._clear_morning_slow_physical_relief()
@@ -8028,6 +8322,7 @@ class SigEnergyOptimizer:
 
         if cfg.auto_enable_ha_control and remote not in {"on", "off"}:
             self._msc_baseline_established = False
+            self._msc_maintenance_epoch = None
             self._clear_solar_physical_relief(d, "ha_control_unavailable")
             self._clear_morning_slow_physical_relief()
             now_ts = datetime.now().timestamp()
@@ -8086,6 +8381,7 @@ class SigEnergyOptimizer:
 
         if not effective_ha_control:
             self._msc_baseline_established = False
+            self._msc_maintenance_epoch = None
             self._clear_morning_slow_physical_relief()
             return _ActuatorApplicationResult(succeeded=True)
 
@@ -8096,6 +8392,7 @@ class SigEnergyOptimizer:
             and str(effective_mode) == str(cfg.automated_option)
         ):
             self._msc_baseline_established = False
+            self._msc_maintenance_epoch = None
             self._clear_morning_slow_physical_relief()
             logger.debug(
                 "Automatic inverter writes paused: SigEnergy Optimizer ownership "
@@ -8111,6 +8408,7 @@ class SigEnergyOptimizer:
             # Remember even an attempted entry: the next safe return must prove
             # closure independently of whether a discharge write reports success.
             self._msc_baseline_established = False
+            self._msc_maintenance_epoch = None
             self._msc_transition = _MscTransition()
         elif ems_mode_to_apply == MODE_MAX_SELF:
             transition_required = bool(
@@ -8130,6 +8428,16 @@ class SigEnergyOptimizer:
                     self._msc_transition = _MscTransition()
                 if not self._msc_transition_observed(s):
                     return await _hold_msc_transition()
+                if (
+                    d.requires_verified_msc_before_export
+                    and d.export_intent == MSC_SURPLUS_CEILING
+                    and self._msc_transition.msc_requested_at is not None
+                ):
+                    # A later snapshot has already proven this exact pending
+                    # request. Keep its boundaries through all dispatch awaits.
+                    reused_msc_epoch = self._msc_transition
+                    reused_close_requested_at = reused_msc_epoch.close_requested_at
+                    reused_msc_requested_at = reused_msc_epoch.msc_requested_at
 
         export_limit_observed = self._grid_limit_is_observed(
             s.current_export_limit,
@@ -8182,6 +8490,30 @@ class SigEnergyOptimizer:
             )
         )
         export_written = False
+        candidate = self._msc_maintenance_epoch
+        if (
+            candidate is not None and not export_write_required
+            and d.requires_verified_msc_before_export
+            and d.export_intent == MSC_SURPLUS_CEILING
+            and ems_mode_to_apply == MODE_MAX_SELF
+            and self._msc_transition is None and self._msc_baseline_established
+            and s.hvac_solar_inputs.live_snapshot
+            and getattr(s, "_msc_read_identity", None) == application_identity
+            and candidate.identity == application_identity
+            and abs(candidate.target_kw - export_val) <= 0.001
+            and export_limit_observed and s.current_export_limit > near_zero
+            and abs(s.current_export_limit - export_val) <= 0.001
+            and self._msc_exact_observed(s)
+            and self._msc_report_is_current(s, ems=True, after=candidate.msc_requested_at)
+            and self._msc_report_is_current(s, ems=False, after=candidate.export_requested_at)
+        ):
+            maintenance_epoch = candidate
+            maintenance_key = (
+                candidate.identity, candidate.target_kw, candidate.msc_requested_at,
+                candidate.export_requested_at, candidate.export_exact,
+            )
+        else:
+            self._msc_maintenance_epoch = None
 
         if d.requires_verified_msc_before_export:
             live_ems_mode = str(
@@ -8197,21 +8529,60 @@ class SigEnergyOptimizer:
             # The decision snapshot can race an external EMS writer. Reassert and
             # confirm exact MSC immediately before deliberately opening the high
             # automatic PV-only ceiling, even when the snapshot already reported MSC.
-            ok_mode = await _automatic_mode(MODE_MAX_SELF)
-            if not ok_mode:
-                return await _safe_fallback("failed reasserting Maximum Self Consumption before high PV-only export")
-            if not await self._wait_for_exact_entity_state(
-                cfg.ems_mode_select,
-                MODE_MAX_SELF,
-                timeout_s=3.0,
-                observed_after=last_mode_requested_at,
-            ):
-                return await _safe_fallback("Maximum Self Consumption did not settle before high PV-only export")
-            if not await self._live_msc_export_ready(
+            # An already-proven pending epoch instead retains its original
+            # request, with fresh joint proof checked again before opening.
+            if maintenance_epoch is not None:
+                evidence = {cfg.ems_mode_select: {}, cfg.grid_export_limit: {}}
+                if not await _authority_permits(evidence=evidence):
+                    return _authority_paused()
+                if not _maintenance_evidence_current(evidence):
+                    return await _safe_fallback("MSC maintenance proof changed before application")
+                last_mode_requested_at = maintenance_epoch.msc_requested_at
+                self._msc_diagnostic_phase = "maintenance"
+                self._msc_diagnostic_context.update(
+                    maintenance=True,
+                    original_msc_requested_at=maintenance_epoch.msc_requested_at,
+                    original_export_requested_at=maintenance_epoch.export_requested_at,
+                    target_kw=maintenance_epoch.target_kw,
+                )
+                d.trace_gates['msc_maintenance_proof_used'] = True
+            elif reused_msc_epoch is not None:
+                if not _reused_msc_epoch_current():
+                    return await _safe_fallback("proven MSC transition changed before PV-only export")
+                last_mode_requested_at = reused_msc_requested_at
+            else:
+                ok_mode = await _automatic_mode(MODE_MAX_SELF)
+                if not ok_mode:
+                    return await _safe_fallback("failed reasserting Maximum Self Consumption before high PV-only export")
+                if not await self._wait_for_exact_entity_state(
+                    cfg.ems_mode_select,
+                    MODE_MAX_SELF,
+                    timeout_s=3.0,
+                    observed_after=last_mode_requested_at,
+                ):
+                    return await _safe_fallback("Maximum Self Consumption did not settle before high PV-only export")
+            if maintenance_epoch is None and not await self._live_msc_export_ready(
                 require_closed=self._msc_transition is not None,
+                export_after=reused_close_requested_at,
+                msc_after=reused_msc_requested_at,
             ):
                 self._msc_transition = _MscTransition(close_request_state=s)
                 return await _hold_msc_transition()
+
+        if (
+            d.requires_verified_msc_before_export and maintenance_epoch is None
+            and not export_write_required and self._msc_transition is None
+            and getattr(s, "_msc_read_identity", None) == application_identity
+            and export_limit_observed and s.current_export_limit > near_zero
+            and abs(s.current_export_limit - export_val) <= 0.001
+        ):
+            request = self._number_settlement_requests.get(cfg.grid_export_limit)
+            if request is None or abs(request[0] - export_val) > 0.001:
+                # Establish one process-local numeric request at unchanged open
+                # startup. Its final joint read must prove this is not a reopen.
+                initialize_export_anchor = True
+                self._msc_diagnostic_context["unchanged_open_anchor_initialization"] = True
+                export_write_required = True
 
         prepare_export_before_discharge = bool(
             ems_mode_to_apply in DISCHARGE_MODES
@@ -8353,7 +8724,7 @@ class SigEnergyOptimizer:
             morning_physical_owned_before_write = d.trace_gates.get(
                 "morning_slow_physical_export_relief", False,
             )
-            ok_chg = await ha.set_number(cfg.ess_max_charging_limit, charge_limit)
+            ok_chg = await _automatic_charge(charge_limit)
             if not ok_chg:
                 self._clear_solar_physical_relief(d, "charge_command_failed")
                 self._clear_morning_slow_physical_relief()
@@ -8378,9 +8749,7 @@ class SigEnergyOptimizer:
                     restored_charge = self._bound_ess_request_kw(
                         d.ess_charge_limit, charge_cap_kw,
                     )
-                    if not await ha.set_number(
-                        cfg.ess_max_charging_limit, restored_charge,
-                    ):
+                    if not await _automatic_charge(restored_charge):
                         application_failures.append(
                             f"failed restoring Morning Slow ESS charge limit to {restored_charge:.2f}kW"
                         )
@@ -8402,7 +8771,7 @@ class SigEnergyOptimizer:
                 self._recheck_solar_charge_authority(s, d, datetime.now(timezone.utc).timestamp())
                 if not d.trace_gates.get("solar_charge_ceiling_owned") or d.ess_charge_limit != charge_limit:
                     restored_charge = self._bound_ess_request_kw(d.ess_charge_limit, charge_cap_kw)
-                    if not await ha.set_number(cfg.ess_max_charging_limit, restored_charge):
+                    if not await _automatic_charge(restored_charge):
                         application_failures.append(
                             f"failed restoring ESS charge limit to {restored_charge:.2f}kW"
                         )
@@ -8439,12 +8808,15 @@ class SigEnergyOptimizer:
         await ha.set_input_number(cfg.min_soc_to_sunrise_helper, min(d.min_soc_to_sunrise, 100.0))
 
         if application_failures:
+            if reused_msc_epoch is not None or maintenance_epoch is not None:
+                return await _safe_fallback("MSC proof application failed: " + "; ".join(application_failures))
             if d.trace_gates.get("solar_surplus_dip_hold_active"):
                 self._solar_dip_proof = None
                 return await _safe_fallback("Solar held application failed: " + "; ".join(application_failures))
             if self._msc_transition is not None:
                 self._msc_transition = _MscTransition()
             self._msc_baseline_established = False
+            self._msc_maintenance_epoch = None
             self._clear_solar_physical_relief(d, "actuator_application_failed")
             self._clear_morning_slow_physical_relief()
             return _ActuatorApplicationResult(
@@ -8464,7 +8836,10 @@ class SigEnergyOptimizer:
         if d.trace_gates.get("solar_surplus_dip_hold_active") and not self._solar_dip_dispatch_current(s):
             self._solar_dip_proof = None
             return await _safe_fallback("Solar measured-surplus hold expired during application")
-        if ems_mode_to_apply == MODE_MAX_SELF and self._msc_exact_observed(s):
+        if (
+            reused_msc_epoch is None and maintenance_epoch is None
+            and ems_mode_to_apply == MODE_MAX_SELF and self._msc_exact_observed(s)
+        ):
             self._msc_baseline_established = True
             self._msc_transition = None
         if d.trace_gates.get("evening_boost_reentry_candidate"):
@@ -8493,9 +8868,7 @@ class SigEnergyOptimizer:
             self._recheck_solar_charge_authority(s, d, datetime.now(timezone.utc).timestamp())
             if was_owned and not d.trace_gates.get("solar_charge_ceiling_owned"):
                 restored_charge = self._bound_ess_request_kw(d.ess_charge_limit, charge_cap_kw)
-                if cfg.ess_max_charging_limit and not await ha.set_number(
-                    cfg.ess_max_charging_limit, restored_charge,
-                ):
+                if cfg.ess_max_charging_limit and not await _automatic_charge(restored_charge):
                     return await _safe_fallback("Failed restoring expired Solar handoff charge restriction")
                 if not self._solar_reentry_dispatch_current(s, d, charge=False):
                     return await _safe_fallback("Solar budget re-entry expired during charge restoration")
@@ -8513,9 +8886,7 @@ class SigEnergyOptimizer:
                 restored_charge = self._bound_ess_request_kw(
                     d.ess_charge_limit, charge_cap_kw,
                 )
-                if not await ha.set_number(
-                    cfg.ess_max_charging_limit, restored_charge,
-                ):
+                if not await _automatic_charge(restored_charge):
                     return await _safe_fallback(
                         "Failed restoring expired Morning Slow charge relief"
                     )
@@ -8532,6 +8903,41 @@ class SigEnergyOptimizer:
                 applied_kw=charge_limit,
                 command_ts=morning_slow_charge_command_ts,
             )
+        if reused_msc_epoch is not None:
+            # Helper writes and final policy checks also await HA. Consume only
+            # the same proven epoch after successful automatic completion.
+            if not await _authority_permits():
+                await _independent_restrictions()
+                return _authority_paused()
+            if not _reused_msc_epoch_current():
+                return await _safe_fallback("proven MSC transition changed during application")
+            self._msc_baseline_established = True
+            self._msc_transition = None
+        if maintenance_epoch is not None:
+            evidence = {cfg.ems_mode_select: {}, cfg.grid_export_limit: {}}
+            if not await _authority_permits(evidence=evidence):
+                await _independent_restrictions()
+                return _authority_paused()
+            if not _maintenance_evidence_current(evidence):
+                return await _safe_fallback("MSC maintenance proof changed during application")
+        elif (
+            d.requires_verified_msc_before_export
+            and d.export_intent == MSC_SURPLUS_CEILING
+            and ems_mode_to_apply == MODE_MAX_SELF
+            and self._msc_transition is None and self._msc_baseline_established
+            and self._msc_maintenance_identity() == application_identity
+            and getattr(s, "_msc_read_identity", None) == application_identity
+            and last_mode_requested_at is not None
+        ):
+            request = self._number_settlement_requests.get(cfg.grid_export_limit)
+            if request is not None and abs(request[0] - export_val) <= 0.001:
+                self._msc_maintenance_epoch = _MscMaintenanceEpoch(
+                    identity=application_identity, target_kw=request[0],
+                    msc_requested_at=last_mode_requested_at,
+                    export_requested_at=request[1], export_exact=request[2],
+                )
+        else:
+            self._msc_maintenance_epoch = None
         return _ActuatorApplicationResult(
             succeeded=True, automatic_application_completed=True,
         )
