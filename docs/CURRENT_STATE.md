@@ -1,18 +1,30 @@
 # Current State
 
-## Release candidate: 2.3.73-haos84 - 28 October 2026
+## Published: 2.3.73-haos84 - 28 October 2026
 
-Publication is authorized and in preparation. Source [PR #57](https://github.com/Belot77/sigenergy-optimizer/pull/57)
-merged normally at `61f17278499467ee79c7c4a4e1c7733517154400`, retaining the reviewed
-source head `4b71f54a66fd4556675b9289f6f003463de4d971`. This release also includes
-charge-readback PR #55 and Boost-helper PR #56. Five version markers change;
-control behavior is unchanged by release preparation.
+[Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.73-haos84)
+published at 2026-10-28T03:51:01Z. Tag/container source `bc1439120ab6c68d5983768ffd678bb62fedefb8`;
+reviewed tree `8ae40a1ef597ce3e07578e1fddb2483910337d35`. Metadata PR #58 merged normally at
+`f7025eac808534428035d8dd7d842661da1ae18e`, with exactly the tagged tree. Source PRs #55, #56
+and #57 are included: charge-readback metadata, Boost persistent-helper currentness,
+proven pending-MSC epoch reuse, qualified unchanged-ceiling maintenance and bounded
+passive settlement diagnostics.
 
-Full source validation passed 1,574 tests / 1,520 subtests; independent safety
-and docs reviews are GO. Release/version/source-pinning and focused control checks
-passed 93 tests / 104 subtests, zero failures. Exact image proof follows in
-[the .84 receipt](HAOS84_RELEASE_CANDIDATE.md). No install,
-live HA access or settings change is authorized by publication.
+Full source suite: **1,574 tests / 1,520 subtests**; release checks: **93 / 104**,
+zero failures. Source, safety, metadata and image-proof reviews are GO. Build
+[40628165315](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40628165315)
+succeeded. All 22 layer/diff-ID checks and 15 final source-file byte/mode checks
+per platform passed. Version/latest index:
+`sha256:ce9f9c1abf04effd9ef33a0bfccc29282f9f81356f617cebd8a6b61e3c36f112`. Previous immutable .83 is unchanged.
+
+See [the complete publication receipt](HAOS84_RELEASE_CANDIDATE.md). Final receipt
+worktree `C:/Projects/sigenergy_optimizer-haos84-publication-proof`, branch
+`docs/haos84-publication-proof`, changes only five documents. Unfinished work and
+protected database metadata remain unchanged. No HA access, installation or live
+settings changes were performed. Installed .84 identity and physical acceptance
+remain unverified. Genuine unavailable/conflicting reports can still block;
+pending retry/latest-request and timeout rules, Solar allocation and provider
+recovery remain separate. Do not claim every historical MSC error is fixed.
 
 ## Historical source candidate for .84 - 28 October 2026
 

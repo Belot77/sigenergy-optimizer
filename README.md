@@ -1,22 +1,25 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Release candidate: 2.3.73-haos84
+## Current published release: 2.3.73-haos84
 
-The reviewed MSC corrections retain proven pending requests and qualify unchanged
-open-ceiling maintenance from later current report evidence, reducing redundant
-MSC requests that could trigger fallback. Charge-setting report metadata and
-Evening Boost persistent-helper currentness corrections are included. Bounded
-passive settlement evidence improves future error attribution.
+[Published 28 October 2026, 03:51:01 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.73-haos84).
+Includes charge-readback metadata, Evening Boost persistent-helper currentness,
+proven pending-MSC epoch reuse, qualified unchanged-open-ceiling maintenance and
+bounded passive settlement evidence. Missing/conflicting device reports still
+block safely; pending retry/latest-request and timeout rules remain unchanged.
 
-Full source suite: 1,574 tests / 1,520 subtests passed; independent safety/docs
-reviews GO. Release checks: 93 tests / 104 subtests passed. Source PR #57 merged
-normally. Publication and exact image proof
-are in preparation; [the .84 receipt](docs/HAOS84_RELEASE_CANDIDATE.md) records
-status. Genuine missing/conflicting data still blocks safely. Pending retry and
-timeout rules remain unchanged; physical acceptance is unverified.
+Tag/container source: `bc1439120ab6c68d5983768ffd678bb62fedefb8`.
+Build 40628165315 passed. Both platforms passed all 22 layer/diff-ID checks and
+15 source-file byte/mode checks each; independent image/source review GO.
+Version/latest index: `sha256:ce9f9c1abf04effd9ef33a0bfccc29282f9f81356f617cebd8a6b61e3c36f112`.
+Source suite: 1,574 tests / 1,520 subtests; release checks: 93 / 104, zero failures.
+Previous immutable .83 remains unchanged. See [publication proof and live checks](docs/HAOS84_RELEASE_CANDIDATE.md).
 
+No HA installation or live settings change was performed. Installed .84 identity,
+physical acceptance and remaining historical MSC causes are unverified. Solar
+feedback allocation and provider recovery remain separate work.
 
-## Current published release: 2.3.72-haos83
+## Previous published release: 2.3.72-haos83
 
 [Published 27 October 2026, 04:13:16 UTC](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.72-haos83).
 Morning Slow now uses bounded partial charging instead of binary normal-cap release,
