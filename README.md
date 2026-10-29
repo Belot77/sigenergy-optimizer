@@ -1,50 +1,16 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Local .87 release preparation - Stage A accepted restrictive settlement recovery - 30 October 2026
+## Current published release: 2.3.76-haos87 - 30 October 2026
 
-This worktree is based on the normal PR #67 merge
-`4ebdb82daf8a3c41efbab1f12366f413e382fbb2`, whose parents are PR #66 merge
-`0e0fa8a5e2779d318390124a34ff9e1b8cabd4ed` and Stage A source
-`067dc1789ba31202956af3c6a88d79f24cc38c2e`. The merge tree is
-`ec7c0fb0f33adba86568df4d2003f553e93fdcba`. It contains the provider-daylight
-correction from PR #66 and accepted restrictive-settlement recovery from PR #67.
-The five established release markers are being prepared as `2.3.76-haos87`; this
-is local release preparation, not a publication receipt.
+Published at 2026-10-29T22:49:07Z (30 October 09:49:07 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.76-haos87). Metadata [PR #68](https://github.com/Belot77/sigenergy-optimizer/pull/68) merged normally at `77be45d70b665283a49ce249111f1fa6c6732c69` at 22:48:37Z, with parents `4ebdb82daf8a3c41efbab1f12366f413e382fbb2` and `6a43077be1a59512bf44b1bb1c41aed410992c37`; merge tree `de893cf6a0bae925025d22eb0099b5b6beb00b8f`. Annotated tag object `9a3ff193b8a79791a3eb333f75463365e939a9ba` resolves `v2.3.76-haos87` to source `6a43077be1a59512bf44b1bb1c41aed410992c37` and that tree.
 
-Settlement recovery applies to exactly two originating cases: an accepted
-ordinary export-close whose later report misses its own short observation wait;
-and a restrictive fallback after delayed proof of an accepted discharge target.
-A renewed retry remains bound to its original cause and current identity and gets
-a fresh request boundary and budget. Generic startup MSC-pending behavior remains
-unchanged. The recovery budget is 15 seconds from before the first restrictive
-dispatch and includes internal awaits; it cannot cancel a request or prove
-physical response. The event loop caps pending idle waits at one second, including
-debounce; HA/service/read awaits may lengthen actual cycles. The ordinary
-three-second target wait remains. Existing accepted close/MSC requests are not
-duplicated while pending, and fresh request-correlated close/MSC proof remains
-required before permissive recovery. Boost's 120-second requalification, Morning
-Dump minimum SoC 15%, and Evening Boost target SoC 80% are unchanged.
+Build [40968005213](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40968005213) succeeded for the exact source. Version/latest OCI index: `sha256:b0e703483652a3b5ead7a1eb968f10dee2571c9d613f6d72e29a210c01d790f6`. The amd64 manifest is `sha256:9fb2e71617d7e943fd64aff45dbe011fb18c1642022dd8e25dbb539aa6e11051`; arm64 is `sha256:2e36eabf2820d78eabeff254fcdcd61ae8e680375c8b55a3adb041aa4e7d95fa`. Each platform passed 11 layer/diff-ID checks and 15 expected source byte/mode checks. Source fingerprint: `sha256:a80c8d7e425ec222b03ff731f0e9c50f810440f43776b96aa22131b163b999f2`. The author verified layer bodies; the independent verifier confirmed registry metadata and expected source, but did not redownload all compressed layer bodies. Offline OCI verification passed 73 synthetic cases. Post-publication tag, source, normal-merge, version/latest and previous-index checks are GO. Previous immutable .86 index `sha256:68ae9242488169b25525c53ef106eae92197a3f398aa3210344a43c6601b9359` remains unchanged.
 
-The provider correction separates valid provider payloads from daylight ownership:
-below-horizon valid data may establish or advance provider freshness, while the
-independent daylight gate still prevents Solar ownership and dispatch. It changes
-no provider generation, coverage, high-water, reconnect or deadline rules.
+The source includes PR #66 provider-payload/daylight separation and PR #67 bounded recovery for the two accepted restrictive-settlement origins. Retained source validation: guarded full suite 1,676 tests / 1,672 subtests, zero failures; focused five-module run 86 / 136; independent safety run 11 / 28. Release version/source-pinning checks passed 16 tests, six runtime modules passed 96 / 141, and the offline verifier passed 73 cases.
 
-Retained validation for the source merge: guarded full suite 1,676 tests / 1,672 subtests, zero failures; focused five-module run 86 / 136; independent safety run 11 / 28.
+The .87 image is published and ready for installation; no .87 installation has been verified. The last supplied installed identity remains .86 (`2.3.75-haos86`, source `74f21875e9a30e561d78644c4a5b0791becccc83`) at 29 October 09:55:23 AEDT. Auto-update was last confirmed off on 29 October. Do not infer physical acceptance from publication or software checks. Installation, settings changes and supervised live acceptance remain separate actions.
 
-Release version/source-pinning checks passed 16 tests in 9.81 seconds with no store use. Six runtime modules passed 96 tests / 141 subtests in 7.69 seconds (202 warnings; 168 isolated temporary stores; zero memory or rejected constructions). Dotenv, SQLite and StateStore guards were active; protected database metadata was unchanged and its contents were not read. The offline OCI verifier passed 73 synthetic cases. Independent publication-receipt review remains pending. No release metadata commit, tag, image build or publication is claimed.
-Published .86 remains the latest verified release until .87 publication checks
-pass. The last operator-supplied installed identity is .86 (`2.3.75-haos86`, source
-`74f21875e9a30e561d78644c4a5b0791becccc83`) at 29 October 09:55:23 AEDT; this is
-not an .87 installation claim. Auto-update was last confirmed off on 29 October.
-
-Remaining engineering questions include intermittent MSC/application outcomes,
-Solar allocation/budget transitions and Evening Boost stability; their live causes
-and remedies are not all established by this change. Physical readback,
-export/import limits, charge settlement and overnight stability remain unverified.
-First verification is isolated and non-live; installation, settings changes and
-supervised live acceptance are separate actions. Safest rollback is to withhold
-this candidate or use a reviewed scoped revert, retaining immutable .86.
+Next live evidence, after separate authorization, is startup runtime/source identity; dawn provider freshness distinct from daylight ownership; Morning-to-Solar/export/charge progression and deadline behavior; accepted MSC/close requests with later correlated reports; and Evening Boost qualification under its unchanged 120-second rule. Report shipped changes, remaining engineering/policy work, missing live evidence and the next authorized action at each publication.
 
 ## Historical pre-merge checkpoint - Solar provider daylight validation - merged by PR #66 - 30 October 2026
 
@@ -86,7 +52,7 @@ and unchanged. Merge does not establish physical acceptance, and the supplied
 provider-poll trace still lacks the raw payload needed to establish the sole live
 cause. Stage A is a separate local candidate based on this merge.
 
-## Current published release: 2.3.75-haos86
+## Historical published release: 2.3.75-haos86
 
 [Published 29 October 2026 at 09:53:02 AEDT](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.75-haos86).
 Repairs the .85 failed-close recovery deadlock by renewing an unaccepted restrictive
