@@ -18,7 +18,7 @@ import hashlib
 import json
 from collections import deque
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 import logging
 import math
@@ -500,6 +500,11 @@ class _ActuatorApplicationResult:
     # automatic application path may retain Boost qualification or admission.
     automatic_application_completed: bool = False
     automatic_transition_pending: bool = False
+    restrictive_settlement_pending: bool = False
+    restrictive_settlement_purpose: Optional[str] = None
+    restrictive_settlement_cause: Optional[str] = None
+    restrictive_settlement_deadline_monotonic: Optional[float] = None
+    restrictive_settlement_expired: bool = False
 
 
 @dataclass
@@ -522,6 +527,14 @@ class _MscTransitionPending(RuntimeError):
     """Intentional restrictive wait; never a completed application."""
 
 
+class _AcceptedRestrictiveSettlementPending(_MscTransitionPending):
+    """Accepted restrictive recovery remains uncommitted and grants no admission."""
+
+
+class _AcceptedRestrictiveSettlementExpired(RuntimeError):
+    """A visible failed attempt; only its cause may seed a fresh restrictive retry."""
+
+
 @dataclass
 class _MscTransition:
     """Unfinished export-close / MSC observation barriers; never persisted."""
@@ -535,6 +548,20 @@ class _MscTransition:
     close_accepted: bool = False
     close_value: Optional[float] = None
     msc_accepted: bool = False
+
+
+@dataclass(frozen=True)
+class _AcceptedRestrictiveSettlement:
+    """One nonextendable observation budget; never an actuator permission."""
+
+    purpose: str
+    cause: str
+    reason: str
+    identity: tuple
+    close_request: tuple
+    transition: Optional[_MscTransition]
+    started_monotonic: float
+    deadline_monotonic: float
 
 
 @dataclass
@@ -660,6 +687,11 @@ class SigEnergyOptimizer:
         self._msc_diagnostic_context: dict[str, Any] = {}
         self._msc_last_number_observation: dict[str, Any] = {}
         self._msc_transition: Optional[_MscTransition] = None
+        self._accepted_restrictive_settlement: Optional[_AcceptedRestrictiveSettlement] = None
+        self._accepted_restrictive_last_monotonic: Optional[float] = None
+        self._accepted_restrictive_recheck_at: Optional[float] = None
+        self._accepted_restrictive_phase_request: Optional[tuple] = None
+        self._accepted_restrictive_retry: Optional[tuple] = None
         self._msc_baseline_established = False
         self._msc_maintenance_epoch = None
 
@@ -734,6 +766,8 @@ class SigEnergyOptimizer:
         if changed.intersection(_CONFIG_OWNER_IDENTITY_ATTRS):
             self._control_identity_activated_at = datetime.now(timezone.utc).timestamp()
         self._msc_maintenance_generation += 1
+        self._retire_accepted_restrictive_settlement(require_close=True)
+        self._accepted_restrictive_retry = None
         self._number_settlement_requests.clear()
         self._msc_baseline_established = False
         self._msc_maintenance_epoch = None
@@ -1818,6 +1852,8 @@ class SigEnergyOptimizer:
 
     def on_ws_connect(self) -> None:
         self._msc_maintenance_generation += 1
+        self._retire_accepted_restrictive_settlement(require_close=True)
+        self._accepted_restrictive_retry = None
         self._msc_maintenance_epoch = None
         self._solar_dip_proof = None
         self._ws_connected = True
@@ -1826,6 +1862,8 @@ class SigEnergyOptimizer:
 
     def on_ws_disconnect(self) -> None:
         self._msc_maintenance_generation += 1
+        self._retire_accepted_restrictive_settlement(require_close=True)
+        self._accepted_restrictive_retry = None
         self._msc_maintenance_epoch = None
         self._solar_dip_proof = None
         self._ws_connected = False
@@ -1851,6 +1889,8 @@ class SigEnergyOptimizer:
         """
         self._reset_evening_boost_reentry("optimizer_start_requires_qualification")
         self._msc_maintenance_generation += 1
+        self._retire_accepted_restrictive_settlement(require_close=True)
+        self._accepted_restrictive_retry = None
         self._msc_maintenance_epoch = None
         self._running = True
         last_tick_ts = 0.0
@@ -1876,6 +1916,9 @@ class SigEnergyOptimizer:
             now = datetime.now().timestamp()
             time_since_heartbeat = now - last_heartbeat_ts
             wait_max = max(0.01, _HEARTBEAT_INTERVAL - time_since_heartbeat)
+            settlement_wait = self._accepted_restrictive_wait_seconds()
+            if settlement_wait is not None:
+                wait_max = min(wait_max, settlement_wait)
             provider_wait = self._solar_provider_wait_seconds(now)
             if provider_wait is not None:
                 wait_max = min(wait_max, provider_wait)
@@ -1931,6 +1974,9 @@ class SigEnergyOptimizer:
         deadline = asyncio.get_event_loop().time() + window
         while True:
             remaining = deadline - asyncio.get_event_loop().time()
+            settlement_wait = self._accepted_restrictive_wait_seconds()
+            if settlement_wait is not None:
+                remaining = min(remaining, settlement_wait)
             if getattr(self, "_solar_provider_urgent", False):
                 self._solar_provider_urgent = False
                 break
@@ -1959,6 +2005,10 @@ class SigEnergyOptimizer:
             self._last_cycle_completed = datetime.now(timezone.utc)
         except asyncio.CancelledError:
             raise
+        except _AcceptedRestrictiveSettlementPending:
+            self._last_cycle_error = ""
+            self._last_cycle_completed = datetime.now(timezone.utc)
+            logger.info("Optimizer awaiting bounded accepted restrictive settlement")
         except _MscTransitionPending:
             self._last_cycle_error = ""
             self._last_cycle_completed = datetime.now(timezone.utc)
@@ -2022,6 +2072,10 @@ class SigEnergyOptimizer:
                     and not application_result.succeeded
                 ):
                     error_type = (
+                        _AcceptedRestrictiveSettlementExpired
+                        if application_result.restrictive_settlement_expired else
+                        _AcceptedRestrictiveSettlementPending
+                        if application_result.restrictive_settlement_pending else
                         _MscTransitionPending
                         if (application_result.transition_pending
                             and application_result.automatic_transition_pending
@@ -2079,6 +2133,8 @@ class SigEnergyOptimizer:
                 self._accumulate_history(state, decision)
                 self._record_price_tracking(state, decision)
             except asyncio.CancelledError:
+                self._retire_accepted_restrictive_settlement(require_close=True)
+                self._accepted_restrictive_retry = None
                 if not application_committed:
                     self._msc_maintenance_epoch = None
                 if application_attempted and not application_committed:
@@ -2089,7 +2145,11 @@ class SigEnergyOptimizer:
                 self._reset_evening_boost_reentry("cycle_cancelled")
                 self._reset_solar_reentry("cycle_cancelled")
                 raise
-            except Exception:
+            except Exception as exc:
+                if not isinstance(exc, _AcceptedRestrictiveSettlementPending):
+                    self._retire_accepted_restrictive_settlement(require_close=True)
+                    if not isinstance(exc, _AcceptedRestrictiveSettlementExpired):
+                        self._accepted_restrictive_retry = None
                 if not application_committed:
                     self._msc_maintenance_epoch = None
                     if application_attempted:
@@ -2632,12 +2692,19 @@ class SigEnergyOptimizer:
                 application.update(
                     status=(
                         "succeeded" if result.succeeded else
-                        "pending" if result.transition_pending else "failed"
+                        "pending" if result.transition_pending or result.restrictive_settlement_pending else "failed"
                     ),
                     succeeded=result.succeeded,
                     fallback_attempted=result.fallback_attempted,
                     fallback_succeeded=result.fallback_succeeded,
                 )
+                if result.restrictive_settlement_purpose is not None:
+                    application["restrictive_settlement"] = {
+                        "pending": result.restrictive_settlement_pending,
+                        "purpose": result.restrictive_settlement_purpose,
+                        "cause": result.restrictive_settlement_cause,
+                        "deadline_monotonic": result.restrictive_settlement_deadline_monotonic,
+                    }
                 if result.transition_pending:
                     phase = d.trace_values.get("msc_transition_phase")
                     application["transition_phase"] = (
@@ -2646,6 +2713,7 @@ class SigEnergyOptimizer:
             error = result.error if isinstance(result, _ActuatorApplicationResult) else ""
             application["error_code"] = (
                 "application_exception" if application_raised else
+                "accepted_restrictive_settlement_pending" if isinstance(result, _ActuatorApplicationResult) and result.restrictive_settlement_pending else
                 "pending_msc" if isinstance(result, _ActuatorApplicationResult) and result.transition_pending and application["transition_phase"] == "msc" else
                 "pending_close" if isinstance(result, _ActuatorApplicationResult) and result.transition_pending else
                 "maintenance_proof_changed" if "maintenance proof changed" in error else
@@ -7684,6 +7752,87 @@ class SigEnergyOptimizer:
         digest = hashlib.sha256(json.dumps(context, separators=(",", ":"), ensure_ascii=True).encode("utf-8")).digest()
         return (id(self.ha), self._msc_maintenance_generation, self._control_identity_activated_at, digest)
 
+    def _retire_accepted_restrictive_settlement(self, *, require_close: bool = False) -> None:
+        attempt = getattr(self, "_accepted_restrictive_settlement", None)
+        self._accepted_restrictive_settlement = None
+        self._accepted_restrictive_last_monotonic = None
+        self._accepted_restrictive_recheck_at = None
+        self._accepted_restrictive_phase_request = None
+        if attempt is not None and require_close:
+            self._msc_transition = _MscTransition(identity=())
+            self._msc_baseline_established = False
+            self._msc_maintenance_epoch = None
+
+    def _accepted_restrictive_wait_seconds(self) -> Optional[float]:
+        attempt = getattr(self, "_accepted_restrictive_settlement", None)
+        if attempt is None:
+            return None
+        now = monotonic()
+        if not math.isfinite(now):
+            return 0.0
+        recheck = getattr(self, "_accepted_restrictive_recheck_at", None)
+        return max(0.0, min(1.0, attempt.deadline_monotonic - now,
+                            (recheck - now) if recheck is not None else 1.0))
+
+    def _accepted_restrictive_error(self, s: Optional[SolarState] = None) -> Optional[str]:
+        attempt = getattr(self, "_accepted_restrictive_settlement", None)
+        if attempt is None:
+            return None
+        now = monotonic()
+        previous = self._accepted_restrictive_last_monotonic
+        if not (math.isfinite(now) and math.isfinite(attempt.started_monotonic)
+                and math.isfinite(attempt.deadline_monotonic)
+                and attempt.deadline_monotonic == attempt.started_monotonic + 15.0
+                and now >= attempt.started_monotonic
+                and (previous is None or now >= previous)):
+            return "accepted restrictive settlement monotonic clock invalid"
+        if now >= attempt.deadline_monotonic:
+            return "accepted restrictive settlement deadline expired"
+        self._accepted_restrictive_last_monotonic = now
+        if (attempt.purpose not in {"fallback", "ordinary_close", "ordinary_close_retry"}
+            or attempt.identity != self._msc_maintenance_identity()
+            or self._number_settlement_requests.get(self.cfg.grid_export_limit) != attempt.close_request
+            or (attempt.purpose != "ordinary_close" and (
+                attempt.transition is None or self._msc_transition is not attempt.transition
+                or self._accepted_restrictive_phase_request != self._accepted_restrictive_phase_signature(attempt.transition)
+            ))
+            or (attempt.purpose == "ordinary_close" and self._msc_transition is not None)):
+            return "accepted restrictive settlement request identity changed"
+        if s is not None:
+            if not (s.hvac_solar_inputs.live_snapshot
+                    and getattr(s, "_msc_read_identity", None) == attempt.identity):
+                return "accepted restrictive settlement reader identity changed"
+            if (s.current_export_limit_observed
+                and self._msc_report_is_current(s, ems=False, after=attempt.close_request[1])
+                and s.current_export_limit > attempt.close_request[0] + .001):
+                return "accepted restrictive settlement contradicted by export report"
+            transition = attempt.transition
+            if (transition is not None and transition.msc_requested_at is not None
+                and s.ems_mode_observed and s.current_ems_mode != MODE_MAX_SELF
+                and self._msc_report_is_current(s, ems=True, after=transition.msc_requested_at)):
+                return "accepted restrictive settlement contradicted by EMS report"
+        return None
+
+    @staticmethod
+    def _accepted_restrictive_phase_signature(transition: _MscTransition) -> tuple:
+        return (transition.phase, transition.msc_requested_at, id(transition.msc_request_state),
+                transition.msc_accepted, transition.close_requested_at, id(transition.close_request_state),
+                transition.close_value, transition.close_accepted, transition.identity)
+
+    def _accepted_restrictive_pending_result(self) -> _ActuatorApplicationResult:
+        attempt = self._accepted_restrictive_settlement
+        assert attempt is not None
+        self._accepted_restrictive_recheck_at = min(monotonic() + 1.0, attempt.deadline_monotonic)
+        return _ActuatorApplicationResult(
+            succeeded=False, error=attempt.reason,
+            fallback_attempted=attempt.purpose == "fallback",
+            fallback_succeeded=False if attempt.purpose == "fallback" else None,
+            restrictive_settlement_pending=True,
+            restrictive_settlement_purpose=attempt.purpose,
+            restrictive_settlement_cause=attempt.cause,
+            restrictive_settlement_deadline_monotonic=attempt.deadline_monotonic,
+        )
+
     async def _apply(
         self, s: SolarState, d: Decision,
     ) -> _ActuatorApplicationResult:
@@ -7699,6 +7848,8 @@ class SigEnergyOptimizer:
         try:
             result = await self._apply_with_msc_proof(s, d)
         except (Exception, asyncio.CancelledError) as exc:
+            self._retire_accepted_restrictive_settlement(require_close=True)
+            self._accepted_restrictive_retry = None
             self._retire_solar_physical_completion()
             self._msc_maintenance_epoch = None
             if self._msc_transition is not None:
@@ -7709,6 +7860,31 @@ class SigEnergyOptimizer:
                 self._msc_transition.msc_accepted = False
             self._msc_diagnostic("finish", "cancelled" if isinstance(exc, asyncio.CancelledError) else "exception")
             raise
+        if result.succeeded and not result.automatic_application_completed:
+            self._accepted_restrictive_retry = None
+        attempt = self._accepted_restrictive_settlement
+        if attempt is not None:
+            failure = self._accepted_restrictive_error(s)
+            if failure is not None:
+                self._retire_accepted_restrictive_settlement(require_close=True)
+                # A deadline can be crossed by the final application await.
+                # Re-enter only the existing restrictive hold, never leave an
+                # earlier opening behind with its recheck timer retired.
+                restricted = replace(d, ems_mode=MODE_MAX_SELF, export_limit=0.0,
+                                     export_intent=EXPORT_BLOCKED, requires_verified_msc_before_export=False)
+                await self._apply_with_msc_proof(s, restricted)
+                result = _ActuatorApplicationResult(
+                    succeeded=False, error=f"{attempt.reason}; {failure}",
+                    fallback_attempted=attempt.purpose == "fallback",
+                    fallback_succeeded=False if attempt.purpose == "fallback" else None,
+                    restrictive_settlement_purpose=attempt.purpose,
+                    restrictive_settlement_cause=attempt.cause,
+                    restrictive_settlement_deadline_monotonic=attempt.deadline_monotonic,
+                )
+            elif result.transition_pending or result.restrictive_settlement_pending:
+                result = self._accepted_restrictive_pending_result()
+            else:
+                self._retire_accepted_restrictive_settlement(require_close=not result.succeeded)
         if not (
             result.succeeded and result.automatic_application_completed
             and not result.fallback_attempted and not result.transition_pending
@@ -7716,7 +7892,7 @@ class SigEnergyOptimizer:
             self._retire_solar_physical_completion()
             self._msc_maintenance_epoch = None
         self._msc_diagnostic_context["phase_after"] = self._msc_transition.phase if self._msc_transition else "idle"
-        self._msc_diagnostic("finish", "succeeded" if result.succeeded else "pending" if result.transition_pending else "failed")
+        self._msc_diagnostic("finish", "succeeded" if result.succeeded else "pending" if result.transition_pending or result.restrictive_settlement_pending else "failed")
         return result
 
     async def _apply_with_msc_proof(
@@ -7772,6 +7948,23 @@ class SigEnergyOptimizer:
         had_automated_authority = False
         last_mode_requested_at: Optional[float] = None
         application_identity = self._msc_maintenance_identity()
+        accepted_budget = self._accepted_restrictive_settlement
+        accepted_budget_last = monotonic()
+
+        def _accepted_budget_current() -> bool:
+            nonlocal accepted_budget_last
+            if accepted_budget is None:
+                return True
+            now = monotonic()
+            current = bool(
+                math.isfinite(now) and math.isfinite(accepted_budget_last)
+                and accepted_budget.started_monotonic <= accepted_budget_last <= now
+                and now < accepted_budget.deadline_monotonic
+                and self._msc_maintenance_identity() == accepted_budget.identity
+            )
+            if current:
+                accepted_budget_last = now
+            return current
         application_solar_relief = self._solar_relief
         application_solar_context = application_solar_relief.trajectory_context
         self._solar_completion_msc_high_water = None
@@ -7884,6 +8077,8 @@ class SigEnergyOptimizer:
             )
 
         def _authority_paused(*, fallback_attempted: bool = False) -> _ActuatorApplicationResult:
+            self._retire_accepted_restrictive_settlement(require_close=True)
+            self._accepted_restrictive_retry = None
             if self._msc_transition is not None:
                 self._msc_transition.identity = ()
                 self._msc_transition.close_accepted = False
@@ -7984,6 +8179,8 @@ class SigEnergyOptimizer:
             if battery_discharge_capability:
                 evidence[cfg.grid_export_limit] = {}
             if not await _authority_permits(restrictive=restrictive, evidence=evidence):
+                return False
+            if self._accepted_restrictive_error() is not None or (not restrictive and not _accepted_budget_current()):
                 return False
             if (
                 maintenance_epoch is not None and recovery is None and not restrictive
@@ -8126,6 +8323,8 @@ class SigEnergyOptimizer:
                 raise
             if entity == cfg.grid_export_limit:
                 self._msc_diagnostic("record_request", "export", self._msc_diagnostic_phase, value, requested_at, result)
+                if self._number_settlement_requests.get(entity) != (value, requested_at, exact):
+                    return False
             if close_transition is not None and close_transition.identity is not None:
                 if not (
                     _pending_reader_current() and self._msc_transition is close_transition
@@ -8133,10 +8332,13 @@ class SigEnergyOptimizer:
                 ):
                     return False
                 close_transition.close_accepted = result is True
+            if self._accepted_restrictive_error() is not None or (not restrictive and not _accepted_budget_current()):
+                return False
             return result
 
         async def _automatic_charge(value: float) -> bool:
-            if maintenance_epoch is not None:
+            if (maintenance_epoch is not None or accepted_budget is not None
+                or self._accepted_restrictive_settlement is not None):
                 return await _automatic_number(
                     cfg.ess_max_charging_limit, value, restrictive=value <= 0.011,
                 )
@@ -8146,6 +8348,8 @@ class SigEnergyOptimizer:
             nonlocal last_mode_requested_at
             evidence = {cfg.grid_export_limit: {}} if mode in DISCHARGE_MODES else {}
             if not await _authority_permits(restrictive=restrictive, evidence=evidence):
+                return False
+            if self._accepted_restrictive_error() is not None or (not restrictive and not _accepted_budget_current()):
                 return False
             if (
                 mode in DISCHARGE_MODES
@@ -8169,6 +8373,8 @@ class SigEnergyOptimizer:
                 mode_transition.msc_request_state = s
                 mode_transition.msc_accepted = False
                 mode_transition.identity = application_identity if _pending_reader_current() else None
+                if self._accepted_restrictive_settlement is not None:
+                    self._accepted_restrictive_phase_request = self._accepted_restrictive_phase_signature(mode_transition)
             try:
                 result = await ha.select_option(cfg.ems_mode_select, mode)
             except (Exception, asyncio.CancelledError) as exc:
@@ -8183,6 +8389,10 @@ class SigEnergyOptimizer:
                 ):
                     return False
                 mode_transition.msc_accepted = result is True
+                if self._accepted_restrictive_settlement is not None:
+                    self._accepted_restrictive_phase_request = self._accepted_restrictive_phase_signature(mode_transition)
+            if self._accepted_restrictive_error() is not None or (not restrictive and not _accepted_budget_current()):
+                return False
             return result
 
         async def _independent_restrictions() -> list[str]:
@@ -8209,7 +8419,58 @@ class SigEnergyOptimizer:
                     failures.append(f"{label} raised {type(exc).__name__}: {exc}")
             return failures
 
-        async def _safe_fallback(reason: str) -> _ActuatorApplicationResult:
+        async def _begin_accepted_settlement(
+            purpose: str, cause: str, reason: str, started: float, *, close_phase_retry: bool = False,
+            expected_request: Optional[tuple] = None, expected_msc_boundary: Optional[float] = None,
+        ) -> Optional[_ActuatorApplicationResult]:
+            request = self._number_settlement_requests.get(cfg.grid_export_limit)
+            transition = self._msc_transition if purpose != "ordinary_close" else None
+            if not (request is not None and _pending_reader_current()
+                    and math.isfinite(started)
+                    and (transition is None if purpose == "ordinary_close" else
+                         transition is not None and transition.identity == application_identity
+                         and transition.close_accepted
+                         and (transition.msc_accepted or close_phase_retry and transition.phase == "close"))):
+                return None
+            if expected_request is not None and request != expected_request:
+                return None
+            if expected_msc_boundary is not None and (
+                transition is None or transition.msc_requested_at != expected_msc_boundary
+            ):
+                return None
+            signature = self._accepted_restrictive_phase_signature(transition) if transition is not None else None
+            # Use current control evidence, never the diagnostic observation sink.
+            current = await self._read_state()
+            if not await _authority_permits():
+                return None
+            if (self._number_settlement_requests.get(cfg.grid_export_limit) != request
+                or transition is not None and (
+                    self._msc_transition is not transition
+                    or self._accepted_restrictive_phase_signature(transition) != signature
+                )):
+                return None
+            self._accepted_restrictive_settlement = _AcceptedRestrictiveSettlement(
+                purpose, cause, reason, application_identity, request, transition,
+                started, started + 15.0,
+            )
+            self._accepted_restrictive_last_monotonic = started
+            self._accepted_restrictive_phase_request = (
+                self._accepted_restrictive_phase_signature(transition) if transition is not None else None
+            )
+            failure = self._accepted_restrictive_error(current)
+            if failure is not None:
+                self._retire_accepted_restrictive_settlement(require_close=True)
+                return None
+            return self._accepted_restrictive_pending_result()
+
+        async def _safe_fallback(
+            reason: str, *, accepted_settlement_cause: Optional[str] = None,
+        ) -> _ActuatorApplicationResult:
+            previous_attempt = self._accepted_restrictive_settlement or accepted_budget
+            if previous_attempt is not None:
+                reason = f"{previous_attempt.reason}; {reason}"
+            self._retire_accepted_restrictive_settlement()
+            self._accepted_restrictive_retry = None
             if not await _authority_permits(restrictive=True):
                 return _authority_paused()
             # Fallback owns its existing emergency sequence. Its service results
@@ -8221,8 +8482,10 @@ class SigEnergyOptimizer:
             self._clear_morning_slow_physical_relief()
             self._reset_solar_reentry("actuator_fallback")
             self._msc_diagnostic_phase = "fallback"
-            logger.error("Entering safe fallback: %s", reason)
+            log_fallback = logger.warning if accepted_settlement_cause else logger.error
+            log_fallback("Entering safe fallback: %s", reason)
             fallback_failures: list[str] = []
+            observation_missing: list[str] = []
 
             async def _attempt(label: str, request: Any) -> bool:
                 try:
@@ -8243,7 +8506,7 @@ class SigEnergyOptimizer:
                 try:
                     observed = bool(await observation())
                     if not observed:
-                        fallback_failures.append(f"{label} was not observed")
+                        observation_missing.append(f"{label} was not observed")
                     return observed
                 except asyncio.CancelledError:
                     raise
@@ -8253,6 +8516,7 @@ class SigEnergyOptimizer:
                     )
                     return False
 
+            restrictive_started = monotonic()
             await _attempt(
                 "grid export safety close",
                 lambda: _automatic_number(cfg.grid_export_limit, safe_export_close_kw, restrictive=True),
@@ -8325,12 +8589,27 @@ class SigEnergyOptimizer:
                 # authority refresh. Recheck both immediately before recovery.
                 if export_requested_at is None or msc_requested_at is None:
                     return False
-                return await _automatic_number(entity, value, recovery=(export_requested_at, msc_requested_at))
+                def within_budget() -> bool:
+                    now = monotonic()
+                    return bool(not accepted_settlement_cause or (
+                        math.isfinite(now) and math.isfinite(restrictive_started)
+                        and restrictive_started <= now < restrictive_started + 15.0
+                    ))
+                if not within_budget():
+                    return False
+                result = await _automatic_number(entity, value, recovery=(export_requested_at, msc_requested_at))
+                return result is True and within_budget()
 
             if safe_recovery_observed:
                 # Settlement permits recovery only within limits still owned
                 # independently of this fallback's temporary safety clamp.
-                if not independent_import_blocked:
+                if accepted_settlement_cause and not (
+                    math.isfinite(restrictive_started) and math.isfinite(monotonic())
+                    and restrictive_started <= monotonic() < restrictive_started + 15.0
+                ):
+                    fallback_failures.append("accepted restrictive settlement deadline expired")
+                    safe_recovery_observed = False
+                if safe_recovery_observed and not independent_import_blocked:
                     await _attempt(
                         "Automated grid import recovery or safety close",
                         lambda: _recovery_number(
@@ -8338,7 +8617,7 @@ class SigEnergyOptimizer:
                             normal_grid_import_kw,
                         ),
                     )
-                if cfg.ess_max_charging_limit:
+                if safe_recovery_observed and cfg.ess_max_charging_limit:
                     await _attempt(
                         "normal Automated ESS charge capability",
                         lambda: _recovery_number(
@@ -8348,7 +8627,7 @@ class SigEnergyOptimizer:
                             else min(normal_ess_charge_kw, max(0.0, d.ess_charge_limit)),
                         ),
                     )
-                if cfg.ess_max_discharging_limit:
+                if safe_recovery_observed and cfg.ess_max_discharging_limit:
                     await _attempt(
                         "normal Automated ESS discharge capability",
                         lambda: _recovery_number(
@@ -8356,12 +8635,22 @@ class SigEnergyOptimizer:
                             min(normal_ess_discharge_kw, max(0.0, d.ess_discharge_limit)),
                         ),
                     )
-                if restrictive_pv_max_kw is None:
+                if safe_recovery_observed and restrictive_pv_max_kw is None:
                     await _attempt(
                         "normal Automated PV MAX capability",
                         lambda: _recovery_number(cfg.pv_max_power_limit, normal_pv_max_kw),
                     )
 
+            if accepted_settlement_cause and observation_missing and not fallback_failures:
+                pending = await _begin_accepted_settlement(
+                    "fallback", accepted_settlement_cause,
+                    f"{reason}; awaiting accepted restrictive recovery: {'; '.join(observation_missing)}",
+                    restrictive_started,
+                    expected_request=export_request, expected_msc_boundary=msc_requested_at,
+                )
+                if pending is not None:
+                    return pending
+            fallback_failures.extend(observation_missing)
             if fallback_failures:
                 fallback_detail = "; ".join(fallback_failures)
                 logger.error("Safe fallback incomplete: %s", fallback_detail)
@@ -8378,6 +8667,9 @@ class SigEnergyOptimizer:
                 fallback_succeeded=(
                     safe_recovery_observed and not fallback_failures
                 ),
+                restrictive_settlement_purpose=previous_attempt.purpose if previous_attempt else None,
+                restrictive_settlement_cause=previous_attempt.cause if previous_attempt else None,
+                restrictive_settlement_deadline_monotonic=previous_attempt.deadline_monotonic if previous_attempt else None,
             )
 
         async def _hold_msc_transition() -> _ActuatorApplicationResult:
@@ -8454,6 +8746,8 @@ class SigEnergyOptimizer:
                     transition.msc_requested_at = datetime.now(timezone.utc).timestamp()
                     transition.msc_request_state = s
                     transition.msc_accepted = False
+                    if self._accepted_restrictive_settlement is not None:
+                        self._accepted_restrictive_phase_request = self._accepted_restrictive_phase_signature(transition)
                 keep_msc = bool(
                     retained_epoch and transition.msc_accepted
                     and _pending_request_recent(transition.msc_requested_at)
@@ -8485,6 +8779,8 @@ class SigEnergyOptimizer:
                     restrictive=True,
                 )))
             failures = []
+            retry_episode = self._accepted_restrictive_retry
+            retry_started = monotonic()
             for label, request in requests:
                 try:
                     if await request() is not True:
@@ -8496,6 +8792,21 @@ class SigEnergyOptimizer:
             if failures:
                 return await _safe_fallback(
                     "MSC transition: " + "; ".join(failures),
+                )
+            if retry_episode is not None:
+                self._accepted_restrictive_retry = None
+                if retry_episode[3] == application_identity and transition.close_accepted:
+                    pending = await _begin_accepted_settlement(
+                        "fallback" if retry_episode[0] == "fallback" else "ordinary_close_retry",
+                        retry_episode[1], retry_episode[2], retry_started,
+                        close_phase_retry=True,
+                    )
+                    if pending is not None:
+                        return pending
+                return _ActuatorApplicationResult(
+                    succeeded=False, error="accepted restrictive retry could not establish current bounded proof",
+                    fallback_attempted=retry_episode[0] == "fallback",
+                    fallback_succeeded=False if retry_episode[0] == "fallback" else None,
                 )
             if authority_revoked or (s.hvac_solar_inputs.live_snapshot and not _pending_reader_current()):
                 return _authority_paused()
@@ -8520,6 +8831,12 @@ class SigEnergyOptimizer:
         effective_mode = str(ownership.value)
         if self._manual_mode_override and effective_mode != self._manual_mode_override:
             return _authority_paused()
+        if effective_mode != cfg.automated_option or remote != "on":
+            # Ownership pauses retire the automatic episode before the existing
+            # operator path acts. Its normal targets must run exactly once.
+            self._retire_accepted_restrictive_settlement(require_close=True)
+            self._accepted_restrictive_retry = None
+            accepted_budget = None
 
         # If in a manual mode, keep manual targets pinned when external writers drift
         # them (e.g. morning slow-charge branch in other automations).
@@ -8680,6 +8997,64 @@ class SigEnergyOptimizer:
             return _ActuatorApplicationResult(succeeded=True)
 
         had_automated_authority = True
+
+        attempt = self._accepted_restrictive_settlement
+        if attempt is not None:
+            failure = self._accepted_restrictive_error(s)
+            if attempt.purpose == "ordinary_close" and (
+                d.ems_mode != MODE_MAX_SELF or d.requires_verified_msc_before_export or d.export_limit > .011
+            ):
+                failure = "accepted restrictive settlement purpose changed"
+            if failure is None and attempt.purpose != "ordinary_close" and self._msc_transition_observed(s):
+                # Keep the deadline through this joint proof and its authority
+                # await. Normal dispatch still retains the local budget below.
+                ready = await self._live_msc_export_ready(
+                    require_closed=True, export_after=attempt.close_request[1],
+                    msc_after=attempt.transition.msc_requested_at,
+                )
+                permitted = await _authority_permits()
+                failure = self._accepted_restrictive_error(s)
+                if not ready or not permitted:
+                    failure = failure or "accepted restrictive settlement final proof changed"
+                if failure is None:
+                    self._retire_accepted_restrictive_settlement()
+            elif failure is None and attempt.purpose == "ordinary_close" and (
+                self._grid_limit_is_observed(s.current_export_limit, s.current_export_limit_observed)
+                and s.current_export_limit <= attempt.close_request[0] + .001
+                and self._msc_report_is_current(s, ems=False, after=attempt.close_request[1])
+            ):
+                if not await _authority_permits():
+                    failure = "accepted restrictive settlement authority changed"
+                else:
+                    failure = self._accepted_restrictive_error(s)
+                if failure is None:
+                    self._retire_accepted_restrictive_settlement()
+            if failure is not None:
+                self._retire_accepted_restrictive_settlement(require_close=True)
+                restrictions = await _independent_restrictions()
+                if "deadline expired" in failure and not restrictions:
+                    self._accepted_restrictive_retry = (
+                        attempt.purpose, attempt.cause, attempt.reason, application_identity,
+                    )
+                return _ActuatorApplicationResult(
+                    succeeded=False,
+                    error="; ".join([attempt.reason, failure, *restrictions]),
+                    fallback_attempted=attempt.purpose == "fallback",
+                    fallback_succeeded=False if attempt.purpose == "fallback" else None,
+                    restrictive_settlement_expired=failure == "accepted restrictive settlement deadline expired",
+                    restrictive_settlement_purpose=attempt.purpose,
+                    restrictive_settlement_cause=attempt.cause,
+                    restrictive_settlement_deadline_monotonic=attempt.deadline_monotonic,
+                )
+            if self._accepted_restrictive_settlement is not None:
+                if attempt.purpose != "ordinary_close":
+                    return await _hold_msc_transition()
+                restrictions = await _independent_restrictions()
+                if restrictions:
+                    return await _safe_fallback("; ".join(restrictions))
+                if not await _authority_permits():
+                    return _authority_paused()
+                return self._accepted_restrictive_pending_result()
 
         if not (
             s.sigenergy_mode_observed
@@ -8902,7 +9277,8 @@ class SigEnergyOptimizer:
                 timeout_s=3.0,
             ):
                 return await _safe_fallback(
-                    f"export limit did not settle at or below {export_val:.2f}kW before discharge EMS"
+                    f"export limit did not settle at or below {export_val:.2f}kW before discharge EMS",
+                    accepted_settlement_cause="accepted_discharge_target_unobserved",
                 )
             export_written = True
 
@@ -8918,6 +9294,7 @@ class SigEnergyOptimizer:
 
         # Export limit
         if export_write_required and not export_written:
+            ordinary_close_started = monotonic()
             ok_export = await _automatic_number(cfg.grid_export_limit, export_val, restrictive=export_val <= near_zero)
             if not ok_export:
                 return await _safe_fallback(f"failed setting export limit to {export_val:.2f}kW")
@@ -8945,6 +9322,12 @@ class SigEnergyOptimizer:
                     restriction_failures = await _independent_restrictions()
                     if restriction_failures:
                         error += "; " + "; ".join(restriction_failures)
+                    else:
+                        pending = await _begin_accepted_settlement(
+                            "ordinary_close", "ordinary_close_unobserved", error, ordinary_close_started,
+                        )
+                        if pending is not None:
+                            return pending
                     return _ActuatorApplicationResult(
                         succeeded=False,
                         error=error,
@@ -9294,6 +9677,8 @@ class SigEnergyOptimizer:
                 state.completed_total_kw = charge_limit
                 state.completed_context = application_solar_context
                 state.completed_command_ts = state.command_ts
+        if not _accepted_budget_current():
+            return await _safe_fallback("accepted restrictive settlement deadline or identity changed before completion")
         return _ActuatorApplicationResult(
             succeeded=True, automatic_application_completed=True,
         )
