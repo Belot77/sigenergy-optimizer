@@ -1,5 +1,36 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Local unreleased checkpoint - Solar provider daylight validation - 30 October 2026
+
+Branch `fix/solar-provider-daylight-validation` at
+`C:/Projects/sigenergy_optimizer-provider-daylight` is based on verified main
+`5f32ec510c6314aed91587c5efb957442fdd0046`. The narrow correction separates
+provider-payload validation from Solar daylight ownership. A coherent pre-sunrise
+provider generation may establish a baseline and a later genuine advance may
+qualify freshness. Below the horizon, independent daylight eligibility still
+prevents Solar ownership and restrictive charging. Source continuity, trusted
+sun/sunset metadata, current-interval/same-day coverage, rejected-generation
+high-water and strict retained deadlines remain unchanged. Dump 15% and Boost
+80% settings remain unchanged.
+
+Tests-first reproduced six failures and four passes. The ten-test module then
+passed with five subtests. Six modules total (one new, five existing) passed
+117 tests / 145 subtests. The guarded full suite passed 1,653 tests / 1,635
+subtests, zero failures (206 warnings, 280.36 seconds; 75 memory / 2,059 isolated
+temporary stores). After independent review, the sunrise fixture was strengthened
+to retain identical forecast data and sunset; its 10 tests / 5 subtests passed
+again. Production was unchanged during that refinement. Independent source,
+test and documentation/scope reviews are GO. Protected database metadata stayed
+unchanged; contents were not read.
+
+This candidate is local, uncommitted, unpublished and not installed. Software
+checks do not prove physical acceptance or that daylight was the sole reason for
+the supplied 06:00 provider rejection: raw provider payload was absent. Safest
+rollback is withholding the candidate or a reviewed scoped revert. Non-live
+preview should first confirm that valid provider data below the horizon does not
+grant Solar charging ownership. Any live startup, provider-poll or sunrise
+verification requires separate approval. No separate monitor-only mode is claimed.
+
 ## Current published release: 2.3.75-haos86
 
 [Published 29 October 2026 at 09:53:02 AEDT](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.75-haos86).
@@ -15,9 +46,14 @@ Independent image-proof review is GO, with full layer bodies checked by the auth
 Source suite: **1,643 tests / 1,630 subtests**; disjoint release checks:
 **58 tests / 61 subtests**, zero failures. Offline verifier: 73 cases passed.
 
-Auto update was confirmed off on 29 October. Latest supplied installed identity
-remains .85; .86 installation and physical acceptance remain unverified.
-See [publication receipt and live checks](docs/HAOS86_RELEASE_CANDIDATE.md).
+Auto update was confirmed off on 29 October. The supplied 29 October 09:55:23 AEDT
+startup confirms runtime `2.3.75-haos86` and source
+`74f21875e9a30e561d78644c4a5b0791becccc83`. This confirms process identity at that
+time, not ongoing physical acceptance. The 30 October 06:00:37 provider poll was
+rejected at 06:00:39; baseline was observed from 06:02:37 through 07:10:44, but
+without the raw provider payload the sole live cause is unproven. Dump15% and
+Boost80% were confirmed on 30 October and are unchanged. Broader review and
+supervised acceptance remain pending. See [publication receipt and live checks](docs/HAOS86_RELEASE_CANDIDATE.md).
 
 ## Historical published release: 2.3.74-haos85
 
