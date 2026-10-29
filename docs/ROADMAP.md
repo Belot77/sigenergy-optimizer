@@ -1,6 +1,33 @@
 # Roadmap
 
-## Current published checkpoint - 27 October 2026 (.83)
+## Current release and work status - 30 October 2026
+
+Published .86 remains the latest verified release; .87 is in local release
+preparation after source PR #67 merged normally. The .87 source contains two
+approved corrections: PR #66 separates provider payload validity from daylight
+ownership, and PR #67 bounds recovery while waiting for accepted restrictive-
+settlement observations. The current branch is `release/2.3.76-haos87`, merge
+`4ebdb82daf8a3c41efbab1f12366f413e382fbb2`, tree
+`ec7c0fb0f33adba86568df4d2003f553e93fdcba`. Its five version markers are
+prepared for `2.3.76-haos87`. Release version/source-pinning checks passed 16 tests; six runtime modules passed 96 tests / 141 subtests; the offline OCI verifier passed 73 synthetic cases. Independent publication-receipt review, metadata commit, tag, build and publication remain pending; no image digest or publication is claimed.
+
+Retained source validation is 1,676 tests / 1,672 subtests, zero failures, with
+focused and independent safety results recorded in CURRENT_STATE.md. These checks
+establish software behavior, not physical acceptance. The last supplied runtime
+identity is .86 at 29 October 09:55:23 AEDT. Physical charge/readback and
+export/import limits, live settlement and sustained Boost behavior remain
+unverified. Open engineering follow-up includes intermittent MSC/application
+outcomes, Solar allocation/budget transitions and Boost re-entry stability; do not
+attribute every observed interruption to this source change.
+
+For each publication report, state what shipped, remaining engineering issues,
+live proof still outstanding, and the next authorized action. Begin with isolated,
+non-live verification. Installation, settings changes and supervised live
+acceptance remain separate actions. Retain immutable .86 as the rollback image;
+do not imply backup/reinstall readiness without evidence. Auto-update was last
+confirmed off on 29 October.
+
+## Historical published checkpoint - 27 October 2026 (.83)
 
 Version **2.3.72-haos83** was published 27 October 2026 at 04:13:16 UTC:
 [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.72-haos83).

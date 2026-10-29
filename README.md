@@ -1,63 +1,50 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Local Stage A checkpoint - accepted restrictive settlement recovery - 30 October 2026
+## Local .87 release preparation - Stage A accepted restrictive settlement recovery - 30 October 2026
 
-Approved branch `fix/accepted-restrictive-settlement-pending` at
-`C:/Projects/sigenergy_optimizer-accepted-restrictive-settlement` is based on
-source PR #66 merge `0e0fa8a5e2779d318390124a34ff9e1b8cabd4ed`, tree
-`cb513e17aa9756d9e1a133b514d4d962f9f478bd`. Frozen source snapshot SHA-256:
-`B5399DBF54EDFB38DE771DEAE8F073B7735AE2C372A586C257F349EA068C3022`.
+This worktree is based on the normal PR #67 merge
+`4ebdb82daf8a3c41efbab1f12366f413e382fbb2`, whose parents are PR #66 merge
+`0e0fa8a5e2779d318390124a34ff9e1b8cabd4ed` and Stage A source
+`067dc1789ba31202956af3c6a88d79f24cc38c2e`. The merge tree is
+`ec7c0fb0f33adba86568df4d2003f553e93fdcba`. It contains the provider-daylight
+correction from PR #66 and accepted restrictive-settlement recovery from PR #67.
+The five established release markers are being prepared as `2.3.76-haos87`; this
+is local release preparation, not a publication receipt.
 
-The two eligible origins are: an accepted ordinary export-close request whose
-later report misses its short observation wait; and an accepted restrictive
-fallback after proof of the accepted discharge target was delayed. A genuinely
-renewed retry remains tied to its originating cause and current identity, and
-gets a new request boundary and budget; it is not a third generic eligibility
-case. Generic startup MSC-pending behavior is unchanged.
-
-The 15-second recovery budget starts before the first restrictive dispatch and
-includes internal awaits; it does not cancel an in-flight HTTP call or prove a
+Settlement recovery applies to exactly two originating cases: an accepted
+ordinary export-close whose later report misses its own short observation wait;
+and a restrictive fallback after delayed proof of an accepted discharge target.
+A renewed retry remains bound to its original cause and current identity and gets
+a fresh request boundary and budget. Generic startup MSC-pending behavior remains
+unchanged. The recovery budget is 15 seconds from before the first restrictive
+dispatch and includes internal awaits; it cannot cancel a request or prove
 physical response. The event loop caps pending idle waits at one second, including
-debounce, but actual cycle time can be longer because HA/service/read awaits may
-run longer. The ordinary three-second primary target wait stays in place. Already
-accepted close or MSC requests are not duplicated while pending; fallback and
-fresh, request-correlated close/MSC proof remain required before permissive
-recovery. Pending is not application completion. Rechecks may reapply independent
-import/discharge clamps and make additional HA requests, so this is not read-only.
-Observed focused scenarios made 12 requests on the happy path and 23 when reports
-were ignored; these are scenario counts, not a universal per-device ceiling.
+debounce; HA/service/read awaits may lengthen actual cycles. The ordinary
+three-second target wait remains. Existing accepted close/MSC requests are not
+duplicated while pending, and fresh request-correlated close/MSC proof remains
+required before permissive recovery. Boost's 120-second requalification, Morning
+Dump minimum SoC 15%, and Evening Boost target SoC 80% are unchanged.
 
-Expiry is a visible failure requiring a new real close-request boundary and fresh
-budget, never extension of the old deadline. An opening await that crosses the
-budget can be followed by the existing restrictive fallback. Authority is checked
-after awaited work before charge permission; active Automated context is retired
-before Manual/Force or Remote EMS OFF handling. Conflicting authority, purpose,
-request timestamp, exactness or phase, failed restriction writes, rejected results
-and exceptions are ineligible. The initiating cause and fallback history remain
-intact. Evening Boost admission is not retained through fallback, and its existing
-120-second requalification is unchanged. Morning Dump minimum SoC remains 15% and
-Evening Boost target SoC remains 80%; these settings are unchanged.
+The provider correction separates valid provider payloads from daylight ownership:
+below-horizon valid data may establish or advance provider freshness, while the
+independent daylight gate still prevents Solar ownership and dispatch. It changes
+no provider generation, coverage, high-water, reconnect or deadline rules.
 
-Tests-first reproduced the missing behavior. Two additional adversarial review
-regressions were repaired before the final green run: charge authority after an
-await when its token was retired, and automatic-context retirement before Manual,
-Force or Remote EMS OFF actions. Five focused modules passed 86 tests / 136
-subtests in 6.42 seconds (202 warnings; 156 isolated temporary stores; 0
-memory/rejected). This includes 23 new methods / 37 subtests (12 core and 11 safety)
-and existing failed-close recovery, Evening Boost re-entry, and application-outcome
-modules. A separate independent safety run passed 11 tests / 28 subtests in 1.45
-seconds (33 isolated temporary stores). The guarded full suite passed 1,676 tests /
-1,672 subtests, zero failures (206 warnings, 282.10 seconds). Dotenv, SQLite and
-StateStore guards remained active; StateStore allowed 75 memory / 2,110 isolated
-temporary constructions and rejected zero. Protected database metadata was
-unchanged; its contents were not read. Independent source/test review is GO;
-documentation/scope review is GO.
+Retained validation for the source merge: guarded full suite 1,676 tests / 1,672 subtests, zero failures; focused five-module run 86 / 136; independent safety run 11 / 28.
 
-The candidate is local, uncommitted, unpublished and uninstalled. Published .86
-and its version markers remain unchanged. Physical acceptance and live behavior
-are unverified. First verification is isolated and non-live; any installation,
-settings change or supervised live acceptance requires separate approval. Safest
-rollback is withholding the candidate or using a reviewed scoped revert.
+Release version/source-pinning checks passed 16 tests in 9.81 seconds with no store use. Six runtime modules passed 96 tests / 141 subtests in 7.69 seconds (202 warnings; 168 isolated temporary stores; zero memory or rejected constructions). Dotenv, SQLite and StateStore guards were active; protected database metadata was unchanged and its contents were not read. The offline OCI verifier passed 73 synthetic cases. Independent publication-receipt review remains pending. No release metadata commit, tag, image build or publication is claimed.
+Published .86 remains the latest verified release until .87 publication checks
+pass. The last operator-supplied installed identity is .86 (`2.3.75-haos86`, source
+`74f21875e9a30e561d78644c4a5b0791becccc83`) at 29 October 09:55:23 AEDT; this is
+not an .87 installation claim. Auto-update was last confirmed off on 29 October.
+
+Remaining engineering questions include intermittent MSC/application outcomes,
+Solar allocation/budget transitions and Evening Boost stability; their live causes
+and remedies are not all established by this change. Physical readback,
+export/import limits, charge settlement and overnight stability remain unverified.
+First verification is isolated and non-live; installation, settings changes and
+supervised live acceptance are separate actions. Safest rollback is to withhold
+this candidate or use a reviewed scoped revert, retaining immutable .86.
 
 ## Historical pre-merge checkpoint - Solar provider daylight validation - merged by PR #66 - 30 October 2026
 
