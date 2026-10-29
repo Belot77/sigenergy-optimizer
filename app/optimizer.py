@@ -883,12 +883,13 @@ class SigEnergyOptimizer:
         )
 
     def _solar_provider_payload_valid(self, s: SolarState, now_ts: float) -> bool:
+        # A coherent provider generation can qualify before sunrise. Daylight
+        # remains a separate Solar policy and charge-ownership requirement.
         periods = self._normalize_detailed_forecast(s.solcast_detailed)
         if not (
             s.solcast_detailed_source_trusted is True
             and s.sunset_observation_trusted is True
             and s.sun_state_observation_trusted is True
-            and s.sun_above_horizon
             and self._solar_provider_periods_strict(periods)
             and self._detailed_forecast_covers(periods, now_ts, s.next_sunset_ts)
         ):
