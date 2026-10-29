@@ -1,31 +1,16 @@
 # Roadmap
 
-## Current release and work status - 30 October 2026
+## Current published release: 2.3.76-haos87 - 30 October 2026
 
-Published .86 remains the latest verified release; .87 is in local release
-preparation after source PR #67 merged normally. The .87 source contains two
-approved corrections: PR #66 separates provider payload validity from daylight
-ownership, and PR #67 bounds recovery while waiting for accepted restrictive-
-settlement observations. The current branch is `release/2.3.76-haos87`, merge
-`4ebdb82daf8a3c41efbab1f12366f413e382fbb2`, tree
-`ec7c0fb0f33adba86568df4d2003f553e93fdcba`. Its five version markers are
-prepared for `2.3.76-haos87`. Release version/source-pinning checks passed 16 tests; six runtime modules passed 96 tests / 141 subtests; the offline OCI verifier passed 73 synthetic cases. Independent publication-receipt review, metadata commit, tag, build and publication remain pending; no image digest or publication is claimed.
+Published at 2026-10-29T22:49:07Z (30 October 09:49:07 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.76-haos87). Metadata [PR #68](https://github.com/Belot77/sigenergy-optimizer/pull/68) merged normally at `77be45d70b665283a49ce249111f1fa6c6732c69` at 22:48:37Z, with parents `4ebdb82daf8a3c41efbab1f12366f413e382fbb2` and `6a43077be1a59512bf44b1bb1c41aed410992c37`; merge tree `de893cf6a0bae925025d22eb0099b5b6beb00b8f`. Annotated tag object `9a3ff193b8a79791a3eb333f75463365e939a9ba` resolves `v2.3.76-haos87` to source `6a43077be1a59512bf44b1bb1c41aed410992c37` and that tree.
 
-Retained source validation is 1,676 tests / 1,672 subtests, zero failures, with
-focused and independent safety results recorded in CURRENT_STATE.md. These checks
-establish software behavior, not physical acceptance. The last supplied runtime
-identity is .86 at 29 October 09:55:23 AEDT. Physical charge/readback and
-export/import limits, live settlement and sustained Boost behavior remain
-unverified. Open engineering follow-up includes intermittent MSC/application
-outcomes, Solar allocation/budget transitions and Boost re-entry stability; do not
-attribute every observed interruption to this source change.
+Build [40968005213](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40968005213) succeeded for the exact source. Version/latest OCI index: `sha256:b0e703483652a3b5ead7a1eb968f10dee2571c9d613f6d72e29a210c01d790f6`. The amd64 manifest is `sha256:9fb2e71617d7e943fd64aff45dbe011fb18c1642022dd8e25dbb539aa6e11051`; arm64 is `sha256:2e36eabf2820d78eabeff254fcdcd61ae8e680375c8b55a3adb041aa4e7d95fa`. Each platform passed 11 layer/diff-ID checks and 15 expected source byte/mode checks. Source fingerprint: `sha256:a80c8d7e425ec222b03ff731f0e9c50f810440f43776b96aa22131b163b999f2`. The author verified layer bodies; the independent verifier confirmed registry metadata and expected source, but did not redownload all compressed layer bodies. Offline OCI verification passed 73 synthetic cases. Post-publication tag, source, normal-merge, version/latest and previous-index checks are GO. Previous immutable .86 index `sha256:68ae9242488169b25525c53ef106eae92197a3f398aa3210344a43c6601b9359` remains unchanged.
 
-For each publication report, state what shipped, remaining engineering issues,
-live proof still outstanding, and the next authorized action. Begin with isolated,
-non-live verification. Installation, settings changes and supervised live
-acceptance remain separate actions. Retain immutable .86 as the rollback image;
-do not imply backup/reinstall readiness without evidence. Auto-update was last
-confirmed off on 29 October.
+The source includes PR #66 provider-payload/daylight separation and PR #67 bounded recovery for the two accepted restrictive-settlement origins. Retained source validation: guarded full suite 1,676 tests / 1,672 subtests, zero failures; focused five-module run 86 / 136; independent safety run 11 / 28. Release version/source-pinning checks passed 16 tests, six runtime modules passed 96 / 141, and the offline verifier passed 73 cases.
+
+The .87 image is published and ready for installation; no .87 installation has been verified. The last supplied installed identity remains .86 (`2.3.75-haos86`, source `74f21875e9a30e561d78644c4a5b0791becccc83`) at 29 October 09:55:23 AEDT. Auto-update was last confirmed off on 29 October. Do not infer physical acceptance from publication or software checks. Installation, settings changes and supervised live acceptance remain separate actions.
+
+Next live evidence, after separate authorization, is startup runtime/source identity; dawn provider freshness distinct from daylight ownership; Morning-to-Solar/export/charge progression and deadline behavior; accepted MSC/close requests with later correlated reports; and Evening Boost qualification under its unchanged 120-second rule. Report shipped changes, remaining engineering/policy work, missing live evidence and the next authorized action at each publication.
 
 ## Historical published checkpoint - 27 October 2026 (.83)
 

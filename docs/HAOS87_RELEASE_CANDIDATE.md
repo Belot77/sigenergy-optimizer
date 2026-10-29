@@ -1,59 +1,27 @@
-# 2.3.76-haos87 release candidate
+# 2.3.76-haos87 publication receipt
 
-Status: local release preparation after source PR #67. Release-specific metadata
-commit, tag, image build, publication and independent publication verification
-remain pending. No future source digest, tag object, image digest or build result
-is asserted here.
+## Publication and source identity
 
-## Source and changes
+Release `v2.3.76-haos87` was published at 2026-10-29T22:49:07Z (30 October 09:49:07 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.76-haos87). Metadata [PR #68](https://github.com/Belot77/sigenergy-optimizer/pull/68) merged normally at `77be45d70b665283a49ce249111f1fa6c6732c69` at 2026-10-29T22:48:37Z, with parents `4ebdb82daf8a3c41efbab1f12366f413e382fbb2` and `6a43077be1a59512bf44b1bb1c41aed410992c37`; merge tree `de893cf6a0bae925025d22eb0099b5b6beb00b8f`. Annotated tag object `9a3ff193b8a79791a3eb333f75463365e939a9ba` resolves the tag to source `6a43077be1a59512bf44b1bb1c41aed410992c37` and tree `de893cf6a0bae925025d22eb0099b5b6beb00b8f`.
 
-Source PR #67 merged normally at
-`4ebdb82daf8a3c41efbab1f12366f413e382fbb2` (parents
-`0e0fa8a5e2779d318390124a34ff9e1b8cabd4ed` and
-`067dc1789ba31202956af3c6a88d79f24cc38c2e`), tree
-`ec7c0fb0f33adba86568df4d2003f553e93fdcba`. PR #66 supplies the
-provider-daylight correction; PR #67 adds accepted restrictive-settlement
-recovery. The five established marker files are prepared for runtime
-`2.3.76-haos87`.
+Build [40968005213](https://github.com/Belot77/sigenergy-optimizer/actions/runs/40968005213) succeeded at the exact source on 2026-10-29T22:45:29Z (30 October 09:45:29 AEDT).
 
-Settlement recovery handles two originating cases: an accepted ordinary
-export-close whose later report misses its short observation wait, and a
-restrictive fallback after proof of the accepted discharge target was delayed. A
-renewed retry stays tied to its originating cause/current identity and gets a new
-close-request boundary and budget. Generic startup MSC-pending semantics remain
-unchanged. The 15-second monotonic budget starts before the first restrictive
-dispatch and includes awaits; it does not cancel an in-flight request or prove
-physical response. Pending event-loop idle waits, including debounce, are capped
-at one second, but actual cycles may be longer when HA/service/read awaits take
-longer. The ordinary three-second primary target wait remains; already accepted
-close/MSC requests are not duplicated while pending, and fresh correlated
-close/MSC proof remains mandatory before permissive recovery.
+## OCI verification
 
-The provider change permits coherent valid provider generations below the horizon
-to establish or advance freshness, while the separate daylight gate continues to
-block Solar ownership and dispatch. Existing generation, same-day coverage,
-high-water, reconnect and deadline rules remain. Evening Boost's 120-second
-requalification and Dump 15% / Boost 80% settings are unchanged.
+Version and `latest` resolve to index `sha256:b0e703483652a3b5ead7a1eb968f10dee2571c9d613f6d72e29a210c01d790f6`. The amd64 manifest is `sha256:9fb2e71617d7e943fd64aff45dbe011fb18c1642022dd8e25dbb539aa6e11051`; arm64 is `sha256:2e36eabf2820d78eabeff254fcdcd61ae8e680375c8b55a3adb041aa4e7d95fa`. Both platforms passed 11 layer/diff-ID checks and 15 expected source byte/mode checks. Source fingerprint: `sha256:a80c8d7e425ec222b03ff731f0e9c50f810440f43776b96aa22131b163b999f2`.
 
-## Validation and remaining status
+The author verified all layer bodies and expected source bytes/modes. Independent registry metadata and source-expectation checks are GO; the independent verifier did not redownload all compressed layer bodies. Offline OCI verification passed 73 synthetic cases. Post-publication checks for the release/tag, remote source, normal merge parents/tree, version/latest index and previous immutable index are GO. The previous .86 index `sha256:68ae9242488169b25525c53ef106eae92197a3f398aa3210344a43c6601b9359` is unchanged.
 
-The merged source retained a guarded full-suite result of 1,676 tests / 1,672
-subtests, zero failures (206 warnings, 282.10 seconds); focused validation passed
-86 tests / 136 subtests and independent safety validation passed 11 / 28.
-Release version/source-pinning checks passed 16 tests in 9.81 seconds with no store use. Six runtime modules passed 96 tests / 141 subtests in 7.69 seconds (202 warnings; 168 isolated temporary stores; zero memory or rejected constructions). Dotenv, SQLite and StateStore guards were active; protected database metadata was unchanged and its contents were not read. The offline OCI verifier passed 73 synthetic cases. Independent publication-receipt review remains pending.
+## Shipped changes and validation
 
-Published .86 remains the latest verified release until .87 publication checks
-complete. The last operator-supplied identity confirms .86 runtime
-`2.3.75-haos86`, source
-`74f21875e9a30e561d78644c4a5b0791becccc83`, at 29 October 09:55:23 AEDT. This
-does not establish .87 installation. Auto-update was last confirmed off on 29
-October. Charge/readback/export limits, live settlement and sustained physical
-Boost behavior remain unverified. Open engineering follow-up includes
-intermittent MSC/application outcomes and Solar allocation/budget and Boost
-stability questions; this release does not claim universal resolution of those
-issues.
+PR #66 separates provider-payload validity from daylight ownership: a valid below-horizon generation can establish or advance provider freshness, while the independent daylight gate still blocks Solar ownership and dispatch. PR #67 adds bounded recovery for two accepted restrictive-settlement origins: an accepted ordinary export-close whose later report misses its own short wait, and a restrictive fallback after delayed proof of an accepted discharge target. The recovery retains current identity/cause binding and request-correlated close/MSC proof; it does not change generic startup MSC-pending behavior. Its 15-second budget includes internal awaits; the event loop caps pending idle waits, including debounce, at one second, while actual cycles may take longer. Existing three-second primary wait, Boost 120-second requalification, Dump 15% floor and Boost 80% target are unchanged.
 
-Safest rollback is to withhold the candidate or use a reviewed scoped revert;
-keep immutable .86 available. Begin with isolated, non-live verification.
-Installation, settings changes and supervised live acceptance are separate
-actions and require their own authorization.
+Retained guarded full suite: 1,676 tests / 1,672 subtests, zero failures. Focused five-module validation: 86 tests / 136 subtests. Independent safety validation: 11 tests / 28 subtests. Release version/source-pinning checks: 16 passed; six runtime modules: 96 tests / 141 subtests; offline OCI verifier: 73 cases. These are software and image checks, not physical acceptance.
+
+## Installation and remaining evidence
+
+The .87 image is published and ready for installation; no .87 installation has been verified. The expected runtime identity is `2.3.76-haos87` at source `6a43077be1a59512bf44b1bb1c41aed410992c37`. The last supplied installed identity remains .86 (`2.3.75-haos86`, source `74f21875e9a30e561d78644c4a5b0791becccc83`) at 29 October 09:55:23 AEDT. Auto-update was last confirmed off on 29 October. No HA installation or settings action was performed as part of publication.
+
+Engineering/policy follow-up remains for O4 Boost qualification-retention policy and stability, O5 reserve/load/price assumptions, O6 broader floor/depletion behavior, and O9 overlapping ownership/status semantics. Published O2/O6/O18 corrections still await live acceptance. The O11 recovery in .87 addresses only its reproduced accepted restrictive-settlement cases; unexplained legacy MSC/application outcomes remain parked, not universally fixed. O20's non-positive-price Morning Dump redesign is parked; the old O8 observation gap is irrecoverable; short Demand Window import spikes are deferred, not confirmed as a defect.
+
+After separate authorization, live proof should capture exact startup identity, dawn provider freshness separately from daylight ownership, Morning-to-Solar/export/charge progression and deadline behavior, accepted close/MSC requests with later correlated reports, and Evening Boost qualification under its existing 120-second rule. Installation, settings changes and supervised live acceptance are separate actions. Safest rollback is to retain immutable .86 and follow a reviewed reinstall/restore procedure; restore readiness itself has not been demonstrated. Each publication report should state what shipped, remaining engineering/policy work, missing live proof and the next authorized action.
