@@ -584,6 +584,8 @@ class SigEnergyOptimizer:
         self.cfg = cfg
         self._last_state: Optional[SolarState] = None
         self._last_decision: Optional[Decision] = None
+        self._morning_dump_applied_window: Optional[tuple[str, float, float]] = None
+        self._morning_dump_retired_window_id: Optional[str] = None
         self._evening_boost_reentry = _EveningBoostReentry()
         self._evening_boost_report_high_water: Optional[float] = None
         self._evening_boost_last_clock: Optional[tuple[float, float]] = None
@@ -667,6 +669,7 @@ class SigEnergyOptimizer:
         self._solar_provider_high_water: Optional[float] = None
         self._solar_provider_ws_high_water: Optional[float] = None
         self._solar_provider_verified: Optional[float] = None
+        self._solar_provider_verified_evidence: Optional[tuple] = None
         self._solar_provider_deadline: Optional[float] = None
         self._solar_provider_advertised: Optional[float] = None
         self._solar_provider_day = None
@@ -833,6 +836,7 @@ class SigEnergyOptimizer:
         self._solar_provider_high_water = None
         self._solar_provider_ws_high_water = None
         self._solar_provider_verified = None
+        self._solar_provider_verified_evidence = None
         self._solar_provider_deadline = None
         self._solar_provider_advertised = None
         self._solar_provider_day = None
@@ -938,6 +942,30 @@ class SigEnergyOptimizer:
             and periods[-1][0] + period_seconds >= sunset
         )
 
+    def _solar_provider_payload_evidence(self, s: SolarState) -> tuple:
+        # Retain immutable, normalized evidence; a cached poll cannot authorize
+        # a different forecast or sunset. Daylight itself is not provider proof.
+        periods = self._normalize_detailed_forecast(s.solcast_detailed)
+        return (
+            s.solcast_provider_source, s.solcast_provider_epoch,
+            self._solar_provider_instant(s.solcast_provider_polled),
+            self.cfg.solcast_forecast_period_hours, tuple(periods or ()),
+            s.next_sunset_ts,
+        )
+
+    def _solar_provider_metadata_loss_only(self, s: SolarState, evidence: tuple) -> bool:
+        verified = self._solar_provider_verified_evidence
+        return bool(
+            verified is not None
+            and s.solcast_detailed_source_trusted is True
+            and (s.sun_state_observation_trusted is not True
+                 or s.sunset_observation_trusted is not True)
+            and evidence[:-1] == verified[:-1]
+            # Untrusted sunset values may be absent. Restoration must still
+            # revalidate the original sunset once its metadata is trusted.
+            and (s.sunset_observation_trusted is not True or evidence[-1] == verified[-1])
+        )
+
     def _update_solar_provider(self, s: SolarState, now_ts: float) -> bool:
         self._refresh_solar_provider_source()
         day = datetime.fromtimestamp(now_ts, self._tz).date()
@@ -977,13 +1005,27 @@ class SigEnergyOptimizer:
             self._solar_provider_deadline = retained
         expired = retained is not None and now_ts >= retained
         payload_valid = self._solar_provider_payload_valid(s, now_ts)
+        evidence = self._solar_provider_payload_evidence(s)
+        unchanged_verified = evidence == self._solar_provider_verified_evidence
+        metadata_loss_only = self._solar_provider_metadata_loss_only(s, evidence)
         rejection = (
             "provider_next_update_unusable" if advertised is None
             else "provider_deadline_due" if advertised <= now_ts
             else "provider_detailed_payload_invalid" if not payload_valid
+            else "provider_verified_payload_changed" if (
+                not advanced and self._solar_provider_verified_evidence is not None
+                and not unchanged_verified
+            )
             else None
         )
+        if advanced:
+            # A new rejected generation consumes the high-water mark and must
+            # never inherit recovery permission from the previous generation.
+            self._solar_provider_verified_evidence = None
         if rejection:
+            if not (metadata_loss_only and advertised is not None
+                    and advertised > now_ts and not expired):
+                self._solar_provider_verified_evidence = None
             self._solar_provider_state = "EXPIRED" if expired else "UNVERIFIED"
             self._solar_provider_reason = rejection
             return False
@@ -1003,8 +1045,14 @@ class SigEnergyOptimizer:
             if retained is None or (now_ts >= retained and polled >= retained):
                 self._solar_provider_deadline = advertised
             self._solar_provider_verified = polled
+            self._solar_provider_verified_evidence = evidence
             self._solar_provider_state = "VALID"
             self._solar_provider_reason = "provider_success_verified"
+        elif unchanged_verified and not expired and self._solar_provider_state != "VALID":
+            # This is revalidation of previously accepted evidence, not a new
+            # provider success: neither the poll nor its deadline is renewed.
+            self._solar_provider_state = "VALID"
+            self._solar_provider_reason = "provider_verified_evidence_revalidated"
         return self._solar_provider_authority_current(s, now_ts)
 
     def _solar_provider_authority_current(self, s: SolarState, now_ts: float) -> bool:
@@ -1013,9 +1061,39 @@ class SigEnergyOptimizer:
             datetime.fromtimestamp(now_ts, self._tz).date() != self._solar_provider_day
         ):
             self._invalidate_solar_provider("forecast_today_local_day_changed")
+        if (
+            s.solcast_provider_epoch != self._solar_provider_epoch
+            or s.solcast_provider_source != self._solar_provider_source
+            or not s.solcast_provider_continuity
+        ):
+            # Reject stale in-flight snapshots without retiring a newer epoch.
+            if s.solcast_provider_epoch == self._solar_provider_epoch:
+                self._invalidate_solar_provider("provider_observation_continuity_untrusted")
+            return False
+        polled = self._solar_provider_instant(s.solcast_provider_polled)
+        if (polled is not None and self._solar_provider_verified is not None
+                and polled < self._solar_provider_verified):
+            # A pending application may still hold an older generation from
+            # this same epoch. It cannot retire or change the newer proof.
+            return False
+        advertised = self._solar_provider_instant(s.solcast_provider_next_update)
+        if advertised is not None and self._solar_provider_deadline is not None:
+            self._solar_provider_deadline = min(self._solar_provider_deadline, advertised)
         if self._solar_provider_deadline is not None and now_ts >= self._solar_provider_deadline:
             self._solar_provider_state = "EXPIRED"
             self._solar_provider_reason = "retained_provider_deadline_reached"
+        if self._solar_provider_state == "VALID":
+            evidence = self._solar_provider_payload_evidence(s)
+            if not (
+                evidence == self._solar_provider_verified_evidence
+                and self._solar_provider_payload_valid(s, now_ts)
+                and advertised is not None and advertised > now_ts
+            ):
+                if not (self._solar_provider_metadata_loss_only(s, evidence)
+                        and advertised is not None and advertised > now_ts):
+                    self._solar_provider_verified_evidence = None
+                self._solar_provider_state = "UNVERIFIED"
+                self._solar_provider_reason = "provider_current_evidence_untrusted"
         return bool(
             self._solar_provider_state == "VALID"
             and s.solcast_provider_epoch == self._solar_provider_epoch
@@ -4456,8 +4534,36 @@ class SigEnergyOptimizer:
                 )
             )
         )
+        morning_dump_window = (
+            (datetime.fromtimestamp(actual_sunrise_ts, self._tz).date().isoformat(),
+             morning_dump_start_ts, morning_dump_end_ts)
+            if morning_dump_start_ts is not None and morning_dump_end_ts is not None
+            else None
+        )
+        applied_dump_window = self._morning_dump_applied_window
+        # Decisions expose a restrictive candidate; only actual application may
+        # retire the episode. Preview/decision-only calls cannot set the latch.
+        morning_dump_refill_retire_candidate = (
+            applied_dump_window
+            if self._morning_dump_window_current(applied_dump_window, now_ts)
+            and not (battery_capacity_trusted and available_discharge_energy_trusted
+                     and morning_dump_refill_timing["evidence_trusted"]
+                     and morning_dump_refill_timing["timing_passed"])
+            else None
+        )
+        morning_dump_current_window_id = (
+            morning_dump_window[0] if morning_dump_window is not None
+            else applied_dump_window[0]
+            if self._morning_dump_window_current(applied_dump_window, now_ts)
+            else None
+        )
+        morning_dump_refill_window_retired = bool(
+            morning_dump_current_window_id is not None
+            and morning_dump_current_window_id == self._morning_dump_retired_window_id
+        )
         morning_dump_active = bool(
-            battery_soc_trusted
+            not morning_dump_refill_window_retired
+            and battery_soc_trusted
             and battery_capacity_trusted
             and available_discharge_energy_trusted
             and morning_dump_detailed_coverage
@@ -6995,6 +7101,7 @@ class SigEnergyOptimizer:
             "close_to_sunset": close_to_sunset,
             "within_morning_grace": within_morning_grace,
             "morning_dump_active": morning_dump_active,
+            "morning_dump_refill_window_retired": morning_dump_refill_window_retired,
             "morning_slow_charge_active": morning_slow_charge_active,
             "morning_slow_genuinely_owns_charging": (
                 morning_slow_genuinely_owns_charging
@@ -7302,6 +7409,13 @@ class SigEnergyOptimizer:
             ),
             **morning_slow_physical_trace_values,
             "morning_slow_relief_reason": morning_slow_relief_reason,
+            "morning_dump_application_window": morning_dump_window,
+            "morning_dump_refill_retire_candidate": morning_dump_refill_retire_candidate,
+            "morning_dump_refill_retirement_reason": (
+                "refill_veto_retired_this_window" if morning_dump_refill_window_retired
+                else "refill_veto_pending_application" if morning_dump_refill_retire_candidate
+                else "not_retired"
+            ),
             "morning_dump_refill_timing_reason": morning_dump_refill_timing[
                 "reason"
             ],
@@ -7836,6 +7950,7 @@ class SigEnergyOptimizer:
     async def _apply(
         self, s: SolarState, d: Decision,
     ) -> _ActuatorApplicationResult:
+        self._apply_morning_dump_retirement(d)
         self._msc_diagnostic("start")
         self._msc_diagnostic_phase = "primary"
         self._msc_diagnostic_context = {
@@ -7893,6 +8008,18 @@ class SigEnergyOptimizer:
             self._msc_maintenance_epoch = None
         self._msc_diagnostic_context["phase_after"] = self._msc_transition.phase if self._msc_transition else "idle"
         self._msc_diagnostic("finish", "succeeded" if result.succeeded else "pending" if result.transition_pending or result.restrictive_settlement_pending else "failed")
+        if (
+            result.succeeded and result.automatic_application_completed
+            and not result.fallback_attempted and not result.transition_pending
+            and not result.restrictive_settlement_pending
+            and d.morning_dump_active and d.export_intent == BATTERY_EXPORT
+            and d.trace_values.get("battery_export_final_owner") == "morning_dump"
+            and d.ems_mode in DISCHARGE_MODES and d.export_limit > .01
+        ):
+            window = d.trace_values.get("morning_dump_application_window")
+            if (self._morning_dump_window_current(window, datetime.now().timestamp())
+                    and window[0] != self._morning_dump_retired_window_id):
+                self._morning_dump_applied_window = window
         return result
 
     async def _apply_with_msc_proof(
@@ -9229,7 +9356,10 @@ class SigEnergyOptimizer:
                     timeout_s=3.0,
                     observed_after=last_mode_requested_at,
                 ):
-                    return await _safe_fallback("Maximum Self Consumption did not settle before high PV-only export")
+                    return await _safe_fallback(
+                        "Maximum Self Consumption did not settle before high PV-only export",
+                        accepted_settlement_cause="accepted_primary_msc_opening_unobserved",
+                    )
             if maintenance_epoch is None and not await self._live_msc_export_ready(
                 require_closed=self._msc_transition is not None,
                 export_after=reused_close_requested_at,
@@ -11229,6 +11359,46 @@ class SigEnergyOptimizer:
                 found = f_ts
                 break
         return found
+
+    @staticmethod
+    def _morning_dump_window_current(window: object, now_ts: float) -> bool:
+        return bool(
+            isinstance(window, tuple) and len(window) == 3
+            and isinstance(window[0], str)
+            and all(isinstance(value, (int, float)) and not isinstance(value, bool)
+                    and math.isfinite(value) for value in (*window[1:], now_ts))
+            and window[1] <= now_ts <= window[2]
+        )
+
+    def _apply_morning_dump_retirement(self, d: Decision) -> None:
+        """Retire only the current applied episode; keep decisions side-effect free."""
+        now_ts = datetime.now().timestamp()
+        candidate = d.trace_values.get("morning_dump_refill_retire_candidate")
+        if (candidate is not None and candidate == self._morning_dump_applied_window
+                and self._morning_dump_window_current(candidate, now_ts)):
+            self._morning_dump_retired_window_id = candidate[0]
+            d.trace_gates["morning_dump_refill_window_retired"] = True
+            d.trace_values["morning_dump_refill_retirement_reason"] = "refill_veto_retired_this_window"
+        window = d.trace_values.get("morning_dump_application_window")
+        if (isinstance(window, tuple) and len(window) == 3
+                and window[0] == self._morning_dump_retired_window_id
+                and d.export_intent == BATTERY_EXPORT
+                and d.trace_values.get("battery_export_final_owner") == "morning_dump"):
+            # A decision captured before another restrictive application must
+            # not reopen an already-retired Dump episode.
+            d.morning_dump_active = False
+            d.export_intent = EXPORT_BLOCKED
+            d.export_limit = 0.0
+            d.ems_mode = MODE_MAX_SELF
+            d.requires_verified_msc_before_export = False
+            d.trace_gates["morning_dump_active"] = False
+            d.trace_gates["morning_dump_refill_window_retired"] = True
+            d.trace_values.update({
+                "battery_export_owner": "none", "battery_export_final_owner": "none",
+                "export_intent": EXPORT_BLOCKED, "desired_export_limit": 0.0,
+                "desired_ems_mode": MODE_MAX_SELF,
+                "morning_dump_refill_retirement_reason": "refill_veto_retired_this_window",
+            })
 
     def _morning_dump_window(self, s: SolarState, actual_sunrise_ts: float):
         cfg = self.cfg

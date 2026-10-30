@@ -111,13 +111,17 @@ class SolarFillProgressTrajectoryTests(unittest.TestCase):
 
     def test_forecast_downgrade_retains_floor_until_urgent_requirement_overtakes_it(self):
         opt = self.fixture._optimizer()
-        for future, expected, source in (
+        # Each changed payload arrives with a genuinely advancing provider poll.
+        for second, (future, expected, source) in enumerate((
             (3.0, 1.2, "fill_progress_floor"),
             (2.4, 1.2, "fill_progress_floor"),
             (1.8, 4.0, "urgent_current_interval"),
-        ):
+        )):
             with self.subTest(future=future):
-                decision = self.fixture._decide(opt, forecast_pv_kw=[6.0] + [future] * 7)
+                decision = self.fixture._decide(
+                    opt, when=self.fixture.WHEN + timedelta(seconds=second),
+                    forecast_pv_kw=[6.0] + [future] * 7,
+                )
                 self.assertEqual(expected, decision.ess_charge_limit)
                 self.assertEqual(source, decision.trace_values["solar_charge_ceiling_trajectory_source"])
 
