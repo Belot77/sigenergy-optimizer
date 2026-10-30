@@ -155,7 +155,7 @@ _POWER_LIMIT_MAX_KW = 100.0
 # timestamp jitter; keep derived-flow coherence equally narrow and independent
 # of the much wider per-sensor freshness window.
 _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
-_RUNTIME_SIGNATURE = "2.3.76-haos87"
+_RUNTIME_SIGNATURE = "2.3.77-haos88"
 
 
 @dataclass
