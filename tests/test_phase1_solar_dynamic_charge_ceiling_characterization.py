@@ -185,11 +185,13 @@ class Phase1SolarDynamicChargeCeilingCharacterizationTests(SolarDynamicChargeFix
         optimizer._last_decision = abundant
         moderate = self._decide(
             optimizer,
+            when=self.WHEN + timedelta(seconds=1),
             forecast_pv_kw=[6.0] + [2.2] * 7,
         )
         optimizer._last_decision = moderate
         limited = self._decide(
             optimizer,
+            when=self.WHEN + timedelta(seconds=2),
             forecast_pv_kw=[6.0] + [1.8] * 7,
         )
 

@@ -193,8 +193,14 @@ class SolarAllocationLifecyclePlanningTests(unittest.TestCase):
         opt, ha = self._start(grid_connection_export_limit_kw=0.0)
         decisions = []
         # Fixed interval anchors keep the downgrade distinct from elapsed time.
-        for second, future_pv in ((0, 3.0), (6, 3.0), (12, 2.2), (18, 1.8)):
-            state, decision = self._decide(opt, second, forecast=[6.0] + [future_pv] * 7)
+        # Only the downgraded payloads introduce a new successful provider poll.
+        for second, future_pv, poll_second in ((0, 3.0, -1), (6, 3.0, -1), (12, 2.2, 12), (18, 1.8, 18)):
+            state, decision = self._decide(
+                opt, second, forecast=[6.0] + [future_pv] * 7,
+                solcast_provider_polled=datetime.fromtimestamp(
+                    self.fixture.WHEN.timestamp() + poll_second, timezone.utc,
+                ).isoformat(),
+            )
             self.assertTrue(self._apply(opt, ha, state, decision).automatic_application_completed)
             decisions.append(decision)
             self.assertTrue(decision.trace_gates["solar_charge_ceiling_owned"])
