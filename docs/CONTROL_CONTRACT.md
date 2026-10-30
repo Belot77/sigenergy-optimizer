@@ -378,7 +378,7 @@ Provider freshness uses explicitly configured Forecast Today and API Last Polled
 
 The process-local states are UNVERIFIED, VALID and EXPIRED. Startup begins UNVERIFIED: the first coherent observation establishes only a provider timestamp baseline and expected deadline. A later credible successful timestamp advance is required for VALID. Credible advances are retained as a high-water mark even when their payload is rejected; unchanged rejected generations cannot become trusted after repair or elapsed time. Malformed, naive, materially future-dated or regressing provider timestamps fail closed.
 
-### PR #70 merged behavior, unpublished in `.88`: provider trust recovery
+### PR #70 behavior published in `.88`: provider trust recovery
 
 Temporary sun/sunset metadata uncertainty is distinct from rejection of a provider generation. Retain immutable evidence for the last verified normalized detailed payload, trusted sunset, poll, source, session epoch and period configuration. Release provider authority and restrictive Solar charging while metadata is untrusted. Restore only unchanged, fully revalidated evidence before the retained deadline in the same source/session. Bad, changed or rejected generations cannot recover under an unchanged poll. Revalidate before and during restrictive application, preserve a newer verified generation against older in-flight state, and retain an earlier observed schedule with `min(D, N)`. Trust is not persisted, no update is forced, and daylight ownership and independent physical protections remain separate. The supplied raw payload is absent, so this correction does not establish the sole live cause.
 
@@ -593,7 +593,7 @@ Eligibility requires trusted timed refill feasibility. The model must not assume
 
 Do not convert Morning Dump into MSC surplus permission. Do not add a hard PV forecast floor unless later evidence and a separate approved change justify one.
 
-### PR #70 merged behavior, unpublished in `.88`: same-morning Dump refill retirement
+### PR #70 behavior published in `.88`: same-morning Dump refill retirement
 
 After a successfully completed automatic Morning Dump loses trusted timed refill feasibility, retire Dump admission for that same identified morning window. Only a completed, selected positive battery-export Dump arms this process-local history; decision-only previews cannot arm or retire it. Commit arm/retirement only during actual application, and retain retirement through failed closure, cancellation and operator-mode changes. Trusted capacity and available-energy evidence are part of refill trust; the independent 15% SoC floor alone is not a retirement trigger. A later morning may qualify again in the same process. A restart loses the latch; even in the same morning, a fresh decision must pass all current eligibility, authority and settlement gates before Dump can qualify again. Fewer same-window export opportunities, including after forecast improvement, are deliberate.
 
@@ -752,7 +752,7 @@ The published .87 image has exactly two originating cases: (1) an accepted ordin
 
 Each recheck must retain current authority, purpose, request identity/timestamp, exactness and transition phase. A phase conflict or any loss of those facts invalidates eligibility. Authority is checked after awaited work and before a charge-permission write; active Automated context is retired before Manual/Force or Remote EMS OFF handling. A recheck may reapply independently required import/discharge clamps and issue additional HA requests; it is not read-only. Existing fallback may re-close a late permissive request if an awaited opening crosses the deadline, then return a failed outcome. Failed restriction writes, rejected results and exceptions never qualify. At expiry, the attempt fails visibly; a later attempt requires a new real close-request boundary and a fresh 15-second budget, not an extension of the old one. Preserve the initiating cause and fallback history. This policy does not keep an Evening Boost admission through fallback or remove its existing 120-second requalification; Morning Dump minimum SoC remains 15% and Evening Boost target SoC remains 80%.
 
-### PR #70 merged behavior, unpublished in `.88`: primary MSC opening recovery
+### PR #70 behavior published in `.88`: primary MSC opening recovery
 
 Merged PR #70 adds only the `accepted_primary_msc_opening_unobserved` origin when an accepted primary MSC request misses exact proof during the existing three-second opening wait, and the subsequent accepted restrictive fallback also lacks proof. Use the existing nonextendable 15-second budget captured before the first fallback close. Require request-correlated close and new-MSC reports before permissive recovery; fresh contradictory open reports retire the attempt. Rejected or exceptional requests do not qualify. A fallback that fully settles inside the original short wait still leaves the initiating application failed. This is not a universal MSC error fix, and pending or command acceptance does not prove equipment response.
 
