@@ -1,14 +1,20 @@
 # Roadmap
 
-## Local release preparation: 2.3.78-haos89 - 4 November 2026
+## Current published release: 2.3.78-haos89 - 4 November 2026
+
+Published at 2026-11-04T08:01:17Z (19:01:17 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.78-haos89). Tag/source `352b61303e7b18da4a46b40ba57546e0c8baa1e7`, tree `0d4ce6a64772dd58136ed45483559b1ecb413104`, annotated tag object `e29d5beddadf3e76b287d647ef354e55612857b1`. Metadata PR #74 merged normally at `2ce58a8e89b849c8588b960869610f3df703879d` at 07:58:50Z; merge tree equals tag tree. Build [41795353716](https://github.com/Belot77/sigenergy-optimizer/actions/runs/41795353716) succeeded. Version/latest index `sha256:1d9e0ed00453cb57698d04d3ca0ef972cf1e672a4bd87a369029334b647961b5`; amd64 `sha256:1834ef0c11a004b278cfcec9da8beca4a823989cba7ca9506477723c9349414c`; arm64 `sha256:6f9350b4b99dec2dc70b0940fe5dc7886b7eb5e9449098fbf41750143a50a3a2`. Source fingerprint `sha256:7cfbfe4221fcb49b979fa14e26deb028a87bf6e792aecf018cf12dad8cae3abe`; all 11 layers/diff IDs and 15 source files/modes per platform verified. Independent image/source/metadata and proof consistency reviews are GO; reviewer did not redownload layer bodies. The 73-case offline verifier passed; `.88` index is unchanged.
+
+The pre-bump source suite passed 1,722 tests / 1,740 subtests; release checks passed 16 static tests and 107 runtime tests / 128 subtests. The operator confirmed auto-update off on 4 November 2026. `.89` is published and ready for separately authorized installation; the last supplied installed identity is `.88`. Require startup runtime `2.3.78-haos89` and source `352b61303e7b18da4a46b40ba57546e0c8baa1e7` before supervised live acceptance. O4/O5/O6/O9 decisions, legacy O11 causes, O20, O8/archive uncertainty, and live physical proof remain open. The all-16 approx. 0.1 kW trace correlation is not proof of runtime deadband, HA rejection, or causality.
+
+## Historical local release-preparation checkpoint: 2.3.78-haos89
 
 PR #73 merged the deliberate export-target correction from source `8c366db87ee955b06ba2d8d07f9808291c7e59da` at `eef008b6ba86e9efcdfd1f37795f374029215d88`, with exact tested tree `dfced95cb2064fe67177de2e8b5ee34d5b934f11`. Source validation passed 1,722 tests / 1,740 subtests; independent reviews are GO. Static release checks passed 16 tests; the separate runtime release check passed 107 tests / 128 subtests. `.89` remains local, uncommitted, unpublished, and uninstalled; `.88` remains latest published and operator-confirmed installed.
 
 The correction sends the bounded target through existing exact dispatch when the observed difference exceeds 0.011 kW, in both export-write and pre-discharge checks. The at-most three-second setting-observation wait and final joint exact post-request guard are unchanged; the wait itself is not proof. All 16 failed `.88` outcomes correlate with an approximately 0.1 kW desired/current export-limit difference; runtime deadband, HA service rejection, and live causality are unproven. No physical acceptance follows from source tests or service-call evidence.
 
-Before publication, verify exact tag/source identity and image digest/embedded source, merge release metadata through a normal PR, publish the GitHub release, and retain a receipt. No build, tag, image, release, or installation is claimed. O4/O5/O6/O9 decisions, legacy O11 causes, O20, historical O8 gap, archive uncertainty, and live physical proof remain open. Rollback is to withhold this candidate or use a reviewed scoped revert.
+The publication gates were completed and are recorded above. `.89` installation and live acceptance remain unverified. O4/O5/O6/O9 decisions, legacy O11 causes, O20, historical O8 gap, archive uncertainty, and live physical proof remain open.
 
-## Current published release: 2.3.77-haos88 - 31 October 2026
+## Historical published release: 2.3.77-haos88 - 31 October 2026 (superseded by .89)
 
 Version 2.3.77-haos88 was published at 2026-10-30T23:42:25Z (31 October 10:42:25 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.77-haos88). The source is `41a2a93d27e3bd88146b68c77639f28193b3a565` (tree `e3c7f5b1f31c30ef54902937baf0f9cf59969c60`); annotated tag object `f7b5fd4f204a26c3b6c915c9417ddf54f5085a11`. Metadata PR #71 merged normally at `9579a3dbd7d7efd36367922809d118395f0eafee` at 23:41:50Z, with parents `2f0725602e339288efd1dbf5be07c229fa575c47` and the release source; merge tree `e3c7f5b1f31c30ef54902937baf0f9cf59969c60` matches the tagged tree.
 
