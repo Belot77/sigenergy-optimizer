@@ -9275,6 +9275,12 @@ class SigEnergyOptimizer:
             and d.requires_verified_msc_before_export
             and float(s.current_export_limit or 0.0) > export_val + 1e-6
         )
+        # Required deliberate-export target corrections must agree with the
+        # existing exact readback check, independently of ordinary write debounce.
+        deliberate_export_target_correction_required = bool(
+            export_limit_observed and deliberate_battery_export
+            and abs(export_val - s.current_export_limit) > 0.011
+        )
         export_write_required = bool(
             export_val <= near_zero or deliberate_battery_export
             if not export_limit_observed
@@ -9283,6 +9289,7 @@ class SigEnergyOptimizer:
                 or export_turning_on
                 or export_turning_off
                 or pv_only_over_cap_correction_required
+                or deliberate_export_target_correction_required
             )
         )
         export_written = False
@@ -9389,6 +9396,7 @@ class SigEnergyOptimizer:
                 not export_limit_observed
                 or s.current_ems_mode != ems_mode_to_apply
                 or abs(export_val - float(s.current_export_limit or 0.0)) >= cfg.min_change_threshold
+                or deliberate_export_target_correction_required
             )
         )
         if prepare_export_before_discharge:

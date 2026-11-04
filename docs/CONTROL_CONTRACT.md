@@ -729,6 +729,12 @@ Automated control requires current verified Automated ownership and observed Rem
 
 Settlement is specific to the dispatched request. Conflicting actuator state/metadata observations cannot establish settlement; report timestamps must be coherent with state and update provenance. Deliberate discharge requires the intended bounded export target, not merely a lower safe value, proven by a fresh trusted report strictly after that target's dispatch boundary. Safety closes and bounded restrictive corrections retain their upper-bound semantics. Recheck settlement and authority before permissive recovery; a later contradiction or takeover invalidates prior proof.
 
+### Local candidate: deliberate export target correction
+
+For an automatic deliberate battery-export request, calculate the difference between the bounded target and the current observed export limit. When `abs(bounded_target - current_observed_export_limit) > 0.011 kW`, the shared `deliberate_export_target_correction_required` predicate requires dispatching the bounded target through the existing `exact=True` path. Apply this predicate both when deciding whether to issue the export-limit write and immediately before selecting discharge EMS, so ordinary deadband cannot suppress a target that still needs proof. Retain the existing setting-observation wait of at most three seconds, followed by the unchanged final joint exact post-request guard before positive ESS discharge. Proof tolerance remains 0.011 kW and request-identity tolerance remains 0.001 kW. Valid same-target debounce remains unchanged. This does not affect PV-only behavior, introduce new policy thresholds or timing, or change qualification. A genuine settlement failure continues through existing fallback. Additional target writes are the risk; withholding the local candidate or a reviewed scoped revert is the rollback.
+
+This correction is a locally validated candidate; see `CURRENT_STATE.md` for the validation results. It is not part of a published release or an installed runtime.
+
 Successful fallback releases only its temporary restrictions. ESS charge and discharge recovery remain bounded by independently owned decision limits and normal safe/trusted capabilities. Relinquished Solar charge ownership restores the otherwise applicable safe normal charge request; it cannot remove another owner's restriction. Demand Window import blocking and independent restrictive PV MAX remain effective through failed or successful fallback.
 
 Approved O21 recovery semantics: classify positive ESS discharge as deliberate
