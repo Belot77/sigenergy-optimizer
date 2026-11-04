@@ -1,14 +1,22 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Local release preparation: 2.3.78-haos89 - 4 November 2026
+## Current published release: 2.3.78-haos89 - 4 November 2026
+
+Published at 2026-11-04T08:01:17Z (19:01:17 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.78-haos89). Tag `v2.3.78-haos89` resolves to source `352b61303e7b18da4a46b40ba57546e0c8baa1e7`, tree `0d4ce6a64772dd58136ed45483559b1ecb413104`; annotated tag object `e29d5beddadf3e76b287d647ef354e55612857b1`. Metadata PR #74 merged normally at `2ce58a8e89b849c8588b960869610f3df703879d` at 07:58:50Z, with parents `eef008b6ba86e9efcdfd1f37795f374029215d88` and the release source; merge tree matches the tagged tree.
+
+Build [41795353716](https://github.com/Belot77/sigenergy-optimizer/actions/runs/41795353716) succeeded at 07:55:15Z. The version/latest OCI index is `sha256:1d9e0ed00453cb57698d04d3ca0ef972cf1e672a4bd87a369029334b647961b5`; amd64 manifest `sha256:1834ef0c11a004b278cfcec9da8beca4a823989cba7ca9506477723c9349414c`; arm64 manifest `sha256:6f9350b4b99dec2dc70b0940fe5dc7886b7eb5e9449098fbf41750143a50a3a2`. Source fingerprint `sha256:7cfbfe4221fcb49b979fa14e26deb028a87bf6e792aecf018cf12dad8cae3abe` uses SHA-256 over sorted absolute image path + NUL + file bytes + NUL. All 11 compressed layers/diff IDs and 15 source files/modes per platform were verified; verification used default TLS and did not extract or execute a container. Independent helper/source-expectation/registry metadata-config review and proof consistency review are GO; the independent reviewer did not redownload layer bodies. The offline verifier passed 73 cases. The immutable .88 index `sha256:cc6759bf5deb23e659083699840237288f744248ec053226acabe46722b7bb39` is unchanged.
+
+The release contains PR #73's narrow deliberate export-target correction. `.89` is published and ready for a separately authorized installation; it is not yet confirmed installed. The operator confirmed add-on auto-update remains off on 4 November. The last supplied startup still identifies `.88` / `2.3.77-haos88` / `41a2a93d27e3bd88146b68c77639f28193b3a565`. After separately authorized installation, capture startup evidence showing runtime signature `2.3.78-haos89` and container source commit `352b61303e7b18da4a46b40ba57546e0c8baa1e7`, then conduct separately authorized supervised physical acceptance. No live operation or acceptance is claimed.
+
+## Historical local release-preparation checkpoint: 2.3.78-haos89 - 4 November 2026
 
 PR #73 merged the deliberate export-target correction from source `8c366db87ee955b06ba2d8d07f9808291c7e59da` at `eef008b6ba86e9efcdfd1f37795f374029215d88`. The merged tree matches the tested tree `dfced95cb2064fe67177de2e8b5ee34d5b934f11`. Source validation passed 1,722 tests / 1,740 subtests, and independent reviews are GO. This workspace prepares `2.3.78-haos89`; it remains local, uncommitted, unpublished, and uninstalled. `.88` remains the latest published and operator-confirmed installed release.
 
 The correction forces the bounded deliberate-export target through existing exact dispatch when its difference from the observed limit exceeds 0.011 kW, in both export-write and pre-discharge checks. The existing setting-observation wait remains at most three seconds, followed by the unchanged final joint exact post-request guard before positive ESS discharge. It does not change proof/request-identity tolerances, valid same-target debounce, PV-only behavior, settlement-failure fallback, qualification, timing, or policy thresholds. The possible cost is an additional target write; rollback is to withhold this candidate or use a reviewed scoped revert.
 
-Publication still requires verified tag/source identity, exact image digest and embedded-source checks, a normally merged metadata PR, GitHub release, and publication receipt. Static release checks passed 16 tests in 9.73 seconds; the separate runtime release check passed 107 tests / 128 subtests in 97.96 seconds. No tag, image, release, installation, or physical acceptance is claimed. Live acceptance remains separately authorized and supervised work.
+At this preparation checkpoint the release checks passed 16 static tests and 107 runtime tests / 128 subtests. Publication and image verification were subsequently completed as recorded above. Installation and physical acceptance remain separate gates.
 
-## Current published release: 2.3.77-haos88 - 31 October 2026
+## Historical published release: 2.3.77-haos88 - 31 October 2026 (superseded by .89)
 
 Version 2.3.77-haos88 was published at 2026-10-30T23:42:25Z (31 October 10:42:25 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.77-haos88). The source is `41a2a93d27e3bd88146b68c77639f28193b3a565` (tree `e3c7f5b1f31c30ef54902937baf0f9cf59969c60`); annotated tag object `f7b5fd4f204a26c3b6c915c9417ddf54f5085a11`. Metadata PR #71 merged normally at `9579a3dbd7d7efd36367922809d118395f0eafee` at 23:41:50Z, with parents `2f0725602e339288efd1dbf5be07c229fa575c47` and the release source; merge tree `e3c7f5b1f31c30ef54902937baf0f9cf59969c60` matches the tagged tree.
 
