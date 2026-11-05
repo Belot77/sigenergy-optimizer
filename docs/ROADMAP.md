@@ -1,8 +1,8 @@
 # Roadmap
 
-## Local 5 November checkpoint (unpublished floor-stop candidate)
+## Local .90 preparation - 5 November 2026
 
-The operator-supplied 5 November 08:02:25 AEDT startup confirms installed runtime `2.3.78-haos89` and container source `352b61303e7b18da4a46b40ba57546e0c8baa1e7`. Installation identity is verified; physical acceptance remains partial. Provider recovery and one bounded MSC recovery are observed; remaining live scenarios stay open. The local `fix/morning-dump-floor-retirement` candidate addresses only already-applied Dump re-entry after trusted floor observation, with no timer or changed floor. Tests/review and publication remain distinct gates; no commit, release or live change is included. Provisional-tariff switching is parked unless a material issue is established. The later ownership-audit, architecture, cleanup, GUI and Climate sequence remains unchanged.
+The operator-supplied 5 November 08:02:25 AEDT startup confirms installed runtime `2.3.78-haos89` and container source `352b61303e7b18da4a46b40ba57546e0c8baa1e7`. Installation identity is verified; physical acceptance remains partial. Provider recovery and one bounded MSC recovery are observed; remaining live scenarios stay open. PR #76 merged normally at `52705dba6d90590a9cc292903dda76c6b810f769`; its exact source tree passed 1,737 tests / 1,758 subtests and independent reviews. The approved `release/2.3.79-haos90` workspace prepares only version metadata and docs for that floor-stop correction. It is uncommitted, unpublished and uninstalled; no additional control change. Release preparation passed 123 tests / 156 subtests and independent source/docs review. Next gate is separate publication approval, then separate installation/live proof. See [the .90 release record](HAOS90_RELEASE_CANDIDATE.md). Provisional-tariff switching is parked unless a material issue is established. The later ownership-audit, architecture, cleanup, GUI and Climate sequence remains unchanged.
 
 ## Current published release: 2.3.78-haos89 - 4 November 2026
 

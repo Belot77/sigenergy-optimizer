@@ -1,6 +1,16 @@
 # SigEnergy Optimizer AI Handover
 
-## Local O6 candidate: Morning Dump floor-stop retirement - 5 November 2026
+## Local release preparation: 2.3.79-haos90 - 5 November 2026
+
+Approved workspace: `C:\Projects\sigenergy_optimizer-release-haos90`, branch `release/2.3.79-haos90`, based on verified main `52705dba6d90590a9cc292903dda76c6b810f769`. PR [#76](https://github.com/Belot77/sigenergy-optimizer/pull/76) merged normally at 12:26:13 AEDT (01:26:13Z) from reviewed source `b06cf9edaa0279ef5ad36f404f2267628a6f1a60`; merge tree `845357ff62c9cbf56217e790dc1a47bb8465a4b5` equals the tested source tree. The source branch and existing unfinished work are preserved.
+
+This preparation updates only the five established version markers and release/status documentation. No additional control change. `.90` is local, uncommitted, unpublished and uninstalled; `.89` remains the latest published and operator-confirmed installed release. Commit, push, tag, image build/publication, release and receipt still require separate approval. HA installation and live settings remain separate.
+
+The release would carry only PR #76's new floor-stop retirement: after a genuinely applied automatic Dump reaches its configured floor under trusted automatic application, no later Dump admission for that identified morning. Pending/failed/cancelled closure cannot reopen it, and stale permissive decisions are clamped. No timer or floor change. Later same-window refill cannot restart Dump; restart forgets the process-local latch and requires current admission checks again. This does not prove physical closure or make the Dump floor a whole-system SoC minimum.
+
+The exact pre-bump source passed 1,737 tests / 1,758 subtests with independent source, test and docs/scope reviews GO. Release validation passed 16 static tests and 107 focused runtime tests / 156 subtests (123 tests / 156 subtests total), zero failures. The runtime checks used 221 isolated temporary SQLite connections and 169 internal socket pairs, zero rejected paths/connections; protected database metadata stayed unchanged, dotenv and external DNS/socket access were disabled. Independent version/source and final release docs/scope reviews are GO. See [the .90 release record](HAOS90_RELEASE_CANDIDATE.md) for preparation checks, rollback and remaining live proof. Withhold this uncommitted candidate for rollback; any later source rollback must be a separately reviewed scoped revert.
+
+## Historical pre-commit O6 checkpoint: Morning Dump floor-stop retirement - 5 November 2026
 
 Branch `fix/morning-dump-floor-retirement` in `C:\Projects\sigenergy_optimizer-dump-floor-retirement` starts from verified `origin/main` `d56efb7a78df15e2efd18df933fbd3500fb91042`. This is local, uncommitted and unpublished; the installed `.89` does not contain this change.
 
