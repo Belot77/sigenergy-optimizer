@@ -1,6 +1,18 @@
 # Changelog
 
-## Local release preparation: 2.3.79-haos90 - unpublished
+## Current published release: 2.3.79-haos90 - 5 November 2026
+
+Published at 2026-11-05T01:52:52Z (12:52:52 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.79-haos90). Tag source `00b837b34e5c26639dd8d2f0d4d448dbf4e452b7`, tree `6970c5ed6468ee272e4880bae685247af73ab967`, annotated tag object `801de298f8c834188aada2e0d7d2b4ed2dcab197`. Metadata PR #77 merged normally at `545a4bd6f80d8fb602a53e85a75b3eea68a4e0d1` (01:49:47Z); merge tree equals the tagged tree.
+
+Build [41950610118](https://github.com/Belot77/sigenergy-optimizer/actions/runs/41950610118) succeeded at 01:47:10Z. Version/latest OCI index `sha256:f15fe33002420affaece797353fa53a191b1fa5a9ab2a7d7f7de48db78b2823e`; amd64 `sha256:11e5dc3a6e6c7812a8ec79dff67dc5570d110ab49353ac84f9bdf796d08776eb`; arm64 `sha256:e438157e4db05cf1bdecbd93397dbdeb81b9ff028f70f42490f49a23cabaae09`. Source fingerprint `sha256:da7274c7f7ae841163dee06028364d3ca0b07837b680c3a7bfc4c44092738ee5` uses SHA-256(sorted absolute image path + NUL + file bytes + NUL). All 11 compressed layers/diff IDs and 15 selected source files/modes per platform were verified using default TLS, without extraction or container execution. Independent helper/source-expectation, registry metadata/config and completed-proof consistency reviews are GO; independent reviewers did not redownload layer bodies. The offline verifier passed 73 cases. Prior immutable .89 index `sha256:1d9e0ed00453cb57698d04d3ca0ef972cf1e672a4bd87a369029334b647961b5` is unchanged. Post-publication tag/source/normal-merge/release/index checks passed.
+
+This release carries PR #76's floor-stop admission retirement: after an already-applied automatic Morning Dump reaches its configured floor under trusted automatic application, further same-window Dump admission stops. No timer or floor change. Later same-window refill cannot restore Dump admission; restart forgets the process-local latch and current checks must pass again. Closure still needs its own proof, and the Dump floor is not a whole-system SoC minimum.
+
+Pre-bump source validation passed 1,737 tests / 1,758 subtests; release checks passed 123 tests / 156 subtests. Independent reviews are GO. Published and install-ready for a separately authorized operator action; .90 installation and physical acceptance are unverified. Latest confirmed installed remains `2.3.78-haos89` / `352b61303e7b18da4a46b40ba57546e0c8baa1e7` from 5 November 08:02:25 AEDT. Auto update was confirmed off on 5 November. No agent-performed HA action occurred.
+
+O4 Boost qualification/stability, O5 reserve/load/price policy, O6 broader handoff/depletion and O9 ownership/status work remain open. Relevant live proof, including .90 floor retirement and .89 changing deliberate-export targets, remains outstanding. Legacy O11 and O20 remain parked; provisional-tariff switching has no timer change. Next action is separate installation authorization, exact startup identity and applicable supervised live evidence. See [the .90 publication receipt](docs/HAOS90_RELEASE_CANDIDATE.md).
+
+## Historical local release-preparation checkpoint: 2.3.79-haos90
 
 PR [#76](https://github.com/Belot77/sigenergy-optimizer/pull/76) merged reviewed source `b06cf9edaa0279ef5ad36f404f2267628a6f1a60` normally at `52705dba6d90590a9cc292903dda76c6b810f769`; merge tree `845357ff62c9cbf56217e790dc1a47bb8465a4b5` matches the tested source. Five version markers and release/status docs now prepare `.90` locally. No release commit, tag, image build/publication or installation is included. `.89` remains latest published and confirmed installed.
 

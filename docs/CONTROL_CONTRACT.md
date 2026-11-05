@@ -599,15 +599,15 @@ After a successfully completed automatic Morning Dump loses trusted timed refill
 
 Do not convert Morning Dump into MSC surplus permission. Do not add a hard PV forecast floor unless later evidence and a separate approved change justify one.
 
-### PR #76 floor-stop admission retirement (prepared for .90)
+### PR #76 floor-stop admission retirement (published in .90)
 
-PR #76 merged at `52705dba6d90590a9cc292903dda76c6b810f769`. The following behavior is merged source, prepared locally for `.90`, and absent from the published/installed `.89`. Release preparation adds version metadata and documentation only; publication and installation are separate gates.
+PR #76 merged at `52705dba6d90590a9cc292903dda76c6b810f769` and is published in `.90`, source `00b837b34e5c26639dd8d2f0d4d448dbf4e452b7`. The following behavior is absent from the latest confirmed installed `.89`; .90 installation and physical acceptance are unverified. Release metadata and publication add no further control change.
 
 After a genuinely applied automatic Morning Dump records the current identified window, a later real automatic application with trusted finite SoC at or below `morning_dump_min_soc` retires further Dump admission for that window before awaiting closure. The automatic decision and current supplied state must still indicate Automated ownership and Remote EMS enabled. Preserve retirement through pending, failed, exceptional or cancelled closure and reject stale permissive Dump decisions. This is an admission decision, not proof that the close or physical stop settled.
 
 Decision-only previews, untrusted SoC, Manual/Force ownership, preemption before the floor, and windows without a prior genuinely completed automatic Dump do not arm floor retirement. Preserve independent owners and ESS/import/PV restrictions. Use `morning_dump_floor_window_retired` and `morning_dump_floor_retirement_reason=floor_reached_retired_this_window`; do not relabel a floor stop as a refill-feasibility veto. The configured floor remains a Dump stop, not a whole-system minimum SoC.
 
-No timer, hysteresis margin, floor-setting change or new durable storage is introduced. A later same-window SoC recovery cannot reopen Dump. The next identified morning may qualify; restart forgets this process-local state and requires all current gates again. The installed `.89` lacks this correction. Rollback is withholding the `.90` preparation or a separately reviewed scoped revert.
+No timer, hysteresis margin, floor-setting change or new durable storage is introduced. A later same-window SoC recovery cannot reopen Dump. The next identified morning may qualify; restart forgets this process-local state and requires all current gates again. The latest confirmed installed `.89` lacks this correction. Before installation, withholding `.90` remains an option; source rollback requires a separately reviewed scoped revert preserving unrelated work.
 
 Verify locally with simulated-HA multi-tick reports, failure/cancellation and stale-decision cases. Preview-only checks must not retire Dump. Before any separately authorized live acceptance, distinguish monitor-only/dry-run reasoning from actual application, confirm exact installed source and configured floor, correlate closure requests with readbacks and measured flows, and verify that rebound does not create another Dump admission. Software checks do not prove physical acceptance.
 
