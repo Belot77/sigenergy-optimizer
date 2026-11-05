@@ -1,8 +1,22 @@
-# 2.3.79-haos90 local release preparation
+# 2.3.79-haos90 publication receipt
 
-**Status:** local, uncommitted, unpublished and uninstalled. Approved scope is preparation, focused checks and independent review only. No commit, push, tag, image build/publication, release, HA access or live settings change is authorized in this stage.
+**Status:** published and install-ready for a separately authorized operator action. Publication and image/source verification are complete; .90 installation and physical acceptance are unverified. Latest confirmed installed is .89. Auto update was confirmed off on 5 November 2026. No agent-performed HA action occurred.
 
-## Verified baseline and scope
+## Current published release: 2.3.79-haos90 - 5 November 2026
+
+Published at 2026-11-05T01:52:52Z (12:52:52 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.79-haos90). Tag source `00b837b34e5c26639dd8d2f0d4d448dbf4e452b7`, tree `6970c5ed6468ee272e4880bae685247af73ab967`, annotated tag object `801de298f8c834188aada2e0d7d2b4ed2dcab197`. Metadata PR #77 merged normally at `545a4bd6f80d8fb602a53e85a75b3eea68a4e0d1` (01:49:47Z); merge tree equals the tagged tree.
+
+Build [41950610118](https://github.com/Belot77/sigenergy-optimizer/actions/runs/41950610118) succeeded at 01:47:10Z. Version/latest OCI index `sha256:f15fe33002420affaece797353fa53a191b1fa5a9ab2a7d7f7de48db78b2823e`; amd64 `sha256:11e5dc3a6e6c7812a8ec79dff67dc5570d110ab49353ac84f9bdf796d08776eb`; arm64 `sha256:e438157e4db05cf1bdecbd93397dbdeb81b9ff028f70f42490f49a23cabaae09`. Source fingerprint `sha256:da7274c7f7ae841163dee06028364d3ca0b07837b680c3a7bfc4c44092738ee5` uses SHA-256(sorted absolute image path + NUL + file bytes + NUL). All 11 compressed layers/diff IDs and 15 selected source files/modes per platform were verified using default TLS, without extraction or container execution. Independent helper/source-expectation, registry metadata/config and completed-proof consistency reviews are GO; independent reviewers did not redownload layer bodies. The offline verifier passed 73 cases. Prior immutable .89 index `sha256:1d9e0ed00453cb57698d04d3ca0ef972cf1e672a4bd87a369029334b647961b5` is unchanged. Post-publication tag/source/normal-merge/release/index checks passed.
+
+This release carries PR #76's floor-stop admission retirement: after an already-applied automatic Morning Dump reaches its configured floor under trusted automatic application, further same-window Dump admission stops. No timer or floor change. Later same-window refill cannot restore Dump admission; restart forgets the process-local latch and current checks must pass again. Closure still needs its own proof, and the Dump floor is not a whole-system SoC minimum.
+
+Pre-bump source validation passed 1,737 tests / 1,758 subtests; release checks passed 123 tests / 156 subtests. Independent reviews are GO. Published and install-ready for a separately authorized operator action; .90 installation and physical acceptance are unverified. Latest confirmed installed remains `2.3.78-haos89` / `352b61303e7b18da4a46b40ba57546e0c8baa1e7` from 5 November 08:02:25 AEDT. Auto update was confirmed off on 5 November. No agent-performed HA action occurred.
+
+O4 Boost qualification/stability, O5 reserve/load/price policy, O6 broader handoff/depletion and O9 ownership/status work remain open. Relevant live proof, including .90 floor retirement and .89 changing deliberate-export targets, remains outstanding. Legacy O11 and O20 remain parked; provisional-tariff switching has no timer change. Next action is separate installation authorization, exact startup identity and applicable supervised live evidence. The detailed historical preparation and remaining gates follow.
+
+
+
+## Historical preparation baseline and scope
 
 Repository: [Belot77/sigenergy-optimizer](https://github.com/Belot77/sigenergy-optimizer).
 Workspace: `C:\Projects\sigenergy_optimizer-release-haos90`.
@@ -13,7 +27,7 @@ PR [#76](https://github.com/Belot77/sigenergy-optimizer/pull/76) merged normally
 
 Preparation changes exactly five version literals from `2.3.78-haos89` to `2.3.79-haos90`: API version, optimizer runtime signature, add-on config version, build-label version and buildstamp. The other seven paths are README, CHANGELOG, AI_HANDOVER, CURRENT_STATE, CONTROL_CONTRACT, ROADMAP and this release record. No other production, test, build-script, configuration or permanent instruction changes.
 
-Latest published and confirmed installed remains `2.3.78-haos89`, source `352b61303e7b18da4a46b40ba57546e0c8baa1e7`, confirmed by the operator's 5 November 08:02:25 AEDT startup. Auto update was last explicitly confirmed off on 4 November. The proposed `v2.3.79-haos90` tag is not created and there is no .90 image/source receipt.
+At preparation, latest published and confirmed installed was `2.3.78-haos89`, source `352b61303e7b18da4a46b40ba57546e0c8baa1e7`, confirmed by the operator's 5 November 08:02:25 AEDT startup. Auto update had last been confirmed off on 4 November. Publication and image/source verification were completed later as recorded above; installed identity remains .89 and Auto update was reconfirmed off on 5 November.
 
 ## Correction and tradeoff
 
@@ -35,11 +49,11 @@ A full suite is not repeated for five version literals and documentation when so
 
 ## Remaining work and live evidence
 
-- Release: finish local checks/review, then obtain separate approval for the metadata commit, branch push/PR, exact tag/build, source/digest verification, normal merge, GitHub release and receipt.
-- Live: separate installation authorization and exact startup runtime/source proof; then observe an applied Dump reaching its floor, closure request/readback/flows and any rebound through the rest of the same morning. Do not restart or force a discharge for acceptance. Restart semantics remain a software limitation requiring applicable future evidence.
+- Publication is complete under the operator's separate approval. The receipt documentation records the verified source, image proof and remaining limits. Installation and live settings remain separately authorized actions.
+- Live: separate installation authorization and exact startup runtime `2.3.79-haos90` / source `00b837b34e5c26639dd8d2f0d4d448dbf4e452b7` proof; then observe an applied Dump reaching its floor, closure request/readback/flows and any rebound through the rest of the same morning. Do not restart or force a discharge for acceptance. Restart semantics remain a software limitation requiring applicable future evidence.
 - Existing .89 deliberate-export target correction still needs changing positive-target evidence on an eligible Dump/Boost cycle. Service-call success alone is not settlement.
 - O4 Boost qualification retention/stability, O5 reserve/load/price policy, O6 broader handoff/depletion behavior and O9 ownership/status audit remain open. Published Solar/provider/fill and MSC corrections retain applicable physical-proof requirements.
 - Legacy O11 causes remain unresolved and parked. O20 non-positive-price Dump redesign and provisional-tariff switching are parked; no tariff timer is included. Historical O8 loss is irrecoverable; short Demand Window spikes remain deferred rather than confirmed defects.
 - After stability/live gates: ownership audit, architecture consolidation, cleanup, GUI/UX, Climate Manager, integration validation/polish, then later replay/modelling and experimental scheduling.
 
-Safest rollback now is withholding this uncommitted candidate. Any later rollback is a separately reviewed scoped software revert preserving unrelated work. Publication, installation identity and physical acceptance must be reported separately.
+The historical preparation rollback was withholding the uncommitted candidate. Before installation, the operator can withhold .90; any source rollback requires a separately reviewed scoped software revert preserving unrelated work. Publication, installation identity and physical acceptance must be reported separately.
