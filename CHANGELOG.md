@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased local candidate - Morning Dump floor-stop retirement
+## Local release preparation: 2.3.79-haos90 - unpublished
 
-After a genuinely completed automatic Dump, retire further same-window Dump admission when a trusted SoC reading reaches the configured floor during actual automatic application. Retain that stop through pending, failed or cancelled closure and reject stale permissive Dump decisions. Record a distinct floor-stop reason; physical settlement still requires its existing proof. Preserve independent owners, Manual/Force targets, controls and the configured floor. No timer or version bump. A later same-window battery refill cannot restart Dump; the latch is process-local and a restart forgets it. This candidate is not in installed `.89`; rollback is withholding it or a reviewed scoped revert.
+PR [#76](https://github.com/Belot77/sigenergy-optimizer/pull/76) merged reviewed source `b06cf9edaa0279ef5ad36f404f2267628a6f1a60` normally at `52705dba6d90590a9cc292903dda76c6b810f769`; merge tree `845357ff62c9cbf56217e790dc1a47bb8465a4b5` matches the tested source. Five version markers and release/status docs now prepare `.90` locally. No release commit, tag, image build/publication or installation is included. `.89` remains latest published and confirmed installed.
+
+After a genuinely completed automatic Dump, retire further same-window Dump admission when a trusted SoC reading reaches the configured floor during actual automatic application. Retain that stop through pending, failed or cancelled closure and reject stale permissive Dump decisions. Record a distinct floor-stop reason; physical settlement still requires its existing proof. Preserve independent owners, Manual/Force targets, controls and the configured floor. No timer or floor change. A later same-window battery refill cannot restart Dump; the latch is process-local and a restart forgets it. This correction is not in installed `.89`; rollback is withholding this preparation or a reviewed scoped revert. The pre-bump source passed 1,737 tests / 1,758 subtests; see [the .90 release record](docs/HAOS90_RELEASE_CANDIDATE.md) for release checks and physical-proof limits.
 
 ## Published release: 2.3.78-haos89 — 4 November 2026
 

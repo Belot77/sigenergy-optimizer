@@ -8,9 +8,11 @@ Build [41795353716](https://github.com/Belot77/sigenergy-optimizer/actions/runs/
 
 The release contains PR #73's narrow deliberate export-target correction. The operator-supplied 5 November 08:02:25 AEDT startup confirms installed runtime `2.3.78-haos89` and container source `352b61303e7b18da4a46b40ba57546e0c8baa1e7`. Installation identity is verified; physical acceptance remains partial. Auto-update was last confirmed off on 4 November. No agent-performed HA action or general live acceptance is claimed.
 
-## Local development candidate: Morning Dump floor stop (unpublished)
+## Local release preparation: 2.3.79-haos90 (unpublished)
 
-The local floor-stop candidate finishes Dump admission for the identified morning after a genuinely applied automatic Dump reaches its configured SoC floor. A small rebound cannot restart Dump, even while closure is pending or fails. Other owners and control protections remain independent; no timer or setting changes. The tradeoff is losing later same-window Dump opportunities. Memory is process-local and restart forgets it. This behavior is not in installed `.89`; see [the contract](docs/CONTROL_CONTRACT.md#local-o6-candidate-floor-stop-admission-retirement-unpublished).
+PR [#76](https://github.com/Belot77/sigenergy-optimizer/pull/76) merged normally at `52705dba6d90590a9cc292903dda76c6b810f769`, with tested tree `845357ff62c9cbf56217e790dc1a47bb8465a4b5`. Local `.90` preparation changes only five version markers and release/status docs; it is uncommitted, unpublished and uninstalled. `.89` remains latest published and confirmed installed. See [the .90 release record](docs/HAOS90_RELEASE_CANDIDATE.md).
+
+The merged floor-stop correction finishes Dump admission for the identified morning after a genuinely applied automatic Dump reaches its configured SoC floor. A small rebound cannot restart Dump, even while closure is pending or fails. Other owners and control protections remain independent; no timer or setting changes. The tradeoff is losing later same-window Dump opportunities. Memory is process-local and restart forgets it. This behavior is not in installed `.89`; see [the contract](docs/CONTROL_CONTRACT.md#pr-76-floor-stop-admission-retirement-prepared-for-90).
 
 ## Historical local release-preparation checkpoint: 2.3.78-haos89 - 4 November 2026
 
