@@ -227,7 +227,7 @@ class MorningDumpRefillReentryTests(unittest.TestCase):
                 self.assertFalse(rebound.morning_dump_active)
         asyncio.run(run())
 
-    def test_refill_input_trust_loss_retires_but_soc_floor_alone_does_not(self):
+    def test_refill_input_trust_loss_and_soc_floor_retire_with_distinct_reasons(self):
         async def run(field):
             clock, ha, opt = self.scenario()
             with clock.active():
@@ -242,7 +242,13 @@ class MorningDumpRefillReentryTests(unittest.TestCase):
                 self.assertFalse(veto.morning_dump_active)
                 await opt._apply(state, veto)
                 _, rebound = await self.decision(opt, ha, clock, need=budget - .1, at=clock.elapsed + 6)
-                self.assertEqual(field == "soc_floor", rebound.morning_dump_active)
+                self.assertFalse(rebound.morning_dump_active)
+                self.assertEqual(
+                    field != "soc_floor", rebound.trace_gates["morning_dump_refill_window_retired"],
+                )
+                self.assertEqual(
+                    field == "soc_floor", rebound.trace_gates["morning_dump_floor_window_retired"],
+                )
         for field in ("battery_capacity_trusted", "available_discharge_energy_trusted", "soc_floor"):
             with self.subTest(field=field):
                 asyncio.run(run(field))

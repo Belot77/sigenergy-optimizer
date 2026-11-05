@@ -599,6 +599,16 @@ After a successfully completed automatic Morning Dump loses trusted timed refill
 
 Do not convert Morning Dump into MSC surplus permission. Do not add a hard PV forecast floor unless later evidence and a separate approved change justify one.
 
+### Local O6 candidate: floor-stop admission retirement (unpublished)
+
+After a genuinely applied automatic Morning Dump records the current identified window, a later real automatic application with trusted finite SoC at or below `morning_dump_min_soc` retires further Dump admission for that window before awaiting closure. The automatic decision and current supplied state must still indicate Automated ownership and Remote EMS enabled. Preserve retirement through pending, failed, exceptional or cancelled closure and reject stale permissive Dump decisions. This is an admission decision, not proof that the close or physical stop settled.
+
+Decision-only previews, untrusted SoC, Manual/Force ownership, preemption before the floor, and windows without a prior genuinely completed automatic Dump do not arm floor retirement. Preserve independent owners and ESS/import/PV restrictions. Use `morning_dump_floor_window_retired` and `morning_dump_floor_retirement_reason=floor_reached_retired_this_window`; do not relabel a floor stop as a refill-feasibility veto. The configured floor remains a Dump stop, not a whole-system minimum SoC.
+
+No timer, hysteresis margin, floor-setting change or new durable storage is introduced. A later same-window SoC recovery cannot reopen Dump. The next identified morning may qualify; restart forgets this process-local state and requires all current gates again. The installed `.89` lacks this candidate. Rollback is withholding it or a separately reviewed scoped revert.
+
+Verify locally with simulated-HA multi-tick reports, failure/cancellation and stale-decision cases. Preview-only checks must not retire Dump. Before any separately authorized live acceptance, distinguish monitor-only/dry-run reasoning from actual application, confirm exact installed source and configured floor, correlate closure requests with readbacks and measured flows, and verify that rebound does not create another Dump admission. Software checks do not prove physical acceptance.
+
 ## Morning Slow Charge
 
 Morning Slow is a charging policy:
@@ -733,7 +743,7 @@ Settlement is specific to the dispatched request. Conflicting actuator state/met
 
 For an automatic deliberate battery-export request, calculate the difference between the bounded target and the current observed export limit. When `abs(bounded_target - current_observed_export_limit) > 0.011 kW`, the shared `deliberate_export_target_correction_required` predicate requires dispatching the bounded target through the existing `exact=True` path. Apply this predicate both when deciding whether to issue the export-limit write and immediately before selecting discharge EMS, so ordinary deadband cannot suppress a target that still needs proof. Retain the existing setting-observation wait of at most three seconds, followed by the unchanged final joint exact post-request guard before positive ESS discharge. Proof tolerance remains 0.011 kW and request-identity tolerance remains 0.001 kW. Valid same-target debounce remains unchanged. This does not affect PV-only behavior, introduce new policy thresholds or timing, or change qualification. A genuine settlement failure continues through existing fallback. Additional target writes are the risk. Source rollback requires a reviewed scoped revert; live rollback remains a separately authorized operator action.
 
-This correction is merged by PR #73 and published in `2.3.78-haos89`. Publication does not establish installation or live settlement; the last supplied installed identity is `.88`. It also does not resolve historical O11 causes. See `CURRENT_STATE.md` and `HAOS89_RELEASE_CANDIDATE.md` for the receipt and remaining gates.
+This correction is merged by PR #73 and published in `2.3.78-haos89`. The operator-supplied 5 November 08:02:25 AEDT startup confirms that installed runtime and container source `352b61303e7b18da4a46b40ba57546e0c8baa1e7`. Installed identity does not establish live settlement or resolve historical O11 causes. The supplied morning PV-only samples do not exercise the deliberate-export target correction. See `CURRENT_STATE.md` and `HAOS89_RELEASE_CANDIDATE.md` for the receipt and remaining gates.
 
 Successful fallback releases only its temporary restrictions. ESS charge and discharge recovery remain bounded by independently owned decision limits and normal safe/trusted capabilities. Relinquished Solar charge ownership restores the otherwise applicable safe normal charge request; it cannot remove another owner's restriction. Demand Window import blocking and independent restrictive PV MAX remain effective through failed or successful fallback.
 
