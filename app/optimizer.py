@@ -586,6 +586,7 @@ class SigEnergyOptimizer:
         self._last_decision: Optional[Decision] = None
         self._morning_dump_applied_window: Optional[tuple[str, float, float]] = None
         self._morning_dump_retired_window_id: Optional[str] = None
+        self._morning_dump_floor_retired_window_id: Optional[str] = None
         self._evening_boost_reentry = _EveningBoostReentry()
         self._evening_boost_report_high_water: Optional[float] = None
         self._evening_boost_last_clock: Optional[tuple[float, float]] = None
@@ -4551,6 +4552,12 @@ class SigEnergyOptimizer:
                      and morning_dump_refill_timing["timing_passed"])
             else None
         )
+        morning_dump_floor_retire_candidate = (
+            applied_dump_window
+            if self._morning_dump_window_current(applied_dump_window, now_ts)
+            and battery_soc_trusted and s.battery_soc <= cfg.morning_dump_min_soc
+            else None
+        )
         morning_dump_current_window_id = (
             morning_dump_window[0] if morning_dump_window is not None
             else applied_dump_window[0]
@@ -4561,8 +4568,13 @@ class SigEnergyOptimizer:
             morning_dump_current_window_id is not None
             and morning_dump_current_window_id == self._morning_dump_retired_window_id
         )
+        morning_dump_floor_window_retired = bool(
+            morning_dump_current_window_id is not None
+            and morning_dump_current_window_id == self._morning_dump_floor_retired_window_id
+        )
         morning_dump_active = bool(
             not morning_dump_refill_window_retired
+            and not morning_dump_floor_window_retired
             and battery_soc_trusted
             and battery_capacity_trusted
             and available_discharge_energy_trusted
@@ -7102,6 +7114,7 @@ class SigEnergyOptimizer:
             "within_morning_grace": within_morning_grace,
             "morning_dump_active": morning_dump_active,
             "morning_dump_refill_window_retired": morning_dump_refill_window_retired,
+            "morning_dump_floor_window_retired": morning_dump_floor_window_retired,
             "morning_slow_charge_active": morning_slow_charge_active,
             "morning_slow_genuinely_owns_charging": (
                 morning_slow_genuinely_owns_charging
@@ -7411,6 +7424,12 @@ class SigEnergyOptimizer:
             "morning_slow_relief_reason": morning_slow_relief_reason,
             "morning_dump_application_window": morning_dump_window,
             "morning_dump_refill_retire_candidate": morning_dump_refill_retire_candidate,
+            "morning_dump_floor_retire_candidate": morning_dump_floor_retire_candidate,
+            "morning_dump_floor_retirement_reason": (
+                "floor_reached_retired_this_window" if morning_dump_floor_window_retired
+                else "floor_stop_pending_application" if morning_dump_floor_retire_candidate
+                else "not_retired"
+            ),
             "morning_dump_refill_retirement_reason": (
                 "refill_veto_retired_this_window" if morning_dump_refill_window_retired
                 else "refill_veto_pending_application" if morning_dump_refill_retire_candidate
@@ -7950,7 +7969,7 @@ class SigEnergyOptimizer:
     async def _apply(
         self, s: SolarState, d: Decision,
     ) -> _ActuatorApplicationResult:
-        self._apply_morning_dump_retirement(d)
+        self._apply_morning_dump_retirement(d, s)
         self._msc_diagnostic("start")
         self._msc_diagnostic_phase = "primary"
         self._msc_diagnostic_context = {
@@ -8018,7 +8037,8 @@ class SigEnergyOptimizer:
         ):
             window = d.trace_values.get("morning_dump_application_window")
             if (self._morning_dump_window_current(window, datetime.now().timestamp())
-                    and window[0] != self._morning_dump_retired_window_id):
+                    and window[0] != self._morning_dump_retired_window_id
+                    and window[0] != self._morning_dump_floor_retired_window_id):
                 self._morning_dump_applied_window = window
         return result
 
@@ -11378,7 +11398,7 @@ class SigEnergyOptimizer:
             and window[1] <= now_ts <= window[2]
         )
 
-    def _apply_morning_dump_retirement(self, d: Decision) -> None:
+    def _apply_morning_dump_retirement(self, d: Decision, s: Optional[SolarState] = None) -> None:
         """Retire only the current applied episode; keep decisions side-effect free."""
         now_ts = datetime.now().timestamp()
         candidate = d.trace_values.get("morning_dump_refill_retire_candidate")
@@ -11387,9 +11407,31 @@ class SigEnergyOptimizer:
             self._morning_dump_retired_window_id = candidate[0]
             d.trace_gates["morning_dump_refill_window_retired"] = True
             d.trace_values["morning_dump_refill_retirement_reason"] = "refill_veto_retired_this_window"
+        floor_candidate = d.trace_values.get("morning_dump_floor_retire_candidate")
+        if (floor_candidate is not None and floor_candidate == self._morning_dump_applied_window
+                and self._morning_dump_window_current(floor_candidate, now_ts)
+                and s is not None and s.battery_soc_trusted is True
+                and math.isfinite(s.battery_soc) and 0.0 <= s.battery_soc <= self.cfg.morning_dump_min_soc
+                and s.sigenergy_mode_observed and s.sigenergy_mode == self.cfg.automated_option
+                and s.ha_control_enabled and not self._manual_mode_override
+                and d.trace_gates.get("observed_automated_control_mode") is True):
+            # Admission retirement precedes closure; failure or cancellation must
+            # not let a small SoC rebound reopen this already-applied episode.
+            # This records no claim that the requested physical stop has settled.
+            self._morning_dump_floor_retired_window_id = floor_candidate[0]
+            d.trace_gates["morning_dump_floor_window_retired"] = True
+            d.trace_values["morning_dump_floor_retirement_reason"] = "floor_reached_retired_this_window"
         window = d.trace_values.get("morning_dump_application_window")
+        refill_retired = bool(
+            isinstance(window, tuple) and len(window) == 3
+            and window[0] == self._morning_dump_retired_window_id
+        )
+        floor_retired = bool(
+            isinstance(window, tuple) and len(window) == 3
+            and window[0] == self._morning_dump_floor_retired_window_id
+        )
         if (isinstance(window, tuple) and len(window) == 3
-                and window[0] == self._morning_dump_retired_window_id
+                and (refill_retired or floor_retired)
                 and d.export_intent == BATTERY_EXPORT
                 and d.trace_values.get("battery_export_final_owner") == "morning_dump"):
             # A decision captured before another restrictive application must
@@ -11400,12 +11442,18 @@ class SigEnergyOptimizer:
             d.ems_mode = MODE_MAX_SELF
             d.requires_verified_msc_before_export = False
             d.trace_gates["morning_dump_active"] = False
-            d.trace_gates["morning_dump_refill_window_retired"] = True
+            d.trace_gates["morning_dump_refill_window_retired"] = refill_retired
+            d.trace_gates["morning_dump_floor_window_retired"] = floor_retired
             d.trace_values.update({
                 "battery_export_owner": "none", "battery_export_final_owner": "none",
                 "export_intent": EXPORT_BLOCKED, "desired_export_limit": 0.0,
                 "desired_ems_mode": MODE_MAX_SELF,
-                "morning_dump_refill_retirement_reason": "refill_veto_retired_this_window",
+                "morning_dump_refill_retirement_reason": (
+                    "refill_veto_retired_this_window" if refill_retired else "not_retired"
+                ),
+                "morning_dump_floor_retirement_reason": (
+                    "floor_reached_retired_this_window" if floor_retired else "not_retired"
+                ),
             })
 
     def _morning_dump_window(self, s: SolarState, actual_sunrise_ts: float):

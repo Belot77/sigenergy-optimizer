@@ -1,12 +1,16 @@
 # Changelog
 
+## Unreleased local candidate - Morning Dump floor-stop retirement
+
+After a genuinely completed automatic Dump, retire further same-window Dump admission when a trusted SoC reading reaches the configured floor during actual automatic application. Retain that stop through pending, failed or cancelled closure and reject stale permissive Dump decisions. Record a distinct floor-stop reason; physical settlement still requires its existing proof. Preserve independent owners, Manual/Force targets, controls and the configured floor. No timer or version bump. A later same-window battery refill cannot restart Dump; the latch is process-local and a restart forgets it. This candidate is not in installed `.89`; rollback is withholding it or a reviewed scoped revert.
+
 ## Published release: 2.3.78-haos89 — 4 November 2026
 
 Published at 2026-11-04T08:01:17Z (19:01:17 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.78-haos89). Annotated tag object `e29d5beddadf3e76b287d647ef354e55612857b1` resolves to source `352b61303e7b18da4a46b40ba57546e0c8baa1e7`, tree `0d4ce6a64772dd58136ed45483559b1ecb413104`. Metadata PR #74 merged normally at `2ce58a8e89b849c8588b960869610f3df703879d` at 07:58:50Z; merge tree equals the tagged tree.
 
 Build [41795353716](https://github.com/Belot77/sigenergy-optimizer/actions/runs/41795353716) succeeded at 07:55:15Z. Version/latest OCI index: `sha256:1d9e0ed00453cb57698d04d3ca0ef972cf1e672a4bd87a369029334b647961b5`; amd64 manifest: `sha256:1834ef0c11a004b278cfcec9da8beca4a823989cba7ca9506477723c9349414c`; arm64 manifest: `sha256:6f9350b4b99dec2dc70b0940fe5dc7886b7eb5e9449098fbf41750143a50a3a2`. Source fingerprint `sha256:7cfbfe4221fcb49b979fa14e26deb028a87bf6e792aecf018cf12dad8cae3abe` is SHA-256(sorted absolute image path + NUL + file bytes + NUL). All 11 compressed layers/diff IDs and 15 source files/modes per platform were verified using default TLS, without extraction or container execution. Independent helper/source-expectation/registry metadata-config review and completed-proof consistency review are GO; the independent reviewer did not redownload compressed layer bodies. The offline verifier passed 73 cases. Previous immutable .88 index `sha256:cc6759bf5deb23e659083699840237288f744248ec053226acabe46722b7bb39` is unchanged.
 
-Source tests passed 1,722 tests / 1,740 subtests. Disjoint release checks passed 16 static tests and 107 runtime tests / 128 subtests; no full suite was rerun for metadata/docs. These are software and publication checks, not live physical acceptance. Auto-update was confirmed off by the operator on 4 November. The last supplied installed identity is still `.88`; `.89` startup and physical acceptance are not established. Exact next startup evidence is runtime signature `2.3.78-haos89` and container source commit `352b61303e7b18da4a46b40ba57546e0c8baa1e7`.
+Source tests passed 1,722 tests / 1,740 subtests. Disjoint release checks passed 16 static tests and 107 runtime tests / 128 subtests; no full suite was rerun for metadata/docs. These are software/publication checks, not physical acceptance. Auto-update was last confirmed off on 4 November. The operator-supplied 5 November 08:02:25 AEDT startup confirms installed runtime `2.3.78-haos89` and container source `352b61303e7b18da4a46b40ba57546e0c8baa1e7`. Installation identity is verified; physical acceptance remains partial.
 
 ### Historical local release-preparation checkpoint
 
