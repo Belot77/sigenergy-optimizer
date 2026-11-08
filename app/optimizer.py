@@ -82,6 +82,7 @@ _SOLAR_SURPLUS_DIP_HOLD_SECONDS = 15.0
 # independent of event debounce and telemetry freshness, and never delay exit.
 _EVENING_BOOST_REENTRY_SECONDS = 120.0
 _EVENING_BOOST_MAX_REPORT_GAP_SECONDS = 60.0
+_O4_SUNSET_TRACE_WINDOW_SECONDS = 300.0
 
 # Remote EMS switch service-call protection. State is still checked every cycle,
 # but unavailable targets are never called and valid-off retries are bounded.
@@ -2871,12 +2872,143 @@ class SigEnergyOptimizer:
             },
         }
 
+    def _o4_sunset_trace_evidence(
+        self, snapshot_at: datetime, rest: dict[str, dict[str, Any]],
+        state_objects: dict[str, dict[str, Any]], enriched: dict[str, dict[str, Any]],
+    ) -> Optional[dict[str, Any]]:
+        """Record bounded pre-application HA evidence for the sunset investigation."""
+        cfg = self.cfg
+        now_ts = snapshot_at.timestamp()
+
+        def stamp(value: Any) -> Optional[float]:
+            if not isinstance(value, str) or len(value) > 64:
+                return None
+            parsed = self._parse_aware_metadata_timestamp(value)
+            return parsed.timestamp() if parsed is not None else None
+
+        def attributes(obj: Any) -> dict[str, Any]:
+            attrs = obj.get("attributes") if isinstance(obj, dict) else None
+            return attrs if isinstance(attrs, dict) else {}
+
+        rest_sun = rest.get(cfg.sun_entity)
+        template_sun = state_objects.get(cfg.sun_entity)
+        anchors = [self._last_state.next_sunset_ts if self._last_state else None]
+        for sun, horizons in ((rest_sun, attributes(rest_sun)), (template_sun, template_sun)):
+            if not isinstance(sun, dict):
+                continue
+            setting = stamp(horizons.get("next_setting"))
+            anchors.append(setting)
+            if sun.get("state") == "below_horizon" and setting is not None:
+                changed = stamp(sun.get("last_changed"))
+                # A night-time HA restart can also set below_horizon. Anchor
+                # to that change only near the previous local day's sunset.
+                prior_local_setting = (
+                    datetime.fromtimestamp(setting, self._tz) - timedelta(days=1)
+                ).timestamp()
+                if (
+                    changed is not None and changed <= now_ts
+                    and abs(changed - prior_local_setting) <= _O4_SUNSET_TRACE_WINDOW_SECONDS
+                    and abs(now_ts - prior_local_setting) <= _O4_SUNSET_TRACE_WINDOW_SECONDS
+                ):
+                    anchors.append(changed)
+        if not any(
+            anchor is not None and abs(now_ts - anchor) <= _O4_SUNSET_TRACE_WINDOW_SECONDS
+            for anchor in anchors
+        ):
+            return None
+
+        def reading(role: str, obj: Any, *, template: bool = False) -> dict[str, Any]:
+            obj = obj if isinstance(obj, dict) else {}
+            value = obj.get("state")
+            if role == "export_limit":
+                try:
+                    value = float(value) if not isinstance(value, bool) else None
+                    if value is not None and (not math.isfinite(value) or value < 0.0):
+                        value = None
+                except (TypeError, ValueError, OverflowError):
+                    value = None
+            elif not isinstance(value, str):
+                value = None
+            elif role == "control_mode":
+                if value == cfg.automated_option:
+                    value = "automated"
+                elif value in (
+                    cfg.manual_option, cfg.full_export_option, cfg.full_import_option,
+                    cfg.full_import_pv_option, cfg.block_flow_option,
+                ):
+                    value = "operator"
+                else:
+                    value = None
+            elif value not in known_states[role]:
+                value = None
+            result = {
+                "state": value,
+                "last_changed_ts": stamp(obj.get("last_changed")),
+                "last_updated_ts": stamp(obj.get("last_updated")),
+                "last_reported_ts": stamp(obj.get("last_reported")),
+            }
+            if role == "sun":
+                horizons = obj if template else attributes(obj)
+                result["next_rising_ts"] = stamp(horizons.get("next_rising"))
+                result["next_setting_ts"] = stamp(horizons.get("next_setting"))
+            return result
+
+        known_states = {
+            "sun": {"above_horizon", "below_horizon"},
+            "remote_ems": {"on", "off"},
+            "ems_mode": {MODE_MAX_SELF} | DISCHARGE_MODES | CHARGE_MODES,
+        }
+        roles = {
+            "sun": cfg.sun_entity,
+            "control_mode": cfg.sigenergy_mode_select,
+            "remote_ems": cfg.ha_control_switch,
+            "ems_mode": cfg.ems_mode_select,
+            "export_limit": cfg.grid_export_limit,
+        }
+        evidence = {"snapshot_phase": "pre_application", "snapshot_at_ts": now_ts}
+        for role, entity in roles.items():
+            first = reading(role, rest.get(entity))
+            second = reading(role, state_objects.get(entity), template=True)
+            control = enriched.get(entity) or {}
+            status = control.get("_msc_metadata_status")
+            if status not in ("accepted", "metadata_conflict", "invalid_timestamp", "read_failed"):
+                status = "missing"
+            conflict = bool(
+                control.get("_control_mode_metadata_conflict")
+                or control.get("_actuator_metadata_conflict")
+            )
+            changed = second["last_changed_ts"]
+            updated = second["last_updated_ts"]
+            reported = second["last_reported_ts"]
+            correlated = (
+                status == "accepted" and not conflict and first["state"] is not None
+                and changed is not None and changed == first["last_changed_ts"]
+                and updated is not None and reported is not None
+                and changed <= updated <= reported <= now_ts
+            )
+            if role == "sun":
+                correlated = correlated and all(
+                    second[key] is not None and second[key] == first[key]
+                    for key in ("next_rising_ts", "next_setting_ts")
+                )
+            report = self._state_metadata_timestamp(control)
+            evidence[role] = {
+                "rest": first,
+                "state_object": second,
+                "metadata_status": status,
+                "control_metadata_conflict": conflict,
+                "correlated_chronology": correlated,
+                "effective_report_ts": report.timestamp() if report is not None else None,
+            }
+        return evidence
+
     def _record_decision_trace(
         self, s: SolarState, d: Decision,
         *, application: Optional[dict[str, Any]] = None,
     ) -> None:
         gates = d.trace_gates if isinstance(d.trace_gates, dict) else {}
         values = d.trace_values if isinstance(d.trace_values, dict) else {}
+        sunset_provenance = getattr(s, "_o4_sunset_provenance", None)
         self._decision_trace.appendleft(
             {
                 "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -2904,6 +3036,7 @@ class SigEnergyOptimizer:
                 "gates": gates,
                 "values": values,
                 "charge_allocation": self._charge_allocation_trace_evidence(s, values),
+                **({"o4_sunset_provenance": sunset_provenance} if sunset_provenance is not None else {}),
                 **({"application": dict(application)} if application is not None else {}),
             }
         )
@@ -3008,6 +3141,8 @@ class SigEnergyOptimizer:
         self,
         bulk: dict[str, dict[str, Any]],
         entity_ids: list[str],
+        *,
+        state_objects: Optional[dict[str, dict[str, Any]]] = None,
     ) -> dict[str, dict[str, Any]]:
         """Merge only correlated State-object ``last_reported`` metadata."""
         report_metadata_reader = getattr(self.ha, "get_state_report_metadata", None)
@@ -3045,6 +3180,8 @@ class SigEnergyOptimizer:
                     bulk[entity_id]["_msc_metadata_status"] = "read_failed"
         if not isinstance(report_metadata, dict):
             report_metadata = {}
+        if state_objects is not None:
+            state_objects.update(report_metadata)
 
         for entity_id in report_entity_ids:
             snapshot = bulk.get(entity_id)
@@ -3340,7 +3477,11 @@ class SigEnergyOptimizer:
             cfg.sigenergy_mode_select,
             cfg.ha_control_switch,
         ))))
-        bulk = await self._enrich_state_report_metadata(bulk, report_entity_ids)
+        rest = bulk.copy()
+        state_objects: dict[str, dict[str, Any]] = {}
+        bulk = await self._enrich_state_report_metadata(
+            bulk, report_entity_ids, state_objects=state_objects,
+        )
 
         def _fv(eid: str, default: Optional[float] = 0.0) -> Optional[float]:
             obj = bulk.get(eid)
@@ -4192,6 +4333,14 @@ class SigEnergyOptimizer:
             s.sigenergy_mode_observed = False
 
         setattr(s, "_msc_read_identity", msc_read_identity if msc_read_identity == self._msc_maintenance_identity() else None)
+        try:
+            sunset_provenance = self._o4_sunset_trace_evidence(
+                observed_at, rest, state_objects, bulk,
+            )
+            if sunset_provenance is not None:
+                setattr(s, "_o4_sunset_provenance", sunset_provenance)
+        except Exception:
+            logger.warning("Sunset trace evidence could not be recorded")
         return s
 
     # ------------------------------------------------------------------
