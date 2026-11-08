@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
+from jinja2.sandbox import ImmutableSandboxedEnvironment
+
 from app.config import Settings
 from app.ha_client import HAClient
 from app.models import (
@@ -140,12 +142,16 @@ class HAClientStateReportMetadataTests(unittest.IsolatedAsyncioTestCase):
     async def test_state_report_metadata_uses_one_read_only_batched_template_request(
         self,
     ) -> None:
+        changed_at = "2026-09-13T21:55:00+00:00"
         updated_at = "2026-09-13T21:58:18+00:00"
         reported_at = "2026-09-13T21:58:29+00:00"
+        next_rising = "2026-09-14T20:00:00+00:00"
+        next_setting = "2026-09-14T08:00:00+00:00"
         rows = [
             {
                 "entity_id": "sensor.battery_soc",
                 "state": "47.1",
+                "last_changed": changed_at,
                 "last_updated": updated_at,
                 "last_reported": reported_at,
                 "attributes": {"not": "requested"},
@@ -153,8 +159,11 @@ class HAClientStateReportMetadataTests(unittest.IsolatedAsyncioTestCase):
             {
                 "entity_id": "sun.sun",
                 "state": "above_horizon",
+                "last_changed": changed_at,
                 "last_updated": updated_at,
                 "last_reported": reported_at,
+                "next_rising": next_rising,
+                "next_setting": next_setting,
                 "attributes": {"not": "requested"},
             },
         ]
@@ -169,13 +178,22 @@ class HAClientStateReportMetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             result,
             {
-                row["entity_id"]: {
-                    "entity_id": row["entity_id"],
-                    "state": row["state"],
-                    "last_updated": row["last_updated"],
-                    "last_reported": row["last_reported"],
-                }
-                for row in rows
+                "sensor.battery_soc": {
+                    "entity_id": "sensor.battery_soc",
+                    "state": "47.1",
+                    "last_changed": changed_at,
+                    "last_updated": updated_at,
+                    "last_reported": reported_at,
+                },
+                "sun.sun": {
+                    "entity_id": "sun.sun",
+                    "state": "above_horizon",
+                    "last_changed": changed_at,
+                    "last_updated": updated_at,
+                    "last_reported": reported_at,
+                    "next_rising": next_rising,
+                    "next_setting": next_setting,
+                },
             },
         )
         self.assertEqual(len(http.calls), 1)
@@ -184,8 +202,98 @@ class HAClientStateReportMetadataTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(request), {"template"})
         self.assertIn("sensor.battery_soc", request["template"])
         self.assertIn("sun.sun", request["template"])
+        self.assertIn("last_changed", request["template"])
         self.assertIn("last_updated", request["template"])
         self.assertIn("last_reported", request["template"])
+        self.assertIn("next_rising", request["template"])
+        self.assertIn("next_setting", request["template"])
+
+    async def test_unusable_optional_report_fields_preserve_required_metadata(self) -> None:
+        sensor_row = {
+            "entity_id": "sensor.battery_soc",
+            "state": "47.1",
+            "last_updated": "2026-09-13T21:58:18+00:00",
+            "last_reported": "2026-09-13T21:58:29+00:00",
+        }
+        sun_row = {**sensor_row, "entity_id": "sun.sun", "state": "above_horizon"}
+        valid_fields = {
+            "last_changed": "2026-09-13T21:55:00+00:00",
+            "next_rising": "2026-09-14T20:00:00+00:00",
+            "next_setting": "2026-09-14T08:00:00+00:00",
+        }
+        absent = object()
+
+        for field in valid_fields:
+            expected_sun = {**sun_row, **valid_fields}
+            del expected_sun[field]
+            for value in (absent, None, 123, {"unexpected": "value"}, "x" * 65):
+                with self.subTest(field=field, value=value):
+                    response_sun = dict(expected_sun)
+                    if value is not absent:
+                        response_sun[field] = value
+                    http = _TemplateHTTPClient(
+                        _TemplateHTTPResponse([sensor_row, response_sun])
+                    )
+                    client = HAClient.__new__(HAClient)
+                    client._client = http
+
+                    result = await client.get_state_report_metadata(
+                        ["sensor.battery_soc", "sun.sun"]
+                    )
+
+                    self.assertEqual(
+                        result, {"sensor.battery_soc": sensor_row, "sun.sun": expected_sun}
+                    )
+                    self.assertEqual(len(http.calls), 1)
+                    self.assertEqual(http.calls[0][0], "/api/template")
+
+    async def test_batched_template_omits_invalid_optional_fields_before_serialization(self) -> None:
+        updated = datetime(2026, 1, 15, 18, tzinfo=timezone.utc)
+        setting = (updated + timedelta(days=1, minutes=1)).isoformat()
+        entities = {
+            "sun.sun": {
+                "state": "below_horizon",
+                "last_changed": updated,
+                "attributes": {"next_setting": setting},
+            },
+            "sun.bad": {
+                "state": "above_horizon",
+                "last_changed": None,
+                "attributes": {"next_rising": object(), "next_setting": "x" * 65},
+            },
+            "switch.remote": {
+                "state": "on",
+                "last_changed": updated,
+                "attributes": {"next_setting": "an unrelated attribute"},
+            },
+        }
+
+        def expand(requested):
+            return [
+                {"entity_id": entity, "last_updated": updated, "last_reported": updated,
+                 **entities[entity]}
+                for entity in requested
+            ]
+
+        environment = ImmutableSandboxedEnvironment()
+        environment.filters["to_json"] = json.dumps
+
+        async def render(_path, *, json):
+            body = environment.from_string(json["template"]).render(expand=expand)
+            return _TemplateHTTPResponse(body)
+
+        client = HAClient.__new__(HAClient)
+        client._client = Mock(post=AsyncMock(side_effect=render))
+        result = await client.get_state_report_metadata(list(entities))
+
+        self.assertEqual(set(entities), set(result))
+        self.assertEqual(setting, result["sun.sun"]["next_setting"])
+        self.assertEqual(updated.isoformat(), result["sun.sun"]["last_changed"])
+        self.assertEqual(
+            {"entity_id", "state", "last_updated", "last_reported"}, set(result["sun.bad"]),
+        )
+        self.assertNotIn("next_setting", result["switch.remote"])
+        client._client.post.assert_awaited_once()
 
     async def test_state_report_metadata_failure_or_malformed_response_is_empty(
         self,

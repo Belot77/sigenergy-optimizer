@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add optional `o4_sunset_provenance` to decision traces near sunset. It records
+  pre-application HA report timing, sun horizons and observed control roles from
+  the existing snapshot for correlation with decision and application metadata.
+  The evidence carries no control authority or actuator-settlement proof.
+  O4 qualification and stability remain open. [Control contract](docs/CONTROL_CONTRACT.md#passive-o4-sunset-report-provenance)
+
 ## Current published release: 2.3.79-haos90 - 5 November 2026
 
 Published at 2026-11-05T01:52:52Z (12:52:52 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.79-haos90). Tag source `00b837b34e5c26639dd8d2f0d4d448dbf4e452b7`, tree `6970c5ed6468ee272e4880bae685247af73ab967`, annotated tag object `801de298f8c834188aada2e0d7d2b4ed2dcab197`. Metadata PR #77 merged normally at `545a4bd6f80d8fb602a53e85a75b3eea68a4e0d1` (01:49:47Z); merge tree equals the tagged tree.

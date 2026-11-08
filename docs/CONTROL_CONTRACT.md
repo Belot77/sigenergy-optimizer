@@ -81,6 +81,26 @@ control authority or safety condition, and remain inside diagnostic failure
 isolation. In particular, negative balance still rejects physical relief, and
 normal charging recovery still requires the existing ownership/settlement gates.
 
+### Passive O4 sunset report provenance
+
+Near sunset, the decision trace may include `o4_sunset_provenance` from its
+pre-application HA snapshot. The capture window is about five minutes on either
+side of sunset. It is anchored by the upcoming sunset or an observed sun-horizon
+change, with the prior snapshot's horizon available as a fallback.
+
+The field records bounded timestamps for the existing REST state read and
+selected HA State objects, along with the observed sun horizons and values for
+the Automated selector, Remote EMS, EMS mode and export-limit roles.
+`correlated_chronology` marks matching state and transition metadata with coherent,
+nonfuture State-object timestamps. For the sun, both horizons must also match.
+`effective_report_ts` records the timestamp selected by the shared metadata
+resolver. `control_metadata_conflict` separately marks a hard conflict.
+Compare these fields with the decision and application outcome. The field reuses
+the existing HA batch. Historical rows without it carry unknown sunset provenance.
+
+These observations grant no control authority and cannot establish actuator
+settlement. O4 qualification and stability remain open.
+
 Update this contract whenever an approved control-ownership rule, invariant, or transition contract changes. Do not change it merely to match accidental current code behavior; report the mismatch and obtain an approved semantic decision first.
 
 ## Runtime configuration activation

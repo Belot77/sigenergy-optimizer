@@ -106,12 +106,22 @@ class HAClient:
         template = (
             "{% set ns = namespace(rows=[]) %}\n"
             f"{{% for entity in expand({encoded_entity_ids}) %}}\n"
-            "{% set ns.rows = ns.rows + [{"
-            "'entity_id': entity.entity_id, "
-            "'state': entity.state, "
-            "'last_updated': entity.last_updated.isoformat(), "
-            "'last_reported': entity.last_reported.isoformat()"
-            "}] %}\n"
+            "{% set horizons = {} %}\n"
+            "{% if entity.state in ['above_horizon', 'below_horizon'] %}\n"
+            "{% set rising = entity.attributes.get('next_rising') %}\n"
+            "{% set setting = entity.attributes.get('next_setting') %}\n"
+            "{% set horizons = {"
+            "'next_rising': rising if rising is string and rising | length <= 64 else none, "
+            "'next_setting': setting if setting is string and setting | length <= 64 else none"
+            "} %}\n"
+            "{% endif %}\n"
+            "{% set ns.rows = ns.rows + [dict(horizons, "
+            "entity_id=entity.entity_id, state=entity.state, "
+            "last_changed=entity.last_changed.isoformat() "
+            "if entity.last_changed is defined and entity.last_changed is not none else none, "
+            "last_updated=entity.last_updated.isoformat(), "
+            "last_reported=entity.last_reported.isoformat()"
+            ")] %}\n"
             "{% endfor %}\n"
             "{{ ns.rows | to_json }}"
         )
@@ -163,6 +173,11 @@ class HAClient:
                     field: row[field]
                     for field in required_fields
                 }
+                # Optional trace fields never invalidate the required report batch.
+                for field in ("last_changed", "next_rising", "next_setting"):
+                    value = row.get(field)
+                    if isinstance(value, str) and 0 < len(value) <= 64:
+                        metadata[entity_id][field] = value
             return metadata
         except Exception as exc:
             logger.warning("get_state_report_metadata failed: %s", exc)
