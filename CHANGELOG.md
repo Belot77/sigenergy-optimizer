@@ -1,12 +1,12 @@
 # Changelog
 
-## Unreleased
+## 2.3.80-haos91 release candidate - 9 November 2026
 
-- Add optional `o4_sunset_provenance` to decision traces near sunset. It records
-  pre-application HA report timing, sun horizons and observed control roles from
-  the existing snapshot for correlation with decision and application metadata.
-  The evidence carries no control authority or actuator-settlement proof.
-  O4 qualification and stability remain open. [Control contract](docs/CONTROL_CONTRACT.md#passive-o4-sunset-report-provenance)
+This local, unpublished candidate packages the passive O4 trace evidence merged at 07:11:46 AEDT on 9 November as `bfbcbdc`. The latest published release and confirmed installation remain `2.3.79-haos90`. [PR #79](https://github.com/Belot77/sigenergy-optimizer/pull/79)
+
+- Near sunset, decision traces may include `o4_sunset_provenance` from the existing pre-application HA batch. It records report timing, sun horizons and observed control roles for correlation with decision and application outcomes. Its role is diagnostic. Actuator settlement still requires independent proof. O4 qualification, stability and live acceptance remain open. [Control contract](docs/CONTROL_CONTRACT.md#passive-o4-sunset-report-provenance)
+
+See the [release candidate record](docs/HAOS91_RELEASE_CANDIDATE.md) for the preparation scope and remaining gates.
 
 ## Current published release: 2.3.79-haos90 - 5 November 2026
 
@@ -16,9 +16,9 @@ Build [41950610118](https://github.com/Belot77/sigenergy-optimizer/actions/runs/
 
 This release carries PR #76's floor-stop admission retirement: after an already-applied automatic Morning Dump reaches its configured floor under trusted automatic application, further same-window Dump admission stops. No timer or floor change. Later same-window refill cannot restore Dump admission; restart forgets the process-local latch and current checks must pass again. Closure still needs its own proof, and the Dump floor is not a whole-system SoC minimum.
 
-Pre-bump source validation passed 1,737 tests / 1,758 subtests; release checks passed 123 tests / 156 subtests. Independent reviews are GO. Published and install-ready for a separately authorized operator action; .90 installation and physical acceptance are unverified. Latest confirmed installed remains `2.3.78-haos89` / `352b61303e7b18da4a46b40ba57546e0c8baa1e7` from 5 November 08:02:25 AEDT. Auto update was confirmed off on 5 November. No agent-performed HA action occurred.
+Pre-bump source validation passed 1,737 tests / 1,758 subtests; release checks passed 123 tests / 156 subtests. Independent reviews are GO. At publication, the latest confirmed installation was `2.3.78-haos89` / `352b61303e7b18da4a46b40ba57546e0c8baa1e7` from 5 November 08:02:25 AEDT. The operator-supplied startup at 13:01:03 AEDT on 5 November confirms `2.3.79-haos90` / `00b837b34e5c26639dd8d2f0d4d448dbf4e452b7`. Physical acceptance remains open. Auto update was confirmed off on 5 November. No agent-performed HA action occurred.
 
-O4 Boost qualification/stability, O5 reserve/load/price policy, O6 broader handoff/depletion and O9 ownership/status work remain open. Relevant live proof, including .90 floor retirement and .89 changing deliberate-export targets, remains outstanding. Legacy O11 and O20 remain parked; provisional-tariff switching has no timer change. Next action is separate installation authorization, exact startup identity and applicable supervised live evidence. See [the .90 publication receipt](docs/HAOS90_RELEASE_CANDIDATE.md).
+O4 Boost qualification/stability, O5 reserve/load/price policy, O6 broader handoff/depletion and O9 ownership/status work remain open. Relevant live proof, including .90 floor retirement and .89 changing deliberate-export targets, remains outstanding. Legacy O11 and O20 remain parked; provisional-tariff switching has no timer change. See [the .90 publication receipt](docs/HAOS90_RELEASE_CANDIDATE.md).
 
 ## Historical local release-preparation checkpoint: 2.3.79-haos90
 
