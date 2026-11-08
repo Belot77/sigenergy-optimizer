@@ -1,14 +1,13 @@
 # Changelog
 
-## 2.3.80-haos91 release candidate - 9 November 2026
+## Current published release: 2.3.80-haos91 - 9 November 2026
 
-This local, unpublished candidate packages the passive O4 trace evidence merged at 07:11:46 AEDT on 9 November as `bfbcbdc`. The latest published release and confirmed installation remain `2.3.79-haos90`. [PR #79](https://github.com/Belot77/sigenergy-optimizer/pull/79)
+Published at 07:29:56 AEDT (2026-11-08T20:29:56Z) from `6144d027496b2a1822219324eb37512d44b002c1`. Metadata PR #80 merged normally at `25c9c585f6a34614983584f4e937f0710f221ee5` and the merge tree matches the tag. Both platform images and tagged source were verified. The latest confirmed installation is .90. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.80-haos91) [Publication receipt](docs/HAOS91_RELEASE_CANDIDATE.md)
 
-- Near sunset, decision traces may include `o4_sunset_provenance` from the existing pre-application HA batch. It records report timing, sun horizons and observed control roles for correlation with decision and application outcomes. Its role is diagnostic. Actuator settlement still requires independent proof. O4 qualification, stability and live acceptance remain open. [Control contract](docs/CONTROL_CONTRACT.md#passive-o4-sunset-report-provenance)
+- Includes PR #79's passive `o4_sunset_provenance` from the existing pre-application HA batch. It records report timing, sun horizons and observed control roles around sunset.
+- Release validation passed 309 tests and 299 subtests. O4 sunset continuation and live acceptance remain open. [Control contract](docs/CONTROL_CONTRACT.md#passive-o4-sunset-report-provenance)
 
-See the [release candidate record](docs/HAOS91_RELEASE_CANDIDATE.md) for the preparation scope and remaining gates.
-
-## Current published release: 2.3.79-haos90 - 5 November 2026
+## Previous published release: 2.3.79-haos90 - 5 November 2026
 
 Published at 2026-11-05T01:52:52Z (12:52:52 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.79-haos90). Tag source `00b837b34e5c26639dd8d2f0d4d448dbf4e452b7`, tree `6970c5ed6468ee272e4880bae685247af73ab967`, annotated tag object `801de298f8c834188aada2e0d7d2b4ed2dcab197`. Metadata PR #77 merged normally at `545a4bd6f80d8fb602a53e85a75b3eea68a4e0d1` (01:49:47Z); merge tree equals the tagged tree.
 
