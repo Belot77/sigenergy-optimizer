@@ -1,5 +1,9 @@
 # Roadmap
 
+## Local release preparation for 2.3.80-haos91 (9 November 2026)
+
+Local release preparation for `2.3.80-haos91` covers version metadata and release documentation. Its source includes PR #79's passive Evening Boost (O4) evidence capture. Control decisions and actuation stay outside this scope. `.90` remains the latest published and confirmed installed release. The O4 continuation decision and supervised live capture and acceptance remain open. See [the .91 candidate record](HAOS91_RELEASE_CANDIDATE.md).
+
 ## Current published release: 2.3.79-haos90 - 5 November 2026
 
 Published at 2026-11-05T01:52:52Z (12:52:52 AEDT): [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.79-haos90). Tag source `00b837b34e5c26639dd8d2f0d4d448dbf4e452b7`, tree `6970c5ed6468ee272e4880bae685247af73ab967`, annotated tag object `801de298f8c834188aada2e0d7d2b4ed2dcab197`. Metadata PR #77 merged normally at `545a4bd6f80d8fb602a53e85a75b3eea68a4e0d1` (01:49:47Z); merge tree equals the tagged tree.
@@ -8,9 +12,9 @@ Build [41950610118](https://github.com/Belot77/sigenergy-optimizer/actions/runs/
 
 This release carries PR #76's floor-stop admission retirement: after an already-applied automatic Morning Dump reaches its configured floor under trusted automatic application, further same-window Dump admission stops. No timer or floor change. Later same-window refill cannot restore Dump admission; restart forgets the process-local latch and current checks must pass again. Closure still needs its own proof, and the Dump floor is not a whole-system SoC minimum.
 
-Pre-bump source validation passed 1,737 tests / 1,758 subtests; release checks passed 123 tests / 156 subtests. Independent reviews are GO. Published and install-ready for a separately authorized operator action; .90 installation and physical acceptance are unverified. Latest confirmed installed remains `2.3.78-haos89` / `352b61303e7b18da4a46b40ba57546e0c8baa1e7` from 5 November 08:02:25 AEDT. Auto update was confirmed off on 5 November. No agent-performed HA action occurred.
+Pre-bump source validation passed 1,737 tests / 1,758 subtests, and release checks passed 123 tests / 156 subtests. Independent reviews are GO. The operator confirmed the installed `2.3.79-haos90` runtime and exact source `00b837b34e5c26639dd8d2f0d4d448dbf4e452b7` from the 5 November 13:01:03 AEDT startup. Auto update was last confirmed off on 5 November. Physical acceptance remains open.
 
-O4 Boost qualification/stability, O5 reserve/load/price policy, O6 broader handoff/depletion and O9 ownership/status work remain open. Relevant live proof, including .90 floor retirement and .89 changing deliberate-export targets, remains outstanding. Legacy O11 and O20 remain parked; provisional-tariff switching has no timer change. Next action is separate installation authorization, exact startup identity and applicable supervised live evidence. See [the .90 publication receipt](HAOS90_RELEASE_CANDIDATE.md).
+O4 Boost qualification/stability, O5 reserve/load/price policy, O6 broader handoff/depletion and O9 ownership/status work remain open. Relevant live proof, including .90 floor retirement and .89 changing deliberate-export targets, remains outstanding. Legacy O11 and O20 remain parked; provisional-tariff switching has no timer change. Further HA actions and supervised live evidence capture require separate authorization. See [the .90 publication receipt](HAOS90_RELEASE_CANDIDATE.md).
 
 ## Historical local .90 preparation - before 5 November publication
 
