@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Apply ESS Controls preserves an explicit PV Max of 0 kW. Blank, nonnumeric,
+  nonfinite and negative PV Max entries show a form error before submission.
+
 ## Current published release: 2.3.80-haos91 - 9 November 2026
 
 Published at 07:29:56 AEDT (2026-11-08T20:29:56Z) from `6144d027496b2a1822219324eb37512d44b002c1`. Metadata PR #80 merged normally at `25c9c585f6a34614983584f4e937f0710f221ee5` and the merge tree matches the tag. Both platform images and tagged source were verified. The latest confirmed installation is .90. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.80-haos91) [Publication receipt](docs/HAOS91_RELEASE_CANDIDATE.md)
