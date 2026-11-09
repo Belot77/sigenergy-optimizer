@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 2.3.81-haos92 local release candidate
+
+This local candidate packages the three O9 dashboard fixes and their
+WebSocket compatibility correction. The latest published release remains
+.91. [Release record](docs/HAOS92_RELEASE_CANDIDATE.md)
 
 - Apply ESS Controls preserves an explicit PV Max of 0 kW. Blank, nonnumeric,
   nonfinite and negative PV Max entries show a form error before submission.
