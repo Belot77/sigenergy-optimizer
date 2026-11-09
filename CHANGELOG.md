@@ -4,6 +4,8 @@
 
 - Apply ESS Controls preserves an explicit PV Max of 0 kW. Blank, nonnumeric,
   nonfinite and negative PV Max entries show a form error before submission.
+- Mode and ESS controls acknowledge successful API requests and refresh the
+  dashboard. Hardware settlement still requires verified readback.
 
 ## Current published release: 2.3.80-haos91 - 9 November 2026
 
