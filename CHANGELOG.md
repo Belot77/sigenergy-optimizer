@@ -6,6 +6,9 @@
   nonfinite and negative PV Max entries show a form error before submission.
 - Mode and ESS controls acknowledge successful API requests and refresh the
   dashboard. Hardware settlement still requires verified readback.
+- The dashboard separates grid and ESS charge targets, Home Assistant limit
+  reports, and measured power. Snapshot age and evidence labels identify
+  stale, missing, or unverified readings.
 
 ## Current published release: 2.3.80-haos91 - 9 November 2026
 
