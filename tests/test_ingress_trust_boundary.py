@@ -183,5 +183,9 @@ def test_status_websocket_remains_read_only_and_keeps_existing_public_policy(har
     asyncio.run(app(scope, receive, send))
     assert messages[0]["type"] == "websocket.accept"
     assert messages[1]["type"] == "websocket.send"
-    assert json.loads(messages[1]["text"])["ws_connected"] is False
+    status = json.loads(messages[1]["text"])
+    assert status["ws_connected"] is False
+    power_status = status["power_status"]
+    assert power_status["snapshot_age_seconds"] is None
+    assert power_status["grid_export"]["ha_limit_status"] == "unavailable"
     assert app.state.optimizer.calls == 0
