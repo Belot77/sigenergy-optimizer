@@ -115,6 +115,9 @@ body{background:#e8f5e9;font-family:"Segoe UI",Tahoma,Geneva,Verdana,sans-serif;
 .glance-val{font-size:22px;font-weight:800;color:var(--tone-value,#1a202c);line-height:1.15}
 .glance-sub{font-size:12px;color:var(--tone-value,#4a5568);font-weight:600;line-height:1.25}
 .glance-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.power-status h3{margin:8px 0 3px}
+.power-status dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 6px;margin:0;font-size:11px}
+.power-status dd{margin:0;text-align:right}
 .advisory-card{background:#f8faf9;border-color:#cfe4d6;--fill-pct:0%}
 .advisory-note{font-size:11px;color:#2f4f3d;line-height:1.4;margin:6px 0 8px}
 .advisory-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px}
@@ -455,7 +458,7 @@ html.theme-dark .cfg-help{color:#9fb3cf}
   <!-- SIDEBAR -->
   <div class="sidebar">
 
-    <div class="reason-bar" id="reasonBar">Waiting for first cycle---</div>
+    <div class="reason-bar" id="reasonBar">Control summary: Waiting for first cycle</div>
 
     <!-- SigEnergy Mode -->
     <div class="card">
@@ -654,7 +657,7 @@ html.theme-dark .cfg-help{color:#9fb3cf}
 
       <aside class="glance-rail">
         <div class="glance-card" id="card-sBat"><div class="glance-lbl" id="lbl-sBat">Battery SoC</div><div class="glance-val" id="sBat">---</div></div>
-        <div class="glance-card" id="card-gBattFlow"><div class="glance-lbl" id="lbl-gBattFlow">Discharge/Charge</div><div class="glance-val" id="gBattFlow">---</div></div>
+        <div class="glance-card" id="card-gBattFlow"><div class="glance-lbl" id="lbl-gBattFlow">Battery Power (sensor or estimate)</div><div class="glance-val" id="gBattFlow">---</div></div>
         <div class="glance-card" id="card-gLoad"><div class="glance-lbl" id="lbl-gLoad">Power Consumption</div><div class="glance-val" id="gLoad">---</div></div>
         <div class="glance-card" id="card-gPV"><div class="glance-lbl" id="lbl-gPV">Solar Output</div><div class="glance-val" id="gPV">---</div></div>
         <div class="glance-card" id="card-gGridImp"><div class="glance-lbl" id="lbl-gGridImp">Grid Import</div><div class="glance-val" id="gGridImp">---</div></div>
@@ -670,12 +673,33 @@ html.theme-dark .cfg-help{color:#9fb3cf}
           <div class="glance-card" id="card-sSunrise"><div class="glance-lbl">Sunrise SoC Req</div><div class="glance-sub" id="sSunrise">---</div></div>
           <div class="glance-card" id="card-gExpFloor"><div class="glance-lbl">Export Floor SoC</div><div class="glance-sub" id="gExpFloor">---</div></div>
           <div class="glance-card" id="card-sImpPrice"><div class="glance-lbl">Import Price</div><div class="glance-sub" id="sImpPrice">---</div></div>
-          <div class="glance-card" id="card-sExpLimVal"><div class="glance-lbl">Export Limit</div><div class="glance-sub" id="sExpLimVal">---</div></div>
           <div class="glance-card" id="card-sFIT"><div class="glance-lbl">Feed-in Price</div><div class="glance-sub" id="sFIT">---</div></div>
-          <div class="glance-card" id="card-sImpLimVal"><div class="glance-lbl">Import Limit</div><div class="glance-sub" id="sImpLimVal">---</div></div>
           <div class="glance-card" id="card-sPVMax"><div class="glance-lbl">PV Max</div><div class="glance-sub" id="sPVMax">---</div></div>
           <div class="glance-card" id="card-sESSThresh"><div class="glance-lbl">ESS-First PV Thresh</div><div class="glance-sub" id="sESSThresh">1.0 kW</div></div>
         </div>
+
+        <section class="glance-card power-status" aria-labelledby="powerStatusTitle">
+          <h2 class="glance-lbl" id="powerStatusTitle">Power Status</h2>
+          <div class="glance-sub" id="powerStatusAge">Snapshot age at refresh: Unknown</div>
+          <h3 class="glance-lbl">Grid Export</h3>
+          <dl class="glance-sub">
+            <dt>Target</dt><dd id="power-grid_export-target">Unknown</dd>
+            <dt>HA-reported limit</dt><dd id="power-grid_export-limit">Unavailable</dd>
+            <dt>Measured power</dt><dd id="power-grid_export-measured">Unavailable</dd>
+          </dl>
+          <h3 class="glance-lbl">Grid Import</h3>
+          <dl class="glance-sub">
+            <dt>Target</dt><dd id="power-grid_import-target">Unknown</dd>
+            <dt>HA-reported limit</dt><dd id="power-grid_import-limit">Unavailable</dd>
+            <dt>Measured power</dt><dd id="power-grid_import-measured">Unavailable</dd>
+          </dl>
+          <h3 class="glance-lbl">ESS Charge</h3>
+          <dl class="glance-sub">
+            <dt>Target</dt><dd id="power-ess_charge-target">Unknown</dd>
+            <dt>HA-reported limit</dt><dd id="power-ess_charge-limit">Unavailable</dd>
+            <dt>Measured power</dt><dd id="power-ess_charge-measured">Unavailable</dd>
+          </dl>
+        </section>
 
         <div class="glance-card"><div class="glance-lbl">Cycle Started</div><div class="glance-sub" id="cycleStart">---</div></div>
         <div class="glance-card"><div class="glance-lbl">Cycle Completed</div><div class="glance-sub" id="cycleDone">---</div></div>
@@ -2515,8 +2539,36 @@ function renderChartNow(elId, lead, metrics) {
     .join('');
 }
 
+function formatReportedPower(kw, status, signedBattery = false) {
+  if (status === 'stale') return 'Stale';
+  if (status === 'unverified') return 'Unverified';
+  if (status !== 'reported' || !Number.isFinite(kw)) return 'Unavailable';
+  const power = `${kw.toFixed(2)} kW`;
+  if (!signedBattery || kw === 0) return power;
+  return kw > 0 ? `+${power} (charging)` : `${power} (discharging)`;
+}
+
+function renderPowerStatus(status) {
+  const age = status?.snapshot_age_seconds;
+  const ageText = Number.isFinite(age) ? `${Math.round(age)} s` : 'Unknown';
+  document.getElementById('powerStatusAge').textContent = `Snapshot age at refresh: ${ageText}`;
+  const sources = { optimizer: 'Last optimizer', preset: 'Preset' };
+  for (const key of ['grid_export', 'grid_import', 'ess_charge']) {
+    const row = status?.[key];
+    const source = sources[row?.target_source];
+    const target = row?.target_kw;
+    document.getElementById(`power-${key}-target`).textContent =
+      source && Number.isFinite(target) ? `${target.toFixed(2)} kW (${source})` : 'Unknown';
+    document.getElementById(`power-${key}-limit`).textContent =
+      formatReportedPower(row?.ha_limit_kw, row?.ha_limit_status);
+    document.getElementById(`power-${key}-measured`).textContent =
+      formatReportedPower(row?.measured_power_kw, row?.measured_power_status, key === 'ess_charge');
+  }
+}
+
 function updateOverview() {
   const s = S;
+  renderPowerStatus(s.power_status);
   const forecastNowKw = currentPvForecastKw();
   const staleEl = document.getElementById('staleBanner');
   const age = Number(s?.data_age_seconds);
@@ -2549,7 +2601,7 @@ function updateOverview() {
     { label: 'Feed-in price', value: `${fcc(s.feedin_price)}/kWh`, tone: 'feedin' },
     { label: 'PV today', value: `${fc(s.forecast_today,1)}kWh`, tone: 'pvtoday' },
   ]);
-  renderChartNow('nowFlow', 'Now (live sensors)', [
+  renderChartNow('nowFlow', 'Sensor snapshot', [
     { label: 'Import', value: `${fc(s.grid_import_power_kw,1)}kW`, tone: 'import' },
     { label: 'Export', value: `${fc(s.grid_export_power_kw,1)}kW`, tone: 'export' },
   ]);
@@ -2566,15 +2618,13 @@ function updateOverview() {
   setTextWithFlash('sBat', fc(s.battery_soc,1));
   setTextWithFlash('sSunrise', fc(s.sunrise_soc_target,2));
   setTextWithFlash('sImpPrice', fcc(s.current_price));
-  setTextWithFlash('sExpLimVal', fc(s.export_limit,2)+' kW');
   setTextWithFlash('sFIT', fcc(s.feedin_price));
-  setTextWithFlash('sImpLimVal', fc(s.import_limit,2)+' kW');
   setTextWithFlash('sPVMax', fc(s.pv_max_power_limit,2)+' kW');
   setTextWithFlash('sESSThresh', '1.0 kW');
   const chargeKwh = Number(s.daily_battery_charge_kwh);
   const dischargeKwh = Number(s.daily_battery_discharge_kwh);
-  const chargeStr = Number.isFinite(chargeKwh) ? `-${fc(chargeKwh,0)}` : '---';
-  const dischargeStr = Number.isFinite(dischargeKwh) ? `+${fc(dischargeKwh,0)}` : '---';
+  const chargeStr = Number.isFinite(chargeKwh) ? fc(chargeKwh,0) : '---';
+  const dischargeStr = Number.isFinite(dischargeKwh) ? fc(dischargeKwh,0) : '---';
   const battFlowTotal = Number.isFinite(chargeKwh) && Number.isFinite(dischargeKwh)
     ? `${fc(chargeKwh + dischargeKwh,0)}`
     : '---';
@@ -2596,7 +2646,7 @@ function updateOverview() {
       : `Remaining: ${fc(currentKwh,1)} kWh`);
   setTextWithFlash('lbl-sBat', `Battery SoC (${socSuffix})`);
 
-  setTextWithFlash('lbl-gBattFlow', `Discharge/Charge (${chargeStr}/${dischargeStr}, Total ${battFlowTotal} kWh)`);
+  setTextWithFlash('lbl-gBattFlow', `Battery power (sensor or estimate) · Daily charge/discharge ${chargeStr}/${dischargeStr}, total ${battFlowTotal} kWh`);
   setTextWithFlash('lbl-gLoad', `Power Consumption (Total: ${fc(s.daily_load_kwh,1)} kWh)`);
   setTextWithFlash('lbl-gPV', `Solar Output (Remaining: ${fc(s.forecast_remaining,1)} kWh)`);
   setTextWithFlash('lbl-gGridImp', `Grid Import (Total: ${fc(s.daily_import_kwh,1)} kWh)`);
@@ -2719,12 +2769,10 @@ function updateOverview() {
     ? ((Number(s.current_price) - importForecastRange.min) / Math.max(0.001, importForecastRange.max - importForecastRange.min)) * 100
     : 0;
   setGlanceFill('card-sImpPrice', importPricePosition, 'rgba(251,146,60,.20)');
-  setGlanceFill('card-sExpLimVal', (Number(s.export_limit) / Math.max(1, getDischargeClampMax())) * 100, 'rgba(74,222,128,.20)');
   const feedinPricePosition = feedinForecastRange.max != null && feedinForecastRange.min != null
     ? ((Number(s.feedin_price) - feedinForecastRange.min) / Math.max(0.001, feedinForecastRange.max - feedinForecastRange.min)) * 100
     : 0;
   setGlanceFill('card-sFIT', feedinPricePosition, 'rgba(74,222,128,.18)');
-  setGlanceFill('card-sImpLimVal', (Number(s.import_limit) / Math.max(1, getChargeClampMax())) * 100, 'rgba(251,191,36,.20)');
   setGlanceFill('card-sPVMax', (Number(s.pv_max_power_limit) / Math.max(25, Number(s.pv_max_power_limit) || 25)) * 100, 'rgba(74,222,128,.20)');
   setGlanceFill('card-sESSThresh', (Number(1.0) / 5) * 100, 'rgba(134,239,172,.18)');
 
@@ -2755,7 +2803,7 @@ function updateOverview() {
   applyGlanceTone('card-gGridExp', exportRatio, 0.22);
 
   // Reason
-  document.getElementById('reasonBar').textContent = s.outcome_reason || '---';
+  document.getElementById('reasonBar').textContent = `Control summary: ${s.outcome_reason || 'Unknown'}`;
 
   // Sync controls
   const focusedId = document.activeElement?.id;

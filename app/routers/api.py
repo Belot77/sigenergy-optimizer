@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from ..config import settings
 from ..forecast_utils import forecast_entry_time, forecast_entry_value
 from ..decision_trace_store import TICKET_SECONDS, TraceDownload
+from ..models import Decision, HVACObservedValue, SolarState
 from ..storage_worker import StorageUnavailable
 
 logger = logging.getLogger(__name__)
@@ -511,6 +512,98 @@ def _live_outcome_reason(mode: str, d: Any, cfg: Any) -> str | None:
     return d.outcome_reason if d else None
 
 
+def _dashboard_power_status(
+    state: SolarState | None,
+    decision: Decision | None,
+    cfg: Any,
+    effective_mode: str,
+    preset_targets: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Separate historical targets from HA reports in the retained snapshot."""
+    now = datetime.now(timezone.utc).timestamp()
+    snapshot_age = now - state.timestamp.timestamp() if state else None
+    snapshot_max_age = max(45, int(settings.poll_interval_seconds) * 2)
+    report_max_age = getattr(cfg, "hvac_solar_data_max_age_seconds", settings.hvac_solar_data_max_age_seconds)
+    automated_target = (
+        state is not None
+        and state.sigenergy_mode_observed
+        and effective_mode == getattr(cfg, "automated_option", "Automated")
+        and state.hvac_solar_inputs.control_mode.value == effective_mode
+        and decision is not None
+        and decision.trace_gates.get("observed_automated_control_mode") is True
+    )
+    inputs = state.hvac_solar_inputs if state else None
+
+    def finite_number(value: Any, *, signed: bool = False) -> float | None:
+        if isinstance(value, bool) or not isinstance(value, (float, int)):
+            return None
+        if not math.isfinite(value) or (not signed and value < 0.0):
+            return None
+        return value
+
+    def reported(
+        observation: HVACObservedValue | None, *, signed: bool = False,
+    ) -> tuple[float | None, str]:
+        if observation is None or not observation.available:
+            return None, "unavailable"
+        value = finite_number(observation.value, signed=signed)
+        report_ts = finite_number(observation.observed_at_ts)
+        if value is None or report_ts is None or snapshot_age is None or snapshot_age < 0:
+            return None, "unverified"
+        report_age = now - report_ts
+        if report_age < -5.0:
+            return None, "unverified"
+        if snapshot_age > snapshot_max_age or report_age > report_max_age:
+            return None, "stale"
+        if not observation.fresh:
+            return None, "unverified"
+        return value, "reported"
+
+    def row(
+        preset_key: str,
+        decision_key: str,
+        limit: HVACObservedValue | None,
+        power: HVACObservedValue | None,
+        *,
+        signed_power: bool = False,
+    ) -> dict[str, Any]:
+        target, source = None, None
+        if preset_targets is not None:
+            target, source = finite_number(preset_targets.get(preset_key)), "preset"
+        elif automated_target:
+            target, source = finite_number(getattr(decision, decision_key)), "optimizer"
+        limit_kw, limit_status = reported(limit)
+        power_kw, power_status = reported(power, signed=signed_power)
+        return {
+            "target_kw": target,
+            "target_source": source if target is not None else None,
+            "ha_limit_kw": limit_kw,
+            "ha_limit_status": limit_status,
+            "measured_power_kw": power_kw,
+            "measured_power_status": power_status,
+        }
+
+    return {
+        "snapshot_age_seconds": snapshot_age if snapshot_age is not None and snapshot_age >= 0 else None,
+        "grid_export": row(
+            "grid_export_limit", "export_limit",
+            inputs.observed_export_limit if inputs else None,
+            inputs.grid_export_power if inputs else None,
+        ),
+        "grid_import": row(
+            "grid_import_limit", "import_limit",
+            state.current_import_limit_observation if state else None,
+            inputs.grid_import_power if inputs else None,
+        ),
+        "ess_charge": row(
+            "ess_charge_limit", "ess_charge_limit",
+            state.current_ess_charge_limit_observation if state else None,
+            inputs.battery_power if inputs else None,
+            signed_power=True,
+        ),
+    }
+
+
 def _solar_surplus_status(d: Any, *, manual_active: bool) -> dict[str, Any]:
     """Present the optimizer's Solar Surplus evidence without recalculating it."""
     trace_gates = d.trace_gates if d and isinstance(d.trace_gates, dict) else {}
@@ -981,6 +1074,7 @@ async def get_status(request: Request) -> dict[str, Any]:
         "ws_connected": opt.ws_connected,
         "stale_data": stale_data,
         "data_age_seconds": data_age_seconds,
+        "power_status": _dashboard_power_status(s, d, cfg, effective_mode, manual_targets),
         "config_time_warnings": getattr(opt, "config_time_warnings", []),
         "last_update": s.timestamp.isoformat() if s else None,
         "battery_soc": s.battery_soc if s else None,
@@ -1443,6 +1537,7 @@ async def ws_status(websocket: WebSocket) -> None:
                 {
                     "ws_connected": opt.ws_connected,
                     "last_update": s.timestamp.isoformat() if s else None,
+                    "power_status": _dashboard_power_status(s, d, opt.cfg, effective_mode, manual_targets),
                     "battery_soc": s.battery_soc if s else None,
                     "available_discharge_energy_kwh": s.available_discharge_energy_kwh if s else None,
                     "pv_kw": s.pv_kw if s else None,

@@ -3962,6 +3962,7 @@ class SigEnergyOptimizer:
             cfg.grid_import_limit,
             max_age_seconds=live_max_age,
         )
+        s.current_import_limit_observation = import_limit_observation
         current_import_limit = (
             float(import_limit_observation.value)
             if import_limit_observation.available
