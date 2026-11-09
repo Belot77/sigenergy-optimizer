@@ -3397,11 +3397,16 @@ async function applyESS(btn) {
   setPendingBadge('pending-ess', true, 'saving', 'Saving...');
   btn.disabled=true; btn.textContent='Applying---';
   try {
+    const pvMaxInput = prev.pvMax.trim();
+    const pvMaxKw = Number(pvMaxInput);
+    if (pvMaxInput === '' || !Number.isFinite(pvMaxKw) || pvMaxKw < 0) {
+      throw new Error('Enter a valid PV Max limit of 0 kW or more.');
+    }
     const target = {
       ems_mode: document.getElementById('emsMode').value,
       grid_export_limit: +document.getElementById('expLim').value||0,
       grid_import_limit: +document.getElementById('impLim').value||0,
-      pv_max_power_limit: +document.getElementById('pvMax').value||25,
+      pv_max_power_limit: pvMaxKw,
       ess_charge_limit: +document.getElementById('essChgLim').value||0,
       ess_discharge_limit: +document.getElementById('essDchLim').value||0,
     };
