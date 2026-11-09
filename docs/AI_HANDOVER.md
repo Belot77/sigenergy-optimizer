@@ -1,22 +1,24 @@
 # SigEnergy Optimizer AI Handover
 
-## Local release candidate 2.3.81-haos92
+## Current published release 2.3.81-haos92 (9 November 2026)
 
-The local `release/2.3.81-haos92` worktree is based on `4acb81cb6f941556b683da49a6ccdaf6154780f3`. It packages the merged O9 changes in PRs #82–#85. The ESS form preserves a zero PV Max, manual Mode and ESS actions acknowledge API acceptance, and the dashboard separates targets, HA limit reports and measured power. WebSocket status reports unavailable evidence before the first snapshot. Hardware settlement requires independent evidence. [Candidate checks and approval gates](HAOS92_RELEASE_CANDIDATE.md)
+Published on 9 November 2026 at 15:02:13 AEDT (2026-11-09T04:02:13Z) from `04eeaf153a2eb2b5fb22751664e33f807e0130a1`. Metadata PR #86 merged at `f2f4c6082dbb065809b7feeab3656d6fc1483987` with the tagged tree `f4af62f494c5acebe31a76765a82865da4194a5e`. Both platform images were verified against that source. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.81-haos92)
 
-`.92` is uncommitted and unpublished. `.91` remains the latest published release and `.90` the latest confirmed installed release. The operator last confirmed Auto update off on 9 November. O4, O5, O6 and the broader O9 ownership and settings audit remain open, along with supervised live proof. Publication, installation and live actions require separate authorization.
+PRs #82–#85 preserve a zero PV Max, acknowledge Mode and ESS API acceptance, separate targets from HA limit reports and measured power, and preserve startup WebSocket status. Hardware settlement requires request-specific evidence. [Publication receipt](HAOS92_RELEASE_CANDIDATE.md)
 
-## Current published release 2.3.80-haos91 (9 November 2026)
+`.90` remains the latest confirmed installation. The operator last confirmed Auto update off on 9 November. After an authorized installation, verify the `2.3.81-haos92` runtime and exact tagged source. O4, O5, O6 and the broader O9 ownership and settings audit remain open, along with supervised live proof.
+
+## Prior published release 2.3.80-haos91 (9 November 2026)
 
 Published on 9 November at 07:29:56 AEDT (8 November at 20:29:56 UTC). Tag `v2.3.80-haos91` resolves to source `6144d027496b2a1822219324eb37512d44b002c1`. Metadata PR #80 merged normally at 07:29:52 AEDT as `25c9c585f6a34614983584f4e937f0710f221ee5` with the tagged tree `5c75deb7276c0e3f69bea778a649f493e5317405`. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.80-haos91)
 
-Build 42520031965 succeeded. The version and `latest` tags resolve to OCI index `sha256:cefd47aa755d9365d3dce3c8054e8acdeb6c9cbf43fb4ba0fc4c2a4bf0d7130e`. Verification matched all 11 layer hashes and diff IDs and 15 tagged source files and modes per architecture. [Build run](https://github.com/Belot77/sigenergy-optimizer/actions/runs/42520031965)
+Build 42520031965 succeeded. At publication, the version and `latest` tags resolved to OCI index `sha256:cefd47aa755d9365d3dce3c8054e8acdeb6c9cbf43fb4ba0fc4c2a4bf0d7130e`. Verification matched all 11 layer hashes and diff IDs and 15 tagged source files and modes per architecture. [Build run](https://github.com/Belot77/sigenergy-optimizer/actions/runs/42520031965)
 
 PR #79 adds passive Evening Boost (O4) sunset evidence to the decision trace. Boost qualification, export priority and actuation follow the existing control path. The O4 continuation decision, live capture and physical acceptance remain open.
 
 The guarded source suite passed 1,747 tests and 1,779 subtests before replacing the fixture timestamp with a synthetic value. The exact sanitized source passed 293 tests and 299 subtests in 16 guarded modules, and the local release preparation passed 309 tests and 299 subtests in 18 modules. Independent source reviews passed.
 
-`.91` is install-ready pending separate authorization. `.90` remains the latest confirmed installed release. The operator reconfirmed Auto update off on 9 November. After an authorized installation, verify the runtime and exact container source from startup, then capture and assess the live evidence. [The .91 publication receipt](HAOS91_RELEASE_CANDIDATE.md)
+`.91` introduced passive sunset evidence. Its O4 live proof remains open. [The .91 publication receipt](HAOS91_RELEASE_CANDIDATE.md)
 
 ## Prior published release 2.3.79-haos90 (5 November 2026)
 

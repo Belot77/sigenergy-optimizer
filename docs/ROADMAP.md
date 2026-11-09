@@ -1,20 +1,20 @@
 # Roadmap
 
-## Local release candidate 2.3.81-haos92
+## Current published release 2.3.81-haos92 (9 November 2026)
 
-PRs #82–#85 have merged the narrow O9 dashboard corrections and the empty-snapshot WebSocket fix. After an authorized installation of .92, verify request acknowledgement, HA readbacks and measured power. `.91` remains the latest published release and `.90` the latest confirmed installed release. [Candidate record](HAOS92_RELEASE_CANDIDATE.md)
+.92 contains the narrow O9 dashboard corrections and empty-snapshot WebSocket fix from PRs #82–#85. After an authorized installation, verify request acknowledgement, HA readbacks and measured power. `.90` remains the latest confirmed installation. [Publication receipt](HAOS92_RELEASE_CANDIDATE.md)
 
 O4 Evening Boost sunset continuation and stability, O5 overnight reserve and load/price policy, O6 broader Morning Dump handoff and depletion, and O9's broader ownership and settings audit remain open. Live evidence is still needed for these applicable control paths, including O4's passive sunset trace. The queued ownership audit follows Phase 2. [Control-ownership audit](#5-short-control-ownership-audit)
 
-## Current published release 2.3.80-haos91 (9 November 2026)
+## Prior published release 2.3.80-haos91 (9 November 2026)
 
 Published on 9 November at 07:29:56 AEDT (8 November at 20:29:56 UTC). Tag `v2.3.80-haos91` resolves to source `6144d027496b2a1822219324eb37512d44b002c1`. Metadata PR #80 merged normally at 07:29:52 AEDT as `25c9c585f6a34614983584f4e937f0710f221ee5` with the tagged tree `5c75deb7276c0e3f69bea778a649f493e5317405`. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.80-haos91)
 
-Build 42520031965 succeeded. The version and `latest` tags resolve to OCI index `sha256:cefd47aa755d9365d3dce3c8054e8acdeb6c9cbf43fb4ba0fc4c2a4bf0d7130e`. Verification matched all 11 layer hashes and diff IDs and 15 tagged source files and modes per architecture. [Build run](https://github.com/Belot77/sigenergy-optimizer/actions/runs/42520031965)
+Build 42520031965 succeeded. At publication, the version and `latest` tags resolved to OCI index `sha256:cefd47aa755d9365d3dce3c8054e8acdeb6c9cbf43fb4ba0fc4c2a4bf0d7130e`. Verification matched all 11 layer hashes and diff IDs and 15 tagged source files and modes per architecture. [Build run](https://github.com/Belot77/sigenergy-optimizer/actions/runs/42520031965)
 
 PR #79 adds passive Evening Boost (O4) sunset evidence to the decision trace. Boost qualification, export priority and actuation follow the existing control path. The O4 continuation decision, live capture and physical acceptance remain open.
 
-`.91` is install-ready pending separate authorization. `.90` remains the latest confirmed installed release. The operator reconfirmed Auto update off on 9 November. After an authorized installation, verify the runtime and exact container source from startup, then capture and assess the live evidence. [The .91 publication receipt](HAOS91_RELEASE_CANDIDATE.md)
+`.91` introduced passive sunset evidence. Its O4 live proof remains open. [The .91 publication receipt](HAOS91_RELEASE_CANDIDATE.md)
 
 ## Prior published release 2.3.79-haos90 (5 November 2026)
 
@@ -444,7 +444,7 @@ This bounded correction preserves the established phase ordering, dependencies a
 
 After Phase 2, confirm that every owner changes only its own actuator domains and that Manual, Force, freshness, price, reserve, import-cost, and settlement protections compose correctly. Resolve material findings before restructuring or integration.
 
-The merged .92 dashboard corrections address three narrow O9 presentation and input issues. The broader O9 ownership and settings audit still includes Solar Override and configuration ownership. [Current O9 status](CURRENT_STATE.md)
+The published .92 dashboard corrections address three narrow O9 presentation and input issues and startup WebSocket status. The broader O9 ownership and settings audit still includes Solar Override and configuration ownership. [Current O9 status](CURRENT_STATE.md)
 
 ## 6. Architecture refactor / consolidation
 
