@@ -522,8 +522,6 @@ def _dashboard_power_status(
     """Separate historical targets from HA reports in the retained snapshot."""
     now = datetime.now(timezone.utc).timestamp()
     snapshot_age = now - state.timestamp.timestamp() if state else None
-    snapshot_max_age = max(45, int(settings.poll_interval_seconds) * 2)
-    report_max_age = getattr(cfg, "hvac_solar_data_max_age_seconds", settings.hvac_solar_data_max_age_seconds)
     automated_target = (
         state is not None
         and state.sigenergy_mode_observed
@@ -553,6 +551,8 @@ def _dashboard_power_status(
         report_age = now - report_ts
         if report_age < -5.0:
             return None, "unverified"
+        snapshot_max_age = max(45, int(settings.poll_interval_seconds) * 2)
+        report_max_age = getattr(cfg, "hvac_solar_data_max_age_seconds", settings.hvac_solar_data_max_age_seconds)
         if snapshot_age > snapshot_max_age or report_age > report_max_age:
             return None, "stale"
         if not observation.fresh:

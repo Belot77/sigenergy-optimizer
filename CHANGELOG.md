@@ -9,6 +9,8 @@
 - The dashboard separates grid and ESS charge targets, Home Assistant limit
   reports, and measured power. Snapshot age and evidence labels identify
   stale, missing, or unverified readings.
+- WebSocket status can report unavailable power evidence before the first
+  optimizer snapshot.
 
 ## Current published release: 2.3.80-haos91 - 9 November 2026
 
