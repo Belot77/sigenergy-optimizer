@@ -1,5 +1,11 @@
 # SigEnergy Optimizer AI Handover
 
+## Local release candidate 2.3.81-haos92
+
+The local `release/2.3.81-haos92` worktree is based on `4acb81cb6f941556b683da49a6ccdaf6154780f3`. It packages the merged O9 changes in PRs #82–#85. The ESS form preserves a zero PV Max, manual Mode and ESS actions acknowledge API acceptance, and the dashboard separates targets, HA limit reports and measured power. WebSocket status reports unavailable evidence before the first snapshot. Hardware settlement requires independent evidence. [Candidate checks and approval gates](HAOS92_RELEASE_CANDIDATE.md)
+
+`.92` is uncommitted and unpublished. `.91` remains the latest published release and `.90` the latest confirmed installed release. The operator last confirmed Auto update off on 9 November. O4, O5, O6 and the broader O9 ownership and settings audit remain open, along with supervised live proof. Publication, installation and live actions require separate authorization.
+
 ## Current published release 2.3.80-haos91 (9 November 2026)
 
 Published on 9 November at 07:29:56 AEDT (8 November at 20:29:56 UTC). Tag `v2.3.80-haos91` resolves to source `6144d027496b2a1822219324eb37512d44b002c1`. Metadata PR #80 merged normally at 07:29:52 AEDT as `25c9c585f6a34614983584f4e937f0710f221ee5` with the tagged tree `5c75deb7276c0e3f69bea778a649f493e5317405`. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.80-haos91)

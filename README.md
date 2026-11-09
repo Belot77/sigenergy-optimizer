@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Local release candidate 2.3.81-haos92
+
+The candidate packages three dashboard fixes. Manual ESS preserves a PV Max of 0 kW. Mode and ESS acknowledge accepted requests. Power Status shows targets, Home Assistant limit reports, and measured flow separately. Before the first snapshot, the WebSocket reports unavailable power evidence. [Release record](docs/HAOS92_RELEASE_CANDIDATE.md)
+
 ## Current published release 2.3.80-haos91 (9 November 2026)
 
 Published on 9 November at 07:29:56 AEDT (8 November at 20:29:56 UTC). Tag `v2.3.80-haos91` resolves to source `6144d027496b2a1822219324eb37512d44b002c1`. Metadata PR #80 merged normally at 07:29:52 AEDT as `25c9c585f6a34614983584f4e937f0710f221ee5` with the tagged tree `5c75deb7276c0e3f69bea778a649f493e5317405`. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.80-haos91)

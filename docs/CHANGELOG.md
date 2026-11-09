@@ -1,6 +1,6 @@
 # Changelog
 
-Current status: **2.3.62-haos73** is the latest published release, published 19 October 2026 at 07:02 UTC (not draft), targeting source `46d36358d38137231dff081176a372c3aa1f4cee`. The `.73` version-preparation commit changes version markers and documentation relative to its PR #23 parent; the full `.73` release includes source pinning and has no optimizer-control delta over `.72`. Supplied runtime evidence at 20 October 06:53:25 Australia/Sydney identifies installed `.73` at that exact source; Supervisor records the local build and final start at 06:53:23. The 371-row live sample from 08:25–09:01 records 356 successful, 8 failed and 7 pending application outcomes. See [HAOS .73 status and live proof](HAOS73_STATUS_AND_LIVE_PROOF.md) for the evidence and limits. This sample supports behavior observed in that interval only; the historical 13-second gap remains open. `.72` was the previous latest release and was superseded by `.73` later the same day.
+This page records historical checkpoints. See the [root changelog](../CHANGELOG.md) for current release status.
 
 ## 2026-10-20 - HAOS .73 publication and live-evidence checkpoint
 

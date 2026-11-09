@@ -1,5 +1,11 @@
 # Roadmap
 
+## Local release candidate 2.3.81-haos92
+
+PRs #82–#85 have merged the narrow O9 dashboard corrections and the empty-snapshot WebSocket fix. After an authorized installation of .92, verify request acknowledgement, HA readbacks and measured power. `.91` remains the latest published release and `.90` the latest confirmed installed release. [Candidate record](HAOS92_RELEASE_CANDIDATE.md)
+
+O4 Evening Boost sunset continuation and stability, O5 overnight reserve and load/price policy, O6 broader Morning Dump handoff and depletion, and O9's broader ownership and settings audit remain open. Live evidence is still needed for these applicable control paths, including O4's passive sunset trace. The queued ownership audit follows Phase 2. [Control-ownership audit](#5-short-control-ownership-audit)
+
 ## Current published release 2.3.80-haos91 (9 November 2026)
 
 Published on 9 November at 07:29:56 AEDT (8 November at 20:29:56 UTC). Tag `v2.3.80-haos91` resolves to source `6144d027496b2a1822219324eb37512d44b002c1`. Metadata PR #80 merged normally at 07:29:52 AEDT as `25c9c585f6a34614983584f4e937f0710f221ee5` with the tagged tree `5c75deb7276c0e3f69bea778a649f493e5317405`. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.80-haos91)
@@ -437,6 +443,8 @@ This bounded correction preserves the established phase ordering, dependencies a
 ## 5. Short control-ownership audit
 
 After Phase 2, confirm that every owner changes only its own actuator domains and that Manual, Force, freshness, price, reserve, import-cost, and settlement protections compose correctly. Resolve material findings before restructuring or integration.
+
+The merged .92 dashboard corrections address three narrow O9 presentation and input issues. The broader O9 ownership and settings audit still includes Solar Override and configuration ownership. [Current O9 status](CURRENT_STATE.md)
 
 ## 6. Architecture refactor / consolidation
 
