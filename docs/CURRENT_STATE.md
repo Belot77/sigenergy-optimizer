@@ -1,12 +1,18 @@
 # Current State
 
+## O4 Evening Boost sunset candidate
+
+The O4 candidate on `fix/o4-boost-sunset-rollover` is based on `fe5bc9b`. It preserves already admitted and successfully applied automatic Boost through one verified natural sunset when the current gates still pass. New and interrupted sessions require 120 seconds of qualification. The guarded full suite passed 1,765 tests and 1,800 subtests, and independent source and test reviews cleared the candidate. Release and supervised live verification are pending. [Control contract](CONTROL_CONTRACT.md#continuation-through-natural-sunset)
+
+O5 reserve policy remains parked. Broader O6 handoff and depletion and O9 ownership and settings work remain open. The quick-tile repair is outside scope.
+
 ## Current published release 2.3.81-haos92 (9 November 2026)
 
 Published on 9 November 2026 at 15:02:13 AEDT (2026-11-09T04:02:13Z) from `04eeaf153a2eb2b5fb22751664e33f807e0130a1`. Metadata PR #86 merged at `f2f4c6082dbb065809b7feeab3656d6fc1483987` with the tagged tree `f4af62f494c5acebe31a76765a82865da4194a5e`. Both platform images were verified against that source. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.81-haos92)
 
 The .92 release packages PRs #82–#85. Manual ESS preserves 0 kW PV Max, Mode and ESS acknowledge API acceptance, and the Power Status card separates targets, HA limit reports and measured power. Before the first snapshot, the WebSocket reports unavailable evidence. [Publication receipt](HAOS92_RELEASE_CANDIDATE.md)
 
-The latest confirmed installation is `.90`, and the operator last confirmed Auto update off on 9 November. Live acceptance requires request-correlated readbacks and measured flow after an authorized installation.
+The operator verified the `2.3.81-haos92` installation from the 9 November 15:09:20 AEDT startup with source `04eeaf153a2eb2b5fb22751664e33f807e0130a1`, matching the published source. The operator last confirmed Auto update off on 9 November. Live acceptance requires request-correlated readbacks and measured flow.
 
 ## Prior published release 2.3.80-haos91 (9 November 2026)
 

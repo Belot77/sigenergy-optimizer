@@ -4,7 +4,7 @@
 
 Published on 9 November 2026 at 15:02:13 AEDT (2026-11-09T04:02:13Z) from `04eeaf153a2eb2b5fb22751664e33f807e0130a1`. Metadata PR #86 merged at `f2f4c6082dbb065809b7feeab3656d6fc1483987` with the tagged tree `f4af62f494c5acebe31a76765a82865da4194a5e`. Both platform images were verified against that source. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.81-haos92)
 
-Manual ESS preserves a PV Max of 0 kW. Mode and ESS acknowledge accepted requests. Power Status shows targets, Home Assistant limit reports, and measured flow separately. Before the first snapshot, the WebSocket reports unavailable power evidence. `.90` remains the latest confirmed installation. [Publication receipt](docs/HAOS92_RELEASE_CANDIDATE.md)
+Manual ESS preserves a PV Max of 0 kW. Mode and ESS acknowledge accepted requests. Power Status shows targets, Home Assistant limit reports, and measured flow separately. Before the first snapshot, the WebSocket reports unavailable power evidence. The operator verified the `2.3.81-haos92` installation from the 9 November 15:09:20 AEDT startup with source `04eeaf153a2eb2b5fb22751664e33f807e0130a1`, matching the published source. [Publication receipt](docs/HAOS92_RELEASE_CANDIDATE.md)
 
 ## Prior published release 2.3.80-haos91 (9 November 2026)
 

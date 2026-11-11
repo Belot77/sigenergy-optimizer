@@ -24,7 +24,7 @@ import logging
 import math
 import os
 from time import monotonic
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, AsyncIterator, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -508,6 +508,24 @@ class _ActuatorApplicationResult:
     restrictive_settlement_expired: bool = False
 
 
+@dataclass(frozen=True)
+class _EveningBoostContext:
+    local_day: date
+    next_sunrise_ts: Optional[float]
+    next_sunset_ts: Optional[float]
+    sun_above_horizon: bool
+    battery_capacity_kwh: float
+    policy: tuple
+
+
+@dataclass(frozen=True)
+class _EveningBoostSunObservation:
+    context: _EveningBoostContext
+    changed_at_ts: float
+    reported_at_ts: float
+    evaluated_at_ts: float
+
+
 @dataclass
 class _EveningBoostReentry:
     """Process-local admission evidence, never a claim of physical activation."""
@@ -521,7 +539,8 @@ class _EveningBoostReentry:
     last_report_monotonic: Optional[float] = None
     last_evaluated_monotonic: Optional[float] = None
     last_wall_ts: Optional[float] = None
-    context: Optional[tuple] = None
+    context: Optional[_EveningBoostContext] = None
+    applied_sunset_proof: Optional[_EveningBoostSunObservation] = None
 
 
 class _MscTransitionPending(RuntimeError):
@@ -3258,6 +3277,31 @@ class SigEnergyOptimizer:
         reported = cls._parse_aware_metadata_timestamp(obj.get("last_reported"))
         return reported if reported is not None and reported >= updated else None
 
+    def _evening_boost_sun_changed_at(
+        self, rest: dict[str, Any], metadata: dict[str, Any],
+        enriched: dict[str, Any], observed_at: datetime,
+    ) -> Optional[float]:
+        """Verify the horizon transition against both reads in this HA batch."""
+        if enriched.get("_msc_metadata_status") != "accepted":
+            return None
+        changed = self._parse_aware_metadata_timestamp(rest.get("last_changed"))
+        updated = self._parse_aware_metadata_timestamp(rest.get("last_updated"))
+        reported = self._state_metadata_timestamp(enriched)
+        if not (
+            changed is not None and updated is not None and reported is not None
+            and changed == self._parse_aware_metadata_timestamp(metadata.get("last_changed"))
+            and changed <= updated <= reported <= observed_at
+        ):
+            return None
+        attributes = rest.get("attributes")
+        if not isinstance(attributes, dict):
+            return None
+        for key in ("next_rising", "next_setting"):
+            horizon = self._parse_aware_metadata_timestamp(attributes.get(key))
+            if horizon is None or horizon != self._parse_aware_metadata_timestamp(metadata.get(key)):
+                return None
+        return changed.timestamp()
+
     @classmethod
     def _state_metadata_is_fresh(
         cls,
@@ -3602,6 +3646,7 @@ class SigEnergyOptimizer:
                     value=sun_observation.value == "above_horizon",
                     available=True,
                     fresh=sun_observation.fresh,
+                    observed_at_ts=sun_observation.observed_at_ts,
                 )
             else:
                 sun_observation = HVACObservedValue()
@@ -4298,6 +4343,11 @@ class SigEnergyOptimizer:
             and math.isfinite(s.next_sunset_ts)
             and s.next_sunset_ts > now_ts
         )
+        if cfg.evening_boost_enabled:
+            s.evening_boost_sun_changed_at_ts = self._evening_boost_sun_changed_at(
+                rest.get(cfg.sun_entity) or {}, state_objects.get(cfg.sun_entity) or {},
+                bulk.get(cfg.sun_entity) or {}, observed_at,
+            )
         if s.next_sunrise_ts:
             raw_h = (s.next_sunrise_ts - now_ts) / 3600
             s.hours_to_sunrise = max(0.0, raw_h)
@@ -4853,10 +4903,12 @@ class SigEnergyOptimizer:
 
         # ---- Evening boost ------------------------------------------
         now_local_day = datetime.fromtimestamp(now_ts, tz=self._tz).date()
-        sunset_local_day = datetime.fromtimestamp(sunset_ts, tz=self._tz).date()
+        tomorrow = datetime.combine(
+            now_local_day + timedelta(days=1), time.min, tzinfo=self._tz,
+        )
         sunset_rolled_to_tomorrow = bool(
             detailed_forecast_validation_required
-            and sunset_local_day == now_local_day + timedelta(days=1)
+            and tomorrow.timestamp() <= sunset_ts < (tomorrow + timedelta(days=1)).timestamp()
         )
         evening_coverage_start_ts = now_ts
         evening_coverage_end_ts = sunset_ts
@@ -11833,7 +11885,9 @@ class SigEnergyOptimizer:
             reason=reason, generation=previous.generation + 1,
         )
 
-    def _evening_boost_reentry_context(self, s: SolarState, now_ts: float) -> tuple:
+    def _evening_boost_reentry_context(
+        self, s: SolarState, now_ts: float,
+    ) -> _EveningBoostContext:
         # A new day, sunrise horizon, capacity or policy configuration cannot
         # inherit qualification obtained under its predecessor.
         names = (
@@ -11854,11 +11908,64 @@ class SigEnergyOptimizer:
             "feedin_sensor", "feedin_forecast_sensor", "price_sensor",
             "price_forecast_sensor", "demand_window_sensor",
         )
-        return (
+        return _EveningBoostContext(
             datetime.fromtimestamp(now_ts, tz=self._tz).date(),
             s.next_sunrise_ts, s.next_sunset_ts, s.sun_above_horizon,
             s.battery_capacity_kwh,
-            *(getattr(self.cfg, name) for name in names),
+            tuple(getattr(self.cfg, name) for name in names),
+        )
+
+    def _evening_boost_sun_observation(
+        self, s: SolarState, now_ts: float,
+    ) -> Optional[_EveningBoostSunObservation]:
+        observation = s.hvac_solar_inputs.sun_above_horizon
+        stamp = observation.observed_at_ts
+        changed = s.evening_boost_sun_changed_at_ts
+        if not (
+            s.hvac_solar_inputs.live_snapshot
+            and s.sun_state_observation_trusted is True
+            and s.sunrise_observation_trusted is True
+            and s.next_sunset_ts is not None and math.isfinite(s.next_sunset_ts)
+            and observation.available and observation.fresh
+            and observation.value is s.sun_above_horizon
+            and isinstance(stamp, (int, float)) and not isinstance(stamp, bool)
+            and math.isfinite(stamp)
+            and changed is not None and changed <= stamp
+            and 0.0 <= now_ts - stamp <= self.cfg.hvac_solar_data_max_age_seconds
+        ):
+            return None
+        return _EveningBoostSunObservation(
+            self._evening_boost_reentry_context(s, now_ts), changed, stamp, now_ts,
+        )
+
+    def _evening_boost_natural_sunset(self, s: SolarState, now_ts: float) -> bool:
+        """Continue completed admission only through one observed natural sunset."""
+        admission = self._evening_boost_reentry
+        previous = admission.applied_sunset_proof
+        if (
+            admission.phase != "admitted" or previous is None
+            or s.sunset_observation_trusted is not True
+        ):
+            return False
+        current = self._evening_boost_sun_observation(s, now_ts)
+        if current is None:
+            return False
+        before, after = previous.context, current.context
+        following_day = datetime.combine(
+            after.local_day + timedelta(days=1), time.min, tzinfo=self._tz,
+        )
+        return bool(
+            before == admission.context
+            and before.sun_above_horizon and not after.sun_above_horizon
+            and replace(
+                after, next_sunset_ts=before.next_sunset_ts, sun_above_horizon=True,
+            ) == before
+            and previous.reported_at_ts <= previous.evaluated_at_ts
+            < before.next_sunset_ts <= current.changed_at_ts
+            and current.changed_at_ts - before.next_sunset_ts <= _EVENING_BOOST_MAX_REPORT_GAP_SECONDS
+            and after.next_sunset_ts > after.next_sunrise_ts
+            and following_day.timestamp() <= after.next_sunset_ts
+            < (following_day + timedelta(days=1)).timestamp()
         )
 
     def _evening_boost_reentry_evidence(self, s: SolarState, now_ts: float) -> Optional[float]:
@@ -11943,11 +12050,20 @@ class SigEnergyOptimizer:
         context = self._evening_boost_reentry_context(s, now_ts)
         admission = self._evening_boost_reentry
         if admission.phase != "closed":
-            if (
-                context != admission.context
-                or stamp - admission.last_report_ts > _EVENING_BOOST_MAX_REPORT_GAP_SECONDS
+            report_gap = (
+                stamp - admission.last_report_ts > _EVENING_BOOST_MAX_REPORT_GAP_SECONDS
                 or now_mono - admission.last_report_monotonic > _EVENING_BOOST_MAX_REPORT_GAP_SECONDS
+            )
+            if (
+                not report_gap and context != admission.context
+                and self._evening_boost_natural_sunset(s, now_ts)
             ):
+                # Adopt the new horizon only at decision time. Dispatch still
+                # requires the new context and rejects old decisions by generation.
+                admission.context = context
+                admission.generation += 1
+                admission.reason = "verified_natural_sunset_continuation"
+            if report_gap or context != admission.context:
                 self._reset_evening_boost_reentry("context_changed_or_report_gap")
                 admission = self._evening_boost_reentry
         if admission.phase == "closed":
@@ -12035,6 +12151,28 @@ class SigEnergyOptimizer:
             d.trace_gates["evening_boost_reentry_application_retained"] = False
             d.trace_values["evening_boost_reentry_after_application_state"] = "closed"
             return False
+        admission = self._evening_boost_reentry
+        # Pending settlement may retain ordinary qualification, but only a real
+        # completed Boost application can anchor the sunset exception.
+        previous_proof = admission.applied_sunset_proof
+        admission.applied_sunset_proof = None
+        if (
+            verified_completion and admission.phase == "admitted"
+            and d.export_intent == BATTERY_EXPORT and d.evening_export_boost_active
+            and d.trace_values.get("battery_export_final_owner") == "evening_export_boost"
+        ):
+            proof = self._evening_boost_sun_observation(s, datetime.now().timestamp())
+            if (
+                proof is not None and proof.context == admission.context
+                and proof.context.sun_above_horizon
+                and proof.reported_at_ts < proof.context.next_sunset_ts
+            ):
+                if proof.evaluated_at_ts < proof.context.next_sunset_ts:
+                    admission.applied_sunset_proof = proof
+                elif previous_proof is not None and previous_proof.context == proof.context:
+                    # A completed cycle can still carry the last above-horizon
+                    # report as the clock crosses sunset. Keep the earlier proof.
+                    admission.applied_sunset_proof = previous_proof
         d.trace_gates["evening_boost_reentry_application_retained"] = True
         d.trace_values["evening_boost_reentry_after_application_state"] = self._evening_boost_reentry.phase
         return verified_pending
