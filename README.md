@@ -1,6 +1,10 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Release 2.3.83-haos94
+## Release 2.3.84-haos95
+
+The dashboard identifies Spike from the selected export policy and reports when export closure and Maximum Self Consumption are awaiting confirmation. The decision trace uses the same pending message when the decision holds export closed. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.84-haos95)
+
+## Prior release 2.3.83-haos94
 
 Dashboard Thresholds and Settings now save edited pricing fields only. Each confirmed save refreshes the saved values on both forms and preserves unsaved edits. An import-only edit can no longer resubmit a stale export limit. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.83-haos94)
 

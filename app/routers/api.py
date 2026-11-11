@@ -506,10 +506,12 @@ def _live_battery_power_kw(s: Any, d: Any, manual_targets: dict[str, Any] | None
     return d.battery_power_kw if d else None
 
 
-def _live_outcome_reason(mode: str, d: Any, cfg: Any) -> str | None:
-    if mode and mode not in {str(getattr(cfg, "automated_option", "Automated")), ""}:
+def _live_outcome_reason(mode: str, d: Decision | None, opt: Any) -> str | None:
+    if mode and mode not in {str(getattr(opt.cfg, "automated_option", "Automated")), ""}:
         return f"Manual mode active ({mode}); optimizer writes paused"
-    return d.outcome_reason if d else None
+    # Pending application keeps the previous applied decision for control.
+    pending = getattr(opt, "msc_export_pending_reason", None)
+    return pending if pending else (d.outcome_reason if d else None)
 
 
 def _dashboard_power_status(
@@ -1044,7 +1046,7 @@ async def get_status(request: Request) -> dict[str, Any]:
     manual_active = effective_mode not in {str(getattr(cfg, "automated_option", "Automated")), ""}
     manual_targets = _manual_display_targets(opt, s, effective_mode, cfg) if manual_active else None
     battery_power_kw = _live_battery_power_kw(s, d, manual_targets)
-    outcome_reason = _live_outcome_reason(effective_mode, d, cfg)
+    outcome_reason = _live_outcome_reason(effective_mode, d, opt)
     def _manual_float(key: str, fallback: Any) -> Any:
         if not manual_targets:
             return fallback
@@ -1147,7 +1149,10 @@ async def get_status(request: Request) -> dict[str, Any]:
         "sigenergy_mode": effective_mode,
         "next_sunrise_ts": datetime.fromtimestamp(s.next_sunrise_ts, tz=timezone.utc).isoformat() if s and s.next_sunrise_ts else None,
         "next_sunset_ts": datetime.fromtimestamp(s.next_sunset_ts, tz=timezone.utc).isoformat() if s and s.next_sunset_ts else None,
-        "export_reason": d.export_reason if d else None,
+        "export_reason": (
+            (getattr(opt, "msc_export_pending_reason", None) if not manual_active else None)
+            or (d.export_reason if d else None)
+        ),
         "import_reason": d.import_reason if d else None,
         "battery_capacity_kwh": s.battery_capacity_kwh if s else None,
         "ess_max_charge_kw": s.ess_max_charge_kw if s else None,
@@ -1510,7 +1515,7 @@ async def ws_status(websocket: WebSocket) -> None:
             manual_active = effective_mode not in {str(getattr(opt.cfg, "automated_option", "Automated")), ""}
             manual_targets = _manual_display_targets(opt, s, effective_mode, opt.cfg) if manual_active else None
             battery_power_kw = _live_battery_power_kw(s, d, manual_targets)
-            outcome_reason = _live_outcome_reason(effective_mode, d, opt.cfg)
+            outcome_reason = _live_outcome_reason(effective_mode, d, opt)
 
             def _manual_float(key: str, fallback: Any) -> Any:
                 if not manual_targets:

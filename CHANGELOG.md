@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.84-haos95
+
+- The dashboard identifies Spike from the selected export policy and reports when export closure and Maximum Self Consumption are awaiting confirmation. The decision trace uses the same pending message when the decision holds export closed.
+
 ## 2.3.83-haos94
 
 - Dashboard Thresholds and Settings pricing forms save edited fields and share saved values while preserving unsaved edits. An import-only edit no longer overwrites an export setting.
