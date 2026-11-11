@@ -1,6 +1,10 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Release 2.3.82-haos93
+## Release 2.3.83-haos94
+
+Dashboard Thresholds and Settings now save edited pricing fields only. Each confirmed save refreshes the saved values on both forms and preserves unsaved edits. An import-only edit can no longer resubmit a stale export limit. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.83-haos94)
+
+## Prior release 2.3.82-haos93
 
 An already active automatic Evening Boost session can continue through a verified natural sunset while its eligibility and safety checks pass. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.82-haos93) [Control contract](docs/CONTROL_CONTRACT.md#continuation-through-natural-sunset)
 

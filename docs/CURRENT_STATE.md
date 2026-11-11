@@ -1,6 +1,12 @@
 # Current State
 
-## Release 2.3.82-haos93
+## Release 2.3.83-haos94
+
+Dashboard Thresholds and Settings now save edited pricing fields only. Each confirmed save refreshes the saved values on both forms and preserves unsaved edits. An import-only edit can no longer resubmit a stale export limit. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.83-haos94)
+
+The last verified live build is .93 from source 0b3ec461487ca6432570cb04dff0881bb85ccf93. The .93 sunset rollover passed offline replay with archived observations. Live continuation across a qualifying sunset and the separate dashboard control-summary issue remain open.
+
+## Prior release 2.3.82-haos93
 
 PR #88 preserves already admitted and successfully applied automatic Boost through one verified natural sunset when the current gates still pass. New and interrupted sessions require 120 seconds of qualification. The guarded O4 suite passed 1,765 tests and 1,800 subtests, and independent source and test reviews cleared the change. Home Assistant showed `.92` installed with Auto update off on 11 November 2026. Supervised live verification is pending. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.82-haos93) [Control contract](CONTROL_CONTRACT.md#continuation-through-natural-sunset)
 

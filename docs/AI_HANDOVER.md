@@ -1,6 +1,12 @@
 # SigEnergy Optimizer AI Handover
 
-## Release 2.3.82-haos93
+## Release 2.3.83-haos94
+
+Dashboard Thresholds and Settings now save edited pricing fields only. Each confirmed save refreshes the saved values on both forms and preserves unsaved edits. An import-only edit can no longer resubmit a stale export limit. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.83-haos94)
+
+The last verified live build is .93 from source 0b3ec461487ca6432570cb04dff0881bb85ccf93. The .93 sunset rollover passed offline replay with archived observations. Live continuation across a qualifying sunset and the separate dashboard control-summary issue remain open.
+
+## Prior release 2.3.82-haos93
 
 The release includes O4 from PR #88. It retains already admitted and successfully applied automatic Evening Boost through one verified natural sunset. Home Assistant showed `.92` installed with Auto update off on 11 November 2026. Supervised verification of the new sunset behavior is pending. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.82-haos93) [Control contract](CONTROL_CONTRACT.md#continuation-through-natural-sunset)
 

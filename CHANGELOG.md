@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.83-haos94
+
+- Dashboard Thresholds and Settings pricing forms save edited fields and share saved values while preserving unsaved edits. An import-only edit no longer overwrites an export setting.
+
 ## 2.3.82-haos93
 
 - Evening Boost can retain an already admitted and successfully applied automatic session through one verified natural sunset. Initial admission, readmission after interruption, and existing safety and settlement checks are unchanged.
