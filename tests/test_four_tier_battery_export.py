@@ -440,6 +440,10 @@ class FourTierDecisionTests(Haos49CharacterizationCase):
                             self.assertGreater(d.export_limit, 0.01)
                             self.assertEqual(MODE_CMD_DISCHARGE_PV, d.ems_mode)
                             self.assertFalse(d.trace_gates["actual_import_cost_guard_blocking"])
+                            if not rejected:
+                                label = "Spike" if spike else "High tier"
+                                self.assertIn(f", {label} @ 120¢", d.export_reason)
+                                self.assertTrue(d.outcome_reason.startswith(d.export_reason))
                             if summary.get("import_cost_floor_unknown"):
                                 self.assertTrue(d.trace_gates["actual_import_cost_guard_active"])
 

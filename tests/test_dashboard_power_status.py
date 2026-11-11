@@ -10,7 +10,7 @@ from fastapi import WebSocketDisconnect
 
 from app.config import Settings
 from app.models import Decision, HVACObservedValue, HVACSolarInputContext, SolarState
-from app.optimizer import SigEnergyOptimizer
+from app.optimizer import SigEnergyOptimizer, _MscTransition
 from app.routers.api import get_status, ws_status
 
 
@@ -41,6 +41,8 @@ class DashboardPowerStatusTests(unittest.IsolatedAsyncioTestCase):
         self.opt._manual_mode_override = ""
         self.opt._manual_ess_charge_override_kw = None
         self.opt._manual_ess_discharge_override_kw = None
+        self.opt._msc_transition = None
+        self.opt._pending_msc_status = None
         self.opt._last_decision = Decision(
             export_limit=7.5,
             import_limit=0.0,
@@ -97,7 +99,7 @@ class DashboardPowerStatusTests(unittest.IsolatedAsyncioTestCase):
         for key in (
             "power_status", "sigenergy_mode", "export_limit", "import_limit",
             "ess_charge_limit", "grid_export_power_kw", "grid_import_power_kw",
-            "battery_power_sensor_kw", "battery_power_kw",
+            "battery_power_sensor_kw", "battery_power_kw", "outcome_reason",
         ):
             self.assertEqual(rest[key], frame[key], key)
         return rest
@@ -142,6 +144,37 @@ class DashboardPowerStatusTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(status["export_limit"], export)
                 self.assertEqual(status["import_limit"], 0.01)
                 self.assertEqual(status["ess_charge_limit"], 25.0)
+
+    async def test_pending_msc_masks_committed_export_outcome_until_cleared(self) -> None:
+        committed = "Exporting 7.5kW, Spike @ 120¢"
+        self.opt.last_decision.outcome_reason = committed
+        self.opt._msc_transition = _MscTransition()
+        self.assertEqual((await self._status())["outcome_reason"], committed)
+
+        for phase in ("close", "msc"):
+            with self.subTest(phase=phase):
+                self.opt._msc_transition = _MscTransition(phase=phase)
+                self.opt._pending_msc_status = self.opt._msc_transition
+                status = await self._status()
+                self.assertEqual(
+                    status["outcome_reason"],
+                    "Waiting for confirmation of export closure and Maximum Self Consumption.",
+                )
+                self.assertEqual(self.opt.last_decision.outcome_reason, committed)
+
+        for mode in (self.opt.cfg.manual_option, self.opt.cfg.full_export_option):
+            with self.subTest(mode=mode):
+                self.opt._manual_mode_override = mode
+                status = await self._status()
+                self.assertEqual(
+                    status["outcome_reason"], f"Manual mode active ({mode}); optimizer writes paused"
+                )
+
+        self.opt._manual_mode_override = ""
+        self.opt._msc_transition = _MscTransition()
+        self.assertEqual((await self._status())["outcome_reason"], committed)
+        self.opt._msc_transition = None
+        self.assertEqual((await self._status())["outcome_reason"], committed)
 
     async def test_stale_unverified_and_unavailable_observations_have_no_value(self) -> None:
         state = self.opt.last_state

@@ -922,6 +922,10 @@ class MscBaselineOverlayContractTests(Haos49CharacterizationCase):
                 ha._record_state_value(cfg.ems_mode_select, ems)
                 decision = self.decide(optimizer, state, self.FIXED_AFTERNOON)
 
+                if name == "exact_msc_still_open":
+                    self.assertTrue(decision.trace_gates["msc_transition_pending"])
+                    self.assertIn("Waiting for confirmation of export closure", decision.export_reason)
+                    self.assertTrue(decision.outcome_reason.startswith(decision.export_reason))
                 self.assertEqual(standby, decision.standby_holdoff_active)
                 self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
                 self.assertEqual(0.0, decision.export_limit)

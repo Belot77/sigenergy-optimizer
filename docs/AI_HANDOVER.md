@@ -1,6 +1,12 @@
 # SigEnergy Optimizer AI Handover
 
-## Release 2.3.83-haos94
+## Release 2.3.84-haos95
+
+The dashboard identifies Spike from the selected export policy and reports when export closure and Maximum Self Consumption are awaiting confirmation. The decision trace uses the same pending message when the decision holds export closed. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.84-haos95)
+
+Home Assistant started .94 at 21:15:17 AEDT on 11 November 2026 from source 7de606e168c33f5890939ff187413247fb01a614. The sunset continuation path passed offline replay. Live continuation across a qualifying sunset remains open.
+
+## Prior release 2.3.83-haos94
 
 Dashboard Thresholds and Settings now save edited pricing fields only. Each confirmed save refreshes the saved values on both forms and preserves unsaved edits. An import-only edit can no longer resubmit a stale export limit. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.83-haos94)
 

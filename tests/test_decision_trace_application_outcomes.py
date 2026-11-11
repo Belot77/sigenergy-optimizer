@@ -124,6 +124,8 @@ class DecisionTraceApplicationOutcomeTests(Haos49CharacterizationCase):
         self.assertIs(False, row["application"]["succeeded"])
         self.assertTrue(row["gates"]["msc_transition_pending"])
         self.assert_not_committed(optimizer, previous, previous_state)
+        self.assertIsNotNone(optimizer._msc_transition)
+        self.assertIs(optimizer._pending_msc_status, optimizer._msc_transition)
         self.assertTrue(optimizer.ha.calls)  # Fake restrictions only.
         self.assertFalse(any(call[0] == "select_option" for call in optimizer.ha.calls))
 

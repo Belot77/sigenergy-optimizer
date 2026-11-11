@@ -156,7 +156,10 @@ _POWER_LIMIT_MAX_KW = 100.0
 # timestamp jitter; keep derived-flow coherence equally narrow and independent
 # of the much wider per-sensor freshness window.
 _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
-_RUNTIME_SIGNATURE = "2.3.83-haos94"
+_RUNTIME_SIGNATURE = "2.3.84-haos95"
+_MSC_EXPORT_PENDING_REASON = (
+    "Waiting for confirmation of export closure and Maximum Self Consumption."
+)
 
 
 @dataclass
@@ -629,6 +632,7 @@ class SigEnergyOptimizer:
         self._last_cycle_started: Optional[datetime] = None
         self._last_cycle_completed: Optional[datetime] = None
         self._last_cycle_error: str = ""
+        self._pending_msc_status: _MscTransition | None = None
         self._last_published_hvac_solar_permission_result: Optional[
             HVACSolarPermissionResult
         ] = None
@@ -730,6 +734,14 @@ class SigEnergyOptimizer:
     @property
     def last_decision(self) -> Optional[Decision]:
         return self._last_decision
+
+    @property
+    def msc_export_pending_reason(self) -> str | None:
+        # Discharge can reserve a transition for the next return to MSC.
+        # Report a wait only after that same transition returns pending.
+        if self._pending_msc_status is not None and self._pending_msc_status is self._msc_transition:
+            return _MSC_EXPORT_PENDING_REASON
+        return None
 
     @property
     def ws_connected(self) -> bool:
@@ -2182,6 +2194,7 @@ class SigEnergyOptimizer:
                         else RuntimeError
                     )
                     raise error_type(application_result.error or "Actuator application failed")
+                self._pending_msc_status = None
                 self._last_decision = decision
                 self._commit_solar_dip_proof(state, decision, application_result)
                 if not decision.trace_gates.get("solar_surplus_dip_hold_active"):
@@ -2232,6 +2245,7 @@ class SigEnergyOptimizer:
                 self._accumulate_history(state, decision)
                 self._record_price_tracking(state, decision)
             except asyncio.CancelledError:
+                self._pending_msc_status = None
                 self._retire_accepted_restrictive_settlement(require_close=True)
                 self._accepted_restrictive_retry = None
                 if not application_committed:
@@ -2245,6 +2259,7 @@ class SigEnergyOptimizer:
                 self._reset_solar_reentry("cycle_cancelled")
                 raise
             except Exception as exc:
+                pending_msc = self._msc_transition if type(exc) is _MscTransitionPending else None
                 if not isinstance(exc, _AcceptedRestrictiveSettlementPending):
                     self._retire_accepted_restrictive_settlement(require_close=True)
                     if not isinstance(exc, _AcceptedRestrictiveSettlementExpired):
@@ -2266,6 +2281,7 @@ class SigEnergyOptimizer:
                         self._solar_dip_recheck_at = datetime.now().timestamp() + _DEBOUNCE_SECONDS
                     self._last_state = prev_state
                     self._last_decision = prev_decision
+                self._pending_msc_status = pending_msc
                 await self._publish_hvac_solar_permission(
                     self._hvac_solar_cycle_error_result()
                 )
@@ -7179,8 +7195,11 @@ class SigEnergyOptimizer:
             morning_slow_charge_active, solar_surplus_bypass, evening_export_boost_active,
             battery_full_safeguard_effective_export_block,
             desired_export_limit, positive_fit_override,
+            battery_export_owner=battery_export_owner if d.export_intent == BATTERY_EXPORT else "none",
         )
-        if evening_reentry_waiting:
+        if msc_transition_pending:
+            d.export_reason = _MSC_EXPORT_PENDING_REASON
+        elif evening_reentry_waiting:
             d.export_reason = (
                 "Evening Boost waiting for 120 seconds of qualifying fresh load "
                 "reports with gaps no greater than 60 seconds; export closed."
@@ -7819,8 +7838,6 @@ class SigEnergyOptimizer:
         d.trace_values["msc_transition_phase"] = (
             self._msc_transition.phase if self._msc_transition is not None else "idle"
         )
-        if msc_transition_pending:
-            d.export_reason = "Export held closed pending observed export closure and later exact MSC."
         d.trace_gates.update({
             "solar_budget_reentry_raw_candidate": solar_budget_raw_candidate,
             "solar_budget_reentry_allowed": solar_budget_reentry_allowed,
@@ -12995,7 +13012,8 @@ class SigEnergyOptimizer:
                         pv_safeguard: bool, tier_limit: float, morning_slow_charge: bool,
                         surplus_bypass: bool, evening_boost: bool, safeguard: bool,
                         desired_export: float,
-                        positive_fit_override: bool) -> str:
+                        positive_fit_override: bool, *,
+                        battery_export_owner: str = "none") -> str:
         cfg = self.cfg
         fit = s.feedin_price_cents
         c = s.current_price_cents
@@ -13028,10 +13046,12 @@ class SigEnergyOptimizer:
             return f"Export blocked, saving for sunset ({s.battery_soc:.0f}% < 100%)"
         if morning_dump:
             return f"Exporting {export_kw_label}, Morning dump @ {fit_d}¢{est}, {s.battery_soc:.0f}%"
-        if s.feedin_price >= cfg.export_threshold_high:
-            return f"Exporting {export_kw_label}, High tier @ {fit_d}¢{est}"
-        if spike:
+        if battery_export_owner == "export_spike":
             return f"Exporting {export_kw_label}, Spike @ {fit_d}¢{est}"
+        if battery_export_owner == "high_price":
+            return f"Exporting {export_kw_label}, High tier @ {fit_d}¢{est}"
+        if battery_export_owner == "evening_export_boost":
+            return f"Exporting {export_kw_label}, Evening Boost @ {fit_d}¢{est}"
         if solar_override:
             return f"Exporting {export_kw_label}, Solar override{est}"
         if morning_slow_charge:
@@ -13068,10 +13088,10 @@ class SigEnergyOptimizer:
             if pv_safeguard:
                 return "Export blocked, forecast protection"
             return f"Export blocked, FIT {fit_d}¢{est} < {ex_low_d}¢"
+        if target_export <= 0.01:
+            return f"Export blocked @ {fit_d}¢{est}"
         if s.feedin_price >= cfg.export_threshold_medium:
             return f"Exporting {export_kw_label}, Med tier @ {fit_d}¢{est}"
-        if evening_boost:
-            return f"Exporting {export_kw_label}, Low tier (boost) @ {fit_d}¢{est}"
         return f"Exporting {export_kw_label}, Low tier @ {fit_d}¢{est}"
 
     def _import_reason(self, s: SolarState, morning_dump: bool, standby_holdoff: bool,
