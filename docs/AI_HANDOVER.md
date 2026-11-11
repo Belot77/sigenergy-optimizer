@@ -1,12 +1,22 @@
 # SigEnergy Optimizer AI Handover
 
+## O4 Evening Boost sunset candidate
+
+The O4 candidate on `fix/o4-boost-sunset-rollover` is based on `fe5bc9b`. It retains already admitted and successfully applied automatic Evening Boost through one verified natural sunset. [Control contract](CONTROL_CONTRACT.md#continuation-through-natural-sunset)
+
+The new module passed 10 tests and 19 subtests. Three continuation regressions failed as expected on `fe5bc9b`. The guarded full suite passed 1,765 tests and 1,800 subtests with zero failures. The run used temporary SQLite stores, disabled dotenv and external connections, and loaded Windows timezone data from a temporary test directory. Independent source and test reviews cleared the candidate. Physical acceptance remains open.
+
+Two `.92` captures show the original context reset and requalification. On 9 November, sunset was 19:44:30.955, reset was at 19:44:36 and qualification returned at 19:46:42. On 10 November, sunset was 19:45:31.591, reset was at 19:45:34, eligibility was lost at 19:45:39 and qualification returned at 19:47:43. All times are AEDT. These captures support the narrow rollover change. Candidate acceptance still needs supervised evidence.
+
+O5 reserve policy remains parked. Broader O6 handoff and depletion and O9 ownership and settings work remain open. The operator removed the quick-tile repair from scope.
+
 ## Current published release 2.3.81-haos92 (9 November 2026)
 
 Published on 9 November 2026 at 15:02:13 AEDT (2026-11-09T04:02:13Z) from `04eeaf153a2eb2b5fb22751664e33f807e0130a1`. Metadata PR #86 merged at `f2f4c6082dbb065809b7feeab3656d6fc1483987` with the tagged tree `f4af62f494c5acebe31a76765a82865da4194a5e`. Both platform images were verified against that source. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.81-haos92)
 
 PRs #82–#85 preserve a zero PV Max, acknowledge Mode and ESS API acceptance, separate targets from HA limit reports and measured power, and preserve startup WebSocket status. Hardware settlement requires request-specific evidence. [Publication receipt](HAOS92_RELEASE_CANDIDATE.md)
 
-`.90` remains the latest confirmed installation. The operator last confirmed Auto update off on 9 November. After an authorized installation, verify the `2.3.81-haos92` runtime and exact tagged source. O4, O5, O6 and the broader O9 ownership and settings audit remain open, along with supervised live proof.
+The operator verified the `2.3.81-haos92` installation from the 9 November 15:09:20 AEDT startup with source `04eeaf153a2eb2b5fb22751664e33f807e0130a1`, matching the published source. The operator last confirmed Auto update off on 9 November. Supervised live proof remains open.
 
 ## Prior published release 2.3.80-haos91 (9 November 2026)
 

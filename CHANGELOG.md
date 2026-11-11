@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Evening Boost can retain an already admitted and successfully applied automatic session through one verified natural sunset. Initial admission, readmission after interruption, and existing safety and settlement checks are unchanged.
+
 ## 2.3.81-haos92 published on 9 November 2026
 
 Published on 9 November 2026 at 15:02:13 AEDT (2026-11-09T04:02:13Z) from `04eeaf153a2eb2b5fb22751664e33f807e0130a1`. Metadata PR #86 merged at `f2f4c6082dbb065809b7feeab3656d6fc1483987` with the tagged tree `f4af62f494c5acebe31a76765a82865da4194a5e`. Both platform images were verified against that source. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.81-haos92) [Publication receipt](docs/HAOS92_RELEASE_CANDIDATE.md)
