@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.82-haos93
 
 - Evening Boost can retain an already admitted and successfully applied automatic session through one verified natural sunset. Initial admission, readmission after interruption, and existing safety and settlement checks are unchanged.
 

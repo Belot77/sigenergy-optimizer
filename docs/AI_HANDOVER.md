@@ -1,8 +1,8 @@
 # SigEnergy Optimizer AI Handover
 
-## O4 Evening Boost sunset candidate
+## Release 2.3.82-haos93
 
-The O4 candidate on `fix/o4-boost-sunset-rollover` is based on `fe5bc9b`. It retains already admitted and successfully applied automatic Evening Boost through one verified natural sunset. [Control contract](CONTROL_CONTRACT.md#continuation-through-natural-sunset)
+The release includes O4 from PR #88. It retains already admitted and successfully applied automatic Evening Boost through one verified natural sunset. Home Assistant showed `.92` installed with Auto update off on 11 November 2026. Supervised verification of the new sunset behavior is pending. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.82-haos93) [Control contract](CONTROL_CONTRACT.md#continuation-through-natural-sunset)
 
 The new module passed 10 tests and 19 subtests. Three continuation regressions failed as expected on `fe5bc9b`. The guarded full suite passed 1,765 tests and 1,800 subtests with zero failures. The run used temporary SQLite stores, disabled dotenv and external connections, and loaded Windows timezone data from a temporary test directory. Independent source and test reviews cleared the candidate. Physical acceptance remains open.
 
@@ -10,7 +10,7 @@ Two `.92` captures show the original context reset and requalification. On 9 Nov
 
 O5 reserve policy remains parked. Broader O6 handoff and depletion and O9 ownership and settings work remain open. The operator removed the quick-tile repair from scope.
 
-## Current published release 2.3.81-haos92 (9 November 2026)
+## Prior published release 2.3.81-haos92 (9 November 2026)
 
 Published on 9 November 2026 at 15:02:13 AEDT (2026-11-09T04:02:13Z) from `04eeaf153a2eb2b5fb22751664e33f807e0130a1`. Metadata PR #86 merged at `f2f4c6082dbb065809b7feeab3656d6fc1483987` with the tagged tree `f4af62f494c5acebe31a76765a82865da4194a5e`. Both platform images were verified against that source. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.81-haos92)
 

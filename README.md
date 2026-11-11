@@ -1,6 +1,10 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Current published release 2.3.81-haos92 (9 November 2026)
+## Release 2.3.82-haos93
+
+An already active automatic Evening Boost session can continue through a verified natural sunset while its eligibility and safety checks pass. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.82-haos93) [Control contract](docs/CONTROL_CONTRACT.md#continuation-through-natural-sunset)
+
+## Prior published release 2.3.81-haos92 (9 November 2026)
 
 Published on 9 November 2026 at 15:02:13 AEDT (2026-11-09T04:02:13Z) from `04eeaf153a2eb2b5fb22751664e33f807e0130a1`. Metadata PR #86 merged at `f2f4c6082dbb065809b7feeab3656d6fc1483987` with the tagged tree `f4af62f494c5acebe31a76765a82865da4194a5e`. Both platform images were verified against that source. [GitHub release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.81-haos92)
 
