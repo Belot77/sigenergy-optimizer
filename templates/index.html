@@ -4018,7 +4018,7 @@ function configFieldHelp(key, label, type) {
     export_threshold_high: 'Affects: FIT boundary for high export tier/full export caps. Lower -> high-tier export unlocks sooner. Higher -> high-tier export requires stronger FIT.',
     export_limit_low: 'Affects: export cap used in low FIT tier. Lower -> reduces export aggressiveness in low-price periods. Higher -> permits more export in low-price periods.',
     export_limit_medium: 'Affects: export cap used in medium FIT tier. Lower -> tighter export in medium-price periods. Higher -> more export allowed in medium-price periods.',
-    export_limit_high: 'Used by High-price export and Medium-tier scaling. It also bounds Morning Dump, Solar Override and PV-only export ceilings. Spike uses it unless Spike Full Power applies. Equipment and grid limits still apply.',
+    export_limit_high: 'Used by High-price export and Medium-tier scaling. It also bounds Morning Dump, Solar Override and PV-only export ceilings. Spike Full Power can raise the Spike cap above this value. Equipment and grid limits still apply.',
     export_spike_threshold: 'Affects: price spike detection threshold for spike export branch. Lower -> spike branch triggers more often. Higher -> only large spikes trigger it.',
     export_spike_min_soc: 'Affects: cheap-import eligibility while a price spike is active. Below this SoC, the ordinary cheap top-up path is blocked. This setting does not set an export floor.',
     battery_export_min_soc_low: 'Compatibility setting, default 100%. Ordinary Low battery export is disabled by policy, including at 100% SoC. Changing this value cannot enable battery sale. Low remains a price classification and PV-only MSC context; independently qualified named policies remain separate.',
