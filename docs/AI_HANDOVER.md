@@ -1,5 +1,13 @@
 # SigEnergy Optimizer AI Handover
 
+## Local O4 split sunset candidate — 12 November 2026
+
+Approved branch `fix/o4-boost-split-sunset` starts at `ac44cc6`. The `.96` trace around 19:47 AEDT showed Home Assistant reporting the sun below the horizon before advancing its next sunset. Keep the restrictive first response. Only the trusted second report with the same below-horizon change timestamp and an advancing next sunset within the existing report-gap bound can carry forward qualification earned since the most recent reset. Require fresh confirmation of Maximum Self Consumption and export closure and successful restrictive application. Do not reopen Boost on that cycle. Actual eligibility losses still reset qualification, and both 120-second minimums still apply. This is separate from retaining an already admitted session through a verified natural sunset.
+
+On the baseline, the regressions reproduced the second qualification reset. The local fix passed 238 tests and 324 subtests across 15 guarded modules; the final sunset module passed 14 tests and 27 subtests after adding cancellation coverage and checking the house discharge limit. Independent control and test reviews found no blockers. The reserve-spike replay kept only the 22 seconds earned after eligibility returned. No commit, release or live changes were made.
+
+For monitor-only verification, inspect the sun reports and decision trace without changing control mode. Replay them with simulated Home Assistant to check the decisions and requested limits. After separately authorized installation, supervised verification should confirm the first report closes Boost, rollover stays closed, and readmission requires current eligibility and both full qualification intervals. Compare requested limits with Home Assistant readbacks and measured flow. Withhold the candidate before release, or use a scoped reviewed revert after release.
+
 ## Release 2.3.85-haos96
 
 The High export limit help describes its effect on other export policies. The dashboard distinguishes advisory Value Gate from the actual import-cost guard. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.85-haos96)

@@ -609,6 +609,12 @@ Qualification alone, an admitted but unapplied decision, and a process restart c
 
 Before any authorized rollout, use monitor-only checks to compare the sun reports, horizons, load cadence and current ownership at sunset. In dry-run, verify the expected decision and reset paths. For supervised live acceptance, verify runtime source and settings, correlate Boost requests with observed controls and measured flow across sunset, and verify stop behavior. Stop Boost and retain manual ownership on unexpected ownership, failed settlement or unsafe behavior. Withhold the candidate before release. After release, use a reviewed revert of the O4 change.
 
+### Qualification across a split sunset report
+
+Home Assistant can report `below_horizon` while `next_setting` still shows the original scheduled sunset. That first report still closes Boost. If a second trusted report within the existing 60-second report-gap bound advances `next_setting` to the following local day, both reports must identify the same below-horizon change timestamp and meet the existing sun and horizon checks. With fresh confirmation of Maximum Self Consumption and export closure, and a successful restrictive application with closure proof still current at completion, the optimizer can retain only qualification time earned since the last reset. It cannot reopen Boost on the rollover cycle.
+
+Later admission still requires both 120-second minimums and all current gates. Loss of reserve, tariff eligibility, authority or any other required evidence resets qualification; pending or failed restrictive application cannot preserve it. This path is separate from the uninterrupted continuation of an already admitted session described above.
+
 ## Morning Dump
 
 Morning Dump is deliberate stored-battery export. While its existing time window, configurable floor, forecast feasibility, and safety rules remain valid, it may own `BATTERY_EXPORT` and use `Command Discharging (PV First)`.

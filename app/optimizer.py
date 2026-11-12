@@ -82,6 +82,7 @@ _SOLAR_SURPLUS_DIP_HOLD_SECONDS = 15.0
 # independent of event debounce and telemetry freshness, and never delay exit.
 _EVENING_BOOST_REENTRY_SECONDS = 120.0
 _EVENING_BOOST_MAX_REPORT_GAP_SECONDS = 60.0
+_EVENING_BOOST_SPLIT_SUNSET_REASON = "verified_split_sunset_qualification_continues"
 _O4_SUNSET_TRACE_WINDOW_SECONDS = 300.0
 
 # Remote EMS switch service-call protection. State is still checked every cycle,
@@ -544,6 +545,7 @@ class _EveningBoostReentry:
     last_wall_ts: Optional[float] = None
     context: Optional[_EveningBoostContext] = None
     applied_sunset_proof: Optional[_EveningBoostSunObservation] = None
+    qualifying_split_sunset_proof: Optional[_EveningBoostSunObservation] = None
 
 
 class _MscTransitionPending(RuntimeError):
@@ -3293,13 +3295,13 @@ class SigEnergyOptimizer:
         reported = cls._parse_aware_metadata_timestamp(obj.get("last_reported"))
         return reported if reported is not None and reported >= updated else None
 
-    def _evening_boost_sun_changed_at(
+    def _evening_boost_sun_report_times(
         self, rest: dict[str, Any], metadata: dict[str, Any],
         enriched: dict[str, Any], observed_at: datetime,
-    ) -> Optional[float]:
+    ) -> tuple[Optional[float], Optional[float]]:
         """Verify the horizon transition against both reads in this HA batch."""
         if enriched.get("_msc_metadata_status") != "accepted":
-            return None
+            return None, None
         changed = self._parse_aware_metadata_timestamp(rest.get("last_changed"))
         updated = self._parse_aware_metadata_timestamp(rest.get("last_updated"))
         reported = self._state_metadata_timestamp(enriched)
@@ -3308,15 +3310,15 @@ class SigEnergyOptimizer:
             and changed == self._parse_aware_metadata_timestamp(metadata.get("last_changed"))
             and changed <= updated <= reported <= observed_at
         ):
-            return None
+            return None, None
         attributes = rest.get("attributes")
         if not isinstance(attributes, dict):
-            return None
+            return None, None
         for key in ("next_rising", "next_setting"):
             horizon = self._parse_aware_metadata_timestamp(attributes.get(key))
             if horizon is None or horizon != self._parse_aware_metadata_timestamp(metadata.get(key)):
-                return None
-        return changed.timestamp()
+                return None, None
+        return changed.timestamp(), updated.timestamp()
 
     @classmethod
     def _state_metadata_is_fresh(
@@ -4360,7 +4362,9 @@ class SigEnergyOptimizer:
             and s.next_sunset_ts > now_ts
         )
         if cfg.evening_boost_enabled:
-            s.evening_boost_sun_changed_at_ts = self._evening_boost_sun_changed_at(
+            (
+                s.evening_boost_sun_changed_at_ts, s.evening_boost_sun_updated_at_ts,
+            ) = self._evening_boost_sun_report_times(
                 rest.get(cfg.sun_entity) or {}, state_objects.get(cfg.sun_entity) or {},
                 bulk.get(cfg.sun_entity) or {}, observed_at,
             )
@@ -11985,6 +11989,81 @@ class SigEnergyOptimizer:
             < (following_day + timedelta(days=1)).timestamp()
         )
 
+    def _evening_boost_qualifying_split_sunset(self, s: SolarState, now_ts: float) -> bool:
+        """Carry the current qualification through a later next_setting update."""
+        admission = self._evening_boost_reentry
+        prior = admission.qualifying_split_sunset_proof
+        if (
+            admission.phase != "qualifying" or prior is None
+            or s.sunset_observation_trusted is not True or self._msc_transition is not None
+            or not self._msc_export_closed(s) or not self._msc_exact_observed(s)
+        ):
+            return False
+        current = self._evening_boost_sun_observation(s, now_ts)
+        if current is None or s.evening_boost_sun_updated_at_ts is None:
+            return False
+        before, after = prior.context, current.context
+        old_setting = before.next_sunset_ts
+        if old_setting is None or after.next_sunrise_ts is None:
+            return False
+        following_day = datetime.combine(after.local_day + timedelta(days=1), time.min, tzinfo=self._tz)
+        return bool(
+            before == admission.context and not after.sun_above_horizon
+            and replace(after, next_sunset_ts=old_setting) == before
+            and prior.changed_at_ts == current.changed_at_ts
+            and prior.reported_at_ts <= prior.evaluated_at_ts
+            < old_setting <= s.evening_boost_sun_updated_at_ts
+            <= current.reported_at_ts <= now_ts
+            and now_ts - old_setting <= _EVENING_BOOST_MAX_REPORT_GAP_SECONDS
+            and after.next_sunset_ts > after.next_sunrise_ts
+            and following_day.timestamp() <= after.next_sunset_ts
+            < (following_day + timedelta(days=1)).timestamp()
+        )
+
+    def _evening_boost_split_closed(self, s: SolarState, d: Decision) -> bool:
+        return bool(
+            d.export_intent == EXPORT_BLOCKED and d.export_limit == 0.0
+            and d.ems_mode == MODE_MAX_SELF
+            and d.trace_values.get("battery_export_final_owner") == "none"
+            and self._msc_transition is None
+            and self._msc_export_closed(s) and self._msc_exact_observed(s)
+        )
+
+    def _evening_boost_note_qualifying_sunset(
+        self, s: SolarState, d: Decision, *, completed: bool,
+    ) -> None:
+        """Record the first half only during confirmed automatic export closure."""
+        admission = self._evening_boost_reentry
+        prior = admission.qualifying_split_sunset_proof
+        admission.qualifying_split_sunset_proof = None
+        if (
+            not completed or admission.phase != "qualifying"
+            or not self._evening_boost_split_closed(s, d)
+        ):
+            return
+        now_ts = datetime.now().timestamp()
+        obs = self._evening_boost_sun_observation(s, now_ts)
+        if obs is None or obs.context != admission.context or obs.context.sun_above_horizon:
+            return
+        old_setting = obs.context.next_sunset_ts
+        day = obs.context.local_day
+        day_start = datetime.combine(day, time.min, tzinfo=self._tz)
+        next_day_start = datetime.combine(day + timedelta(days=1), time.min, tzinfo=self._tz)
+        if not (
+            old_setting is not None and day_start.timestamp() <= old_setting < next_day_start.timestamp()
+            and 0 < old_setting - obs.changed_at_ts <= _EVENING_BOOST_MAX_REPORT_GAP_SECONDS
+            and now_ts - old_setting <= _EVENING_BOOST_MAX_REPORT_GAP_SECONDS
+        ):
+            return
+        if prior is not None and (
+            prior.context != obs.context or prior.changed_at_ts != obs.changed_at_ts
+            or prior.reported_at_ts > obs.reported_at_ts
+        ):
+            return
+        # After the scheduled instant, keep only a matching report proved before
+        # it. A delayed old-setting report cannot seed new rollover proof.
+        admission.qualifying_split_sunset_proof = obs if obs.evaluated_at_ts < old_setting else prior
+
     def _evening_boost_reentry_evidence(self, s: SolarState, now_ts: float) -> Optional[float]:
         inputs = s.hvac_solar_inputs
         if (
@@ -12066,6 +12145,7 @@ class SigEnergyOptimizer:
         self._evening_boost_report_high_water = stamp
         context = self._evening_boost_reentry_context(s, now_ts)
         admission = self._evening_boost_reentry
+        split_sunset = False
         if admission.phase != "closed":
             report_gap = (
                 stamp - admission.last_report_ts > _EVENING_BOOST_MAX_REPORT_GAP_SECONDS
@@ -12080,6 +12160,12 @@ class SigEnergyOptimizer:
                 admission.context = context
                 admission.generation += 1
                 admission.reason = "verified_natural_sunset_continuation"
+            if not report_gap and context != admission.context:
+                split_sunset = self._evening_boost_qualifying_split_sunset(s, now_ts)
+                if split_sunset:
+                    admission.context = context
+                    admission.generation += 1
+                    admission.qualifying_split_sunset_proof = None
             if report_gap or context != admission.context:
                 self._reset_evening_boost_reentry("context_changed_or_report_gap")
                 admission = self._evening_boost_reentry
@@ -12098,6 +12184,9 @@ class SigEnergyOptimizer:
             admission.last_report_monotonic = now_mono
         admission.last_evaluated_monotonic = now_mono
         admission.last_wall_ts = now_ts
+        if split_sunset:
+            admission.reason = _EVENING_BOOST_SPLIT_SUNSET_REASON
+            return False
         if admission.phase == "admitted":
             return True
         if (
@@ -12161,6 +12250,10 @@ class SigEnergyOptimizer:
         )
         if not (
             (verified_completion or verified_pending)
+            and (
+                self._evening_boost_reentry.reason != _EVENING_BOOST_SPLIT_SUNSET_REASON
+                or (verified_completion and self._evening_boost_split_closed(s, d))
+            )
             and d.trace_gates.get("evening_boost_reentry_candidate")
             and self._evening_boost_reentry_evidence(s, datetime.now().timestamp()) is not None
         ):
@@ -12171,6 +12264,7 @@ class SigEnergyOptimizer:
         admission = self._evening_boost_reentry
         # Pending settlement may retain ordinary qualification, but only a real
         # completed Boost application can anchor the sunset exception.
+        self._evening_boost_note_qualifying_sunset(s, d, completed=verified_completion)
         previous_proof = admission.applied_sunset_proof
         admission.applied_sunset_proof = None
         if (

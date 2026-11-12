@@ -187,6 +187,7 @@ class SolarState:
     sunrise_observation_trusted: Optional[bool] = None
     sunset_observation_trusted: Optional[bool] = None
     evening_boost_sun_changed_at_ts: Optional[float] = None
+    evening_boost_sun_updated_at_ts: Optional[float] = None
     hours_to_sunrise: float = 6.0
     hours_to_sunset: float = 0.0
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Evening Boost still closes if Home Assistant reports the sun below the horizon before updating the next sunset. Once the two reports confirm the same rollover and the restrictive controls are confirmed, Boost can keep the qualification time earned since its last reset. The rollover itself cannot reopen export, and the existing 120-second qualification still applies.
+
 ## 2.3.85-haos96
 
 - Export settings explain where the High export limit applies. The dashboard distinguishes advisory Value Gate from the actual import-cost guard.
