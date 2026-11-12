@@ -157,7 +157,7 @@ _POWER_LIMIT_MAX_KW = 100.0
 # timestamp jitter; keep derived-flow coherence equally narrow and independent
 # of the much wider per-sensor freshness window.
 _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
-_RUNTIME_SIGNATURE = "2.3.85-haos96"
+_RUNTIME_SIGNATURE = "2.3.86-haos97"
 _MSC_EXPORT_PENDING_REASON = (
     "Waiting for confirmation of export closure and Maximum Self Consumption."
 )

@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.86-haos97
+
+Evening Boost keeps qualification already earned when two trusted Home Assistant reports confirm the same sunset rollover. Export stays closed on that cycle, and readmission still requires the full 120-second qualification and current eligibility. [Control contract](docs/CONTROL_CONTRACT.md#qualification-across-a-split-sunset-report)
+
 ## Release 2.3.85-haos96
 
 Export settings explain where the High export limit applies. The dashboard distinguishes advisory Value Gate from the actual import-cost guard. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.85-haos96)

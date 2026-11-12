@@ -1,10 +1,10 @@
 # Current State
 
-## Local O4 split sunset candidate — 12 November 2026
+## 2.3.86-haos97 release preparation — 12 November 2026
 
 The `.96` trace around 19:47 AEDT showed the below-horizon state before the next-sunset update. The existing logic closed Boost and reset qualification. The local `fix/o4-boost-split-sunset` candidate still closes Boost on the first report. A trusted second report confirming the same rollover can preserve qualification earned since the most recent reset, after fresh confirmation of Maximum Self Consumption and export closure and successful restrictive application. Boost cannot reopen on that cycle. The existing 120-second minimums, 60-second report-gap bound and all eligibility resets still apply. [Control contract](CONTROL_CONTRACT.md#qualification-across-a-split-sunset-report)
 
-The candidate is unpublished and uninstalled. The captured behavior is evidence for the split-report case; supervised live acceptance of the correction and of uninterrupted sunset continuation remain separate.
+PR #94 merged the reviewed fix into main at `b12ad9e`. The release metadata identifies 2.3.86-haos97. The last confirmed installed build at this checkpoint was 2.3.85-haos96. Supervised live verification remains pending.
 
 ## Release 2.3.85-haos96
 
