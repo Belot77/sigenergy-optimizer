@@ -1,10 +1,18 @@
 # Current State
 
-## Release 2.3.84-haos95
+## Release 2.3.85-haos96
+
+The High export limit help describes its effect on other export policies. The dashboard distinguishes advisory Value Gate from the actual import-cost guard. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.85-haos96)
+
+## Prior release 2.3.84-haos95
 
 The dashboard identifies Spike from the selected export policy and reports when export closure and Maximum Self Consumption are awaiting confirmation. The decision trace uses the same pending message when the decision holds export closed. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.84-haos95)
 
-Home Assistant started .94 at 21:15:17 AEDT on 11 November 2026 from source 7de606e168c33f5890939ff187413247fb01a614. The sunset continuation path passed offline replay. Live continuation across a qualifying sunset remains open.
+Home Assistant startup on 11 November 2026 at 22:34:03 AEDT verified runtime `2.3.84-haos95` from source `f3f37edc53040363fe3d11ac10d4730e317e8e7e`.
+
+In the 12 November trace (all times AEDT), Morning Dump retired at 06:28:15 at 15.0% SoC. The pending export closure and Maximum Self Consumption transition completed by 06:28:24. Measured export reached zero at 06:28:27. At 11:59:01, Morning Slow handed off to Solar, which raised the charge limit from 2.00 to 5.87 kW. Home Assistant reported the new limit at 11:59:05 and measured charging reached 5.87 kW at 11:59:11. Solar stayed in control through 12:34:19, when SoC was 50.3%.
+
+Afternoon near-full behaviour and live continuation across an eligible sunset remain unverified in the supplied traces. The sunset continuation path passed offline replay.
 
 ## Prior release 2.3.83-haos94
 

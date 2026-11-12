@@ -161,7 +161,7 @@ def create_app() -> FastAPI:
     allowed_origins = _parse_csv_list(settings.cors_allowed_origins)
     app = FastAPI(
         title="SigEnergy Optimizer",
-        version="2.3.84-haos95",
+        version="2.3.85-haos96",
         lifespan=lifespan,
     )
     app.add_middleware(
