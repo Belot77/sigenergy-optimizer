@@ -93,6 +93,168 @@ class EveningBoostSunsetContinuationTests(unittest.TestCase):
         _, decision, result = finish.call_args.args
         return decision, result
 
+    def split_sunset(self, states, cfg, when, *, early=148.595315, rollover=180):
+        """HA reports below first, then advances next_setting on a later update."""
+        self.sunset(states, cfg, when)
+        start = self.case.START
+        below = start + timedelta(seconds=early)
+        sun = states[cfg.sun_entity]
+        if when >= below:
+            sun["state"] = "below_horizon"
+            sun["last_changed"] = below.astimezone(timezone.utc).isoformat()
+        if when < start + timedelta(seconds=rollover):
+            old_setting = start + timedelta(seconds=self.SUNSET_SECONDS)
+            sun["attributes"]["next_setting"] = old_setting.astimezone(timezone.utc).isoformat()
+
+    def start_split_replay(self):
+        self.SUNSET_SECONDS = 180
+        self.qualify(real=True)
+
+    def test_split_rollover_keeps_only_earned_time_and_does_not_open_on_rollover(self):
+        self.start_split_replay()
+        ha = self.optimizer.ha
+        ha.calls.clear()
+        for elapsed in (146, 149, 154, 158, 174):
+            decision, result = self.real_tick(elapsed, mutate=self.split_sunset)
+            if elapsed >= 149:
+                self.case.assert_waiting(decision)
+        self.assertIn(("set_number", self.optimizer.cfg.grid_export_limit, 0.01), ha.calls)
+        self.assertTrue(result.automatic_application_completed)
+        generation = decision.trace_values["evening_boost_reentry_generation"]
+        house_discharge_limit = decision.ess_discharge_limit
+
+        ha.calls.clear()
+        rolled, result = self.real_tick(181, mutate=self.split_sunset)
+        self.case.assert_waiting(rolled)
+        self.assertTrue(result.automatic_application_completed)
+        self.assertEqual(32, rolled.trace_values["evening_boost_reentry_elapsed_seconds"])
+        self.assertEqual(32, rolled.trace_values["evening_boost_reentry_report_span_seconds"])
+        self.assertEqual(generation + 1, rolled.trace_values["evening_boost_reentry_generation"])
+        self.assertFalse(any(
+            (action == "set_number" and entity == self.optimizer.cfg.grid_export_limit and value > 0.011)
+            or (action == "select_option" and value in optimizer_module.DISCHARGE_MODES)
+            for action, entity, value in ha.calls
+        ), ha.calls)
+        # MSC may reassert the same battery limit for house supply.
+        self.assertEqual(house_discharge_limit, rolled.ess_discharge_limit)
+        for action, entity, value in ha.calls:
+            if action == "set_number" and entity == self.optimizer.cfg.ess_max_discharging_limit:
+                self.assertEqual(house_discharge_limit, value)
+        for elapsed in (211, 241, 268):
+            decision, _ = self.real_tick(elapsed, mutate=self.split_sunset)
+            self.case.assert_waiting(decision)
+        admitted, result = self.real_tick(269, mutate=self.split_sunset)
+        self.assertEqual(BATTERY_EXPORT, admitted.export_intent)
+        self.assertTrue(result.automatic_application_completed)
+
+    def test_split_rollover_cannot_restore_pre_loss_boost_time(self):
+        self.start_split_replay()
+
+        def with_load_spike(states, cfg, when):
+            self.split_sunset(states, cfg, when)
+            if when == self.case.START + timedelta(seconds=155):
+                states[cfg.consumed_power_sensor]["state"] = 6.0
+
+        for elapsed in (146, 149, 153, 155, 159, 163, 167, 174, 179, 181):
+            decision, _ = self.real_tick(elapsed, mutate=with_load_spike)
+            if elapsed == 155:
+                self.assertEqual("closed", decision.trace_values["evening_boost_reentry_state"])
+                self.assertNotEqual(BATTERY_EXPORT, decision.export_intent)
+        self.case.assert_waiting(decision)
+        self.assertEqual(22, decision.trace_values["evening_boost_reentry_elapsed_seconds"])
+        for elapsed in (211, 241, 269, 278):
+            decision, _ = self.real_tick(elapsed, mutate=with_load_spike)
+            self.case.assert_waiting(decision)
+        admitted, result = self.real_tick(279, mutate=with_load_spike)
+        self.assertEqual(BATTERY_EXPORT, admitted.export_intent)
+        self.assertTrue(result.automatic_application_completed)
+
+    def test_cancelled_split_rollover_discards_carried_qualification(self):
+        self.start_split_replay()
+        for elapsed in (146, 149, 154, 158, 174):
+            self.real_tick(elapsed, mutate=self.split_sunset)
+
+        async def cancel_apply(state, decision):
+            self.case.assert_waiting(decision)
+            self.assertEqual(32, decision.trace_values["evening_boost_reentry_elapsed_seconds"])
+            raise asyncio.CancelledError
+
+        with patch.object(self.optimizer, "_apply", side_effect=cancel_apply):
+            with self.assertRaises(asyncio.CancelledError):
+                self.real_tick(181, mutate=self.split_sunset)
+
+        next_tick, _ = self.real_tick(182, mutate=self.split_sunset)
+        self.case.assert_waiting(next_tick)
+        self.assertEqual(0, next_tick.trace_values["evening_boost_reentry_elapsed_seconds"])
+
+    def test_split_rollover_rejects_unproven_sun_or_closure(self):
+        for invalid in (
+            "changed_sunrise", "early_update", "early_horizon", "late_rollover",
+            "metadata_conflict", "pending_before_rollover", "pending_on_rollover",
+            "stale_close_at_finish",
+        ):
+            with self.subTest(invalid=invalid):
+                self.start_split_replay()
+                roll_tick = 242 if invalid == "late_rollover" else 181
+
+                def mutate(states, cfg, when):
+                    self.split_sunset(
+                        states, cfg, when,
+                        early=110 if invalid == "early_horizon" else 148.595315,
+                        rollover=241 if invalid == "late_rollover" else 180,
+                    )
+                    if when != self.case.START + timedelta(seconds=roll_tick):
+                        return
+                    sun = states[cfg.sun_entity]
+                    if invalid == "changed_sunrise":
+                        rising = datetime.fromisoformat(sun["attributes"]["next_rising"])
+                        sun["attributes"]["next_rising"] = (rising + timedelta(minutes=1)).isoformat()
+                    if invalid == "early_update":
+                        updated = self.case.START + timedelta(seconds=179)
+                        sun["last_updated"] = updated.astimezone(timezone.utc).isoformat()
+
+                ticks = (146, 149, 154, 158, 174)
+                if invalid == "late_rollover":
+                    ticks += (181, 211)
+                for elapsed in (*ticks, roll_tick):
+                    if elapsed == roll_tick and invalid == "metadata_conflict":
+                        self.sun_metadata_mutation = lambda obj: obj.update(next_setting=obj["next_rising"])
+                    pending = (
+                        invalid == "pending_before_rollover" and elapsed == 174
+                        or invalid == "pending_on_rollover" and elapsed == roll_tick
+                    )
+                    try:
+                        if pending:
+                            outcome = optimizer_module._ActuatorApplicationResult(
+                                succeeded=False, error="MSC transition awaiting synthetic observation",
+                                transition_pending=True, automatic_transition_pending=True,
+                            )
+                            with patch.object(self.optimizer, "_apply", return_value=outcome):
+                                decision, _ = self.real_tick(elapsed, mutate=mutate)
+                        elif invalid == "stale_close_at_finish" and elapsed == roll_tick:
+                            apply = self.optimizer._apply
+
+                            async def apply_and_age_msc(state, decision):
+                                result = await apply(state, decision)
+                                self.assertTrue(result.automatic_application_completed)
+                                state._msc_ems_reported_at = 0.0
+                                return result
+
+                            with patch.object(self.optimizer, "_apply", side_effect=apply_and_age_msc):
+                                decision, _ = self.real_tick(elapsed, mutate=mutate)
+                        else:
+                            decision, _ = self.real_tick(elapsed, mutate=mutate)
+                    finally:
+                        self.sun_metadata_mutation = None
+                self.case.assert_waiting(decision)
+                if invalid in ("pending_on_rollover", "stale_close_at_finish"):
+                    self.assertEqual(32, decision.trace_values["evening_boost_reentry_elapsed_seconds"])
+                    self.assertEqual("closed", decision.trace_values["evening_boost_reentry_after_application_state"])
+                    decision, _ = self.real_tick(211, mutate=mutate)
+                    self.assertEqual(0, decision.trace_values["evening_boost_reentry_elapsed_seconds"])
+                else:
+                    self.assertEqual(0, decision.trace_values["evening_boost_reentry_elapsed_seconds"])
+
     def test_completed_boost_continues_without_a_sunset_close(self):
         admitted = self.qualify(real=True)
         ha = self.optimizer.ha
