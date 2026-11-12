@@ -1,6 +1,10 @@
 # SigEnergy Optimizer for Home Assistant OS
 
-## Release 2.3.84-haos95
+## Release 2.3.85-haos96
+
+Export settings explain where the High export limit applies. The dashboard distinguishes advisory Value Gate from the actual import-cost guard. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.85-haos96)
+
+## Prior release 2.3.84-haos95
 
 The dashboard identifies Spike from the selected export policy and reports when export closure and Maximum Self Consumption are awaiting confirmation. The decision trace uses the same pending message when the decision holds export closed. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.84-haos95)
 

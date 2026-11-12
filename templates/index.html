@@ -735,14 +735,11 @@ html.theme-dark .cfg-help{color:#9fb3cf}
         </div>
         <div class="glance-card advisory-card">
           <div class="glance-lbl">Advisory Export Value Gate</div>
-          <div class="advisory-note" id="advModeNote">n/a</div>
+          <div class="advisory-note">The separate actual import-cost guard can block automatic battery export below the recorded import price.</div>
           <div class="advisory-grid">
             <div class="advisory-item"><span class="advisory-k">Mode</span><span class="advisory-v" id="advMode">n/a</span></div>
-            <div class="advisory-item"><span class="advisory-k">Config</span><span class="advisory-v" id="advConfig">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Would Allow</span><span class="advisory-v" id="advWouldAllow">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Would Block</span><span class="advisory-v" id="advWouldBlock">n/a</span></div>
-            <div class="advisory-item"><span class="advisory-k">Enforcement Active</span><span class="advisory-v" id="advEnforceActive">n/a</span></div>
-            <div class="advisory-item"><span class="advisory-k">Veto Active</span><span class="advisory-v" id="advVetoActive">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Export Type</span><span class="advisory-v" id="advExportType">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">PV Init Source</span><span class="advisory-v" id="advPvInitSource">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Estimated Init Enabled</span><span class="advisory-v" id="advEstimatedInitEnabled">n/a</span></div>
@@ -775,12 +772,12 @@ html.theme-dark .cfg-help{color:#9fb3cf}
             <div class="advisory-item"><span class="advisory-k">Top-off Target</span><span class="advisory-v" id="advTopoffTarget">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Top-off Met</span><span class="advisory-v" id="advTopoffMet">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Import-cost Block</span><span class="advisory-v" id="advImportBlock">n/a</span></div>
-            <div class="advisory-item"><span class="advisory-k">Hard Import Guard Active</span><span class="advisory-v" id="advHardImportGuardActive">n/a</span></div>
-            <div class="advisory-item"><span class="advisory-k">Hard Import Guard Blocking</span><span class="advisory-v" id="advHardImportGuardBlocking">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Actual Import-Cost Guard Active</span><span class="advisory-v" id="advHardImportGuardActive">n/a</span></div>
+            <div class="advisory-item"><span class="advisory-k">Actual Import-Cost Guard Blocking</span><span class="advisory-v" id="advHardImportGuardBlocking">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">Auto Below-cost Block</span><span class="advisory-v" id="advAutoBelowCostBlock">n/a</span></div>
             <div class="advisory-item"><span class="advisory-k">PV Below Floor Allowed</span><span class="advisory-v" id="advPvBelowFloor">n/a</span></div>
             <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Curtailment Diagnostic</span><span class="advisory-v" id="advCurtailDiag">n/a</span></div>
-            <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Hard Import Guard Reason</span><span class="advisory-v" id="advHardImportGuardReason">n/a</span></div>
+            <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Actual Import-Cost Guard Reason</span><span class="advisory-v" id="advHardImportGuardReason">n/a</span></div>
             <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">PV Init Reason</span><span class="advisory-v" id="advEstimatedInitReason">n/a</span></div>
             <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">PV Probe</span><span class="advisory-v">PV initiation probes are capped and guarded</span></div>
             <div class="advisory-item" style="grid-column:1 / -1"><span class="advisory-k">Reason</span><span class="advisory-v" id="advReason">n/a</span></div>
@@ -2701,9 +2698,6 @@ function updateOverview() {
   setTextWithFlash('advWouldAllow', fmtAdvisoryBool(s.export_value_gate_would_allow));
   setTextWithFlash('advWouldBlock', fmtAdvisoryBool(s.export_value_gate_would_block));
   setTextWithFlash('advMode', fmtAdvisoryText(s.export_value_gate_mode));
-  setTextWithFlash('advConfig', `enabled=${fmtAdvisoryBool(!!uiCfg?.export_value_gate_enabled)} dry_run=${fmtAdvisoryBool(!!uiCfg?.export_value_gate_dry_run)} enforce=${fmtAdvisoryBool(!!uiCfg?.export_value_gate_enforce)}`);
-  setTextWithFlash('advEnforceActive', fmtAdvisoryBool(s.export_value_gate_enforcement_active));
-  setTextWithFlash('advVetoActive', fmtAdvisoryBool(s.export_value_gate_veto_active));
   setTextWithFlash('advExportType', fmtAdvisoryText(s.export_value_gate_export_type));
   setTextWithFlash('advPvInitSource', fmtAdvisoryText(s.pv_surplus_initiation_source));
   setTextWithFlash('advEstimatedInitEnabled', fmtAdvisoryBool(s.pv_surplus_estimated_init_enabled));
@@ -2744,14 +2738,6 @@ function updateOverview() {
   setTextWithFlash('advHardImportGuardReason', fmtAdvisoryText(s.actual_import_cost_guard_reason));
   setTextWithFlash('advEstimatedInitReason', fmtAdvisoryText(s.pv_surplus_estimated_init_reason));
   setTextWithFlash('advReason', fmtAdvisoryText(s.export_value_gate_reason));
-  const mode = String(s.export_value_gate_mode || '').toLowerCase();
-  const note = mode === 'enforcement active'
-    ? 'Enforcement active - value gate can veto live export control.'
-    : (mode === 'advisory only'
-      ? 'Advisory only - does not change live control.'
-      : 'Disabled - value gate is not participating in decisions.');
-  setTextWithFlash('advModeNote', note);
-
   setGlanceFill('card-sBat', s.battery_soc, 'rgba(34,197,94,.22)');
   setGlanceFill('card-gPV', (Number(s.pv_kw) / Math.max(1, Number(s.pv_max_power_limit) || 25)) * 100, 'rgba(132,204,22,.22)');
   setGlanceFill('card-gLoad', (Number(s.load_kw) / Math.max(1, Number(s.pv_max_power_limit) || 25)) * 100, 'rgba(163,230,53,.22)');
@@ -4032,7 +4018,7 @@ function configFieldHelp(key, label, type) {
     export_threshold_high: 'Affects: FIT boundary for high export tier/full export caps. Lower -> high-tier export unlocks sooner. Higher -> high-tier export requires stronger FIT.',
     export_limit_low: 'Affects: export cap used in low FIT tier. Lower -> reduces export aggressiveness in low-price periods. Higher -> permits more export in low-price periods.',
     export_limit_medium: 'Affects: export cap used in medium FIT tier. Lower -> tighter export in medium-price periods. Higher -> more export allowed in medium-price periods.',
-    export_limit_high: 'Affects: export cap used in high FIT tier/spike contexts. Lower -> tempers export even in strong price windows. Higher -> allows stronger export in high-value windows.',
+    export_limit_high: 'Used by High-price export and Medium-tier scaling. It also bounds Morning Dump, Solar Override and PV-only export ceilings. Spike uses it unless Spike Full Power applies. Equipment and grid limits still apply.',
     export_spike_threshold: 'Affects: price spike detection threshold for spike export branch. Lower -> spike branch triggers more often. Higher -> only large spikes trigger it.',
     export_spike_min_soc: 'Affects: cheap-import eligibility while a price spike is active. Below this SoC, the ordinary cheap top-up path is blocked. This setting does not set an export floor.',
     battery_export_min_soc_low: 'Compatibility setting, default 100%. Ordinary Low battery export is disabled by policy, including at 100% SoC. Changing this value cannot enable battery sale. Low remains a price classification and PV-only MSC context; independently qualified named policies remain separate.',
