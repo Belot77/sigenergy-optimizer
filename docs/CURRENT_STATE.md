@@ -4,6 +4,8 @@
 
 The High export limit help describes its effect on other export policies. The dashboard distinguishes advisory Value Gate from the actual import-cost guard. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.85-haos96)
 
+Home Assistant startup on 12 November 2026 at 13:25:09 AEDT verified runtime 2.3.85-haos96 from source 0e36e74f99e0af5bacc11d03e39d5b1f0d6ec809. The Home Assistant WebSocket connected and both updated dashboard explanations rendered.
+
 ## Prior release 2.3.84-haos95
 
 The dashboard identifies Spike from the selected export policy and reports when export closure and Maximum Self Consumption are awaiting confirmation. The decision trace uses the same pending message when the decision holds export closed. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.84-haos95)
