@@ -743,6 +743,14 @@ class SigEnergyOptimizer:
         # Report a wait only after that same transition returns pending.
         if self._pending_msc_status is not None and self._pending_msc_status is self._msc_transition:
             return _MSC_EXPORT_PENDING_REASON
+        # Accepted fallback has its own pending lifecycle and does not set
+        # _pending_msc_status. The current transition still owns its readback.
+        attempt = getattr(self, "_accepted_restrictive_settlement", None)
+        if (
+            attempt is not None and attempt.purpose == "fallback"
+            and attempt.transition is not None and attempt.transition is self._msc_transition
+        ):
+            return _MSC_EXPORT_PENDING_REASON
         return None
 
     @property
@@ -3046,6 +3054,13 @@ class SigEnergyOptimizer:
         gates = d.trace_gates if isinstance(d.trace_gates, dict) else {}
         values = d.trace_values if isinstance(d.trace_values, dict) else {}
         sunset_provenance = getattr(s, "_o4_sunset_provenance", None)
+        outcome_reason = d.outcome_reason
+        if (
+            application is not None and application.get("status") == "pending"
+            and application.get("fallback_attempted") is True
+            and application.get("error_code") == "accepted_restrictive_settlement_pending"
+        ):
+            outcome_reason = _MSC_EXPORT_PENDING_REASON
         self._decision_trace.appendleft(
             {
                 "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -3056,7 +3071,7 @@ class SigEnergyOptimizer:
                     "pv_max_power_limit_kw": d.pv_max_power_limit,
                     "ess_charge_limit_kw": d.ess_charge_limit,
                     "ess_discharge_limit_kw": d.ess_discharge_limit,
-                    "outcome_reason": d.outcome_reason,
+                    "outcome_reason": outcome_reason,
                 },
                 "state": {
                     "battery_soc": s.battery_soc,

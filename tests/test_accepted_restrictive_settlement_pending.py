@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from app.models import BATTERY_EXPORT, EXPORT_BLOCKED, MSC_SURPLUS_CEILING, Decision
 from app.optimizer import DISCHARGE_MODES, MODE_CMD_DISCHARGE_PV, MODE_MAX_SELF
+from app.routers.api import _live_outcome_reason
 from haos49_characterization_helpers import Haos49CharacterizationCase
 from test_msc_settled_epoch_reuse import PeriodicReportHA, ReportClock
 
@@ -353,6 +354,48 @@ class AcceptedRestrictiveSettlementPendingTests(unittest.TestCase):
                 self.assertIsNone(opt._solar_relief.completed_total_kw)
                 self.assertEqual("closed", opt._evening_boost_reentry.phase)
                 self.assertEqual("application_or_cycle_failed", opt._evening_boost_reentry.reason)
+        asyncio.run(run())
+
+    def test_dashboard_and_trace_report_pending_fallback_until_recovery(self):
+        async def run():
+            clock, ha, opt = self.scenario(old=5.8)
+            previous = self.decision(5.8)
+            previous.outcome_reason = "Exporting 5.8kW, Evening Boost"
+            opt._last_decision = previous
+            proposed = self.decision(5.4)
+            proposed.outcome_reason = "Exporting 5.8kW (set 5.4), Evening Boost"
+            recovery = self.decision(25.0, recovery=True)
+            recovery.outcome_reason = "Ordinary Maximum Self Consumption"
+            waiting = "Waiting for confirmation of export closure and Maximum Self Consumption."
+            proposed_reason = proposed.outcome_reason
+            automated = opt.cfg.automated_option
+
+            with clock.active(), patch.object(opt, "_decide", return_value=proposed) as decide:
+                await opt._safe_tick()
+                pending = opt.decision_trace(limit=1)[0]
+                self.assertEqual("pending", pending["application"]["status"])
+                self.assertTrue(pending["application"]["fallback_attempted"])
+                self.assertEqual(waiting, pending["summary"]["outcome_reason"])
+                self.assertEqual(5.4, pending["summary"]["export_limit_kw"])
+                self.assertEqual(proposed_reason, proposed.outcome_reason)
+                self.assertIs(previous, opt.last_decision)
+                self.assertEqual(waiting, _live_outcome_reason(automated, opt.last_decision, opt))
+                manual = opt.cfg.manual_option
+                self.assertEqual(f"Manual mode active ({manual}); optimizer writes paused",
+                                 _live_outcome_reason(manual, opt.last_decision, opt))
+
+                decide.return_value = recovery
+                clock.elapsed = 8.0
+                await opt._safe_tick()
+                self.assertEqual(waiting, _live_outcome_reason(automated, opt.last_decision, opt))
+                clock.elapsed = 9.0
+                await opt._safe_tick()
+                completed = opt.decision_trace(limit=1)[0]
+                self.assertEqual("succeeded", completed["application"]["status"])
+                self.assertIs(recovery, opt.last_decision)
+                self.assertEqual(recovery.outcome_reason, completed["summary"]["outcome_reason"])
+                self.assertEqual(recovery.outcome_reason, _live_outcome_reason(automated, opt.last_decision, opt))
+
         asyncio.run(run())
 
     def test_event_loop_debounce_wakes_at_pending_one_second_recheck_without_events(self):

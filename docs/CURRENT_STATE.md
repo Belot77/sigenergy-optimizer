@@ -1,6 +1,20 @@
 # Current State
 
-## 2.3.86-haos97 release preparation — 12 November 2026
+## Current live status — 17 November 2026
+
+Home Assistant startup logs at 22:11:46 AEDT on 12 November 2026 confirmed `2.3.86-haos97` running from source `2528a3d817f04945f18a073ce1184ccdae16d6bc`. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.86-haos97)
+
+On 14 November, the split-sunset capture showed the first early below-horizon report closing Boost about 44.8 seconds before `next_setting`. At 19:49:38, the trusted confirming report carried 44.8 seconds of qualification with target 0. Boost readmitted at 19:51:01 after 125.9 seconds elapsed and 123.4 seconds between the first and last qualifying load reports. Measured export reached 5.97 kW by 19:51:12.
+
+On 16 November, Boost requested export closure at 19:50:13 after SoC fell below the 80% floor to 79.9%. Measured export reached 0 kW at 19:50:21, and Boost stayed closed through both sun updates. On 17 November, the two sun updates were 64.7 seconds apart, beyond the 60-second confirmation bound. At 19:52:40 the qualification timer reset from 61.6 seconds to zero. Boost qualified again at 19:54:46, and measured export reached 5.56 kW by 19:54:54. Uninterrupted export at an eligible sunset remains a non-blocking observation.
+
+These captures support the reported split-sunset and target-stop observations only. They do not establish general physical acceptance or behavior beyond the observed intervals.
+
+### Pending local dashboard wording candidate
+
+On the published build, offline replays of the 16 and 17 November cases reproduced an “Exporting” message in the dashboard and trace while fallback was still waiting for export closure and Maximum Self Consumption. The local candidate reuses the existing waiting message during that fallback. The replays passed on the candidate, and the guarded suite passed 97 tests and 102 subtests. Independent review found no blockers. The candidate is ready for commit review. Withhold it or revert the scoped change to roll back.
+
+## Historical .97 release preparation — 12 November 2026
 
 The `.96` trace around 19:47 AEDT showed the below-horizon state before the next-sunset update. The existing logic closed Boost and reset qualification. The local `fix/o4-boost-split-sunset` candidate still closes Boost on the first report. A trusted second report confirming the same rollover can preserve qualification earned since the most recent reset, after fresh confirmation of Maximum Self Consumption and export closure and successful restrictive application. Boost cannot reopen on that cycle. The existing 120-second minimums, 60-second report-gap bound and all eligibility resets still apply. [Control contract](CONTROL_CONTRACT.md#qualification-across-a-split-sunset-report)
 
