@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.88-haos99
+
+- Apply ESS Controls sends only edited fields. Untouched fields keep refreshing while an edit is in progress. If a request stops partway through, the dashboard lists the service calls Home Assistant accepted and refreshes status.
+
 ## 2.3.87-haos98
 
 - Show the export closure and Maximum Self Consumption confirmation message in the dashboard and decision trace while an accepted fallback is pending.

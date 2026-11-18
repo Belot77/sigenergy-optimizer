@@ -1,5 +1,9 @@
 # Current State
 
+## 18 November 2026 — O9 ESS control edits
+
+Home Assistant verified `2.3.87-haos98` and source `d3a97dea9e8fee06bda28bf6c18863757071366d` at 15:20:54 AEDT. The O9 audit replay reproduced a PV Max-only edit resending stale EMS mode, grid export and Remote EMS values. The ESS edit fix sends only changed fields and shows accepted calls after partial failure. The observed state remains available in Power Status. [Control contract](CONTROL_CONTRACT.md)
+
 ## Current live status — 17 November 2026
 
 Home Assistant startup logs at 22:11:46 AEDT on 12 November 2026 confirmed `2.3.86-haos97` running from source `2528a3d817f04945f18a073ce1184ccdae16d6bc`. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.86-haos97)
