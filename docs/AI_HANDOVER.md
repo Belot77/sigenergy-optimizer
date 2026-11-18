@@ -1,5 +1,9 @@
 # SigEnergy Optimizer AI Handover
 
+## 18 November 2026 — O9 ESS control edits
+
+The `.98` installation started at 15:20:54 AEDT from `d3a97dea9e8fee06bda28bf6c18863757071366d`. The O9 ESS form fix targets a replayed defect in which a PV Max edit resubmitted stale export, EMS and Remote EMS controls. The dashboard now sends only fields edited against their displayed baselines. The partial endpoint validates before dispatch, uses the existing lock and order, and reports accepted fields when it stops on an error. Validate with simulated Home Assistant. A scoped code revert restores the old form and route selection. [Control contract](CONTROL_CONTRACT.md)
+
 ## Current live status — 17 November 2026
 
 Home Assistant startup logs at 22:11:46 AEDT on 12 November 2026 confirmed `2.3.86-haos97` running from source `2528a3d817f04945f18a073ce1184ccdae16d6bc`. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.86-haos97)

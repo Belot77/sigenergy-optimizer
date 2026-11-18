@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Request, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from ..config import settings
 from ..forecast_utils import forecast_entry_time, forecast_entry_value
@@ -1348,6 +1348,29 @@ class ESSRequest(BaseModel):
     ess_discharge_limit: Optional[float] = None
 
 
+class ESSFieldsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    ems_mode: str | None = None
+    grid_export_limit: float | None = None
+    grid_import_limit: float | None = None
+    pv_max_power_limit: float | None = None
+    ess_charge_limit: float | None = None
+    ess_discharge_limit: float | None = None
+    ha_control: bool | None = None
+
+
+_ESS_COMMANDS = (
+    ("ems_mode", "ems_mode_select", "select_option", "set EMS mode"),
+    ("grid_export_limit", "grid_export_limit", "set_number", "set grid export limit"),
+    ("grid_import_limit", "grid_import_limit", "set_number", "set grid import limit"),
+    ("pv_max_power_limit", "pv_max_power_limit", "set_number", "set PV max power limit"),
+    ("ess_charge_limit", "ess_max_charging_limit", "set_number", "set ESS charge limit"),
+    ("ess_discharge_limit", "ess_max_discharging_limit", "set_number", "set ESS discharge limit"),
+    ("ha_control", "ha_control_switch", None, "HA control"),
+)
+
+
 def _require_ha_service_success(success: bool, operation: str) -> None:
     if not success:
         raise RuntimeError(f"Home Assistant service call failed: {operation}")
@@ -1361,29 +1384,39 @@ async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
         return await _set_ess_locked(request, body)
 
 
-async def _set_ess_locked(request: Request, body: ESSRequest) -> dict[str, Any]:
+@router.post("/set_ess_fields")
+async def set_ess_fields(request: Request, body: ESSFieldsRequest) -> dict[str, Any]:
+    _require_mutation_auth(request)
+    async with _opt(request)._control_lock:
+        _require_mutation_auth(request)
+        return await _set_ess_locked(request, body)
+
+
+async def _set_ess_locked(request: Request, body: ESSRequest | ESSFieldsRequest) -> dict[str, Any]:
     opt = _opt(request)
     ha = _ha(request)
     cfg = opt.cfg
+    edited_fields_only = isinstance(body, ESSFieldsRequest)
+    submitted = body.model_dump(exclude_unset=edited_fields_only)
     charge_cap_kw, discharge_cap_kw = _state_power_caps_kw(opt)
-    pv_cap_kw = max(charge_cap_kw, discharge_cap_kw)
     field_errors: list[dict[str, str]] = []
-    for name, number, cap in [
-        ("grid_export_limit", body.grid_export_limit, discharge_cap_kw),
-        ("grid_import_limit", body.grid_import_limit, charge_cap_kw),
-        ("pv_max_power_limit", body.pv_max_power_limit, pv_cap_kw),
-    ]:
-        if not (0.0 <= number <= cap):
-            field_errors.append(
-                {
-                    "key": name,
-                    "error": f"value {number} kW is outside allowed range 0-{cap:.2f} kW",
-                }
-            )
-    for name, number, cap in [
-        ("ess_charge_limit", body.ess_charge_limit, charge_cap_kw),
-        ("ess_discharge_limit", body.ess_discharge_limit, discharge_cap_kw),
-    ]:
+    if edited_fields_only:
+        if not submitted:
+            field_errors.append({"key": "fields", "error": "at least one edited field is required"})
+        for name, value in submitted.items():
+            if value is None:
+                field_errors.append({"key": name, "error": "an explicit value is required"})
+        if body.ems_mode is not None and body.ems_mode.strip().lower() in {"", "---", "unknown", "unavailable"}:
+            field_errors.append({"key": "ems_mode", "error": "an available EMS mode is required"})
+    caps = {
+        "grid_export_limit": discharge_cap_kw,
+        "grid_import_limit": charge_cap_kw,
+        "pv_max_power_limit": max(charge_cap_kw, discharge_cap_kw),
+        "ess_charge_limit": charge_cap_kw,
+        "ess_discharge_limit": discharge_cap_kw,
+    }
+    for name, cap in caps.items():
+        number = submitted.get(name)
         if number is not None and not (0.0 <= number <= cap):
             field_errors.append(
                 {
@@ -1411,77 +1444,71 @@ async def _set_ess_locked(request: Request, body: ESSRequest) -> dict[str, Any]:
         "grid_import_limit": opt.last_decision.import_limit if opt.last_decision else None,
         "pv_max_power_limit": opt.last_decision.pv_max_power_limit if opt.last_decision else None,
     }
+    accepted_fields: list[str] = []
+    failed_field: str | None = None
+    failure: Exception | None = None
     try:
-        _require_ha_service_success(
-            await ha.select_option(cfg.ems_mode_select, body.ems_mode),
-            "set EMS mode",
-        )
-        _require_ha_service_success(
-            await ha.set_number(cfg.grid_export_limit, body.grid_export_limit),
-            "set grid export limit",
-        )
-        _require_ha_service_success(
-            await ha.set_number(cfg.grid_import_limit, body.grid_import_limit),
-            "set grid import limit",
-        )
-        _require_ha_service_success(
-            await ha.set_number(cfg.pv_max_power_limit, body.pv_max_power_limit),
-            "set PV max power limit",
-        )
-        if body.ess_charge_limit is not None:
-            _require_ha_service_success(
-                await ha.set_number(
-                    cfg.ess_max_charging_limit,
-                    body.ess_charge_limit,
-                ),
-                "set ESS charge limit",
-            )
-        if body.ess_discharge_limit is not None:
-            _require_ha_service_success(
-                await ha.set_number(
-                    cfg.ess_max_discharging_limit,
-                    body.ess_discharge_limit,
-                ),
-                "set ESS discharge limit",
-            )
-        if body.ha_control is not None:
-            if body.ha_control:
-                _require_ha_service_success(
-                    await ha.turn_on(cfg.ha_control_switch),
-                    "enable HA control",
-                )
+        for name, binding, method, operation in _ESS_COMMANDS:
+            value = submitted.get(name)
+            if value is None:
+                continue
+            failed_field = name
+            entity_id = getattr(cfg, binding)
+            if method is not None:
+                _require_ha_service_success(await getattr(ha, method)(entity_id, value), operation)
+            elif value:
+                _require_ha_service_success(await ha.turn_on(entity_id), "enable HA control")
             else:
-                _require_ha_service_success(
-                    await ha.turn_off(cfg.ha_control_switch),
-                    "disable HA control",
-                )
-        mode_from_entity = str(await ha.get_state_value(cfg.sigenergy_mode_select, "") or "")
-        current_mode = mode_from_entity or _effective_mode_label(opt, opt.last_state, cfg)
-        if current_mode == str(getattr(cfg, "block_flow_option", "Prevent Import & Export")):
-            set_overrides = getattr(opt, "set_manual_ess_overrides", None)
-            if callable(set_overrides):
-                set_overrides(
-                    charge_kw=body.ess_charge_limit,
-                    discharge_kw=body.ess_discharge_limit,
-                )
+                _require_ha_service_success(await ha.turn_off(entity_id), "disable HA control")
+            accepted_fields.append(name)
+            failed_field = None
+    except Exception as exc:
+        failure = exc
+
+    charge_kw = body.ess_charge_limit if "ess_charge_limit" in accepted_fields else None
+    discharge_kw = body.ess_discharge_limit if "ess_discharge_limit" in accepted_fields else None
+    retain_overrides = (
+        charge_kw is not None or discharge_kw is not None
+        if edited_fields_only else failure is None
+    )
+    if retain_overrides:
+        try:
+            mode_from_entity = str(await ha.get_state_value(cfg.sigenergy_mode_select, "") or "")
+            current_mode = mode_from_entity or _effective_mode_label(opt, opt.last_state, cfg)
+            if current_mode == str(getattr(cfg, "block_flow_option", "Prevent Import & Export")):
+                set_overrides = getattr(opt, "set_manual_ess_overrides", None)
+                if callable(set_overrides):
+                    set_overrides(charge_kw=charge_kw, discharge_kw=discharge_kw)
+        except Exception as exc:
+            if failure is None:
+                failure = exc
+            else:
+                logger.warning("Could not retain accepted direct ESS charge or discharge overrides", exc_info=True)
+
+    if failure is None:
         _record_audit(
             request,
             action="set_ess",
             result="ok",
             old_value=old_values,
-            new_value=body.model_dump(),
+            new_value=submitted,
         )
-        return {"ok": True}
-    except Exception as exc:
-        _record_audit(
-            request,
-            action="set_ess",
-            result="error",
-            old_value=old_values,
-            new_value=body.model_dump(),
-            details={"error": str(exc)},
-        )
-        raise HTTPException(status_code=500, detail=str(exc))
+        return {"ok": True, "accepted_fields": accepted_fields} if edited_fields_only else {"ok": True}
+
+    detail = {
+        "message": str(failure),
+        "accepted_fields": accepted_fields,
+        "failed_field": failed_field,
+    }
+    _record_audit(
+        request,
+        action="set_ess",
+        result="error",
+        old_value=old_values,
+        new_value=submitted,
+        details=detail if edited_fields_only else {"error": str(failure)},
+    )
+    raise HTTPException(status_code=500, detail=detail if edited_fields_only else str(failure)) from failure
 
 
 @router.get("/config")

@@ -492,7 +492,7 @@ html.theme-dark .cfg-help{color:#9fb3cf}
     <div class="card">
       <div class="card-title">ESS Mode &amp; Limits</div>
       <div class="flabel">Sigen Plant Remote EMS Control Mode <span id="pending-ess" class="pending-badge">Pending...</span></div>
-      <select id="emsMode" style="margin-bottom:6px">
+      <select id="emsMode" disabled style="margin-bottom:6px">
         <option>Maximum Self Consumption</option>
         <option>Command Discharging (PV First)</option>
         <option>Command Discharging (ESS First)</option>
@@ -500,20 +500,20 @@ html.theme-dark .cfg-help{color:#9fb3cf}
         <option>Command Charging (Grid First)</option>
       </select>
       <div class="flabel">Home Assistant Control</div>
-      <select id="haCtrl" style="margin-bottom:6px">
+      <select id="haCtrl" disabled style="margin-bottom:6px">
         <option value="on">On</option>
         <option value="off">Off</option>
       </select>
       <div class="flabel">Grid Export Limitation (kW)</div>
-      <input type="number" id="expLim" min="0" max="50" step="0.1" value="0.0" style="margin-bottom:6px">
+      <input type="number" id="expLim" min="0" max="50" step="0.1" disabled style="margin-bottom:6px">
       <div class="flabel">Grid Import Limitation (kW)</div>
-      <input type="number" id="impLim" min="0" max="50" step="0.1" value="0.0" style="margin-bottom:6px">
+      <input type="number" id="impLim" min="0" max="50" step="0.1" disabled style="margin-bottom:6px">
       <div class="flabel">PV Max Power Limit (kW)</div>
-      <input type="number" id="pvMax" min="0" max="50" step="0.1" value="25.0" style="margin-bottom:6px">
+      <input type="number" id="pvMax" min="0" max="50" step="0.1" disabled style="margin-bottom:6px">
       <div class="flabel">ESS Max Charge Limit (kW)</div>
-      <input type="number" id="essChgLim" min="0" max="30" step="0.1" value="21.0" style="margin-bottom:6px">
+      <input type="number" id="essChgLim" min="0" max="30" step="0.1" disabled style="margin-bottom:6px">
       <div class="flabel">ESS Max Discharge Limit (kW)</div>
-      <input type="number" id="essDchLim" min="0" max="30" step="0.1" value="24.0" style="margin-bottom:6px">
+      <input type="number" id="essDchLim" min="0" max="30" step="0.1" disabled style="margin-bottom:6px">
       <button class="sbtn" onclick="applyESS(this)">Apply ESS Controls</button>
       <div class="action-msg" id="msgEss"></div>
     </div>
@@ -2799,17 +2799,7 @@ function updateOverview() {
   if (focusedId !== 'modeSelect') {
     syncSel('modeSelect', s.sigenergy_mode);
   }
-  // Only sync ESS inputs when none of them have focus (avoids overwriting mid-edit)
-  const essInputIds = new Set(['emsMode', 'expLim', 'impLim', 'pvMax', 'haCtrl', 'essChgLim', 'essDchLim']);
-  if (!essInputIds.has(focusedId)) {
-    syncSel('emsMode', s.ems_mode);
-    document.getElementById('expLim').value = fc(s.export_limit, 2);
-    document.getElementById('impLim').value = fc(s.import_limit, 2);
-    document.getElementById('pvMax').value  = fc(s.pv_max_power_limit, 2);
-    document.getElementById('essChgLim').value = fc(s.ess_charge_limit, 2);
-    document.getElementById('essDchLim').value = fc(s.ess_discharge_limit, 2);
-    document.getElementById('haCtrl').value = s.ha_control_enabled ? 'on' : 'off';
-  }
+  syncEssControls(s, focusedId);
 
   updateScenarioComparison();
   updateThresholdPreview();
@@ -2819,6 +2809,49 @@ function syncSel(id, val) {
   if (!val) return;
   const sel = document.getElementById(id);
   for (let i=0; i<sel.options.length; i++) if (sel.options[i].text===val){sel.selectedIndex=i;break;}
+}
+
+const ESS_CONTROL_FIELDS = [
+  ['ems_mode', 'emsMode', 'ems_mode', 'EMS mode'],
+  ['grid_export_limit', 'expLim', 'export_limit', 'Grid export limit'],
+  ['grid_import_limit', 'impLim', 'import_limit', 'Grid import limit'],
+  ['pv_max_power_limit', 'pvMax', 'pv_max_power_limit', 'PV Max limit'],
+  ['ess_charge_limit', 'essChgLim', 'ess_charge_limit', 'ESS charge limit'],
+  ['ess_discharge_limit', 'essDchLim', 'ess_discharge_limit', 'ESS discharge limit'],
+  ['ha_control', 'haCtrl', 'ha_control_enabled', 'Home Assistant control'],
+];
+const essControlBaselines = new Map();
+const essControlsInFlight = new Set();
+
+function sameEssControlValue(key, left, right) {
+  if (left === right) return true;
+  if (key === 'ems_mode' || key === 'ha_control' || !left.trim() || !right.trim()) return false;
+  return Number(left) === Number(right);
+}
+
+function syncEssControls(status, focusedId) {
+  for (const [key, id, statusKey] of ESS_CONTROL_FIELDS) {
+    const input = document.getElementById(id);
+    const baseline = essControlBaselines.get(key);
+    if (essControlsInFlight.has(key) || focusedId === id
+        || (baseline !== undefined && !sameEssControlValue(key, input.value, baseline))) continue;
+    const reported = status[statusKey];
+    if (key === 'ems_mode') {
+      if (reported) syncSel(id, reported);
+      if (!reported || input.value !== reported) {
+        essControlBaselines.delete(key);
+        input.disabled = true;
+        continue;
+      }
+    } else if (key === 'ha_control') {
+      input.value = typeof reported === 'boolean' ? (reported ? 'on' : 'off') : '';
+    } else {
+      input.value = Number.isFinite(reported) ? fc(reported, 2) : '';
+    }
+    input.disabled = !input.value;
+    if (input.disabled) essControlBaselines.delete(key);
+    else essControlBaselines.set(key, input.value);
+  }
 }
 function setV(id, val) { const el=document.getElementById(id); if(el&&val!=null) el.value=val; }
 
@@ -3318,6 +3351,7 @@ async function post(url, body) {
       : (err?.detail?.message || err?.message || r.statusText);
     const ex = new Error(detail || r.statusText);
     ex.fieldErrors = err?.field_errors || err?.detail?.field_errors || [];
+    ex.acceptedFields = err?.detail?.accepted_fields;
     throw ex;
   }
   return r.json();
@@ -3477,61 +3511,71 @@ async function applyMode(btn) {
 
 async function applyESS(btn) {
   if (!btn) return;
-  const prev = {
-    emsMode: document.getElementById('emsMode').value,
-    expLim: document.getElementById('expLim').value,
-    impLim: document.getElementById('impLim').value,
-    pvMax: document.getElementById('pvMax').value,
-    haCtrl: document.getElementById('haCtrl').value,
-    essChgLim: document.getElementById('essChgLim').value,
-    essDchLim: document.getElementById('essDchLim').value,
-  };
+  const submitted = new Map();
+  let failed = false;
   setActionMessage('msgEss', 'warn', `Sending ESS update at ${ts()}...`);
   setPendingBadge('pending-ess', true, 'saving', 'Saving...');
   btn.disabled=true; btn.textContent='Applying---';
   try {
-    const pvMaxInput = prev.pvMax.trim();
-    const pvMaxKw = Number(pvMaxInput);
-    if (pvMaxInput === '' || !Number.isFinite(pvMaxKw) || pvMaxKw < 0) {
-      throw new Error('Enter a valid PV Max limit of 0 kW or more.');
+    const updates = {};
+    for (const [key, id, , label] of ESS_CONTROL_FIELDS) {
+      const baseline = essControlBaselines.get(key);
+      const raw = document.getElementById(id).value;
+      if (baseline === undefined || sameEssControlValue(key, raw, baseline)) continue;
+      if (key === 'ems_mode') {
+        if (!raw) throw new Error('Select an EMS mode.');
+        updates[key] = raw;
+      } else if (key === 'ha_control') {
+        if (raw !== 'on' && raw !== 'off') throw new Error('Select On or Off for Home Assistant control.');
+        updates[key] = raw === 'on';
+      } else {
+        const value = Number(raw);
+        if (!raw.trim() || !Number.isFinite(value) || value < 0) {
+          throw new Error(`Enter a valid ${label} of 0 kW or more.`);
+        }
+        updates[key] = value;
+      }
+      submitted.set(key, raw);
     }
-    const target = {
-      ems_mode: document.getElementById('emsMode').value,
-      grid_export_limit: +document.getElementById('expLim').value||0,
-      grid_import_limit: +document.getElementById('impLim').value||0,
-      pv_max_power_limit: pvMaxKw,
-      ess_charge_limit: +document.getElementById('essChgLim').value||0,
-      ess_discharge_limit: +document.getElementById('essDchLim').value||0,
-    };
-    await post('api/set_ess', {
-      ems_mode: target.ems_mode,
-      grid_export_limit: target.grid_export_limit,
-      grid_import_limit: target.grid_import_limit,
-      pv_max_power_limit: target.pv_max_power_limit,
-      ess_charge_limit: target.ess_charge_limit,
-      ess_discharge_limit: target.ess_discharge_limit,
-      ha_control: document.getElementById('haCtrl').value === 'on',
-    });
-    btn.textContent = 'Request accepted';
-    setPendingBadge('pending-ess', true, 'saved', 'Accepted');
-    setActionMessage('msgEss', 'ok', `ESS request accepted at ${ts()}.`);
-    poll();
+    if (submitted.size) {
+      for (const key of submitted.keys()) essControlsInFlight.add(key);
+      const result = await post('api/set_ess_fields', updates);
+      recordAcceptedEssControls(submitted, result.accepted_fields);
+      btn.textContent = 'Request accepted';
+      setPendingBadge('pending-ess', true, 'saved', 'Accepted');
+      setActionMessage('msgEss', 'ok', `ESS request accepted at ${ts()}.`);
+      poll();
+    } else {
+      btn.textContent = 'No changes';
+      setPendingBadge('pending-ess', false);
+      setActionMessage('msgEss', 'ok', 'No ESS controls changed.');
+    }
   } catch(e){
+    failed = true;
     btn.textContent='Error';
     btn.title=e.message||String(e);
     setPendingBadge('pending-ess', true, 'failed', 'Failed');
-    document.getElementById('emsMode').value = prev.emsMode;
-    document.getElementById('expLim').value = prev.expLim;
-    document.getElementById('impLim').value = prev.impLim;
-    document.getElementById('pvMax').value = prev.pvMax;
-    document.getElementById('haCtrl').value = prev.haCtrl;
-    document.getElementById('essChgLim').value = prev.essChgLim;
-    document.getElementById('essDchLim').value = prev.essDchLim;
+    const accepted = recordAcceptedEssControls(submitted, e.acceptedFields);
     const fieldTxt = formatFieldErrors(e.fieldErrors);
-    setActionMessage('msgEss', 'err', `ESS update failed at ${ts()}: ${e.message || String(e)}${fieldTxt ? ' | ' + fieldTxt : ''}`);
+    const partial = accepted.length ? ` Home Assistant accepted: ${accepted.join(', ')}.` : '';
+    setActionMessage('msgEss', 'err', `ESS update failed at ${ts()}: ${e.message || String(e)}${fieldTxt ? ' | ' + fieldTxt : ''}${partial}`);
+    poll();
     console.error('applyESS:', e.message);
+  } finally {
+    for (const key of submitted.keys()) essControlsInFlight.delete(key);
   }
-  setTimeout(()=>{ btn.textContent='Apply ESS Controls'; btn.title=''; btn.disabled=false; setPendingBadge('pending-ess', false, 'pending', 'Pending...'); clearActionMessage('msgEss', 0); }, 2000);
+  setTimeout(()=>{ btn.textContent='Apply ESS Controls'; btn.title=''; btn.disabled=false; setPendingBadge('pending-ess', false, 'pending', 'Pending...'); if (!failed) clearActionMessage('msgEss', 0); }, 2000);
+}
+
+function recordAcceptedEssControls(submitted, acceptedFields) {
+  if (!Array.isArray(acceptedFields)) return [];
+  const accepted = [];
+  for (const [key, , , label] of ESS_CONTROL_FIELDS) {
+    if (!acceptedFields.includes(key) || !submitted.has(key)) continue;
+    essControlBaselines.set(key, submitted.get(key));
+    accepted.push(label);
+  }
+  return accepted;
 }
 
 async function applyThresholds(btn) {
