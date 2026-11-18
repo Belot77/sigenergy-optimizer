@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.87-haos98
 
 - Show the export closure and Maximum Self Consumption confirmation message in the dashboard and decision trace while an accepted fallback is pending.
 

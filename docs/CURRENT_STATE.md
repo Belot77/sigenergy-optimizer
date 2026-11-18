@@ -10,9 +10,9 @@ On 16 November, Boost requested export closure at 19:50:13 after SoC fell below 
 
 These captures support the reported split-sunset and target-stop observations only. They do not establish general physical acceptance or behavior beyond the observed intervals.
 
-### Pending local dashboard wording candidate
+### 2.3.87-haos98 release preparation
 
-On the published build, offline replays of the 16 and 17 November cases reproduced an “Exporting” message in the dashboard and trace while fallback was still waiting for export closure and Maximum Self Consumption. The local candidate reuses the existing waiting message during that fallback. The replays passed on the candidate, and the guarded suite passed 97 tests and 102 subtests. Independent review found no blockers. The candidate is ready for commit review. Withhold it or revert the scoped change to roll back.
+PR #96 merged at `c4cb364`. The dashboard and trace now show the existing confirmation message while an accepted fallback is pending. On .97, the 16 and 17 November replays showed an exporting message during that wait. Both replays passed on the reviewed change, and the guarded suite passed 97 tests and 102 subtests. The last verified installation at this checkpoint was .97.
 
 ## Historical .97 release preparation — 12 November 2026
 

@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.87-haos98
+
+The dashboard and decision trace show when the optimizer is waiting for confirmation of export closure and Maximum Self Consumption during an accepted fallback.
+
 ## Release 2.3.86-haos97
 
 Evening Boost keeps qualification already earned when two trusted Home Assistant reports confirm the same sunset rollover. Export stays closed on that cycle, and readmission still requires the full 120-second qualification and current eligibility. [Control contract](docs/CONTROL_CONTRACT.md#qualification-across-a-split-sunset-report)
