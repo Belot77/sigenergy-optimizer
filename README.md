@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.90-haos101
+
+Settings explain how Export Limit Low influences Evening Boost power and how overnight reserve protection limits Sunrise Export Relax. The export summary identifies an overnight reserve requirement above full battery capacity. The control contract describes Medium, High and Spike priorities alongside Solar and Morning policies.
+
 ## Release 2.3.89-haos100
 
 Settings saves send the fields you edited. Changing Morning Dump's duration keeps the current saved SoC floor, and clearing a numeric input displays a validation error. Unsaved edits are retained during reloads and failed saves.
