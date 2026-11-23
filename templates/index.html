@@ -859,8 +859,8 @@ let wsReconnectTimer = null;
 let activeProfile = 'maxConsumption';
 let uiCfg = null;
 let configLoadGeneration = 0;
-let pricingSavePending = false;
-const pricingBaselines = new WeakMap();
+let configSavePending = false;
+const configBaselines = new WeakMap();
 let auditRows = [];
 let entitySearchTimers = {};
 let entityPickerState = {};
@@ -2929,52 +2929,50 @@ const DASHBOARD_PRICING_INPUTS = [
   ['import_limit_high', 'tImpHighLimit', 1],
 ];
 
-function isPricingSection(key) {
-  return key === 'export_pricing_caps' || key === 'import_pricing_caps';
-}
-
-function pricingSectionInputs(section) {
+function configSectionInputs(section) {
   return section.fields.map(([key, , type]) => [key, cfgFieldId(section.key, key), type]);
 }
 
-function samePricingInput(a, b) {
-  return a === b || (
+function sameConfigInput(a, b, type = 'number') {
+  return a === b || (type === 'number' &&
     a !== undefined && b !== undefined && a.trim() !== '' && b.trim() !== ''
     && Number.isFinite(Number(a)) && Number(a) === Number(b)
   );
 }
 
-function syncPricingInput(id, value, submitted) {
+function syncConfigInput(id, value, submitted, type = 'number') {
   const input = document.getElementById(id);
   if (!input) return;
-  const previous = submitted.has(id) ? submitted.get(id) : pricingBaselines.get(input);
+  const previous = submitted.has(id) ? submitted.get(id) : configBaselines.get(input);
   const savedValue = String(value ?? '');
-  pricingBaselines.set(input, savedValue);
-  if (previous === undefined || samePricingInput(input.value, previous)) {
+  configBaselines.set(input, savedValue);
+  if (previous === undefined || sameConfigInput(input.value, previous, type)) {
     input.value = savedValue;
   }
 }
 
-function syncPricingInputs(cfg, submitted = new Map()) {
+function syncConfigInputs(cfg, submitted = new Map()) {
   for (const [key, id, scale] of DASHBOARD_PRICING_INPUTS) {
     if (!Object.hasOwn(cfg, key)) continue;
     const value = scale === 100 ? (cfg[key] * scale).toFixed(2) : cfg[key];
-    syncPricingInput(id, value, submitted);
+    syncConfigInput(id, value, submitted);
   }
-  for (const section of _CONFIG_SECTIONS.filter(section => isPricingSection(section.key))) {
-    for (const [key, id] of pricingSectionInputs(section)) {
-      if (Object.hasOwn(cfg, key)) syncPricingInput(id, cfg[key], submitted);
+  for (const section of _CONFIG_SECTIONS) {
+    for (const [key, id, type] of configSectionInputs(section)) {
+      if (Object.hasOwn(cfg, key)) syncConfigInput(id, cfg[key], submitted, type);
     }
   }
 }
 
-function collectPricingEdit(key, id, type, scale = 1) {
+function collectConfigEdit(key, id, type, scale = 1) {
   const input = document.getElementById(id);
-  const baseline = pricingBaselines.get(input);
-  if (baseline === undefined) throw new Error('Pricing settings unavailable. Reopen Settings to reload.');
+  if (!input) return null;
+  const baseline = configBaselines.get(input);
+  if (baseline === undefined) return null;
   const raw = input.value;
-  if (samePricingInput(raw, baseline)) return null;
+  if (sameConfigInput(raw, baseline, type)) return null;
   if (type === 'bool') return {key, value: raw === 'true', id, raw};
+  if (type === 'text') return {key, value: raw, id, raw};
   const value = Number(raw) / scale;
   if (!raw.trim() || !Number.isFinite(value)) {
     throw new Error('Enter a valid number for ' + key.replaceAll('_', ' ') + '.');
@@ -2982,22 +2980,22 @@ function collectPricingEdit(key, id, type, scale = 1) {
   return {key, value, id, raw};
 }
 
-async function savePricingEdits(edits) {
+async function saveConfigEdits(edits) {
   if (!edits.length) return false;
-  if (pricingSavePending) throw new Error('Wait for the current pricing save to finish.');
-  pricingSavePending = true;
+  if (configSavePending) throw new Error('Wait for the current settings save to finish.');
+  configSavePending = true;
   try {
     const updates = edits.map(({key, value}) => ({key, value}));
     const {updated} = await post('api/config/batch', {updates, persist: true});
     // An earlier GET may still be in flight with values from before this save.
     configLoadGeneration += 1;
     uiCfg = {...uiCfg, ...updated};
-    syncPricingInputs(updated, new Map(edits.map(({id, raw}) => [id, raw])));
+    syncConfigInputs(updated, new Map(edits.map(({id, raw}) => [id, raw])));
     updateScenarioComparison();
     updateThresholdPreview();
     return true;
   } finally {
-    pricingSavePending = false;
+    configSavePending = false;
   }
 }
 
@@ -3586,8 +3584,8 @@ async function applyThresholds(btn) {
   btn.textContent = 'Applying---';
   try {
     const edits = DASHBOARD_PRICING_INPUTS.map(([key, id, scale]) =>
-      collectPricingEdit(key, id, 'number', scale)).filter(Boolean);
-    const saved = await savePricingEdits(edits);
+      collectConfigEdit(key, id, 'number', scale)).filter(Boolean);
+    const saved = await saveConfigEdits(edits);
     btn.textContent = saved ? 'Applied + Saved ---' : 'No changes';
     setPendingBadge('pending-thresholds', saved, 'saved', 'Saved');
     setActionMessage('msgThresholds', 'ok', saved ? 'Thresholds saved at ' + ts() + '.' : 'No changes to save.');
@@ -4425,15 +4423,6 @@ function renderConfigSection(cfg, section, initiallyOpen=false) {
   </details>`;
 }
 
-function readConfigFieldValue(sectionKey, field) {
-  const [key, , type] = field;
-  const el = document.getElementById(cfgFieldId(sectionKey, key));
-  if (!el) return { key, value: null };
-  if (type === 'bool') return { key, value: el.value === 'true' };
-  if (type === 'number') return { key, value: Number(el.value) };
-  return { key, value: el.value ?? '' };
-}
-
 const CONFIG_BACKUP_REDACT_KEY_PARTS = ['token', 'api_key', 'password', 'secret', 'bearer', 'authorization', 'ha_token'];
 const CONFIG_BACKUP_REDACT_ALLOW_KEYS = new Set([
   'allow_loopback_without_api_key',
@@ -4511,18 +4500,19 @@ async function downloadConfigBackup(btn) {
 }
 
 async function loadConfig() {
-  if (pricingSavePending) return;
+  if (configSavePending) return;
   const el = document.getElementById('cfgContent');
   const generation = ++configLoadGeneration;
   try {
     const cfg = await getJson('api/config');
-    if (generation !== configLoadGeneration || pricingSavePending) return;
+    if (generation !== configLoadGeneration || configSavePending) return;
     const drafts = new Map();
-    for (const section of _CONFIG_SECTIONS.filter(section => isPricingSection(section.key))) {
-      for (const [, id] of pricingSectionInputs(section)) {
+    for (const section of _CONFIG_SECTIONS) {
+      for (const [, id, type] of configSectionInputs(section)) {
         const input = document.getElementById(id);
-        const baseline = pricingBaselines.get(input);
-        if (baseline !== undefined && !samePricingInput(input.value, baseline)) {
+        if (!input) continue;
+        const baseline = configBaselines.get(input);
+        if (baseline !== undefined && !sameConfigInput(input.value, baseline, type)) {
           drafts.set(id, input.value);
         }
       }
@@ -4534,7 +4524,7 @@ async function loadConfig() {
       <div class="cfg-backup-note">Downloads a backup of the current Config settings. Keep private if it contains local URLs or helper names.</div>
     </div>`;
     el.innerHTML = `<div class="cfg-stack">${backupHtml}<div class="cfg-hint">Entity fields are now searchable. Click a field marked <strong>searchable</strong>, then type part of the entity id or name.</div>${sectionsHtml}</div>`;
-    syncPricingInputs(cfg);
+    syncConfigInputs(cfg);
     for (const [id, value] of drafts) {
       const input = document.getElementById(id);
       if (input) input.value = value;
@@ -4557,24 +4547,10 @@ async function applyConfigSection(btn, sectionKey) {
   btn.textContent = 'Saving---';
   const section = _CONFIG_SECTIONS.find(s => s.key === sectionKey);
   const msg = document.getElementById('msg_' + sectionKey);
-  const pricing = isPricingSection(sectionKey);
-  const prevValues = {};
-  if (!pricing) {
-    for (const [key] of section.fields) {
-      const input = document.getElementById(cfgFieldId(sectionKey, key));
-      prevValues[key] = input ? input.value : '';
-    }
-  }
   try {
-    let saved = true;
-    if (pricing) {
-      const edits = pricingSectionInputs(section).map(([key, id, type]) =>
-        collectPricingEdit(key, id, type)).filter(Boolean);
-      saved = await savePricingEdits(edits);
-    } else {
-      const updates = section.fields.map(field => readConfigFieldValue(sectionKey, field));
-      await post('api/config/batch', { updates, persist: true });
-    }
+    const edits = configSectionInputs(section).map(([key, id, type]) =>
+      collectConfigEdit(key, id, type)).filter(Boolean);
+    const saved = await saveConfigEdits(edits);
     btn.textContent = saved ? 'Saved ---' : 'No changes';
     setPendingBadge('pending-cfg-' + sectionKey, saved, 'saved', 'Saved');
     if (msg) {
@@ -4586,13 +4562,6 @@ async function applyConfigSection(btn, sectionKey) {
     btn.title = e.message || String(e);
     setPendingBadge(`pending-cfg-${sectionKey}`, true, 'failed', 'Failed');
     console.error('applyConfigSection:', e.message);
-    for (const field of section.fields) {
-      const [key] = field;
-      const input = document.getElementById(cfgFieldId(sectionKey, key));
-      if (input && Object.prototype.hasOwnProperty.call(prevValues, key)) {
-        input.value = prevValues[key];
-      }
-    }
     const fieldTxt = formatFieldErrors(e.fieldErrors);
     if (msg) { msg.textContent = `Save failed: ${e.message || String(e)}${fieldTxt ? ' | ' + fieldTxt : ''}`; msg.style.color = '#e53e3e'; }
   }

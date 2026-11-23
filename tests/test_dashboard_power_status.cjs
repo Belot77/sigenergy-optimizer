@@ -15,7 +15,7 @@ function openDashboard() {
   const noop = () => {};
   const classList = { add: noop, remove: noop, toggle: noop, contains: () => false };
   const style = { setProperty: noop, removeProperty: noop };
-  const ids = /^(?:power-|powerStatusAge$|reasonBar$|lbl-gBattFlow$|nowFlow$|expLim$|impLim$|pvMax$|essChgLim$|essDchLim$|haCtrl$|wsDot$)/;
+  const ids = /^(?:power-|powerStatusAge$|reasonBar$|lbl-gBattFlow$|nowFlow$|emsMode$|expLim$|impLim$|pvMax$|essChgLim$|essDchLim$|haCtrl$|wsDot$)/;
   const elements = new Map([...template.matchAll(/\bid="([^"]+)"/g)]
     .map(([, id]) => id)
     .filter(id => ids.test(id))

@@ -17,6 +17,8 @@ const script = new Script(state + settings.slice(0, startup), { filename: 'templ
 
 const EXPORT = 'export_pricing_caps';
 const IMPORT = 'import_pricing_caps';
+const DUMP = 'morning_dump';
+const BOOST = 'evening_boost';
 const setting = (section, key) => `cfg_${section}_${key}`;
 
 function element(id, initialValue = '') {
@@ -48,6 +50,12 @@ async function openDashboard() {
     battery_export_min_soc_high: 20, battery_export_min_soc_spike: 10,
     export_spike_threshold: 0, export_spike_min_soc: 0, export_spike_full_power: false,
     allow_low_medium_export_positive_fit: false, allow_positive_fit_battery_discharging: false,
+    morning_dump_enabled: true, morning_dump_hours_before_sunrise: 2, morning_dump_min_soc: 15,
+    evening_boost_enabled: true, evening_boost_min_feedin_price: 0.01,
+    evening_aggressive_floor: 80, evening_boost_forecast_safety: 1.2,
+    evening_boost_min_tomorrow_forecast_kwh: 100,
+    notification_service: '01', auto_enable_ha_control: true,
+    ems_mode_select: 'select.example_ems',
   };
   const elements = new Map([...template.matchAll(/\bid="(t(?:Exp|Imp)\w+)"/g)]
     .map(([, id]) => [id, element(id)]));
@@ -72,6 +80,7 @@ async function openDashboard() {
   const errors = [];
   let pause;
   let pauseLoad;
+  let rejectSave = false;
   const context = {
     document: Object.assign(doc, {
       getElementById: id => elements.get(id) ?? null,
@@ -102,6 +111,10 @@ async function openDashboard() {
         pause = undefined;
         await pending;
       }
+      if (rejectSave) {
+        rejectSave = false;
+        return { ok: false, statusText: 'Save rejected', json: async () => ({ detail: 'Save rejected' }) };
+      }
       Object.assign(config, updated);
       return { ok: true, json: async () => ({ ok: true, updated }) };
     },
@@ -111,15 +124,21 @@ async function openDashboard() {
   await context.loadConfig();
   assert.equal(elements.get('tExpHighLimit').value, '10');
   assert.equal(elements.get(setting(EXPORT, 'export_limit_high')).value, '10');
-  const save = async section => {
+  const attemptSave = async section => {
     const button = element('apply');
     if (section) await context.applyConfigSection(button, section);
     else await context.applyThresholds(button);
+    return button;
+  };
+  const save = async section => {
+    const button = await attemptSave(section);
     assert.deepEqual(errors, []);
     assert.notEqual(button.textContent, 'Error');
   };
   return {
-    config, requests, save, reload: () => context.loadConfig(),
+    config, requests, save, attemptSave, reload: () => context.loadConfig(),
+    remove: id => elements.delete(id),
+    rejectNextSave: () => { rejectSave = true; },
     value: id => elements.get(id).value,
     edit(id, value) {
       const input = elements.get(id);
@@ -220,4 +239,132 @@ test('Acknowledging a save preserves a newer edit made while the request is pend
   await ui.save(EXPORT);
   assert.deepEqual(ui.requests, [{ export_limit_high: 12 }, { export_limit_high: 13 }]);
   assert.equal(ui.value('tExpHighLimit'), '13');
+});
+
+test('A Morning Dump duration edit omits an untouched floor changed by another client', async () => {
+  const ui = await openDashboard();
+  ui.config.morning_dump_min_soc = 20;
+  ui.edit(setting(DUMP, 'morning_dump_hours_before_sunrise'), '1.5');
+  await ui.save(DUMP);
+
+  assert.deepEqual(ui.requests, [{ morning_dump_hours_before_sunrise: 1.5 }]);
+  assert.equal(ui.config.morning_dump_min_soc, 20);
+});
+
+for (const invalid of ['', '   ', 'Infinity', 'NaN']) {
+  test(`A blank or nonfinite Morning Dump floor ${JSON.stringify(invalid)} is rejected before saving`, async () => {
+    const ui = await openDashboard();
+    const floor = setting(DUMP, 'morning_dump_min_soc');
+    ui.edit(floor, invalid);
+    const button = await ui.attemptSave(DUMP);
+
+    assert.equal(button.textContent, 'Error');
+    assert.deepEqual(ui.requests, []);
+    assert.equal(ui.config.morning_dump_min_soc, 15);
+    assert.equal(ui.value(floor), invalid);
+  });
+}
+
+test('An explicit zero and false remain intentional Settings edits', async () => {
+  const ui = await openDashboard();
+  ui.edit(setting(DUMP, 'morning_dump_min_soc'), '0');
+  ui.edit(setting(DUMP, 'morning_dump_enabled'), 'false');
+  await ui.save(DUMP);
+
+  assert.deepEqual(ui.requests, [{ morning_dump_enabled: false, morning_dump_min_soc: 0 }]);
+});
+
+test('An unchanged section sends no request, including equivalent numeric formatting', async () => {
+  const ui = await openDashboard();
+  ui.edit(setting(DUMP, 'morning_dump_min_soc'), '15.00');
+  await ui.save(DUMP);
+  await ui.save(BOOST);
+
+  assert.deepEqual(ui.requests, []);
+});
+
+test('Text Settings use exact values and preserve an intentional empty string', async () => {
+  const ui = await openDashboard();
+  const service = setting('control_notifications', 'notification_service');
+  ui.edit(service, '1');
+  await ui.save('control_notifications');
+  ui.edit(service, '');
+  await ui.save('control_notifications');
+
+  assert.deepEqual(ui.requests, [{ notification_service: '1' }, { notification_service: '' }]);
+});
+
+test('An entity binding edit omits untouched bindings and a missing input', async () => {
+  const ui = await openDashboard();
+  ui.edit(setting('ems_limits', 'ems_mode_select'), 'select.replacement_ems');
+  ui.remove(setting('ems_limits', 'grid_export_limit'));
+  await ui.save('ems_limits');
+
+  assert.deepEqual(ui.requests, [{ ems_mode_select: 'select.replacement_ems' }]);
+});
+
+test('Reload preserves drafts across non-pricing sections and refreshes untouched fields', async () => {
+  const ui = await openDashboard();
+  const duration = setting(DUMP, 'morning_dump_hours_before_sunrise');
+  const forecast = setting(BOOST, 'evening_boost_min_tomorrow_forecast_kwh');
+  ui.edit(duration, '1.5');
+  ui.edit(forecast, '80');
+  ui.config.morning_dump_min_soc = 20;
+  await ui.reload();
+
+  assert.equal(ui.value(duration), '1.5');
+  assert.equal(ui.value(forecast), '80');
+  assert.equal(ui.value(setting(DUMP, 'morning_dump_min_soc')), '20');
+  await ui.save(DUMP);
+  await ui.save(BOOST);
+  assert.deepEqual(ui.requests, [
+    { morning_dump_hours_before_sunrise: 1.5 },
+    { evening_boost_min_tomorrow_forecast_kwh: 80 },
+  ]);
+});
+
+test('A stale reload cannot undo an acknowledged non-pricing save', async () => {
+  const ui = await openDashboard();
+  const floor = setting(DUMP, 'morning_dump_min_soc');
+  const resume = ui.pauseNextLoad();
+  const reload = ui.reload();
+  ui.edit(floor, '20');
+  await ui.save(DUMP);
+  resume();
+  await reload;
+
+  assert.equal(ui.value(floor), '20');
+  await ui.save(DUMP);
+  assert.deepEqual(ui.requests, [{ morning_dump_min_soc: 20 }]);
+});
+
+test('A non-pricing save acknowledges only its submitted draft and preserves newer edits', async () => {
+  const ui = await openDashboard();
+  const floor = setting(DUMP, 'morning_dump_min_soc');
+  const resume = ui.pauseNextSave();
+  ui.edit(floor, '20');
+  const pending = ui.save(DUMP);
+  ui.edit(floor, '25');
+  resume();
+  await pending;
+
+  assert.equal(ui.value(floor), '25');
+  await ui.save(DUMP);
+  assert.deepEqual(ui.requests, [{ morning_dump_min_soc: 20 }, { morning_dump_min_soc: 25 }]);
+});
+
+test('A rejected non-pricing save preserves a newer draft for retry', async () => {
+  const ui = await openDashboard();
+  const floor = setting(DUMP, 'morning_dump_min_soc');
+  const resume = ui.pauseNextSave();
+  ui.rejectNextSave();
+  ui.edit(floor, '20');
+  const pending = ui.attemptSave(DUMP);
+  ui.edit(floor, '25');
+  resume();
+  const button = await pending;
+
+  assert.equal(button.textContent, 'Error');
+  assert.equal(ui.config.morning_dump_min_soc, 15);
+  assert.equal(ui.value(floor), '25');
 });
