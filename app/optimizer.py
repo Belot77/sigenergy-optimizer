@@ -157,7 +157,7 @@ _POWER_LIMIT_MAX_KW = 100.0
 # timestamp jitter; keep derived-flow coherence equally narrow and independent
 # of the much wider per-sensor freshness window.
 _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
-_RUNTIME_SIGNATURE = "2.3.92-haos103"
+_RUNTIME_SIGNATURE = "2.3.93-haos104"
 _MSC_EXPORT_PENDING_REASON = (
     "Waiting for confirmation of export closure and Maximum Self Consumption."
 )
@@ -601,6 +601,14 @@ class _MscMaintenanceEpoch:
     last_ems_reported_at: Optional[float] = None
     last_export_reported_at: Optional[float] = None
     last_checked_at: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class _DirectESSSelection:
+    mode: str
+    changed_at: datetime
+    updated_at: datetime
+    reported_at: datetime
 
 
 class SigEnergyOptimizer:
@@ -3451,6 +3459,9 @@ class SigEnergyOptimizer:
 
     async def _read_control_authority(
         self, evidence: Optional[dict[str, dict[str, Any]]] = None,
+        *,
+        remember_mode: bool = True,
+        state_objects: Optional[dict[str, dict[str, Any]]] = None,
     ) -> tuple[HVACObservedValue, str]:
         """Refresh ownership and Remote EMS together; evaluate after all awaits."""
         entities = [self.cfg.sigenergy_mode_select, self.cfg.ha_control_switch]
@@ -3459,7 +3470,7 @@ class SigEnergyOptimizer:
         try:
             bulk = await self.ha.bulk_states(entities)
             bulk = await self._enrich_state_report_metadata(
-                bulk, entities,
+                bulk, entities, state_objects=state_objects,
             )
             if evidence is not None:
                 for entity in evidence:
@@ -3467,7 +3478,8 @@ class SigEnergyOptimizer:
             observation = self._control_mode_observation(
                 bulk.get(entities[0]), observed_at=datetime.now(timezone.utc),
             )
-            self._remember_control_mode(observation, bulk.get(entities[0]))
+            if remember_mode:
+                self._remember_control_mode(observation, bulk.get(entities[0]))
             switch = bulk.get(entities[1], {})
             switch_state = str(switch.get("state", "")).strip().lower()
             if (
@@ -3482,6 +3494,43 @@ class SigEnergyOptimizer:
         except Exception as exc:
             logger.warning("Current control authority read failed: %s", exc)
             return HVACObservedValue(), "unknown"
+
+    async def _read_direct_ess_control_selection(self) -> _DirectESSSelection | None:
+        """Read current selector evidence without changing cached ownership."""
+        entity_id = self.cfg.sigenergy_mode_select
+        evidence: dict[str, dict[str, Any]] = {entity_id: {}}
+        state_objects: dict[str, dict[str, Any]] = {}
+        observation, _ = await self._read_control_authority(
+            evidence, remember_mode=False, state_objects=state_objects,
+        )
+        if not (observation.available and observation.fresh):
+            return None
+        mode = str(observation.value)
+        if (
+            self._manual_mode_override
+            and self._manual_mode_requested_at is not None
+            and self._manual_mode_override != mode
+        ):
+            return None
+
+        state = evidence[entity_id]
+        changed_at = self._parse_aware_metadata_timestamp(state.get("last_changed"))
+        updated_at = self._parse_aware_metadata_timestamp(state.get("last_updated"))
+        reported_at = self._state_metadata_timestamp(state)
+        if not (
+            changed_at is not None and updated_at is not None and reported_at is not None
+            and changed_at <= updated_at <= reported_at
+        ):
+            return None
+        if callable(getattr(self.ha, "get_state_report_metadata", None)):
+            # Enrichment finished after the bulk read. Without a matching fresh
+            # snapshot the earlier REST read cannot authorize a direct write.
+            if state.get("_msc_metadata_status") != "accepted":
+                return None
+            current = state_objects.get(entity_id, {})
+            if changed_at != self._parse_aware_metadata_timestamp(current.get("last_changed")):
+                return None
+        return _DirectESSSelection(mode, changed_at, updated_at, reported_at)
 
     async def _read_state(self) -> SolarState:
         cfg = self.cfg

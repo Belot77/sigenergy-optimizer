@@ -541,6 +541,11 @@ def test_real_runtime_identity_and_direct_control_retire_delayed_summary(boundar
                         await opt.apply_manual_mode(opt.cfg.automated_option)
                 else:
                     rig = SimpleNamespace(opt=opt, ha=opt.ha)
+                    selector_at = when.isoformat()
+                    rig.ha.states[opt.cfg.sigenergy_mode_select] = {
+                        "state": opt.cfg.automated_option, "last_changed": selector_at,
+                        "last_updated": selector_at, "last_reported": selector_at,
+                    }
                     transport = httpx.ASGITransport(app=_app(rig), client=("198.51.100.14", 12345))
                     with patch.object(api, "settings", _auth_settings()):
                         async with httpx.AsyncClient(transport=transport, base_url="http://synthetic.invalid") as client:

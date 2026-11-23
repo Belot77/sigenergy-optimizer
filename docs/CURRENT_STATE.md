@@ -1,8 +1,12 @@
 # Current State
 
+## Direct ESS writes and external mode changes
+
+The `.104` candidate checks SigEnergy Mode before direct ESS writes and preserves partial acceptance reporting when Home Assistant changes the selection during a request. The `.103` settings-ownership release is published. The operator's most recent startup log confirmed `.102`. [Control contract](CONTROL_CONTRACT.md)
+
 ## Settings ownership across restart
 
-The `.103` candidate shows which fields Home Assistant manages through `extra_env` and rejects dashboard saves for those fields. The operator supplied the `.102` startup log at 18:59:23 AEDT on 23 November 2026, confirming source `7107bcc4414a7c3a5831c163a231a564f1a7153a`. Direct ESS writes during an external mode change remain the next ownership item. [Control contract](CONTROL_CONTRACT.md)
+The `.103` release shows which fields Home Assistant manages through `extra_env` and rejects dashboard saves for those fields. The operator supplied the `.102` startup log at 18:59:23 AEDT on 23 November 2026, confirming source `7107bcc4414a7c3a5831c163a231a564f1a7153a`. [Control contract](CONTROL_CONTRACT.md)
 
 ## Atomic settings persistence
 

@@ -24,6 +24,8 @@ def test_config_activation_cannot_split_authenticated_ess_target_bindings(rig):
         old_export = rig.opt.cfg.grid_export_limit
         new_export = "number.o14_new_export"
         old_ems = rig.opt.cfg.ems_mode_select
+        rig.ha.observe(rig.opt.cfg.sigenergy_mode_select, rig.opt.cfg.automated_option,
+                       changed=rig.clock.now)
 
         def checked_auth(request):
             original_auth(request)

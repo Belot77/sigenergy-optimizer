@@ -8,7 +8,7 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from fastapi import APIRouter, Request, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
@@ -20,6 +20,9 @@ from ..decision_trace_store import TICKET_SECONDS, TraceDownload
 from ..models import Decision, HVACObservedValue, SolarState
 from ..settings_persistence import write_settings_atomically
 from ..storage_worker import StorageUnavailable
+
+if TYPE_CHECKING:
+    from ..optimizer import _DirectESSSelection
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -1387,6 +1390,29 @@ def _require_ha_service_success(success: bool, operation: str) -> None:
         raise RuntimeError(f"Home Assistant service call failed: {operation}")
 
 
+class _DirectESSModeConflict(RuntimeError):
+    pass
+
+
+async def _require_direct_ess_selection(
+    opt: Any, previous: _DirectESSSelection | None,
+) -> _DirectESSSelection:
+    current = await opt._read_direct_ess_control_selection()
+    if current is None or (
+        previous is not None and (
+            current.changed_at < previous.changed_at
+            or current.updated_at < previous.updated_at
+            or current.reported_at < previous.reported_at
+        )
+    ):
+        raise _DirectESSModeConflict("Current SigEnergy Mode could not be verified")
+    if previous is not None and (
+        current.mode != previous.mode or current.changed_at != previous.changed_at
+    ):
+        raise _DirectESSModeConflict("SigEnergy Mode changed during the direct ESS request")
+    return current
+
+
 @router.post("/set_ess")
 async def set_ess(request: Request, body: ESSRequest) -> dict[str, Any]:
     _require_mutation_auth(request)
@@ -1444,11 +1470,6 @@ async def _set_ess_locked(request: Request, body: ESSRequest | ESSFieldsRequest)
         )
         raise _validation_exception(field_errors)
 
-    # A validated direct request may change import between optimizer samples.
-    invalidate_accounting = getattr(opt, "invalidate_import_accounting", None)
-    if callable(invalidate_accounting):
-        invalidate_accounting("direct_ess_import_boundary")
-
     old_values = {
         "ems_mode": opt.last_decision.ems_mode if opt.last_decision else None,
         "grid_export_limit": opt.last_decision.export_limit if opt.last_decision else None,
@@ -1458,13 +1479,33 @@ async def _set_ess_locked(request: Request, body: ESSRequest | ESSFieldsRequest)
     accepted_fields: list[str] = []
     failed_field: str | None = None
     failure: Exception | None = None
+    selection: _DirectESSSelection | None = None
+    commands = [
+        (name, getattr(cfg, binding), method, operation, submitted[name])
+        for name, binding, method, operation in _ESS_COMMANDS
+        if submitted.get(name) is not None
+    ]
+    selector = str(cfg.sigenergy_mode_select).strip().lower()
     try:
-        for name, binding, method, operation in _ESS_COMMANDS:
-            value = submitted.get(name)
-            if value is None:
-                continue
+        aliased_field = next(
+            (name for name, entity_id, *_ in commands if str(entity_id).strip().lower() == selector),
+            None,
+        )
+        if aliased_field is not None:
+            failed_field = aliased_field
+            raise _DirectESSModeConflict(
+                f"Direct ESS field {aliased_field} is bound to the SigEnergy Mode selector"
+            )
+
+        for name, entity_id, method, operation, value in commands:
             failed_field = name
-            entity_id = getattr(cfg, binding)
+            current = await _require_direct_ess_selection(opt, selection)
+            if selection is None:
+                # The first authorized write may change import between optimizer samples.
+                invalidate_accounting = getattr(opt, "invalidate_import_accounting", None)
+                if callable(invalidate_accounting):
+                    invalidate_accounting("direct_ess_import_boundary")
+            selection = current
             if method is not None:
                 _require_ha_service_success(await getattr(ha, method)(entity_id, value), operation)
             elif value:
@@ -1478,18 +1519,17 @@ async def _set_ess_locked(request: Request, body: ESSRequest | ESSFieldsRequest)
 
     charge_kw = body.ess_charge_limit if "ess_charge_limit" in accepted_fields else None
     discharge_kw = body.ess_discharge_limit if "ess_discharge_limit" in accepted_fields else None
-    retain_overrides = (
-        charge_kw is not None or discharge_kw is not None
-        if edited_fields_only else failure is None
-    )
-    if retain_overrides:
+    if (
+        (charge_kw is not None or discharge_kw is not None)
+        and selection is not None
+        and selection.mode == cfg.block_flow_option
+        and (failure is None or (edited_fields_only and not isinstance(failure, _DirectESSModeConflict)))
+    ):
         try:
-            mode_from_entity = str(await ha.get_state_value(cfg.sigenergy_mode_select, "") or "")
-            current_mode = mode_from_entity or _effective_mode_label(opt, opt.last_state, cfg)
-            if current_mode == str(getattr(cfg, "block_flow_option", "Prevent Import & Export")):
-                set_overrides = getattr(opt, "set_manual_ess_overrides", None)
-                if callable(set_overrides):
-                    set_overrides(charge_kw=charge_kw, discharge_kw=discharge_kw)
+            await _require_direct_ess_selection(opt, selection)
+            set_overrides = getattr(opt, "set_manual_ess_overrides", None)
+            if callable(set_overrides):
+                set_overrides(charge_kw=charge_kw, discharge_kw=discharge_kw)
         except Exception as exc:
             if failure is None:
                 failure = exc
@@ -1511,15 +1551,22 @@ async def _set_ess_locked(request: Request, body: ESSRequest | ESSFieldsRequest)
         "accepted_fields": accepted_fields,
         "failed_field": failed_field,
     }
+    interrupted = isinstance(failure, _DirectESSModeConflict)
+    legacy_error = str(failure)
+    if interrupted and accepted_fields:
+        legacy_error += f". Home Assistant accepted {', '.join(accepted_fields)} before the request stopped."
     _record_audit(
         request,
         action="set_ess",
         result="error",
         old_value=old_values,
         new_value=submitted,
-        details=detail if edited_fields_only else {"error": str(failure)},
+        details=detail if edited_fields_only or interrupted else {"error": legacy_error},
     )
-    raise HTTPException(status_code=500, detail=detail if edited_fields_only else str(failure)) from failure
+    raise HTTPException(
+        status_code=409 if interrupted else 500,
+        detail=detail if edited_fields_only else legacy_error,
+    ) from failure
 
 
 @router.get("/config")

@@ -95,6 +95,11 @@ def test_back_to_back_force_import_block_and_auto_keep_unobserved_cost_unknown(c
 def test_direct_ess_import_changes_invalidate_only_after_validation(context, invalid):
     case, optimizer, when = context
     rig = SimpleNamespace(opt=optimizer, ha=optimizer.ha)
+    selector_at = datetime.fromtimestamp(when.timestamp(), tz=optimizer._tz).isoformat()
+    rig.ha.states[optimizer.cfg.sigenergy_mode_select] = {
+        "state": optimizer.cfg.automated_option, "last_changed": selector_at,
+        "last_updated": selector_at, "last_reported": selector_at,
+    }
 
     async def run():
         transport = httpx.ASGITransport(app=_app(rig), client=("198.51.100.14", 12345))
