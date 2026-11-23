@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.89-haos100
+
+- Settings saves send only edited fields. Blank numeric inputs are rejected, explicit zero values are retained, and unsaved edits survive reloads and failed saves.
+
 ## 2.3.88-haos99
 
 - Apply ESS Controls sends only edited fields. Untouched fields keep refreshing while an edit is in progress. If a request stops partway through, the dashboard lists the service calls Home Assistant accepted and refreshes status.

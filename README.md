@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.89-haos100
+
+Settings saves send the fields you edited. Changing Morning Dump's duration keeps the current saved SoC floor, and clearing a numeric input displays a validation error. Unsaved edits are retained during reloads and failed saves.
+
 ## Release 2.3.87-haos98
 
 The dashboard and decision trace show when the optimizer is waiting for confirmation of export closure and Maximum Self Consumption during an accepted fallback.

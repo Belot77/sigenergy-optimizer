@@ -1,5 +1,13 @@
 # SigEnergy Optimizer AI Handover
 
+## 23 November 2026 — Settings edited fields
+
+Branch `fix/settings-edited-fields-only` starts at main `703fdb28ce12977e567ff26bbc4d26dd114decbf`. Generalize the existing pricing save behavior to the other Settings forms, retaining numeric, boolean, text and entity semantics. Regression coverage must reproduce a duration-only save that previously resubmitted an old Morning Dump floor, reject a blank floor, preserve explicit zero and false, and retain drafts through reloads and failed or pending saves. A scoped revert or the prior `.99` image provides rollback. [Control contract](CONTROL_CONTRACT.md)
+
+The `.100` candidate passed 37 dashboard checks and two release checks. All 13 new Settings regressions failed against `.99` and passed with this patch. Independent review cleared the implementation. The Power Status fixture now includes the EMS control element required by `.99`, with the existing assertions retained. Computer-use launchers failed before opening Home Assistant on 23 November, so installation access is currently unavailable. The last verified runtime remains `.99` until new startup proof is obtained.
+
+Home Assistant startup at 19:08:53 AEDT on 18 November verified `.99`, source `5b33020f8bf7d3f7e110e71f826e6140e33aad4f`, with the WebSocket connected. The `.99` build shipped the ESS edited-fields endpoint. Its focused validation passed 37 checks. The broader regression run was interrupted before completion. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.88-haos99)
+
 ## 18 November 2026 — O9 ESS control edits
 
 The `.98` installation started at 15:20:54 AEDT from `d3a97dea9e8fee06bda28bf6c18863757071366d`. The O9 ESS form fix targets a replayed defect in which a PV Max edit resubmitted stale export, EMS and Remote EMS controls. The dashboard now sends only fields edited against their displayed baselines. The partial endpoint validates before dispatch, uses the existing lock and order, and reports accepted fields when it stops on an error. Validate with simulated Home Assistant. A scoped code revert restores the old form and route selection. [Control contract](CONTROL_CONTRACT.md)
