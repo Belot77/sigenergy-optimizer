@@ -7,16 +7,14 @@ OPTIONS_FILE="/data/options.json"
 ENV_FILE="/data/.env"
 
 mkdir -p "${DATA_DIR}"
-if [ ! -f "${ENV_FILE}" ]; then
-  cp "${APP_DIR}/.env.example" "${ENV_FILE}"
-fi
-
 python3 <<'PY'
 from __future__ import annotations
 
 import json
 import re
 from pathlib import Path
+
+from app.settings_persistence import write_settings_atomically
 
 options_path = Path("/data/options.json")
 env_path = Path("/data/.env")
@@ -25,7 +23,8 @@ options = {}
 if options_path.exists():
     options = json.loads(options_path.read_text(encoding="utf-8"))
 
-lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+existing_or_template = env_path if env_path.exists() else Path("/app/.env.example")
+lines = existing_or_template.read_text(encoding="utf-8").splitlines()
 
 updates: dict[str, str] = {}
 
@@ -69,7 +68,7 @@ for line in lines:
 for env_key in sorted(remaining):
     out.append(f"{env_key}={updates[env_key]}")
 
-env_path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+write_settings_atomically(env_path, "\n".join(out).rstrip() + "\n")
 PY
 
 ln -sf "${ENV_FILE}" "${APP_DIR}/.env"

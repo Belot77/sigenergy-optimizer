@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.91-haos102
+
+- Save settings atomically during dashboard updates and add-on startup. An interruption before replacement leaves the previous complete settings file available.
+
 ## 2.3.90-haos101
 
 - Explain Evening Boost's use of Export Limit Low, protected overnight reserve behavior, and the existing export priorities. Describe an overnight reserve requirement above full battery capacity in the export summary.
