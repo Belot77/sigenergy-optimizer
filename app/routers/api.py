@@ -17,6 +17,7 @@ from ..config import settings
 from ..forecast_utils import forecast_entry_time, forecast_entry_value
 from ..decision_trace_store import TICKET_SECONDS, TraceDownload
 from ..models import Decision, HVACObservedValue, SolarState
+from ..settings_persistence import write_settings_atomically
 from ..storage_worker import StorageUnavailable
 
 logger = logging.getLogger(__name__)
@@ -787,7 +788,7 @@ def _persist_config_keys_to_env(
     for env_key in sorted(remaining):
         out.append(f"{env_key}={updates[env_key]}")
 
-    env_path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+    write_settings_atomically(env_path, "\n".join(out).rstrip() + "\n")
     return sorted(updates.keys())
 
 

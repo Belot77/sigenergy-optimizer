@@ -1,5 +1,11 @@
 # SigEnergy Optimizer AI Handover
 
+## Atomic settings persistence
+
+Branch `fix/atomic-settings-persistence` starts at main `38f779f113a6f3c3fbda707d9e2b6b0d3ae90605`. The dashboard and add-on startup previously rewrote `.env` in place. Both now stage a complete file beside the resolved destination and replace it atomically. This covers first startup, existing files and the HAOS symlink in `/app`. The replacement is the point at which settings become persistent. A scoped revert or the published `.101` image provides rollback. The last operator-confirmed installation is `.100`. [Control contract](CONTROL_CONTRACT.md)
+
+The `.102` candidate passed 23 focused checks on Windows, including first startup, restart, single and batch save failure, and successful retry. Three tests were skipped because the host lacks native symlink privileges or requires POSIX mode and directory-sync support. A simulated alias verified the resolved destination. Independent review and the startup shell syntax check passed. The computer-use launcher failed before opening Home Assistant.
+
 ## 23 November 2026 — Boost and reserve explanations
 
 The operator confirmed `.100` installed. Its tagged source is `4486c2a52e6a5f3762f778a82adf8d910139051f`; startup/source readback was unavailable through the failing computer-use launcher. Branch `fix/boost-reserve-help` starts at main `ea8221dc11b55cce6d70cb1e3abcb0a20ff144bf`.

@@ -1,5 +1,9 @@
 # Current State
 
+## Atomic settings persistence
+
+The `.102` candidate protects the saved settings file during dashboard saves and add-on startup, including initial creation. The `.101` explanation release is published, and `.100` is the latest operator-confirmed installation. Remaining O9 work covers settings source precedence at restart and direct ESS writes across an external mode change. [Control contract](CONTROL_CONTRACT.md)
+
 ## 23 November 2026 — Boost and reserve explanations
 
 The operator confirmed `.100` installed. The published source is `4486c2a52e6a5f3762f778a82adf8d910139051f`. The `.101` candidate corrects Boost power and protected-reserve help text, the reserve-above-capacity status, and the current priority descriptions. Settings persistence and restart precedence, and direct ESS writes across an external mode change remain O9 follow-ups. [Control contract](CONTROL_CONTRACT.md)

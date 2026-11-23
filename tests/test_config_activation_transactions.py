@@ -9,6 +9,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+from app import settings_persistence
 from app.optimizer import MODE_MAX_SELF, _MscTransition
 from app.routers import api
 from test_config_activation_authority_race import _app, _auth_settings, _post, rig
@@ -134,18 +135,42 @@ def test_waiting_config_cancellation_does_not_activate_or_persist(rig, batch):
 
 
 @pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
-def test_failed_persistence_leaves_active_configuration_and_proof_unchanged(rig, batch):
+def test_failed_persistence_leaves_active_configuration_and_proof_unchanged(
+    rig, batch, tmp_path, monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
     old = rig.opt.cfg.grid_export_limit
+    target = tmp_path / ".env"
+    previous_settings = f"GRID_EXPORT_LIMIT={old}\nDEMO_OTHER=7\n"
+    target.write_text(previous_settings, encoding="utf-8")
     proof = {old: (0.01, 123.0, True)}
     rig.opt._number_settlement_requests = proof.copy()
-    with patch.object(api, "_persist_config_keys_to_env", side_effect=OSError("synthetic write failure")):
+    new_export = "number.o14_persisted"
+
+    def fail_replacement(_staged, destination):
+        assert destination == target
+        assert target.read_text(encoding="utf-8") == previous_settings
+        assert rig.opt.cfg.grid_export_limit == old
+        raise OSError("synthetic replace failure")
+
+    with monkeypatch.context() as failure:
+        failure.setattr(settings_persistence.os, "replace", fail_replacement)
         response = asyncio.run(_change(
-            rig, {"grid_export_limit": "number.o14_unpersisted"}, batch=batch, persist=True,
+            rig, {"grid_export_limit": new_export}, batch=batch, persist=True,
         ))
     assert response.status_code == 500
+    assert target.read_text(encoding="utf-8") == previous_settings
+    assert list(tmp_path.iterdir()) == [target]
     assert rig.opt.cfg.grid_export_limit == old
     assert rig.opt._number_settlement_requests == proof
     assert not rig.opt._control_lock.locked()
+
+    response = asyncio.run(_change(rig, {"grid_export_limit": new_export}, batch=batch, persist=True))
+    assert response.status_code == 200
+    assert response.json()["persisted_keys"] == ["GRID_EXPORT_LIMIT"]
+    assert target.read_text(encoding="utf-8") == f"GRID_EXPORT_LIMIT={new_export}\nDEMO_OTHER=7\n"
+    assert rig.opt.cfg.grid_export_limit == new_export
+    assert not rig.opt._number_settlement_requests
 
 
 def test_queued_config_validation_uses_preceding_activated_values(rig):
