@@ -1,5 +1,13 @@
 # SigEnergy Optimizer AI Handover
 
+## Direct ESS writes and external mode changes
+
+Branch `fix/ess-external-mode-guard` starts at main `6111e173622befee4cd53914544c730a8a528d9c`. The `.104` change checks fresh SigEnergy Mode evidence at direct ESS write boundaries. When a selection changes or its evidence becomes unverified, the API stops the rest of the request. Service acceptance remains evidence only for calls already dispatched. The approved rollback is a scoped revert or the published `.103` image. The last confirmed runtime from the operator's startup log is `.102`. [Control contract](CONTROL_CONTRACT.md)
+
+Previously, a direct ESS request could continue under the optimizer's lock while a Home Assistant automation changed SigEnergy Mode independently. Each write now adds an observation and can be interrupted if Home Assistant cannot verify the selection. For live verification, confirm the runtime and source in the startup log, then compare a normal edited ESS save with Power Status. Use simulation for the interruption case instead of creating a live ownership change just to test it.
+
+The guarded Python run passed 343 tests and 106 subtests across 14 modules, including 176 focused tests and 22 subtests. The 39 dashboard checks, two version checks and independent code and regression review passed. A failed or conflicting State-object read interrupts the request. The browser launcher failed before opening Home Assistant, so installation remains unverified.
+
 ## Settings ownership across restart
 
 Branch `fix/settings-restart-precedence` starts at main `49e33208f3b95240d08f136a821ba54eacc7e26d`. The `.103` change marks fields supplied by HAOS `extra_env` and blocks conflicting dashboard and API updates. Only setting names are handed to the running process. Removing a key from `extra_env` and restarting restores dashboard editing. The last overlaid value can remain in `.env` until edited. Roll back with a scoped revert or the published `.102` image. [Control contract](CONTROL_CONTRACT.md)

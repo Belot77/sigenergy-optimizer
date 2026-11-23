@@ -71,13 +71,15 @@ class _ObservedHA(RecordingHA):
         self.on_write = None
         self.metadata_error = None
 
-    def observe(self, entity, value, *, at=None, updated=None):
+    def observe(self, entity, value, *, at=None, updated=None, changed=None):
         at = at or self.clock.now
         row = {
             "entity_id": entity, "state": str(value), "attributes": {},
             "last_updated": (updated or at).isoformat(),
             "last_reported": at.isoformat(),
         }
+        if changed is not None:
+            row["last_changed"] = changed.isoformat()
         self.reports[entity] = row
         self.metadata[entity] = deepcopy(row)
 
@@ -993,6 +995,7 @@ def test_authenticated_direct_set_ess_preserves_separate_service_order(rig):
 
     opt = _DummyOptimizer()
     ha = _RecordingHA(mode_value="Manual")
+    opt.ha = ha
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(optimizer=opt, ha=ha)),
                               client=SimpleNamespace(host="192.0.2.1"),
                               headers={"x-api-key": "synthetic-stage-a-api-key"})
@@ -1011,4 +1014,4 @@ def test_authenticated_direct_set_ess_preserves_separate_service_order(rig):
         ("set_number", "number.ess_discharge", 5.0),
         ("turn_on", "switch.ha_control"),
     ]
-    assert ha.state_reads == ["select.sigenergy_mode"]
+    assert ha.state_reads == ["select.sigenergy_mode"] * len(ha.calls)

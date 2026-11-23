@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.93-haos104
+
+Direct ESS requests verify the current SigEnergy Mode before each write. If Home Assistant reports a different selection or loses a trustworthy observation, the dashboard shows which writes Home Assistant already accepted. An accepted service call can still take effect.
+
 ## Release 2.3.92-haos103
 
 Settings supplied by the add-on's `extra_env` appear as **Managed by Home Assistant**. Edit them in the add-on configuration, or remove the override and restart the add-on to resume dashboard editing. The last applied value stays in the saved settings until you edit it.
