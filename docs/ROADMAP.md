@@ -1,10 +1,18 @@
 # Roadmap
 
-## Current published release 2.3.81-haos92 (9 November 2026)
+## Current published release 2.3.93-haos104 (23 November 2026)
 
-.92 contains the narrow O9 dashboard corrections and empty-snapshot WebSocket fix from PRs #82–#85. After an authorized installation, verify request acknowledgement, HA readbacks and measured power. `.90` remains the latest confirmed installation. [Publication receipt](HAOS92_RELEASE_CANDIDATE.md)
+`.104` completes the planned ESS and settings fixes in this round. It checks SigEnergy Mode before each direct ESS write and reports the fields Home Assistant accepted if a request stops early. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.93-haos104)
 
-O4 Evening Boost sunset continuation and stability, O5 overnight reserve and load/price policy, O6 broader Morning Dump handoff and depletion, and O9's broader ownership and settings audit remain open. Live evidence is still needed for these applicable control paths, including O4's passive sunset trace. The queued ownership audit follows Phase 2. [Control-ownership audit](#5-short-control-ownership-audit)
+The latest verified Home Assistant startup is `.102`. Confirm the `.104` runtime and source from its startup log, then verify a routine ESS edit against Power Status. The Evening Boost check at a qualifying sunset can happen whenever conditions line up. [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
+
+The longer-term roadmap covers [architecture consolidation](#6-architecture-refactor--consolidation), [repository cleanup](#7-repository--project-cleanup), [dashboard UX](#8-full-gui--ux-redesign-and-functional-corrections), and [Climate Manager](#9-climate-manager-integration).
+
+## Prior published release 2.3.81-haos92 (9 November 2026)
+
+`.92` contained the narrow O9 dashboard corrections and empty-snapshot WebSocket fix from PRs #82–#85. At that checkpoint, `.90` was the latest confirmed installation. The planned live check covered request acknowledgement, HA readbacks and measured power. [Publication receipt](HAOS92_RELEASE_CANDIDATE.md)
+
+At the `.92` checkpoint, O4 Evening Boost sunset continuation and stability, O5 overnight reserve and load/price policy, O6 broader Morning Dump handoff and depletion, and the broader O9 ownership and settings audit were open. [Control-ownership audit](#5-short-control-ownership-audit)
 
 ## Prior published release 2.3.80-haos91 (9 November 2026)
 
@@ -444,7 +452,7 @@ This bounded correction preserves the established phase ordering, dependencies a
 
 After Phase 2, confirm that every owner changes only its own actuator domains and that Manual, Force, freshness, price, reserve, import-cost, and settlement protections compose correctly. Resolve material findings before restructuring or integration.
 
-The published .92 dashboard corrections address three narrow O9 presentation and input issues and startup WebSocket status. The broader O9 ownership and settings audit still includes Solar Override and configuration ownership. [Current O9 status](CURRENT_STATE.md)
+The O9 fixes through `.104` cover edited-field saves, atomic settings persistence, settings ownership at restart and mode checks on direct ESS writes. Keep Solar Override and any remaining actuator ownership questions in scope for this audit. [Current O9 status](CURRENT_STATE.md#published-release-and-live-verification)
 
 ## 6. Architecture refactor / consolidation
 

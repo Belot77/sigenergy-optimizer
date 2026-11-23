@@ -1,34 +1,36 @@
 # Current State
 
-## Direct ESS writes and external mode changes
+## Published release and live verification
 
-The `.104` candidate checks SigEnergy Mode before direct ESS writes and preserves partial acceptance reporting when Home Assistant changes the selection during a request. The `.103` settings-ownership release is published. The operator's most recent startup log confirmed `.102`. [Control contract](CONTROL_CONTRACT.md)
+`2.3.93-haos104` was published on 23 November 2026 from source `a2e343993673e30309cca36053f58c647669f4e4`. It verifies SigEnergy Mode before direct ESS writes and reports which fields Home Assistant accepted when a request stops early. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.93-haos104) · [Control contract](CONTROL_CONTRACT.md)
 
-## Settings ownership across restart
+The latest verified Home Assistant startup is `2.3.91-haos102` at 18:59:23 AEDT on 23 November 2026, from source `7107bcc4414a7c3a5831c163a231a564f1a7153a`. Live verification of `.104` requires its startup runtime and source, followed by comparing a routine ESS save with Power Status.
 
-The `.103` release shows which fields Home Assistant manages through `extra_env` and rejects dashboard saves for those fields. The operator supplied the `.102` startup log at 18:59:23 AEDT on 23 November 2026, confirming source `7107bcc4414a7c3a5831c163a231a564f1a7153a`. [Control contract](CONTROL_CONTRACT.md)
+## Settings ownership across restart — .103
 
-## Atomic settings persistence
+The `.103` release shows which fields Home Assistant manages through `extra_env` and rejects dashboard saves for those fields. [Control contract](CONTROL_CONTRACT.md)
 
-The `.102` candidate protects the saved settings file during dashboard saves and add-on startup, including initial creation. The `.101` explanation release is published, and `.100` is the latest operator-confirmed installation. Remaining O9 work covers settings source precedence at restart and direct ESS writes across an external mode change. [Control contract](CONTROL_CONTRACT.md)
+## Atomic settings persistence — .102
+
+The `.102` release protects the saved settings file during dashboard saves and add-on startup, including initial creation. [Control contract](CONTROL_CONTRACT.md)
 
 ## 23 November 2026 — Boost and reserve explanations
 
-The operator confirmed `.100` installed. The published source is `4486c2a52e6a5f3762f778a82adf8d910139051f`. The `.101` candidate corrects Boost power and protected-reserve help text, the reserve-above-capacity status, and the current priority descriptions. Settings persistence and restart precedence, and direct ESS writes across an external mode change remain O9 follow-ups. [Control contract](CONTROL_CONTRACT.md)
+At this checkpoint, the operator had confirmed `.100` installed. The published `.100` source was `4486c2a52e6a5f3762f778a82adf8d910139051f`. The `.101` release corrected Boost power and protected-reserve help text, the reserve-above-capacity status, and priority descriptions. [Control contract](CONTROL_CONTRACT.md)
 
 The candidate passed 10 focused reserve-diagnostic tests with 26 subtests and 37 dashboard tests. The actuator comparison retained every requested target. Browser installation access remains unavailable because the launcher fails before opening Home Assistant. Live sunset continuation remains a non-blocking observation.
 
 ## 23 November 2026 — Settings edited fields
 
-The last verified installed build is `.99`, source `5b33020f8bf7d3f7e110e71f826e6140e33aad4f`, from the 18 November 19:08:53 AEDT startup. The Settings-form patch addresses resubmission of untouched values and blank numeric inputs becoming zero. Validation includes duration-only changes, typed zero and false, text/entity fields, failed saves, and drafts changed while a save or reload is pending. [Control contract](CONTROL_CONTRACT.md)
+At this checkpoint, the last verified startup was `.99`, source `5b33020f8bf7d3f7e110e71f826e6140e33aad4f`, on 18 November at 19:08:53 AEDT. The Settings-form patch addressed resubmission of untouched values and blank numeric inputs becoming zero. Validation included duration-only changes, typed zero and false, text/entity fields, failed saves, and drafts changed while a save or reload was pending. [Control contract](CONTROL_CONTRACT.md)
 
-The `.100` candidate passed all 37 dashboard checks and both release checks, with independent review GO. Installation access is unavailable because the browser and Windows computer-use launchers fail before opening Home Assistant. Verify `.100` runtime and source after installation. Remaining O9 work includes settings persistence and restart precedence, direct ESS requests across an external ownership change, and the Boost/reserve explanations. Live sunset continuation remains a non-blocking observation.
+The `.100` candidate passed all 37 dashboard checks and both release checks, with independent review GO. The browser and Windows computer-use launchers failed before opening Home Assistant.
 
 ## 18 November 2026 — O9 ESS control edits
 
 Home Assistant verified `2.3.87-haos98` and source `d3a97dea9e8fee06bda28bf6c18863757071366d` at 15:20:54 AEDT. The O9 audit replay reproduced a PV Max-only edit resending stale EMS mode, grid export and Remote EMS values. The ESS edit fix sends only changed fields and shows accepted calls after partial failure. The observed state remains available in Power Status. [Control contract](CONTROL_CONTRACT.md)
 
-## Current live status — 17 November 2026
+## Historical live status — 17 November 2026
 
 Home Assistant startup logs at 22:11:46 AEDT on 12 November 2026 confirmed `2.3.86-haos97` running from source `2528a3d817f04945f18a073ce1184ccdae16d6bc`. [Release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.86-haos97)
 
@@ -822,7 +824,7 @@ checks passed 19 / 22. Independent production review is GO; baseline control AST
 comparison passes after removing only passive additions. No full-suite or physical
 acceptance claim. [Contract and limits](CONTROL_CONTRACT.md#passive-charge-allocation-evidence).
 
-## Current Solar allocation characterization - 26 October 2026
+## Historical Solar allocation characterization - 26 October 2026
 
 The operator reports installed .79. Supplied evidence shows both zero charge
 requests near 15 kW export and a later screenshot with 18.87 kW charging/zero
@@ -1380,6 +1382,8 @@ Current Automated ownership and observed Remote EMS ON remain required at applic
 - Protected reference: `C:\Projects\sigenergy_optimizer-evening-priority`, branch `test/evening-medium-priority-characterization`, base `08f4daf...`, ten intentionally dirty files. Never reset, stash, discard, overwrite, commit, delete or wholesale-copy its optimizer. This checkpoint does not touch it or the Stage A worktree.
 
 ## Outstanding operational bug register
+
+This register records the `.90` checkpoint. See [the current release and live verification](#published-release-and-live-verification) for the latest status.
 
 The register distinguishes published code corrections from remaining engineering, operator-policy and physical-evidence gates. O14, O16 and O10 clock recovery shipped in .77; their original worktrees remain preserved. O15 and O17 shipped in .78 after combined validation and independent source/test/documentation review GO. The narrow O2/O6 stabilization corrections shipped in .79; their physical acceptance and adjacent policy questions remain open. Their standalone results and evidence limits remain recorded separately below. Publication and image/source identity are verified; installation, exposure and physical acceptance remain unverified. O1, O3 and O6 retain the listed live acceptance or adjacent-behavior questions despite their earlier narrow corrections. O11 remains parked; historical HDD, archive and MSC causation is not established.
 
