@@ -4,6 +4,7 @@ import ipaddress
 import time
 import logging
 import math
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -25,6 +26,10 @@ router = APIRouter()
 
 _POWER_LIMIT_MAX_KW: float = 100.0  # absolute hard cap for ESS/PV limits
 _MASKED_KEYS: set[str] = {"ha_token", "ui_api_key"}
+_HAOS_MANAGED_SETTING_ERROR = (
+    "Managed by Home Assistant. Edit this setting in the add-on configuration, or "
+    "remove its extra_env override and restart the add-on to edit it here."
+)
 _CHART_RESAMPLE_MS = 300000
 _THRESHOLD_PRESET_KEYS: tuple[str, ...] = (
     "export_threshold_low",
@@ -738,6 +743,11 @@ def _coerce_config_value(cfg: Any, key: str, raw: Any) -> Any:
 
 def _config_key_to_env_var(key: str) -> str:
     return key.upper()
+
+
+def _haos_managed_env_keys() -> set[str]:
+    snapshot = os.environ.get("SIGENERGY_HAOS_MANAGED_SETTINGS", "")
+    return {key for key in snapshot.split(",") if key}
 
 
 def _to_env_literal(value: Any) -> str:
@@ -1520,6 +1530,10 @@ async def get_config(request: Request) -> dict[str, Any]:
     for key in _MASKED_KEYS:
         if key in data:
             data[key] = "****"
+    managed_env_keys = _haos_managed_env_keys()
+    data["_haos_managed_fields"] = sorted(
+        key for key in data if _config_key_to_env_var(key) in managed_env_keys
+    )
     return data
 
 
@@ -1643,9 +1657,12 @@ def _update_config_locked(request: Request, body: ConfigUpdateRequest) -> dict[s
         raise HTTPException(status_code=400, detail=f"Unknown config key: {body.key}")
     old_value = getattr(cfg, body.key)
     try:
-        coerced = _coerce_config_value(cfg, body.key, body.value)
-        err = _validate_config_value(cfg, body.key, coerced)
-        field_errors = [{"key": body.key, "error": err}] if err else []
+        if _config_key_to_env_var(body.key) in _haos_managed_env_keys():
+            field_errors = [{"key": body.key, "error": _HAOS_MANAGED_SETTING_ERROR}]
+        else:
+            coerced = _coerce_config_value(cfg, body.key, body.value)
+            err = _validate_config_value(cfg, body.key, coerced)
+            field_errors = [{"key": body.key, "error": err}] if err else []
         if not field_errors:
             field_errors.extend(
                 _validate_solar_surplus_margin_pair(
@@ -1799,9 +1816,13 @@ def _update_config_batch_locked(request: Request, body: ConfigBatchUpdateRequest
 
     coerced_updates: dict[str, Any] = {}
     field_errors: list[dict[str, str]] = []
+    managed_env_keys = _haos_managed_env_keys()
     for item in body.updates:
         if not hasattr(cfg, item.key):
             field_errors.append({"key": item.key, "error": "Unknown config key"})
+            continue
+        if _config_key_to_env_var(item.key) in managed_env_keys:
+            field_errors.append({"key": item.key, "error": _HAOS_MANAGED_SETTING_ERROR})
             continue
         try:
             coerced = _coerce_config_value(cfg, item.key, item.value)

@@ -1,5 +1,9 @@
 # Current State
 
+## Settings ownership across restart
+
+The `.103` candidate shows which fields Home Assistant manages through `extra_env` and rejects dashboard saves for those fields. The operator supplied the `.102` startup log at 18:59:23 AEDT on 23 November 2026, confirming source `7107bcc4414a7c3a5831c163a231a564f1a7153a`. Direct ESS writes during an external mode change remain the next ownership item. [Control contract](CONTROL_CONTRACT.md)
+
 ## Atomic settings persistence
 
 The `.102` candidate protects the saved settings file during dashboard saves and add-on startup, including initial creation. The `.101` explanation release is published, and `.100` is the latest operator-confirmed installation. Remaining O9 work covers settings source precedence at restart and direct ESS writes across an external mode change. [Control contract](CONTROL_CONTRACT.md)

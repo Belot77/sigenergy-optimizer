@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.92-haos103
+
+- Mark settings supplied by Home Assistant's `extra_env` as managed and reject dashboard edits to those fields. Restart after removing an override to edit that field from the dashboard.
+
 ## 2.3.91-haos102
 
 - Save settings atomically during dashboard updates and add-on startup. An interruption before replacement leaves the previous complete settings file available.
