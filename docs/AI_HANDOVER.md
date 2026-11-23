@@ -1,5 +1,13 @@
 # SigEnergy Optimizer AI Handover
 
+## Settings ownership across restart
+
+Branch `fix/settings-restart-precedence` starts at main `49e33208f3b95240d08f136a821ba54eacc7e26d`. The `.103` change marks fields supplied by HAOS `extra_env` and blocks conflicting dashboard and API updates. Only setting names are handed to the running process. Removing a key from `extra_env` and restarting restores dashboard editing. The last overlaid value can remain in `.env` until edited. Roll back with a scoped revert or the published `.102` image. [Control contract](CONTROL_CONTRACT.md)
+
+The operator provided `.102` startup logs for 23 November 2026 at 18:59:23 AEDT from `7107bcc4414a7c3a5831c163a231a564f1a7153a`. The startup WebSocket connected. A later high PV-only export attempt did not observe Maximum Self Consumption settling within its original wait, and the optimizer reported observing restrictive recovery. The excerpt ends during a later trusted-observation wait. It does not establish why settlement was late.
+
+The `.103` candidate passed 39 dashboard checks and 29 guarded Python checks. Windows skipped three inherited symlink and POSIX tests. The startup test covers case variants and `export` assignments without touching another setting's multiline value. Tests also cover mixed API updates, threshold presets, and editing after override removal and restart. Independent review and Bash syntax checks passed. The browser launcher failed before opening Home Assistant.
+
 ## Atomic settings persistence
 
 Branch `fix/atomic-settings-persistence` starts at main `38f779f113a6f3c3fbda707d9e2b6b0d3ae90605`. The dashboard and add-on startup previously rewrote `.env` in place. Both now stage a complete file beside the resolved destination and replace it atomically. This covers first startup, existing files and the HAOS symlink in `/app`. The replacement is the point at which settings become persistent. A scoped revert or the published `.101` image provides rollback. The last operator-confirmed installation is `.100`. [Control contract](CONTROL_CONTRACT.md)

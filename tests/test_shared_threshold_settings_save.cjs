@@ -40,7 +40,7 @@ function element(id, initialValue = '') {
   };
 }
 
-async function openDashboard() {
+async function openDashboard(managed = []) {
   const config = {
     export_threshold_low: 0.01, export_threshold_medium: 0.1, export_threshold_high: 0.1234567,
     export_limit_low: 3, export_limit_medium: 5, export_limit_high: 10,
@@ -56,19 +56,22 @@ async function openDashboard() {
     evening_boost_min_tomorrow_forecast_kwh: 100,
     notification_service: '01', auto_enable_ha_control: true,
     ems_mode_select: 'select.example_ems',
+    _haos_managed_fields: managed,
   };
   const elements = new Map([...template.matchAll(/\bid="(t(?:Exp|Imp)\w+)"/g)]
     .map(([, id]) => [id, element(id)]));
   const content = element('cfgContent');
   const doc = element('document');
+  let configMarkup = '';
   Object.defineProperty(content, 'innerHTML', {
     set(markup) {
+      configMarkup = markup;
       for (const id of elements.keys()) if (id.startsWith('cfg_')) elements.delete(id);
       for (const [, tag] of markup.matchAll(/(<input\b[^>]*>)/g)) {
         const id = tag.match(/\bid="([^"]+)"/)?.[1];
         if (id?.startsWith('cfg_')) elements.set(id, element(id, tag.match(/\bvalue="([^"]*)"/)?.[1] ?? ''));
       }
-      for (const [, id, options] of markup.matchAll(/<select id="([^"]+)">([\s\S]*?)<\/select>/g)) {
+      for (const [, id, options] of markup.matchAll(/<select id="([^"]+)"[^>]*>([\s\S]*?)<\/select>/g)) {
         if (!id.startsWith('cfg_')) continue;
         const selected = options.match(/<option value="([^"]*)"\s+selected\b/)?.[1];
         elements.set(id, element(id, selected ?? options.match(/<option value="([^"]*)"/)?.[1] ?? ''));
@@ -76,11 +79,13 @@ async function openDashboard() {
     },
   });
   elements.set(content.id, content);
+  elements.set('managedThresholdsNote', element('managedThresholdsNote'));
   const requests = [];
   const errors = [];
   let pause;
   let pauseLoad;
   let rejectSave = false;
+  let preset;
   const context = {
     document: Object.assign(doc, {
       getElementById: id => elements.get(id) ?? null,
@@ -91,6 +96,9 @@ async function openDashboard() {
     setTimeout() {},
     console: { error: (...args) => errors.push(args.join(' ')) },
     fetch: async (url, options) => {
+      if (url === './api/presets/test-preset') {
+        return { ok: true, json: async () => ({ preset: { payload: preset } }) };
+      }
       if (url === './api/config' && !options.method) {
         const snapshot = { ...config };
         if (pauseLoad) {
@@ -137,6 +145,18 @@ async function openDashboard() {
   };
   return {
     config, requests, save, attemptSave, reload: () => context.loadConfig(),
+    markup: () => configMarkup,
+    disabled: id => Boolean(elements.get(id).disabled),
+    thresholdNoteVisible: () => !elements.get('managedThresholdsNote').hidden,
+    async loadPreset(payload) {
+      preset = payload;
+      elements.set('presetSelect', element('presetSelect', 'test-preset'));
+      try {
+        await context.loadPreset();
+      } finally {
+        elements.delete('presetSelect');
+      }
+    },
     remove: id => elements.delete(id),
     rejectNextSave: () => { rejectSave = true; },
     value: id => elements.get(id).value,
@@ -159,6 +179,48 @@ async function openDashboard() {
     },
   };
 }
+
+test('Home Assistant ownership is visible and blocks edits from both settings surfaces', async () => {
+  const ui = await openDashboard(['morning_dump_enabled', 'export_limit_high', 'ems_mode_select']);
+  assert.match(ui.markup(), /Managed by Home Assistant/);
+  assert.equal(ui.disabled(setting(DUMP, 'morning_dump_enabled')), true);
+  assert.equal(ui.disabled(setting('ems_limits', 'ems_mode_select')), true);
+  assert.equal(ui.disabled(setting(EXPORT, 'export_limit_high')), true);
+  assert.equal(ui.disabled('tExpHighLimit'), true);
+  assert.equal(ui.thresholdNoteVisible(), true);
+
+  ui.edit(setting(DUMP, 'morning_dump_enabled'), 'false');
+  ui.edit(setting(DUMP, 'morning_dump_hours_before_sunrise'), '1.5');
+  await ui.save(DUMP);
+  await ui.loadPreset({ export_limit_high: 80, import_limit_low: 4 });
+  assert.equal(ui.value('tExpHighLimit'), '10');
+  await ui.save();
+
+  assert.deepEqual(ui.requests, [{ morning_dump_hours_before_sunrise: 1.5 }, { import_limit_low: 4 }]);
+});
+
+test('Reload shows the managed value and restores editing when override ownership clears', async () => {
+  const ui = await openDashboard();
+  const floor = setting(DUMP, 'morning_dump_min_soc');
+  ui.edit(floor, '18');
+  ui.edit('tExpHighLimit', '12');
+  ui.config._haos_managed_fields = ['morning_dump_min_soc', 'export_limit_high'];
+  ui.config.morning_dump_min_soc = 22;
+  ui.config.export_limit_high = 16;
+  await ui.reload();
+  assert.equal(ui.disabled(floor), true);
+  assert.equal(ui.value(floor), '22');
+  assert.equal(ui.value('tExpHighLimit'), '16');
+
+  ui.config._haos_managed_fields = [];
+  await ui.reload();
+  assert.equal(ui.disabled(floor), false);
+  assert.equal(ui.disabled('tExpHighLimit'), false);
+  assert.equal(ui.thresholdNoteVisible(), false);
+  ui.edit(floor, '24');
+  await ui.save(DUMP);
+  assert.deepEqual(ui.requests, [{ morning_dump_min_soc: 24 }]);
+});
 
 test('Settings export cap survives a subsequent dashboard import-only save', async () => {
   const ui = await openDashboard();

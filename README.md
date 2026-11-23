@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.92-haos103
+
+Settings supplied by the add-on's `extra_env` appear as **Managed by Home Assistant**. Edit them in the add-on configuration, or remove the override and restart the add-on to resume dashboard editing. The last applied value stays in the saved settings until you edit it.
+
 ## Release 2.3.91-haos102
 
 Dashboard saves and add-on startup write a complete settings file before replacing the one in persistent storage. First startup prepares the template and add-on options together before publishing the file. [Control contract](docs/CONTROL_CONTRACT.md)

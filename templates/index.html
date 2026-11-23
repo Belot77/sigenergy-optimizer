@@ -551,6 +551,7 @@ html.theme-dark .cfg-help{color:#9fb3cf}
         <input class="thresh-input" id="tImpHighPrice" type="number" step="0.01" value="-30.00">
         <input class="thresh-input" id="tImpHighLimit" type="number" step="0.1" value="25">
       </div>
+      <div class="cfg-help" id="managedThresholdsNote" hidden>Disabled thresholds are managed by Home Assistant. Edit them in the add-on configuration.</div>
       <div class="preview-card" id="thresholdPreview">
         <div class="preview-title">Live Threshold Preview</div>
         <div class="preview-note">Waiting for live status from Home Assistant...</div>
@@ -2933,6 +2934,10 @@ function configSectionInputs(section) {
   return section.fields.map(([key, , type]) => [key, cfgFieldId(section.key, key), type]);
 }
 
+function isHaosManagedField(cfg, key) {
+  return Array.isArray(cfg?._haos_managed_fields) && cfg._haos_managed_fields.includes(key);
+}
+
 function sameConfigInput(a, b, type = 'number') {
   return a === b || (type === 'number' &&
     a !== undefined && b !== undefined && a.trim() !== '' && b.trim() !== ''
@@ -2940,13 +2945,14 @@ function sameConfigInput(a, b, type = 'number') {
   );
 }
 
-function syncConfigInput(id, value, submitted, type = 'number') {
+function syncConfigInput(id, value, submitted, type = 'number', managed = false) {
   const input = document.getElementById(id);
   if (!input) return;
   const previous = submitted.has(id) ? submitted.get(id) : configBaselines.get(input);
   const savedValue = String(value ?? '');
   configBaselines.set(input, savedValue);
-  if (previous === undefined || sameConfigInput(input.value, previous, type)) {
+  input.disabled = managed;
+  if (managed || previous === undefined || sameConfigInput(input.value, previous, type)) {
     input.value = savedValue;
   }
 }
@@ -2955,18 +2961,23 @@ function syncConfigInputs(cfg, submitted = new Map()) {
   for (const [key, id, scale] of DASHBOARD_PRICING_INPUTS) {
     if (!Object.hasOwn(cfg, key)) continue;
     const value = scale === 100 ? (cfg[key] * scale).toFixed(2) : cfg[key];
-    syncConfigInput(id, value, submitted);
+    const managed = isHaosManagedField(uiCfg, key);
+    syncConfigInput(id, value, submitted, 'number', managed);
+    const input = document.getElementById(id);
+    if (input) input.title = managed ? 'Managed by Home Assistant' : '';
   }
+  const note = document.getElementById('managedThresholdsNote');
+  if (note) note.hidden = !DASHBOARD_PRICING_INPUTS.some(([key]) => isHaosManagedField(uiCfg, key));
   for (const section of _CONFIG_SECTIONS) {
     for (const [key, id, type] of configSectionInputs(section)) {
-      if (Object.hasOwn(cfg, key)) syncConfigInput(id, cfg[key], submitted, type);
+      if (Object.hasOwn(cfg, key)) syncConfigInput(id, cfg[key], submitted, type, isHaosManagedField(uiCfg, key));
     }
   }
 }
 
 function collectConfigEdit(key, id, type, scale = 1) {
   const input = document.getElementById(id);
-  if (!input) return null;
+  if (!input || input.disabled) return null;
   const baseline = configBaselines.get(input);
   if (baseline === undefined) return null;
   const raw = input.value;
@@ -3423,33 +3434,15 @@ async function loadPreset() {
   }
   try {
     const data = await getJson(`api/presets/${encodeURIComponent(name)}`);
-    const p = data?.preset?.payload || {};
-    const oldValues = {
-      tExpLowPrice: document.getElementById('tExpLowPrice').value,
-      tExpMedPrice: document.getElementById('tExpMedPrice').value,
-      tExpHighPrice: document.getElementById('tExpHighPrice').value,
-      tExpLowLimit: document.getElementById('tExpLowLimit').value,
-      tExpMedLimit: document.getElementById('tExpMedLimit').value,
-      tExpHighLimit: document.getElementById('tExpHighLimit').value,
-      tImpLowPrice: document.getElementById('tImpLowPrice').value,
-      tImpMedPrice: document.getElementById('tImpMedPrice').value,
-      tImpHighPrice: document.getElementById('tImpHighPrice').value,
-      tImpLowLimit: document.getElementById('tImpLowLimit').value,
-      tImpMedLimit: document.getElementById('tImpMedLimit').value,
-      tImpHighLimit: document.getElementById('tImpHighLimit').value,
-    };
-    if (Number.isFinite(Number(p.export_threshold_low))) document.getElementById('tExpLowPrice').value = (Number(p.export_threshold_low) * 100).toFixed(2);
-    if (Number.isFinite(Number(p.export_threshold_medium))) document.getElementById('tExpMedPrice').value = (Number(p.export_threshold_medium) * 100).toFixed(2);
-    if (Number.isFinite(Number(p.export_threshold_high))) document.getElementById('tExpHighPrice').value = (Number(p.export_threshold_high) * 100).toFixed(2);
-    if (Number.isFinite(Number(p.export_limit_low))) document.getElementById('tExpLowLimit').value = String(p.export_limit_low);
-    if (Number.isFinite(Number(p.export_limit_medium))) document.getElementById('tExpMedLimit').value = String(p.export_limit_medium);
-    if (Number.isFinite(Number(p.export_limit_high))) document.getElementById('tExpHighLimit').value = String(p.export_limit_high);
-    if (Number.isFinite(Number(p.import_threshold_low))) document.getElementById('tImpLowPrice').value = (Number(p.import_threshold_low) * 100).toFixed(2);
-    if (Number.isFinite(Number(p.import_threshold_medium))) document.getElementById('tImpMedPrice').value = (Number(p.import_threshold_medium) * 100).toFixed(2);
-    if (Number.isFinite(Number(p.import_threshold_high))) document.getElementById('tImpHighPrice').value = (Number(p.import_threshold_high) * 100).toFixed(2);
-    if (Number.isFinite(Number(p.import_limit_low))) document.getElementById('tImpLowLimit').value = String(p.import_limit_low);
-    if (Number.isFinite(Number(p.import_limit_medium))) document.getElementById('tImpMedLimit').value = String(p.import_limit_medium);
-    if (Number.isFinite(Number(p.import_limit_high))) document.getElementById('tImpHighLimit').value = String(p.import_limit_high);
+    const payload = data?.preset?.payload || {};
+    const oldValues = {};
+    for (const [key, id, scale] of DASHBOARD_PRICING_INPUTS) {
+      const input = document.getElementById(id);
+      oldValues[id] = input.value;
+      const value = payload[key];
+      if (input.disabled || !Number.isFinite(Number(value))) continue;
+      input.value = scale === 100 ? (Number(value) * scale).toFixed(2) : String(value);
+    }
     updateThresholdPreview();
     updateScenarioComparison();
     setActionMessage('msgPreset', 'ok', `Loaded preset "${name}" into threshold inputs.`);
@@ -4136,15 +4129,18 @@ function configFieldHelp(key, label, type) {
 function renderConfigField(sectionKey, cfg, field) {
   const [key, label, type, step] = field;
   const value = cfg[key];
-  const entityKey = isEntityKey(key);
+  const managed = isHaosManagedField(cfg, key);
+  const disabled = managed ? ' disabled' : '';
+  const entityKey = isEntityKey(key) && !managed;
   const labelHtml = entityKey ? `${label} <span class="cfg-entity-badge">searchable</span>` : label;
   const helpText = configFieldHelp(key, label, type);
   const helpHtml = helpText ? `<div class="cfg-help">${escH(helpText)}</div>` : '';
+  const managedHtml = managed ? '<div class="cfg-help">Managed by Home Assistant. Edit in the add-on configuration.</div>' : '';
   let input = '';
   if (type === 'bool') {
-    input = `<select id="${cfgFieldId(sectionKey, key)}"><option value="true" ${value ? 'selected' : ''}>True</option><option value="false" ${!value ? 'selected' : ''}>False</option></select>`;
+    input = `<select id="${cfgFieldId(sectionKey, key)}"${disabled}><option value="true" ${value ? 'selected' : ''}>True</option><option value="false" ${!value ? 'selected' : ''}>False</option></select>`;
   } else if (type === 'number') {
-    input = `<input type="number" id="${cfgFieldId(sectionKey, key)}" step="${step || '0.1'}" value="${escH(String(value ?? ''))}">`;
+    input = `<input type="number" id="${cfgFieldId(sectionKey, key)}" step="${step || '0.1'}" value="${escH(String(value ?? ''))}"${disabled}>`;
   } else {
     if (entityKey) {
       input = `<div class="entity-picker" id="${cfgPickerPanelId(sectionKey, key)}_wrap">
@@ -4158,10 +4154,10 @@ function renderConfigField(sectionKey, cfg, field) {
         </div>
       </div>`;
     } else {
-      input = `<input type="text" id="${cfgFieldId(sectionKey, key)}" value="${escH(String(value ?? ''))}">`;
+      input = `<input type="text" id="${cfgFieldId(sectionKey, key)}" value="${escH(String(value ?? ''))}"${disabled}>`;
     }
   }
-  return `<div class="cfg-field"><label for="${cfgFieldId(sectionKey, key)}">${labelHtml}</label>${helpHtml}${input}</div>`;
+  return `<div class="cfg-field"><label for="${cfgFieldId(sectionKey, key)}">${labelHtml}</label>${managedHtml}${helpHtml}${input}</div>`;
 }
 
 function preferredDomainsForKey(key) {
@@ -4326,7 +4322,7 @@ function setupConfigEntityAutocomplete() {
       const input = document.getElementById(cfgFieldId(section.key, key));
       const toggle = document.getElementById(cfgPickerToggleId(section.key, key));
       const search = document.getElementById(cfgPickerSearchId(section.key, key));
-      if (!input) continue;
+      if (!input || input.disabled) continue;
 
       input.addEventListener('focus', () => {
         openEntityPicker(section.key, key);
@@ -4462,6 +4458,7 @@ async function downloadConfigBackup(btn) {
   }
   try {
     const cfg = await getJson('api/config');
+    delete cfg._haos_managed_fields;
     let status = {};
     try {
       status = await getJson('api/status');
@@ -4527,7 +4524,7 @@ async function loadConfig() {
     syncConfigInputs(cfg);
     for (const [id, value] of drafts) {
       const input = document.getElementById(id);
-      if (input) input.value = value;
+      if (input && !input.disabled) input.value = value;
     }
     setupConfigEntityAutocomplete();
     await loadPresets();
