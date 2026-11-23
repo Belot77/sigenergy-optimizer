@@ -105,3 +105,50 @@ class BatteryPlanningDiagnosticsTests(unittest.TestCase):
         for field in ("ems_mode", "export_limit", "import_limit", "pv_max_power_limit", "ess_charge_limit", "ess_discharge_limit"):
             with self.subTest(actuator=field):
                 self.assertEqual(getattr(decision, field), getattr(without_diagnostics, field))
+
+    def _export_reason(self, optimizer, state, **overrides):
+        arguments = {
+            "spike": False, "solar_override": False, "morning_dump": False,
+            "export_blocked": False, "forecast_guard": False,
+            "is_evening_or_night": True, "export_min_soc": 113.0,
+            "pv_safeguard": False, "tier_limit": 5.0,
+            "morning_slow_charge": False, "surplus_bypass": False,
+            "evening_boost": False, "safeguard": False,
+            "desired_export": 0.0, "positive_fit_override": False,
+        }
+        arguments.update(overrides)
+        return optimizer._export_reason(state, **arguments)
+
+    def test_overnight_export_status_explains_an_above_capacity_requirement(self) -> None:
+        optimizer, state, _ = self._advisory()
+        self.assertEqual(
+            "Export blocked, overnight reserve requirement exceeds full battery capacity",
+            self._export_reason(optimizer, state),
+        )
+
+    def test_other_floor_and_higher_priority_statuses_keep_their_existing_wording(self) -> None:
+        optimizer, state, _ = self._advisory()
+        for overrides, expected in (
+            ({"export_min_soc": 100.0}, "Export blocked, at 100% floor"),
+            ({"is_evening_or_night": False}, "Export blocked, at 113% floor"),
+            ({"forecast_guard": True}, "Export blocked, low forecast"),
+        ):
+            with self.subTest(overrides=overrides):
+                self.assertEqual(expected, self._export_reason(optimizer, state, **overrides))
+
+    def test_export_status_wording_cannot_change_actuator_targets(self) -> None:
+        optimizer = self.fixture._optimizer()
+        state = self.fixture._state(
+            battery_soc=100.0, battery_capacity_kwh=30.0, load_kw=0.0,
+            sigenergy_mode=optimizer.cfg.automated_option, sigenergy_mode_observed=True,
+        )
+        with patch.object(optimizer, "_battery_soc_required_to_sunrise", return_value=113.0):
+            decision = optimizer._decide(state)
+        with patch.object(optimizer, "_battery_soc_required_to_sunrise", return_value=113.0), patch.object(
+            optimizer, "_export_reason", return_value="Export blocked, at 113% floor",
+        ):
+            legacy_wording = optimizer._decide(state)
+        self.assertEqual(113.0, decision.trace_values["soc_required"])
+        for field in ("ems_mode", "export_limit", "import_limit", "pv_max_power_limit", "ess_charge_limit", "ess_discharge_limit"):
+            with self.subTest(actuator=field):
+                self.assertEqual(getattr(decision, field), getattr(legacy_wording, field))

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.90-haos101
+
+- Explain Evening Boost's use of Export Limit Low, protected overnight reserve behavior, and the existing export priorities. Describe an overnight reserve requirement above full battery capacity in the export summary.
+
 ## 2.3.89-haos100
 
 - Settings saves send only edited fields. Blank numeric inputs are rejected, explicit zero values are retained, and unsaved edits survive reloads and failed saves.

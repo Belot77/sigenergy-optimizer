@@ -495,7 +495,7 @@ This distinction creates only `MSC_SURPLUS_CEILING`. It never creates `BATTERY_E
 ### Ownership interactions
 
 - Morning Slow owns its charging behavior. Solar is off while Morning Slow is active and cannot alter its charge rate.
-- Morning Dump and other explicit deliberate `BATTERY_EXPORT` owners win over Solar. After Morning Dump ends, Solar must satisfy full entry again.
+- Morning Dump and qualified High/Spike export take priority over Solar. Medium cannot preempt Morning Dump or Morning Slow and yields to independently qualified Solar Bypass or legacy Solar Override. After Morning Dump ends, Solar must satisfy full entry again.
 - Demand Window continues to own import blocking; Solar does not take import ownership.
 - Exact-full remains a separate PV-only branch and its semantics must not be merged into Solar.
 - Manual and Force remain operator-owned; Solar continuation cannot survive as active control ownership through them.
@@ -585,7 +585,9 @@ Diagnostics distinguish tier, selected/protected floor, proposal qualification/s
 
 Evening Boost is a deliberate `BATTERY_EXPORT` policy with owner `evening_export_boost`. Its dedicated setting is `evening_boost_min_feedin_price`: the software default and hard permitted minimum are both `$0.01/kWh`. Values below one cent and non-finite values are invalid; no arbitrary upper bound applies.
 
-When every Evening Boost eligibility and safety gate passes, it may operate below the ordinary export-tier threshold. The existing `export_limit_low` remains the ordinary tier output, not an Evening Boost-specific export ceiling. Ordinary positive-FiT export does not acquire Evening Boost ownership, and absolute sub-one-cent export remains blocked.
+When every Evening Boost eligibility and safety gate passes, it may operate below the ordinary export-tier threshold. In that case, `export_limit_low` supplies the tier limit used by its power calculation. The final request also depends on SoC headroom, discharge-window scaling, protected reserve and equipment limits. Ordinary positive-FiT export does not acquire Evening Boost ownership, and absolute sub-one-cent export remains blocked.
+
+At night, the export floor is clamped to both the calculated overnight requirement and `sunrise_reserve_soc`. Nonnegative `sunrise_export_relax_percent` values cannot reduce the final floor below those protections. The setting remains part of the Evening Boost qualification context, so changing it can restart qualification. A requirement above 100% means the reserve requirement exceeds a full battery's capacity. The export summary explains that condition while the original reserve and export calculations retain their existing values.
 
 Available-energy trust, refill feasibility, actual import-cost protection, forecast and reserve protections, battery floor, observed Automated ownership, Demand Window separation, Manual/Force ownership, and fail-closed actuator settlement remain mandatory. This decision does not introduce a 5.5 kW Evening Boost redesign.
 

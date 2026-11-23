@@ -1,5 +1,11 @@
 # Current State
 
+## 23 November 2026 — Boost and reserve explanations
+
+The operator confirmed `.100` installed. The published source is `4486c2a52e6a5f3762f778a82adf8d910139051f`. The `.101` candidate corrects Boost power and protected-reserve help text, the reserve-above-capacity status, and the current priority descriptions. Settings persistence and restart precedence, and direct ESS writes across an external mode change remain O9 follow-ups. [Control contract](CONTROL_CONTRACT.md)
+
+The candidate passed 10 focused reserve-diagnostic tests with 26 subtests and 37 dashboard tests. The actuator comparison retained every requested target. Browser installation access remains unavailable because the launcher fails before opening Home Assistant. Live sunset continuation remains a non-blocking observation.
+
 ## 23 November 2026 — Settings edited fields
 
 The last verified installed build is `.99`, source `5b33020f8bf7d3f7e110e71f826e6140e33aad4f`, from the 18 November 19:08:53 AEDT startup. The Settings-form patch addresses resubmission of untouched values and blank numeric inputs becoming zero. Validation includes duration-only changes, typed zero and false, text/entity fields, failed saves, and drafts changed while a save or reload is pending. [Control contract](CONTROL_CONTRACT.md)

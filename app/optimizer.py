@@ -157,7 +157,7 @@ _POWER_LIMIT_MAX_KW = 100.0
 # timestamp jitter; keep derived-flow coherence equally narrow and independent
 # of the much wider per-sensor freshness window.
 _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
-_RUNTIME_SIGNATURE = "2.3.89-haos100"
+_RUNTIME_SIGNATURE = "2.3.90-haos101"
 _MSC_EXPORT_PENDING_REASON = (
     "Waiting for confirmation of export closure and Maximum Self Consumption."
 )
@@ -13182,6 +13182,8 @@ class SigEnergyOptimizer:
         if (export_blocked or forecast_guard) and not surplus_bypass:
             return "Export blocked, low forecast"
         if s.battery_soc <= export_min_soc:
+            if is_evening_or_night and export_min_soc > 100.0:
+                return "Export blocked, overnight reserve requirement exceeds full battery capacity"
             return f"Export blocked, at {export_min_soc:.0f}% floor"
         if s.battery_soc < effective_floor:
             return f"Export blocked, below {effective_floor:.0f}% target"

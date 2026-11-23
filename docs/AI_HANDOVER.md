@@ -1,5 +1,13 @@
 # SigEnergy Optimizer AI Handover
 
+## 23 November 2026 — Boost and reserve explanations
+
+The operator confirmed `.100` installed. Its tagged source is `4486c2a52e6a5f3762f778a82adf8d910139051f`; startup/source readback was unavailable through the failing computer-use launcher. Branch `fix/boost-reserve-help` starts at main `ea8221dc11b55cce6d70cb1e3abcb0a20ff144bf`.
+
+The `.101` explanation patch documents the current Export Limit Low input to below-threshold Boost power, the protected floor that prevents positive Sunrise Export Relax values from increasing nighttime export, and Medium's existing deferral to qualified Solar. The status wording explains overnight reserve requirements above full capacity. Historical decisions retain their original text. A scoped revert or the prior `.100` image provides rollback. [Control contract](CONTROL_CONTRACT.md)
+
+Focused validation passed 10 reserve-diagnostic tests with 26 subtests, including the new summary and comparison of all six actuator targets against the legacy message. All 37 dashboard tests passed. The direct status cases cover nighttime requirements above 100%, a normal 100% floor, the daytime path and higher-priority forecast wording. These checks use simulated state. The browser launcher still fails before Home Assistant opens, so a new installed runtime will require operator confirmation.
+
 ## 23 November 2026 — Settings edited fields
 
 Branch `fix/settings-edited-fields-only` starts at main `703fdb28ce12977e567ff26bbc4d26dd114decbf`. Generalize the existing pricing save behavior to the other Settings forms, retaining numeric, boolean, text and entity semantics. Regression coverage must reproduce a duration-only save that previously resubmitted an old Morning Dump floor, reject a blank floor, preserve explicit zero and false, and retain drafts through reloads and failed or pending saves. A scoped revert or the prior `.99` image provides rollback. [Control contract](CONTROL_CONTRACT.md)
