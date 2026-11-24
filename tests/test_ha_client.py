@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import unittest
 from typing import Any
+
+import httpx
 
 from app.ha_client import HAClient
 
@@ -86,6 +89,118 @@ class HAClientNotificationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(ok)
         self.assertIn("Notification via notify.send_message to notify.dave_pixel failed", "\n".join(logs.output))
+
+
+class SolarProviderHandoffWitnessTests(unittest.IsolatedAsyncioTestCase):
+    entities = ("sensor.solcast_today", "sensor.solcast_last_polled")
+
+    def _row(self, entity_id: str) -> dict[str, str]:
+        return {
+            "entity_id": entity_id,
+            "state": "65.31" if entity_id == self.entities[0] else "2026-11-24T00:24:36+00:00",
+            "context_id": f"{entity_id}-context",
+            "last_changed": "2026-11-24T00:24:36+00:00",
+            "last_updated": "2026-11-24T00:24:36.001+00:00",
+            "last_reported": "2026-11-24T01:45:30Z",
+            "entry_id": "solcast-entry",
+            "domain": "solcast_solar",
+            "entry_state": "loaded",
+            "version": "4.6.1",
+            "device_id": "solcast-device",
+        }
+
+    async def _read(self, response, entities=None):
+        requests = []
+
+        def handle(request):
+            requests.append(request)
+            if isinstance(response, Exception):
+                raise response
+            return response
+
+        client = HAClient("http://home-assistant.invalid", "test-token")
+        await client.close()
+        async with httpx.AsyncClient(
+            base_url="http://home-assistant.invalid",
+            transport=httpx.MockTransport(handle),
+        ) as mock_client:
+            client._client = mock_client
+            result = await client.get_solar_provider_handoff_witness(entities or self.entities)
+        return result, requests
+
+    async def test_reads_complete_native_witness_in_one_read_only_request(self):
+        rows = [self._row(entity_id) for entity_id in reversed(self.entities)]
+        rows[0]["version"] = "v4.6.1"
+        result, requests = await self._read(httpx.Response(200, json=rows))
+
+        self.assertEqual(len(requests), 1)
+        request = requests[0]
+        self.assertEqual((request.method, request.url.path), ("POST", "/api/template"))
+        template = json.loads(request.content)["template"]
+        for fragment in (
+            *self.entities,
+            "entity.context.id",
+            "entity.last_reported.isoformat()",
+            "entity.attributes.get('restored')",
+            "('solcast_solar', entry) in identifiers",
+            "config_entry_attr(entry, 'state')",
+            "device_attr(device, 'sw_version')",
+        ):
+            self.assertIn(fragment, template)
+        expected = {
+            row["entity_id"]: {
+                key: value for key, value in row.items() if key not in {"entity_id", "device_id"}
+            }
+            for row in rows
+        }
+        expected[self.entities[1]]["version"] = "4.6.1"
+        self.assertEqual(result, expected)
+
+    async def test_rejects_incomplete_or_conflicting_evidence(self):
+        first, second = [self._row(entity_id) for entity_id in self.entities]
+        cases = (
+            [first],
+            [first, first],
+            [first, second, second],
+            [first, {**second, "entity_id": "sensor.other"}],
+            [first, {**second, "entry_id": "other-entry"}],
+            [first, {**second, "device_id": "other-device"}],
+            [first, {**second, "domain": "template"}],
+            [first, {**second, "entry_state": "setup_retry"}],
+            [first, {**second, "version": "4.6.2"}],
+            [first, {**second, "state": "unavailable"}],
+            [first, {**second, "context_id": ""}],
+            [first, {**second, "last_changed": "2026-11-24T00:24:36"}],
+            [first, {**second, "last_changed": "2026-11-24T00:25:36Z"}],
+            [first, {**second, "last_reported": "2026-11-24T00:24:35Z"}],
+            [first, {**second, "last_reported": "invalid"}],
+        )
+        for rows in cases:
+            with self.subTest(rows=rows):
+                result, _ = await self._read(httpx.Response(200, json=rows))
+                self.assertEqual(result, {})
+
+    async def test_rejects_failed_template_requests(self):
+        for response in (
+            httpx.Response(403),
+            httpx.Response(200, text="invalid JSON"),
+            httpx.ReadTimeout("no response"),
+        ):
+            with self.subTest(response=response):
+                result, requests = await self._read(response)
+                self.assertEqual(result, {})
+                self.assertEqual(len(requests), 1)
+
+    async def test_rejects_non_sensor_or_duplicate_ids_before_request(self):
+        for entities in (
+            (self.entities[0], "switch.other"),
+            (self.entities[0], self.entities[0]),
+            (self.entities[0], "sensor.other' %}"),
+        ):
+            with self.subTest(entities=entities):
+                result, requests = await self._read(httpx.Response(200), entities)
+                self.assertEqual(result, {})
+                self.assertEqual(requests, [])
 
 
 if __name__ == "__main__":

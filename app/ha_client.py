@@ -5,6 +5,7 @@ Uses httpx for async HTTP.
 from __future__ import annotations
 import json
 import logging
+import re
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote
@@ -181,6 +182,89 @@ class HAClient:
             return metadata
         except Exception as exc:
             logger.warning("get_state_report_metadata failed: %s", exc)
+            return {}
+
+    async def get_solar_provider_handoff_witness(
+        self,
+        entities: tuple[str, str],
+    ) -> dict[str, dict[str, Any]]:
+        """Read live State revisions for two sensors on one supported Solcast entry."""
+        if (
+            len(entities) != 2
+            or entities[0] == entities[1]
+            or not all(
+                isinstance(entity_id, str)
+                and re.fullmatch(r"sensor\.[a-z0-9_]+", entity_id)
+                for entity_id in entities
+            )
+        ):
+            return {}
+
+        encoded_entities = json.dumps(entities)
+        template = (
+            "{% set ns = namespace(rows=[]) %}\n"
+            f"{{% for entity in expand({encoded_entities}) %}}\n"
+            "{% set entry = config_entry_id(entity.entity_id) %}\n"
+            "{% set device = device_id(entity.entity_id) %}\n"
+            "{% set identifiers = device_attr(device, 'identifiers') if device else none %}\n"
+            "{% if entry and identifiers and ('solcast_solar', entry) in identifiers "
+            "and not entity.attributes.get('restored') %}\n"
+            "{% set ns.rows = ns.rows + [dict("
+            "entity_id=entity.entity_id, state=entity.state, context_id=entity.context.id, "
+            "last_changed=entity.last_changed.isoformat(), "
+            "last_updated=entity.last_updated.isoformat(), "
+            "last_reported=entity.last_reported.isoformat(), "
+            "entry_id=entry, domain=config_entry_attr(entry, 'domain'), "
+            "entry_state=config_entry_attr(entry, 'state'), "
+            "version=device_attr(device, 'sw_version'), device_id=device"
+            ")] %}\n"
+            "{% endif %}\n"
+            "{% endfor %}\n"
+            "{{ ns.rows | to_json }}"
+        )
+        try:
+            response = await self._client.post("/api/template", json={"template": template})
+            response.raise_for_status()
+            rows = response.json()
+            if not isinstance(rows, list) or len(rows) != 2:
+                return {}
+
+            witness: dict[str, dict[str, Any]] = {}
+            entry_and_device = set()
+            timestamp_fields = ("last_changed", "last_updated", "last_reported")
+            result_fields = ("state", "context_id", *timestamp_fields, "entry_id", "domain", "entry_state")
+            for row in rows:
+                if not isinstance(row, dict) or not all(
+                    isinstance(row.get(field), str) and 0 < len(row[field]) <= 255
+                    for field in (*result_fields, "entity_id", "version", "device_id")
+                ):
+                    return {}
+                entity_id = row["entity_id"]
+                if (
+                    entity_id not in entities
+                    or entity_id in witness
+                    or row["state"].strip().lower() in UNAVAILABLE
+                    or row["domain"] != "solcast_solar"
+                    or row["entry_state"] != "loaded"
+                    or row["version"].removeprefix("v") != "4.6.1"
+                    or not all(row[field].strip() == row[field] for field in ("context_id", "entry_id", "device_id"))
+                ):
+                    return {}
+                changed, updated, reported = (
+                    datetime.fromisoformat(row[field].replace("Z", "+00:00"))
+                    for field in timestamp_fields
+                )
+                if any(stamp.utcoffset() is None for stamp in (changed, updated, reported)):
+                    return {}
+                if not changed <= updated <= reported:
+                    return {}
+                entry_and_device.add((row["entry_id"], row["device_id"]))
+                witness[entity_id] = {field: row[field] for field in result_fields}
+                witness[entity_id]["version"] = "4.6.1"
+
+            return witness if len(entry_and_device) == 1 else {}
+        except (httpx.HTTPError, ValueError, OverflowError):
+            logger.debug("Unable to read Solar provider handoff witness")
             return {}
 
     async def set_state(

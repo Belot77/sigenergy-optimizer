@@ -327,6 +327,62 @@ def test_main_lifespan_closes_ha_and_storage_on_all_exit_paths(failure):
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("exit_path", ["clean", "body_error", "optimizer_error", "storage_error"])
+def test_solar_handoff_lifecycle_quiesces_control_before_saving(exit_path):
+    async def scenario():
+        events = []
+
+        async def load():
+            events.append("load")
+
+        async def save():
+            events.append("save")
+            assert "optimizer_stopped" in events and "websocket_stopped" not in events
+            if exit_path == "storage_error":
+                raise StorageUnavailable("synthetic")
+
+        async def optimizer_loop():
+            events.append("optimizer_started")
+            try:
+                if exit_path == "optimizer_error":
+                    raise RuntimeError("synthetic")
+                await asyncio.Future()
+            finally:
+                events.append("optimizer_stopped")
+
+        async def websocket_loop():
+            events.append("websocket_started")
+            try:
+                await asyncio.Future()
+            finally:
+                events.append("websocket_stopped")
+
+        optimizer = SimpleNamespace(
+            load_solar_provider_handoff=load, save_solar_provider_handoff=save,
+            run_forever=optimizer_loop, trigger_queue=asyncio.Queue(),
+            get_watch_entities=set, on_ws_connect=None, on_ws_disconnect=None,
+            on_provider_state_observation=None,
+        )
+        with (
+            patch.object(main, "SigEnergyOptimizer", return_value=optimizer),
+            patch.object(main, "HAWebSocketClient", return_value=SimpleNamespace(run_forever=websocket_loop)),
+            patch.object(main, "DecisionTraceStore", side_effect=OSError("synthetic")),
+        ):
+            try:
+                async with main._optimizer_lifespan(FastAPI(), None, None):
+                    await asyncio.sleep(0)
+                    if exit_path == "body_error":
+                        raise RuntimeError("synthetic")
+            except RuntimeError:
+                assert exit_path == "body_error"
+
+        assert events[0] == "load"
+        assert events[-1] == "websocket_stopped"
+        assert ("save" in events) == (exit_path in {"clean", "storage_error"})
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("boundary", ["capture", "permission", "invalidate", "source-revert", "midnight"])
 def test_late_ack_retires_exact_head_without_restoring_old_trust(boundary):
     async def scenario():

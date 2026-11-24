@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.96-haos107
+
+A clean add-on restart can reuse the last verified Solcast forecast once the same native Home Assistant sensors re-report their unchanged revisions. This check supports the native BJReplay Solcast 4.6.1 entities and keeps their original forecast deadline. First run or unavailable proof uses the existing wait for a successful Solcast poll. [Control contract](docs/CONTROL_CONTRACT.md#clean-optimizer-restart)
+
 ## Release 2.3.95-haos106
 
 The control summary shows **Export target closed** when a Solar Override decision ends with a closed target. Power Status continues to show measured export separately. [Control contract](docs/CONTROL_CONTRACT.md)

@@ -43,6 +43,7 @@ class DecisionTraceLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.optimizer = SimpleNamespace(
             decision_trace=lambda limit: list(self.rows)[:limit],
             run_once=AsyncMock(), trigger_queue=asyncio.Queue(),
+            load_solar_provider_handoff=AsyncMock(), save_solar_provider_handoff=AsyncMock(),
         )
 
     def tearDown(self):
