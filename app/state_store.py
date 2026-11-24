@@ -8,6 +8,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 
 class StateStore:
@@ -93,6 +94,14 @@ class StateStore:
             )
             self._conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS solar_provider_handoff (
+                  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                  payload_json TEXT NOT NULL CHECK (typeof(payload_json) = 'text')
+                )
+                """
+            )
+            self._conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS audit_log (
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   ts TEXT NOT NULL,
@@ -124,6 +133,38 @@ class StateStore:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+    def save_solar_provider_handoff(self, payload: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO solar_provider_handoff (singleton, payload_json) VALUES (1, ?)
+                ON CONFLICT(singleton) DO UPDATE SET payload_json = excluded.payload_json
+                """,
+                (payload,),
+            )
+
+    def take_solar_provider_handoff(self) -> str | None:
+        with self._lock, self._conn:
+            # Reserve the write lock before reading so another connection cannot
+            # read and consume the same handoff during this transaction.
+            self._conn.execute("BEGIN IMMEDIATE")
+            row = self._conn.execute(
+                "SELECT payload_json FROM solar_provider_handoff WHERE singleton = 1"
+            ).fetchone()
+            if row is not None:
+                self._conn.execute("DELETE FROM solar_provider_handoff WHERE singleton = 1")
+        return row[0] if row is not None else None
+
+    @staticmethod
+    def solar_provider_host_boot_id() -> str | None:
+        """Read the current Linux boot identity on the storage worker."""
+        try:
+            with Path("/proc/sys/kernel/random/boot_id").open(encoding="ascii") as handle:
+                raw = handle.read(38).strip()
+            return raw if str(UUID(raw)) == raw else None
+        except (OSError, ValueError):
+            return None
 
     @staticmethod
     def _json_dump(value: Any) -> str:

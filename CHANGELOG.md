@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.96-haos107
+
+- Revalidate a verified Solcast forecast after a clean optimizer restart while its original deadline and native Home Assistant sensor evidence remain current.
+
 ## 2.3.95-haos106
 
 - Show “Export target closed” when Solar Override was selected and the final export target is closed. Keep measured power in Power Status.

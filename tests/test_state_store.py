@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 from app.state_store import StateStore
 
 
 class StateStoreTests(unittest.TestCase):
+    handoff = '{"version":1}'
+
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.db_path = str(Path(self._tmp.name) / "state.db")
@@ -55,6 +63,83 @@ class StateStoreTests(unittest.TestCase):
         deleted = self.store.delete_threshold_preset("MyPreset")
         self.assertTrue(deleted)
         self.assertIsNone(self.store.get_threshold_preset("MyPreset"))
+
+    def test_solar_provider_handoff_is_replaced_and_consumed_across_reopens(self) -> None:
+        replacement = '{"version":1,"revision":"later"}'
+        self.assertIsNone(self.store.take_solar_provider_handoff())
+        self.store.save_solar_provider_handoff(self.handoff)
+        self.store.save_solar_provider_handoff(replacement)
+        self.store.close()
+        self.store = StateStore(self.db_path)
+        self.assertEqual(self.store.take_solar_provider_handoff(), replacement)
+        self.store.close()
+        self.store = StateStore(self.db_path)
+        self.assertIsNone(self.store.take_solar_provider_handoff())
+
+    def test_solar_provider_handoff_migrates_an_existing_database(self) -> None:
+        preset = {"export_limit_low": 3.0}
+        self.store.save_threshold_preset("Existing", preset)
+        self.store.close()
+        with closing(sqlite3.connect(self.db_path)) as previous, previous:
+            previous.execute("DROP TABLE solar_provider_handoff")
+
+        self.store = StateStore(self.db_path)
+        self.assertIsNone(self.store.take_solar_provider_handoff())
+        self.store.save_solar_provider_handoff(self.handoff)
+        self.assertEqual(self.store.take_solar_provider_handoff(), self.handoff)
+        self.assertEqual(self.store.get_threshold_preset("Existing")["payload"], preset)
+
+    def test_failed_handoff_commits_roll_back_replacement_and_consumption(self) -> None:
+        self.store.save_solar_provider_handoff(self.handoff)
+        connection = self.store._conn
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.executescript("""
+            CREATE TEMP TABLE handoff_test_parent (id INTEGER PRIMARY KEY);
+            CREATE TEMP TABLE handoff_test_child (
+              parent_id INTEGER REFERENCES handoff_test_parent(id) DEFERRABLE INITIALLY DEFERRED
+            );
+            CREATE TEMP TRIGGER handoff_test_reject_update AFTER UPDATE ON main.solar_provider_handoff
+            BEGIN INSERT INTO handoff_test_child VALUES (1); END;
+            CREATE TEMP TRIGGER handoff_test_reject_delete AFTER DELETE ON main.solar_provider_handoff
+            BEGIN INSERT INTO handoff_test_child VALUES (1); END;
+        """)
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "FOREIGN KEY"):
+            self.store.save_solar_provider_handoff('{"version":1,"revision":"rejected"}')
+        self.assertFalse(connection.in_transaction)
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "FOREIGN KEY"):
+            self.store.take_solar_provider_handoff()
+        self.assertFalse(connection.in_transaction)
+
+        self.store.close()
+        self.store = StateStore(self.db_path)
+        self.assertEqual(self.store.take_solar_provider_handoff(), self.handoff)
+
+    def test_two_connections_cannot_take_the_same_solar_provider_handoff(self) -> None:
+        self.store.save_solar_provider_handoff(self.handoff)
+        barrier = threading.Barrier(2)
+
+        def take(store: StateStore) -> str | None:
+            barrier.wait(timeout=5)
+            return store.take_solar_provider_handoff()
+
+        with closing(StateStore(self.db_path)) as other, ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(take, self.store)
+            second = executor.submit(take, other)
+            self.assertCountEqual([first.result(timeout=5), second.result(timeout=5)], [self.handoff, None])
+
+    def test_solar_provider_host_boot_id_requires_a_canonical_linux_uuid(self) -> None:
+        boot_id = "581c1e02-1b30-41d9-a5ec-2ccf68636727"
+        for raw, expected in (
+            (boot_id + "\n", boot_id),
+            (boot_id.upper() + "\n", None),
+            (boot_id + "x\n", None),
+            ("unavailable\n", None),
+        ):
+            with self.subTest(raw=raw), patch.object(Path, "open", autospec=True, return_value=StringIO(raw)) as opened:
+                self.assertEqual(self.store.solar_provider_host_boot_id(), expected)
+                opened.assert_called_once_with(Path("/proc/sys/kernel/random/boot_id"), encoding="ascii")
+        with patch.object(Path, "open", side_effect=FileNotFoundError):
+            self.assertIsNone(self.store.solar_provider_host_boot_id())
 
     def test_optimizer_import_topup_floor_uses_highest_actual_price_not_average(self) -> None:
         date = "2026-06-16"

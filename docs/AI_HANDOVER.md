@@ -1,5 +1,15 @@
 # SigEnergy Optimizer AI Handover
 
+## Solcast recovery after a clean add-on restart
+
+Release `2.3.96-haos107` comes from `fix/solar-provider-restart-handoff`, based on main `90e8a05a90ba7fabc1f0c1a5070bfc94fd80e5cc`. On `.106`, the Home Assistant charge limit returned from 5.64 to 21.00 kW by 13:37:16 AEDT after startup. At 13:40:03 the 25 kW Solar Bypass export ceiling was open, Solcast still showed the 13:07:29 poll, and the battery was taking 16.48 kW with zero measured export. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.96-haos107) · [Control contract](CONTROL_CONTRACT.md#clean-optimizer-restart)
+
+The release saves a one-use Solcast checkpoint during a clean optimizer stop, then revalidates the same live HA sensor revisions and forecast before restoring authority. Repeated restarts preserve the original wall and elapsed-time expiry. The first startup without a checkpoint still needs an advancing provider poll. Use the verified `.106` image or a scoped revert for rollback.
+
+The targeted offline run passed 299 tests and 130 subtests with simulated HA and temporary storage. The full run found missing handoff callbacks in the existing decision-trace lifecycle fixture. After updating that test double, all 45 trace and storage lifecycle tests passed with two subtests. Across the full run and the fixture rerun, 1,910 tests and 1,873 subtests passed, with three skips. Independent source review passed.
+
+For monitored live verification, compare the accepted Solcast poll and deadline before a clean add-on restart with `provider_clean_restart_revalidated` and the same deadline after restart. Use a simulated decision to inspect the recalculated ESS target. When Automated is eligible and Solar owns charging, compare that target with the HA-reported limit and measured battery and export power. Live behavior remains unverified.
+
 ## Solar Override status wording
 
 Release `2.3.95-haos106` comes from `fix/solar-override-status`, based on main `9c42d3105e54361f2b4561507ae1932783f3f5cf`. The prior summary could use Solar Override eligibility to display “Exporting” while the final target was closed and the final battery-export owner was absent. The revised summary follows the final target and owner. Power Status still shows measured export separately. Use the verified `.105` image or a scoped revert for rollback. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.95-haos106) · [Control contract](CONTROL_CONTRACT.md)

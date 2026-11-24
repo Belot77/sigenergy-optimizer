@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
+from .solar_provider_handoff import SolarProviderHandoff
+
 
 @dataclass(frozen=True)
 class HVACObservedValue:
@@ -201,6 +203,9 @@ class SolarState:
     solcast_provider_source: Optional[tuple[str, str]] = None
     solcast_provider_epoch: Optional[int] = None
     solcast_provider_continuity: bool = False
+    solcast_handoff_receipt: SolarProviderHandoff | None = None
+    solcast_handoff_witness_digest: str | None = None
+    solcast_handoff_revision: int | None = None
     price_forecast_entries: list = field(default_factory=list)  # [{start_time, per_kwh}, ...]
     price_forecast_source_trusted: Optional[bool] = None
     feedin_forecast_entries: list = field(default_factory=list)

@@ -1,10 +1,10 @@
 # Roadmap
 
-## Current release 2.3.95-haos106
+## Current release 2.3.96-haos107
 
-`.106` corrects the Solar Override summary when the final export target is closed. The operator deferred the proposed Force settlement gate to preserve responsive Force presets. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.95-haos106)
+`.107` restores Solar Bypass charge-limit authority after an eligible clean add-on restart using the previously verified Solcast forecast. Live verification needs a successful provider poll on `.107` and one subsequent clean daytime add-on restart. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.96-haos107) · [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
 
-The latest verified Home Assistant startup is `.102`. Confirm the `.106` runtime and source from its startup log, then observe the corrected summary when Solar Override ends with a closed export target. The routine ESS save and qualifying Evening Boost sunset checks can happen during normal use. [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
+The latest verified Home Assistant startup is `.106`. Observe the corrected summary when Solar Override ends with a closed export target. The routine ESS save and qualifying Evening Boost sunset checks can happen during normal use. The operator deferred the proposed Force settlement gate to preserve responsive Force presets. [Prior release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.95-haos106)
 
 The longer-term roadmap covers [architecture consolidation](#6-architecture-refactor--consolidation), [repository cleanup](#7-repository--project-cleanup), [dashboard UX](#8-full-gui--ux-redesign-and-functional-corrections), and [Climate Manager](#9-climate-manager-integration).
 

@@ -51,6 +51,7 @@ from .models import (
 )
 from .state_store import StateStore
 from .storage_worker import StorageWorker, StorageUnavailable
+from .solar_provider_handoff import SolarProviderHandoff, evidence_digest
 from .solar_reentry import SOLAR_REENTRY_MAX_REPORT_GAP_SECONDS, SolarReentryGuard
 
 logger = logging.getLogger(__name__)
@@ -157,7 +158,8 @@ _POWER_LIMIT_MAX_KW = 100.0
 # timestamp jitter; keep derived-flow coherence equally narrow and independent
 # of the much wider per-sensor freshness window.
 _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
-_RUNTIME_SIGNATURE = "2.3.95-haos106"
+_RUNTIME_SIGNATURE = "2.3.96-haos107"
+_SOLAR_HANDOFF_HA_TIMEOUT_SECONDS = 3.0
 _MSC_EXPORT_PENDING_REASON = (
     "Waiting for confirmation of export closure and Maximum Self Consumption."
 )
@@ -733,6 +735,11 @@ class SigEnergyOptimizer:
         self._solar_provider_day = None
         self._solar_provider_baselined = False
         self._solar_provider_urgent = False
+        self._solar_provider_boot_id: str | None = None
+        self._solar_provider_handoff: SolarProviderHandoff | None = None
+        self._solar_provider_handoff_clock: SolarProviderHandoff | None = None
+        self._solar_provider_connected_once = False
+        self._solar_provider_revision = 0
         self._solar_relief = _SolarPhysicalReliefState()
         self._solar_completion_msc_high_water: Optional[float] = None
         self._morning_slow_relief = _MorningSlowPhysicalReliefState()
@@ -903,8 +910,13 @@ class SigEnergyOptimizer:
             self._watch_entities.clear()
             self.get_watch_entities()
 
-    def _invalidate_solar_provider(self, reason: str, *, wake: bool = True) -> None:
+    def _invalidate_solar_provider(
+        self, reason: str, *, wake: bool = True, keep_startup_handoff: bool = False,
+    ) -> None:
         self._solar_provider_epoch += 1
+        if not keep_startup_handoff:
+            self._solar_provider_handoff = None
+        self._solar_provider_handoff_clock = None
         self._solar_provider_state = "UNVERIFIED"
         self._solar_provider_reason = reason
         self._solar_provider_high_water = None
@@ -940,6 +952,7 @@ class SigEnergyOptimizer:
         self._refresh_solar_provider_source()
         if entity_id not in self._solar_provider_source:
             return
+        self._solar_provider_revision += 1
         unavailable = {"", "none", "unknown", "unavailable"}
         if any(
             not isinstance(obj, dict)
@@ -1027,6 +1040,166 @@ class SigEnergyOptimizer:
             s.next_sunset_ts,
         )
 
+    @staticmethod
+    def _solar_handoff_forecast_digest(evidence: tuple) -> str:
+        # The new process must bind the matching forecast to its own live epoch.
+        return evidence_digest((evidence[0], *evidence[2:]))
+
+    async def load_solar_provider_handoff(self) -> None:
+        """Consume the checkpoint before either control or WebSocket startup."""
+        if self._storage_worker is None:
+            return
+        try:
+            raw = await self._storage_worker.call("take_solar_provider_handoff")
+            self._solar_provider_boot_id = await self._storage_worker.call("solar_provider_host_boot_id")
+        except StorageUnavailable:
+            logger.info("Solar restart handoff storage unavailable")
+            return
+        receipt = SolarProviderHandoff.from_json(raw)
+        if receipt is not None and receipt.source == self._solar_provider_source and receipt.clock_is_current(
+            self._solar_provider_boot_id, datetime.now(timezone.utc).timestamp(), monotonic(),
+        ):
+            self._solar_provider_handoff = receipt
+
+    async def save_solar_provider_handoff(self) -> None:
+        """Record a verified current generation after control stops and before WS stops."""
+        storage = self._storage_worker
+        boot_id = self._solar_provider_boot_id
+        if storage is None or boot_id is None or not self._ws_connected or self._solar_provider_state != "VALID":
+            return
+        try:
+            async with asyncio.timeout(_SOLAR_HANDOFF_HA_TIMEOUT_SECONDS):
+                state = await self._read_state(capture_solar_handoff=True)
+            wall = datetime.now(timezone.utc).timestamp()
+            elapsed = monotonic()
+            if (
+                not self._solar_handoff_snapshot_current(state)
+                or not self._solar_provider_authority_current(state, wall)
+            ):
+                return
+            evidence = self._solar_provider_verified_evidence
+            polled = self._solar_provider_verified
+            deadline = self._solar_provider_deadline
+            digest = state.solcast_handoff_witness_digest
+            if evidence is None or polled is None or deadline is None or digest is None:
+                return
+            day = datetime.fromtimestamp(wall, self._tz).date().isoformat()
+            inherited_clock = self._solar_provider_handoff_clock
+            if inherited_clock is not None:
+                # Re-anchor only forwards. A small backward wall-clock step
+                # must not add time to the deadline over repeated clean restarts.
+                wall = max(wall, inherited_clock.saved_wall + (elapsed - inherited_clock.saved_monotonic))
+            receipt = SolarProviderHandoff(
+                boot_id=boot_id, source=self._solar_provider_source,
+                day=day,
+                poll=polled, deadline=deadline,
+                forecast_digest=self._solar_handoff_forecast_digest(evidence), witness_digest=digest,
+                saved_wall=wall, saved_monotonic=elapsed,
+            )
+            await storage.call("save_solar_provider_handoff", receipt.to_json())
+        except (StorageUnavailable, TimeoutError, ValueError):
+            logger.info("Solar restart handoff could not be saved")
+
+    @staticmethod
+    def _solar_handoff_witness_digest(witness: dict[str, dict[str, Any]]) -> str:
+        # Unchanged reports advance last_reported without changing the State revision.
+        return evidence_digest({
+            entity: {key: value for key, value in row.items() if key != "last_reported"}
+            for entity, row in witness.items()
+        })
+
+    async def _read_solar_handoff_witness(
+        self, source: tuple[str, str], receipt: SolarProviderHandoff | None,
+    ) -> dict[str, dict[str, Any]]:
+        """For restore, prove both matching native entities can still report."""
+        try:
+            async with asyncio.timeout(_SOLAR_HANDOFF_HA_TIMEOUT_SECONDS):
+                before = await self.ha.get_solar_provider_handoff_witness(source)
+                if receipt is None or not before:
+                    return before
+                if self._solar_handoff_witness_digest(before) != receipt.witness_digest:
+                    return {}
+                # The supported Solcast coordinator publishes its local cache for
+                # update_entity. The provider's forced forecast action is separate.
+                if not await self.ha.call_service("homeassistant", "update_entity", {"entity_id": list(source)}):
+                    return {}
+                after = await self.ha.get_solar_provider_handoff_witness(source)
+                if not after or self._solar_handoff_witness_digest(after) != receipt.witness_digest:
+                    return {}
+                now = datetime.now(timezone.utc).timestamp()
+                for entity in source:
+                    earlier = self._solar_provider_instant(before[entity]["last_reported"])
+                    later = self._solar_provider_instant(after[entity]["last_reported"])
+                    if earlier is None or later is None or not earlier < later <= now + 5.0:
+                        return {}
+                return after
+        except TimeoutError:
+            return {}
+
+    def _solar_handoff_matches_rest(
+        self, witness: dict[str, dict[str, Any]], bulk: dict[str, dict[str, Any]],
+    ) -> bool:
+        for entity, revision in witness.items():
+            obj = bulk.get(entity, {})
+            context = obj.get("context")
+            if (
+                not isinstance(context, dict) or context.get("id") != revision["context_id"]
+                or obj.get("state") != revision["state"]
+                or any(
+                    self._solar_provider_instant(obj.get(key)) != self._solar_provider_instant(revision[key])
+                    for key in ("last_changed", "last_updated")
+                )
+            ):
+                return False
+        return bool(witness)
+
+    def _solar_handoff_snapshot_current(self, s: SolarState) -> bool:
+        return bool(
+            self._ws_connected and s.solcast_provider_continuity
+            and s.solcast_provider_epoch == self._solar_provider_epoch
+            and s.solcast_provider_source == self._solar_provider_source
+            and s.solcast_handoff_revision == self._solar_provider_revision
+        )
+
+    def _restore_solar_provider_handoff(
+        self, s: SolarState, evidence: tuple, now_ts: float, polled: float, advertised: float, day: date,
+    ) -> bool:
+        receipt = s.solcast_handoff_receipt
+        if not (
+            receipt is not None and self._solar_handoff_snapshot_current(s)
+            and receipt.source == s.solcast_provider_source
+            and receipt.day == day.isoformat() and receipt.poll == polled
+            and receipt.witness_digest == s.solcast_handoff_witness_digest
+            and receipt.forecast_digest == self._solar_handoff_forecast_digest(evidence)
+        ):
+            return False
+        deadline = min(receipt.deadline, advertised)
+        if deadline <= receipt.saved_wall:
+            return False
+        receipt = replace(receipt, deadline=deadline)
+        if not receipt.clock_is_current(self._solar_provider_boot_id, now_ts, monotonic()):
+            return False
+        self._solar_provider_deadline = receipt.deadline
+        self._solar_provider_verified = polled
+        self._solar_provider_verified_evidence = evidence
+        self._solar_provider_handoff_clock = receipt
+        self._solar_provider_state = "VALID"
+        self._solar_provider_reason = "provider_clean_restart_revalidated"
+        return True
+
+    def _solar_handoff_remaining_seconds(self, now_ts: float) -> float | None:
+        receipt = self._solar_provider_handoff_clock
+        if receipt is None or self._solar_provider_deadline is None:
+            return None
+        clock = monotonic()
+        deadline = min(receipt.deadline, self._solar_provider_deadline)
+        if deadline <= receipt.saved_wall:
+            return 0.0
+        receipt = replace(receipt, deadline=deadline)
+        if not receipt.clock_is_current(self._solar_provider_boot_id, now_ts, clock):
+            return 0.0
+        return receipt.deadline - receipt.saved_wall + receipt.saved_monotonic - clock
+
     def _solar_provider_metadata_loss_only(self, s: SolarState, evidence: tuple) -> bool:
         verified = self._solar_provider_verified_evidence
         return bool(
@@ -1051,7 +1224,10 @@ class SigEnergyOptimizer:
             or not s.solcast_provider_continuity
         ):
             if s.solcast_provider_epoch == self._solar_provider_epoch:
-                self._invalidate_solar_provider("provider_observation_continuity_untrusted", wake=False)
+                self._invalidate_solar_provider(
+                    "provider_observation_continuity_untrusted", wake=False,
+                    keep_startup_handoff=not self._solar_provider_connected_once,
+                )
             self._solar_provider_state = "UNVERIFIED"
             self._solar_provider_reason = "provider_observation_continuity_untrusted"
             return False
@@ -1077,7 +1253,10 @@ class SigEnergyOptimizer:
         if advertised is not None and retained is not None:
             retained = min(retained, advertised)
             self._solar_provider_deadline = retained
-        expired = retained is not None and now_ts >= retained
+        handoff_expired = self._solar_handoff_remaining_seconds(now_ts) == 0.0
+        expired = retained is not None and (now_ts >= retained or handoff_expired)
+        if handoff_expired:
+            self._solar_provider_verified_evidence = None
         payload_valid = self._solar_provider_payload_valid(s, now_ts)
         evidence = self._solar_provider_payload_evidence(s)
         unchanged_verified = evidence == self._solar_provider_verified_evidence
@@ -1106,6 +1285,8 @@ class SigEnergyOptimizer:
         if not self._solar_provider_baselined:
             self._solar_provider_baselined = True
             self._solar_provider_day = day
+            if self._restore_solar_provider_handoff(s, evidence, now_ts, polled, advertised, day):
+                return self._solar_provider_authority_current(s, now_ts)
             self._solar_provider_deadline = advertised if retained is None else retained
             self._solar_provider_state = "UNVERIFIED"
             self._solar_provider_reason = "baseline_requires_provider_advance"
@@ -1118,6 +1299,7 @@ class SigEnergyOptimizer:
             # An early success must NOT discharge a still-outstanding obligation.
             if retained is None or (now_ts >= retained and polled >= retained):
                 self._solar_provider_deadline = advertised
+                self._solar_provider_handoff_clock = None
             self._solar_provider_verified = polled
             self._solar_provider_verified_evidence = evidence
             self._solar_provider_state = "VALID"
@@ -1142,7 +1324,12 @@ class SigEnergyOptimizer:
         ):
             # Reject stale in-flight snapshots without retiring a newer epoch.
             if s.solcast_provider_epoch == self._solar_provider_epoch:
-                self._invalidate_solar_provider("provider_observation_continuity_untrusted")
+                self._invalidate_solar_provider(
+                    "provider_observation_continuity_untrusted",
+                    keep_startup_handoff=not self._solar_provider_connected_once,
+                )
+            return False
+        if s.solcast_handoff_receipt is not None and not self._solar_handoff_snapshot_current(s):
             return False
         polled = self._solar_provider_instant(s.solcast_provider_polled)
         if (polled is not None and self._solar_provider_verified is not None
@@ -1156,6 +1343,10 @@ class SigEnergyOptimizer:
         if self._solar_provider_deadline is not None and now_ts >= self._solar_provider_deadline:
             self._solar_provider_state = "EXPIRED"
             self._solar_provider_reason = "retained_provider_deadline_reached"
+        if self._solar_handoff_remaining_seconds(now_ts) == 0.0:
+            self._solar_provider_state = "EXPIRED"
+            self._solar_provider_verified_evidence = None
+            self._solar_provider_reason = "provider_restart_clock_or_deadline_lost"
         if self._solar_provider_state == "VALID":
             evidence = self._solar_provider_payload_evidence(s)
             if not (
@@ -1782,11 +1973,16 @@ class SigEnergyOptimizer:
         day = datetime.fromtimestamp(now_ts, self._tz).date()
         midnight = datetime.combine(day + timedelta(days=1), time.min, self._tz).timestamp()
         remaining = max(0.0, min(self._solar_provider_deadline, midnight) - now_ts)
+        handoff_remaining = self._solar_handoff_remaining_seconds(now_ts)
+        if handoff_remaining is not None:
+            remaining = min(remaining, handoff_remaining)
         if remaining == 0.0:
             # Consume the deadline wake once, including when the following HA
             # read fails. An unavailable source must not create a busy retry loop.
             self._solar_provider_state = "EXPIRED"
             self._solar_provider_reason = "retained_provider_deadline_reached"
+            if handoff_remaining == 0.0:
+                self._solar_provider_verified_evidence = None
         return remaining
 
     @staticmethod
@@ -2009,7 +2205,11 @@ class SigEnergyOptimizer:
         self._msc_maintenance_epoch = None
         self._solar_dip_proof = None
         self._ws_connected = True
-        self._invalidate_solar_provider("ha_websocket_connected_new_epoch")
+        self._invalidate_solar_provider(
+            "ha_websocket_connected_new_epoch",
+            keep_startup_handoff=not self._solar_provider_connected_once,
+        )
+        self._solar_provider_connected_once = True
         logger.info("WebSocket connected — event-driven mode active")
 
     def on_ws_disconnect(self) -> None:
@@ -2183,7 +2383,12 @@ class SigEnergyOptimizer:
             try:
                 prev_decision = self._last_decision
                 prev_state = self._last_state
-                state = await self._read_state()
+                if self._solar_provider_handoff is not None and self._ws_connected:
+                    handoff = self._solar_provider_handoff
+                    self._solar_provider_handoff = None
+                    state = await self._read_state(solar_handoff=handoff)
+                else:
+                    state = await self._read_state()
                 self._last_state = state
                 # Price the measured interval under its prior applied permission
                 # before this cycle can authorize a new battery-export decision.
@@ -3590,7 +3795,10 @@ class SigEnergyOptimizer:
             self.cfg.sigenergy_mode_select, str(observation.value), changed_at, updated_at, reported_at,
         )
 
-    async def _read_state(self) -> SolarState:
+    async def _read_state(
+        self, *, capture_solar_handoff: bool = False,
+        solar_handoff: SolarProviderHandoff | None = None,
+    ) -> SolarState:
         cfg = self.cfg
         msc_read_identity = self._msc_maintenance_identity()
         s = SolarState()
@@ -3598,6 +3806,19 @@ class SigEnergyOptimizer:
         s.solcast_provider_epoch = self._solar_provider_epoch
         s.solcast_provider_source = self._solar_provider_source
         s.solcast_provider_continuity = self._ws_connected
+        handoff_revision = self._solar_provider_revision
+        handoff_witness = {}
+        if s.solcast_provider_continuity and (
+            capture_solar_handoff or (
+                solar_handoff is not None and solar_handoff.source == s.solcast_provider_source
+                and solar_handoff.clock_is_current(
+                    self._solar_provider_boot_id, datetime.now(timezone.utc).timestamp(), monotonic(),
+                )
+            )
+        ):
+            handoff_witness = await self._read_solar_handoff_witness(
+                self._solar_provider_source, solar_handoff,
+            )
 
         # ---- bulk fetch -----------------------------------------------
         entity_ids = [
@@ -3635,6 +3856,10 @@ class SigEnergyOptimizer:
             if candidate and candidate not in entity_ids:
                 entity_ids.append(candidate)
         bulk = await self.ha.bulk_states(entity_ids)
+        if handoff_witness and self._solar_handoff_matches_rest(handoff_witness, bulk):
+            s.solcast_handoff_receipt = solar_handoff
+            s.solcast_handoff_witness_digest = self._solar_handoff_witness_digest(handoff_witness)
+            s.solcast_handoff_revision = handoff_revision
 
         # REST state JSON may retain a frozen last_reported value for unchanged
         # entities.  Only the optimizer's freshness-sensitive observations request

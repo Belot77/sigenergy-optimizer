@@ -74,6 +74,7 @@ async def lifespan(app: FastAPI):
 @asynccontextmanager
 async def _optimizer_lifespan(app: FastAPI, ha: HAClient, storage: StorageWorker):
     optimizer = SigEnergyOptimizer(ha, settings, storage_worker=storage)
+    await optimizer.load_solar_provider_handoff()
     logger.info(
         "Runtime signature=%s morning_slow_charge_runtime_disabled=%s",
         getattr(optimizer, "runtime_signature", "unknown"),
@@ -128,8 +129,10 @@ async def _optimizer_lifespan(app: FastAPI, ha: HAClient, storage: StorageWorker
         trace_task is not None,
     )
 
+    clean_shutdown = False
     try:
         yield
+        clean_shutdown = True
     finally:
         # Passive diagnostics have no final flush and never delay control-task
         # cancellation waiting for a filesystem worker to finish.
@@ -146,14 +149,31 @@ async def _optimizer_lifespan(app: FastAPI, ha: HAClient, storage: StorageWorker
 
         # Stop producers before the outer lifecycle stops storage admission.
         logger.info("Shutting down background tasks")
-        for task in (ws_task, optimizer_task):
-            task.cancel()
+        optimizer_running = not optimizer_task.done()
+        lifespan_task = asyncio.current_task()
+        try:
+            optimizer_task.cancel()
             try:
-                await task
+                await optimizer_task
             except asyncio.CancelledError:
-                pass
+                if lifespan_task is not None and lifespan_task.cancelling():
+                    raise
+                if clean_shutdown and optimizer_running and optimizer_task.cancelled() and not ws_task.done():
+                    try:
+                        await optimizer.save_solar_provider_handoff()
+                    except Exception:
+                        logger.warning("Solar restart handoff failed during shutdown")
             except Exception:
-                logger.warning("Background task failed during shutdown")
+                logger.warning("Optimizer task failed during shutdown")
+        finally:
+            ws_task.cancel()
+            try:
+                await ws_task
+            except asyncio.CancelledError:
+                if lifespan_task is not None and lifespan_task.cancelling():
+                    raise
+            except Exception:
+                logger.warning("HA WebSocket task failed during shutdown")
         logger.info("Shutdown complete")
 
 
@@ -161,7 +181,7 @@ def create_app() -> FastAPI:
     allowed_origins = _parse_csv_list(settings.cors_allowed_origins)
     app = FastAPI(
         title="SigEnergy Optimizer",
-        version="2.3.95-haos106",
+        version="2.3.96-haos107",
         lifespan=lifespan,
     )
     app.add_middleware(
