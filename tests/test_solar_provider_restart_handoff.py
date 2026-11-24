@@ -16,8 +16,9 @@ from test_phase1_solar_dynamic_charge_ceiling_characterization import SolarDynam
 
 
 class ProviderHA(RecordingHA):
-    def __init__(self):
+    def __init__(self, version="4.6.1"):
         super().__init__()
+        self.version = version
         self.witness = {}
         self.report_advances = 2
         self.republish_at = None
@@ -136,12 +137,12 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
                 "entry_id": "native-solcast-test",
                 "domain": "solcast_solar",
                 "entry_state": "loaded",
-                "version": "4.6.1",
+                "version": ha.version,
             }
         ha.republish_at = self._iso(seconds)
 
-    async def _save_previously_verified(self, worker):
-        opt = self._with_ha(ProviderHA(), worker)
+    async def _save_previously_verified(self, worker, *, version="4.6.1"):
+        opt = self._with_ha(ProviderHA(version), worker)
         with self._clock(-1):
             await opt.load_solar_provider_handoff()
             opt.on_ws_connect()
@@ -167,10 +168,10 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
             self.assertEqual(decision.trace_values["solar_provider_reason"], reason)
 
     def test_clean_restart_restores_only_after_connected_read_and_uses_fresh_inputs(self):
-        async def run():
+        async def run(version):
             async with self._storage() as worker:
-                original = await self._save_previously_verified(worker)
-                opt = self._with_ha(ProviderHA(), worker)
+                original = await self._save_previously_verified(worker, version=version)
+                opt = self._with_ha(ProviderHA(version), worker)
                 with self._clock(8):
                     self._live_states(opt, seconds=8, pv_kw=4.0, load_kw=2.0, due=1200)
                     await opt.load_solar_provider_handoff()
@@ -195,13 +196,16 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
                 self.assertEqual(opt._apply.await_args.args[0].pv_kw, 4.0)
                 self.assertEqual(opt._apply.await_args.args[0].load_kw, 2.0)
 
-        asyncio.run(run())
+        for version in ("4.6.1", "4.6.3"):
+            with self.subTest(version=version):
+                asyncio.run(run(version))
 
     def test_ineligible_witnesses_never_resume_or_retry_the_same_receipt(self):
         async def run(case, expected_calls):
             async with self._storage() as worker:
                 await self._save_previously_verified(worker)
-                opt = self._with_ha(ProviderHA(), worker)
+                version = "4.6.3" if case == "integration_version_changed" else "4.6.1"
+                opt = self._with_ha(ProviderHA(version), worker)
                 seconds = self.DUE_IN if case == "expired" else 8
                 with self._clock(seconds):
                     await opt.load_solar_provider_handoff()
@@ -229,6 +233,7 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
 
         for case, expected_calls in (
             ("expired", 0), ("witness_missing_or_unsupported", 0), ("revision_changed", 0),
+            ("integration_version_changed", 0),
             ("no_report_advanced", 1), ("only_one_report_advanced", 1), ("service_failed", 1),
             ("rest_context_changed", 1), ("rest_forecast_changed", 1),
         ):

@@ -1,5 +1,13 @@
 # SigEnergy Optimizer AI Handover
 
+## Solcast v4.6.4 compatibility
+
+Release `2.3.97-haos108` comes from `fix/solar-provider-464-handoff`, based on main `cb7809b74e62ad859a29527d258872f040c7aa62`. The operator confirmed Solcast v4.6.4, which reports `4.6.3` from its manifest. It uses the same native entity identity and cache refresh as v4.6.3. The `.107` handoff only accepted `4.6.1`. The `.108` checkpoint binds the actual supported version along with the existing evidence and expiry. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.97-haos108) · [Control contract](CONTROL_CONTRACT.md#clean-optimizer-restart)
+
+The 24-hour archive shows `.106` verified the 14:16:17 AEDT Solcast poll at 14:16:21. It reported a 4.81 kW charge limit and 11.90 kW export at 14:22:03. The first recorded `.107` session started at 14:27:32 and used the normal 21 kW charge limit through 14:42:32. The archive has a 5-minute 29-second gap between sessions. It covers the upgrade and leaves recovery across a qualifying restart unverified. A scoped revert or the `.107` release provides rollback.
+
+Independent review and 212 guarded tests with 131 subtests passed. The tests cover both supported versions, version conflicts, fresh input after restart and retention of the original expiry. For live verification, `.108` first needs to verify a successful poll. During an eligible daytime Bypass window, compare the poll, deadline, and HA-reported charge limit across a subsequent clean add-on restart.
+
 ## Solcast recovery after a clean add-on restart
 
 Release `2.3.96-haos107` comes from `fix/solar-provider-restart-handoff`, based on main `90e8a05a90ba7fabc1f0c1a5070bfc94fd80e5cc`. On `.106`, the Home Assistant charge limit returned from 5.64 to 21.00 kW by 13:37:16 AEDT after startup. At 13:40:03 the 25 kW Solar Bypass export ceiling was open, Solcast still showed the 13:07:29 poll, and the battery was taking 16.48 kW with zero measured export. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.96-haos107) · [Control contract](CONTROL_CONTRACT.md#clean-optimizer-restart)

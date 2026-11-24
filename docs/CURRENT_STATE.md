@@ -2,9 +2,9 @@
 
 ## Published release and live verification
 
-`2.3.96-haos107` revalidates a previously verified Solcast forecast after a clean optimizer restart. The GitHub release records the source and add-on image digests. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.96-haos107) · [Handover](AI_HANDOVER.md#solcast-recovery-after-a-clean-add-on-restart)
+`2.3.97-haos108` adds compatibility with upstream Solcast v4.6.3 and v4.6.4 for the clean restart handoff introduced in `.107`. The GitHub release records the source and add-on image digests. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.97-haos108) · [Handover](AI_HANDOVER.md#solcast-v464-compatibility)
 
-The latest verified Home Assistant startup is `2.3.95-haos106` at 13:36:59 AEDT on 24 November 2026, from source `adaa7abbbc006fb8facc60eb27fae9a9b19bdee9`. After installing `.107`, let the add-on verify a Solcast poll. Compare the poll, provider deadline and Home Assistant charge limit before and after a clean daytime add-on restart. Live acceptance remains open.
+The latest verified Home Assistant startup is `2.3.96-haos107` at 14:27:31 AEDT on 24 November 2026, from source `7966a7cf87b93a1d023f56cd107d9a053fbb9f36`. After installing `.108`, let the add-on verify a Solcast poll. Compare the poll, provider deadline and Home Assistant charge limit before and after a clean daytime add-on restart. Live acceptance remains open.
 
 ## Solar Override status wording — .106
 

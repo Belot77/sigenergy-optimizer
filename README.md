@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.97-haos108
+
+Solar Bypass restart recovery supports native BJReplay Solcast v4.6.3 and v4.6.4. Both report `4.6.3` to Home Assistant. Existing Solcast v4.6.1 support and forecast expiry checks still apply. [Control contract](docs/CONTROL_CONTRACT.md#clean-optimizer-restart)
+
 ## Release 2.3.96-haos107
 
 A clean add-on restart can reuse the last verified Solcast forecast once the same native Home Assistant sensors re-report their unchanged revisions. This check supports the native BJReplay Solcast 4.6.1 entities and keeps their original forecast deadline. First run or unavailable proof uses the existing wait for a successful Solcast poll. [Control contract](docs/CONTROL_CONTRACT.md#clean-optimizer-restart)
