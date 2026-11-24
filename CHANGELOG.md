@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.97-haos108
+
+- Support the native Solcast `4.6.3` identity reported by the upstream v4.6.3 and v4.6.4 releases when revalidating a forecast after a clean add-on restart.
+
 ## 2.3.96-haos107
 
 - Revalidate a verified Solcast forecast after a clean optimizer restart while its original deadline and native Home Assistant sensor evidence remain current.

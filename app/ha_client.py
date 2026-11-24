@@ -15,6 +15,9 @@ import httpx
 logger = logging.getLogger(__name__)
 
 UNAVAILABLE = {"unknown", "unavailable", "none", ""}
+# These native versions re-report the cache through Home Assistant update_entity.
+# The upstream v4.6.4 release still reports 4.6.3 in its integration manifest.
+_SOLCAST_HANDOFF_VERSIONS = frozenset({"4.6.1", "4.6.3"})
 
 
 class HAClient:
@@ -230,7 +233,7 @@ class HAClient:
                 return {}
 
             witness: dict[str, dict[str, Any]] = {}
-            entry_and_device = set()
+            integration_identity = set()
             timestamp_fields = ("last_changed", "last_updated", "last_reported")
             result_fields = ("state", "context_id", *timestamp_fields, "entry_id", "domain", "entry_state")
             for row in rows:
@@ -240,13 +243,14 @@ class HAClient:
                 ):
                     return {}
                 entity_id = row["entity_id"]
+                version = row["version"].removeprefix("v")
                 if (
                     entity_id not in entities
                     or entity_id in witness
                     or row["state"].strip().lower() in UNAVAILABLE
                     or row["domain"] != "solcast_solar"
                     or row["entry_state"] != "loaded"
-                    or row["version"].removeprefix("v") != "4.6.1"
+                    or version not in _SOLCAST_HANDOFF_VERSIONS
                     or not all(row[field].strip() == row[field] for field in ("context_id", "entry_id", "device_id"))
                 ):
                     return {}
@@ -258,11 +262,11 @@ class HAClient:
                     return {}
                 if not changed <= updated <= reported:
                     return {}
-                entry_and_device.add((row["entry_id"], row["device_id"]))
+                integration_identity.add((row["entry_id"], row["device_id"], version))
                 witness[entity_id] = {field: row[field] for field in result_fields}
-                witness[entity_id]["version"] = "4.6.1"
+                witness[entity_id]["version"] = version
 
-            return witness if len(entry_and_device) == 1 else {}
+            return witness if len(integration_identity) == 1 else {}
         except (httpx.HTTPError, ValueError, OverflowError):
             logger.debug("Unable to read Solar provider handoff witness")
             return {}
