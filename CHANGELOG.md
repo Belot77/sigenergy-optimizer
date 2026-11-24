@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.95-haos106
+
+- Show “Export target closed” when Solar Override was selected and the final export target is closed. Keep measured power in Power Status.
+
 ## 2.3.94-haos105
 
 - Recheck authorization under the control lock before applying a queued mode change.

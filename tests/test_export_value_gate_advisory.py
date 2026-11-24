@@ -3478,6 +3478,10 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                     self.assertEqual(BATTERY_EXPORT, decision.export_intent)
                     self.assertIn(decision.ems_mode, DISCHARGE_MODES)
                     self.assertFalse(decision.requires_verified_msc_before_export)
+                    if name == "solar_override":
+                        self.assertEqual("solar_override", decision.trace_values["battery_export_final_owner"])
+                        self.assertTrue(decision.export_reason.startswith("Exporting "))
+                        self.assertIn("Solar override", decision.export_reason)
 
     def test_zero_capped_solar_bypass_retains_policy_selection_but_closes_export(self) -> None:
         now_ts = datetime.now().timestamp()
@@ -3572,6 +3576,35 @@ class ExportValueGateAdvisoryTests(unittest.TestCase):
                         "evening_export_boost",
                         decision.trace_values.get("battery_export_owner"),
                     )
+
+    def test_solar_override_reports_closed_target_independently_of_measured_export(self) -> None:
+        now_ts = datetime.now().timestamp()
+        for measured_export_kw in (0.0, 2.5):
+            with self.subTest(measured_export_kw=measured_export_kw):
+                optimizer = self._optimizer(battery_full_safeguard_enabled=False)
+                optimizer._is_evening_or_night = lambda _now: False
+                state = self._qualifying_solar_bypass_state(
+                    optimizer,
+                    now_ts,
+                    battery_soc=100.0,
+                    available_discharge_energy_kwh=30.0,
+                    feedin_price=0.30,
+                    feedin_price_cents=30.0,
+                    battery_power_sensor_kw=-0.2,
+                    grid_export_limit_entity_max_kw=0.01,
+                    grid_export_power_kw=measured_export_kw,
+                )
+
+                decision = optimizer._decide(state)
+
+                self.assertEqual("solar_override", decision.trace_values["desired_export_source"])
+                self.assertEqual("none", decision.trace_values["battery_export_final_owner"])
+                self.assertEqual(0.01, decision.export_limit)
+                self.assertEqual(EXPORT_BLOCKED, decision.export_intent)
+                self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
+                self.assertEqual(measured_export_kw, decision.trace_values["grid_export_power_kw"])
+                self.assertEqual("Export target closed", decision.export_reason)
+                self.assertTrue(decision.outcome_reason.startswith(decision.export_reason))
 
     def test_disabled_low_positive_fit_does_not_displace_qualified_solar(self) -> None:
         now_ts = datetime.now().timestamp()

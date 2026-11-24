@@ -531,6 +531,8 @@ Each owner remains subject to its own eligibility and all independent safety gua
 
 Solar Override may retain a deliberate battery-backed export only when trusted SoC is strictly above both the selected battery-export tier floor and the independent protected floor, and every existing qualification, authority, forecast, actual-import-cost, capability and settlement guard passes. At or below either floor, that override must not create a battery-export owner or discharge EMS. This floor check does not suppress a separately qualified genuine PV-only MSC surplus ceiling: it may remain only when the existing observed Automated/exact-MSC and trusted-flow evidence proves no meaningful battery-backed export. Never infer PV-only permission from the rejected override or its numeric target. This rule applies to Solar Override only; Morning Dump, Evening Boost and operator-owned Manual/Force keep their own policies and floors.
 
+The control summary uses the final decision for Solar Override wording. A closed target can report “Export target closed” even while measured export is positive. Cost and settlement reasons take precedence, and Power Status reports measured export separately.
+
 ### Four independent battery-export tiers
 
 | Selected tier | SoC configuration key | Software default |

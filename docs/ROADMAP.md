@@ -1,14 +1,16 @@
 # Roadmap
 
-## Current release 2.3.94-haos105
+## Current release 2.3.95-haos106
 
-`.105` addresses two findings from the operator-mode audit. Queued mode selections recheck authorization at dispatch, and Prevent Import & Export edits are scoped to the verified selection. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.94-haos105)
+`.106` corrects the Solar Override summary when the final export target is closed. The operator deferred the proposed Force settlement gate to preserve responsive Force presets. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.95-haos106)
 
-The latest verified Home Assistant startup is `.102`. Confirm the `.105` runtime and source from its startup log, then verify a routine ESS edit against Power Status. The Evening Boost check at a qualifying sunset can happen whenever conditions line up. [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
-
-Remaining audit follow-ups are the Force settlement policy for permissive limits and the Solar Override status wording when the final export target is closed.
+The latest verified Home Assistant startup is `.102`. Confirm the `.106` runtime and source from its startup log, then observe the corrected summary when Solar Override ends with a closed export target. The routine ESS save and qualifying Evening Boost sunset checks can happen during normal use. [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
 
 The longer-term roadmap covers [architecture consolidation](#6-architecture-refactor--consolidation), [repository cleanup](#7-repository--project-cleanup), [dashboard UX](#8-full-gui--ux-redesign-and-functional-corrections), and [Climate Manager](#9-climate-manager-integration).
+
+## Prior published release 2.3.94-haos105 (24 November 2026)
+
+`.105` rechecks authorization for queued mode selections and scopes Prevent Import & Export edits to the verified selection. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.94-haos105)
 
 ## Prior published release 2.3.93-haos104 (23 November 2026)
 
