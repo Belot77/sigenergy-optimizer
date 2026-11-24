@@ -82,6 +82,7 @@ class _DummyOptimizer:
     async def _read_direct_ess_control_selection(self) -> _DirectESSSelection:
         self.ha.state_reads.append(self.cfg.sigenergy_mode_select)
         return _DirectESSSelection(
+            entity_id=self.cfg.sigenergy_mode_select,
             mode=self.ha.mode_value, changed_at=self.ha.mode_changed,
             updated_at=self.ha.mode_changed, reported_at=datetime.now(timezone.utc),
         )
@@ -95,8 +96,9 @@ class _DummyOptimizer:
     def invalidate_import_accounting(self, reason: str) -> None:
         self.accounting_invalidations.append(reason)
 
-    def set_manual_ess_overrides(
+    def set_direct_ess_overrides(
         self,
+        selection: _DirectESSSelection,
         *,
         charge_kw: float | None,
         discharge_kw: float | None,
@@ -588,17 +590,231 @@ def test_block_flow_cannot_retain_overrides_after_final_accepted_write_changes_o
             ha.observe(cfg.sigenergy_mode_select, cfg.manual_option, changed=rig.clock.now)
 
     rig.ha.on_write = external_change
-    with patch.object(rig.opt, "set_manual_ess_overrides", wraps=rig.opt.set_manual_ess_overrides) as retain:
+    with patch.object(rig.opt, "set_direct_ess_overrides", wraps=rig.opt.set_direct_ess_overrides) as retain:
         response = asyncio.run(ess_api(path, ess_charge_limit=7))
 
     assert response.status_code == 409, response.text
     assert rig.ha.calls[-1] == ("set_number", cfg.ess_max_charging_limit, 7)
-    assert rig.opt._manual_ess_charge_override_kw is None
+    assert not rig.opt._direct_ess_overrides
     retain.assert_not_called()
     if path == "set_ess_fields":
         detail = response.json()["detail"]
         assert detail["accepted_fields"] == ["ess_charge_limit"]
         assert detail["failed_field"] is None
+
+
+def _observe_prevent_selection(rig, *, changed_at=None):
+    cfg = rig.opt.cfg
+    rig.ha.observe(
+        cfg.sigenergy_mode_select, cfg.block_flow_option,
+        changed=changed_at or rig.clock.now,
+    )
+    rig.ha.observe(cfg.grid_export_limit, 3.0)
+    rig.ha.observe(cfg.grid_import_limit, 4.0)
+    rig.ha.observe(cfg.ess_max_charging_limit, 14.0)
+    rig.ha.observe(cfg.ess_max_discharging_limit, 16.0)
+
+
+def _apply_prevent_maintenance(rig, *, after_write=None):
+    cfg = rig.opt.cfg
+    state = rig.read()
+    assert state.sigenergy_mode_observed and state.sigenergy_mode == cfg.block_flow_option
+
+    async def observe_write(ha, method, entity, value):
+        if method == "select_option" and entity == cfg.ems_mode_select:
+            rig.clock.advance(0.25)
+            ha.observe(entity, value)
+        if after_write is not None:
+            await after_write(ha, entity)
+
+    start = len(rig.ha.calls)
+    rig.ha.on_write = observe_write
+    try:
+        result = rig.apply(state, rig.decision())
+    finally:
+        rig.ha.on_write = None
+    writes = [(entity, value) for method, entity, value in rig.ha.calls[start:] if method == "set_number"]
+    assert (cfg.grid_export_limit, cfg.block_flow_limit_value) in writes
+    assert (cfg.grid_import_limit, cfg.block_flow_limit_value) in writes
+    return result, writes
+
+
+@pytest.mark.parametrize("path", ["set_ess", "set_ess_fields"])
+def test_prevent_direct_edits_survive_advancing_reports_and_unrelated_configuration(rig, ess_api, path):
+    cfg = rig.opt.cfg
+    change = rig.clock.now
+    _observe_prevent_selection(rig)
+    assert asyncio.run(ess_api(path, ess_charge_limit=7)).status_code == 200
+    rig.clock.advance(0.25)
+    _observe_prevent_selection(rig, changed_at=change)
+    assert asyncio.run(ess_api(path, ess_discharge_limit=8)).status_code == 200
+
+    async def rebind_grid_export_only():
+        async with rig.opt.configuration_transaction():
+            cfg.grid_export_limit = "number.ess_test_rebound_grid_export"
+
+    asyncio.run(rebind_grid_export_only())
+    rig.clock.advance(0.25)
+    _observe_prevent_selection(rig, changed_at=change)
+    outcome, writes = _apply_prevent_maintenance(rig)
+
+    assert outcome.succeeded
+    assert (cfg.ess_max_charging_limit, 7.0) in writes
+    assert (cfg.ess_max_discharging_limit, 8.0) in writes
+
+
+@pytest.mark.parametrize("departure_read", [False, True])
+def test_new_prevent_selection_does_not_reapply_previous_direct_edits(rig, ess_api, departure_read):
+    cfg = rig.opt.cfg
+    _observe_prevent_selection(rig)
+    assert rig.opt._manual_mode_override is None
+    assert asyncio.run(ess_api("set_ess_fields", ess_charge_limit=7, ess_discharge_limit=8)).status_code == 200
+    rig.clock.advance(0.25)
+    rig.ha.observe(cfg.sigenergy_mode_select, cfg.manual_option, changed=rig.clock.now)
+    if departure_read:
+        assert rig.read().sigenergy_mode == cfg.manual_option
+    rig.clock.advance(0.25)
+    _observe_prevent_selection(rig)
+    expected = rig.opt._manual_mode_targets(
+        cfg.block_flow_option, rig.read(), include_block_flow_ess_limits=True,
+    )
+    outcome, writes = _apply_prevent_maintenance(rig)
+
+    assert outcome.succeeded
+    assert [value for entity, value in writes if entity == cfg.ess_max_charging_limit] == [expected["ess_charge_limit"]]
+    assert [value for entity, value in writes if entity == cfg.ess_max_discharging_limit] == [expected["ess_discharge_limit"]]
+
+
+def test_new_prevent_charge_edit_does_not_retain_old_discharge_or_old_preset(rig, ess_api):
+    cfg = rig.opt.cfg
+    _observe_prevent_selection(rig)
+    # The earlier dashboard preset can have cached numbers from different device limits.
+    rig.opt.set_manual_ess_overrides(charge_kw=12, discharge_kw=13)
+    assert asyncio.run(ess_api("set_ess_fields", ess_charge_limit=7, ess_discharge_limit=8)).status_code == 200
+    rig.clock.advance(0.25)
+    _observe_prevent_selection(rig)
+    assert asyncio.run(ess_api("set_ess_fields", ess_charge_limit=6)).status_code == 200
+    expected = rig.opt._manual_mode_targets(
+        cfg.block_flow_option, rig.read(), include_block_flow_ess_limits=True,
+    )
+    outcome, writes = _apply_prevent_maintenance(rig)
+
+    assert outcome.succeeded
+    assert (cfg.ess_max_charging_limit, 6.0) in writes
+    assert expected["ess_discharge_limit"] not in {8.0, 13.0}
+    assert [value for entity, value in writes if entity == cfg.ess_max_discharging_limit] == [expected["ess_discharge_limit"]]
+
+
+@pytest.mark.parametrize("issue", ["missing", "regressed", "conflicting-change"])
+def test_unverified_prevent_selection_holds_edited_field_until_same_selection_is_verified(rig, ess_api, issue):
+    cfg = rig.opt.cfg
+    selector = cfg.sigenergy_mode_select
+    change = rig.clock.now
+    _observe_prevent_selection(rig)
+    assert asyncio.run(ess_api("set_ess_fields", ess_charge_limit=7)).status_code == 200
+    rig.clock.advance(0.25)
+    _observe_prevent_selection(rig, changed_at=change)
+    high_water = rig.clock.now
+    rig.read()
+    rig.clock.advance(0.25)
+    if issue == "missing":
+        _observe_prevent_selection(rig)
+        rig.ha.metadata.pop(selector)
+    elif issue == "regressed":
+        rig.ha.observe(
+            selector, cfg.block_flow_option, changed=change,
+            updated=high_water - timedelta(seconds=0.1), at=high_water - timedelta(seconds=0.1),
+        )
+    else:
+        _observe_prevent_selection(rig, changed_at=change)
+        rig.ha.metadata[selector]["last_changed"] = (change + timedelta(seconds=0.1)).isoformat()
+
+    outcome, writes = _apply_prevent_maintenance(rig)
+    assert outcome.succeeded
+    assert cfg.ess_max_charging_limit not in dict(writes)
+    assert cfg.ess_max_discharging_limit in dict(writes)
+
+    _observe_prevent_selection(rig, changed_at=change)
+    outcome, writes = _apply_prevent_maintenance(rig)
+    assert outcome.succeeded
+    assert (cfg.ess_max_charging_limit, 7.0) in writes
+
+
+@pytest.mark.parametrize("issue", ["new-selection", "missing"])
+def test_prevent_maintenance_rechecks_selection_before_retrying_edited_field(rig, ess_api, issue):
+    cfg = rig.opt.cfg
+    selector = cfg.sigenergy_mode_select
+    _observe_prevent_selection(rig)
+    assert asyncio.run(ess_api("set_ess_fields", ess_charge_limit=7)).status_code == 200
+    rig.ha.outcomes[("set_number", cfg.ess_max_charging_limit)] = [False]
+
+    async def lose_selection(ha, entity):
+        if entity == cfg.ess_max_charging_limit:
+            rig.clock.advance(0.25)
+            if issue == "new-selection":
+                ha.observe(selector, cfg.block_flow_option, changed=rig.clock.now)
+            else:
+                ha.metadata.pop(selector, None)
+
+    outcome, writes = _apply_prevent_maintenance(rig, after_write=lose_selection)
+    assert not outcome.succeeded
+    assert [value for entity, value in writes if entity == cfg.ess_max_charging_limit] == [7.0]
+    assert cfg.ess_max_discharging_limit in dict(writes)
+
+
+def test_prevent_default_restore_stays_guarded_if_new_selection_evidence_disappears(rig, ess_api):
+    cfg = rig.opt.cfg
+    selector = cfg.sigenergy_mode_select
+    _observe_prevent_selection(rig)
+    assert asyncio.run(ess_api("set_ess_fields", ess_charge_limit=7)).status_code == 200
+    rig.clock.advance(0.25)
+    new_selection = rig.clock.now
+    _observe_prevent_selection(rig)
+
+    async def lose_report(ha, entity):
+        if entity == cfg.grid_export_limit:
+            ha.metadata.pop(selector, None)
+
+    outcome, writes = _apply_prevent_maintenance(rig, after_write=lose_report)
+    assert not outcome.succeeded
+    assert cfg.ess_max_charging_limit not in dict(writes)
+    assert cfg.ess_max_discharging_limit in dict(writes)
+
+    _observe_prevent_selection(rig, changed_at=new_selection)
+    expected = rig.opt._manual_mode_targets(
+        cfg.block_flow_option, rig.read(), include_block_flow_ess_limits=True,
+    )
+    outcome, writes = _apply_prevent_maintenance(rig)
+    assert outcome.succeeded
+    assert [value for entity, value in writes if entity == cfg.ess_max_charging_limit] == [expected["ess_charge_limit"]]
+    assert "ess_charge_limit" not in rig.opt._direct_ess_overrides
+
+
+def test_rebound_prevent_selector_holds_old_edit_until_a_new_choice_is_observed(rig, ess_api):
+    cfg = rig.opt.cfg
+    _observe_prevent_selection(rig)
+    assert asyncio.run(ess_api("set_ess_fields", ess_charge_limit=7)).status_code == 200
+    rig.clock.advance(0.25)
+
+    async def rebind_selector():
+        async with rig.opt.configuration_transaction():
+            cfg.sigenergy_mode_select = "input_select.ess_test_rebound_owner"
+
+    asyncio.run(rebind_selector())
+    assert rig.clock.now.timestamp() < rig.opt._control_identity_activated_at
+    _observe_prevent_selection(rig)
+    outcome, writes = _apply_prevent_maintenance(rig)
+    assert outcome.succeeded
+    assert cfg.ess_max_charging_limit not in dict(writes)
+
+    rig.clock.now = datetime.fromtimestamp(rig.opt._control_identity_activated_at + 0.25, tz=timezone.utc)
+    _observe_prevent_selection(rig)
+    expected = rig.opt._manual_mode_targets(
+        cfg.block_flow_option, rig.read(), include_block_flow_ess_limits=True,
+    )
+    outcome, writes = _apply_prevent_maintenance(rig)
+    assert outcome.succeeded
+    assert [value for entity, value in writes if entity == cfg.ess_max_charging_limit] == [expected["ess_charge_limit"]]
 
 
 if __name__ == "__main__":

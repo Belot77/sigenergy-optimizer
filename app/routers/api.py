@@ -456,7 +456,9 @@ def _effective_mode_label(opt: Any, s: Any, cfg: Any) -> str:
 def _manual_display_targets(opt: Any, s: Any, mode: str, cfg: Any) -> dict[str, Any] | None:
     if mode in {str(getattr(cfg, "automated_option", "Automated")), str(getattr(cfg, "manual_option", "Manual")), ""}:
         return None
-    target_builder = getattr(opt, "_manual_mode_targets", None)
+    target_builder = getattr(opt, "_manual_mode_display_targets", None)
+    if not callable(target_builder):
+        target_builder = getattr(opt, "_manual_mode_targets", None)
     if callable(target_builder):
         try:
             return target_builder(
@@ -1329,7 +1331,9 @@ async def set_mode(request: Request, body: ModeRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"Unsupported mode: {body.mode}")
     old_mode = opt.last_state.sigenergy_mode if opt.last_state else None
     try:
-        await opt.apply_manual_mode(body.mode)
+        await opt.apply_manual_mode(
+            body.mode, authorize_before_apply=lambda: _require_mutation_auth(request),
+        )
         _record_audit(
             request,
             action="set_mode",
@@ -1339,6 +1343,8 @@ async def set_mode(request: Request, body: ModeRequest) -> dict[str, Any]:
             new_value=body.mode,
         )
         return {"ok": True, "mode": body.mode}
+    except HTTPException:
+        raise
     except Exception as exc:
         _record_audit(
             request,
@@ -1398,17 +1404,9 @@ async def _require_direct_ess_selection(
     opt: Any, previous: _DirectESSSelection | None,
 ) -> _DirectESSSelection:
     current = await opt._read_direct_ess_control_selection()
-    if current is None or (
-        previous is not None and (
-            current.changed_at < previous.changed_at
-            or current.updated_at < previous.updated_at
-            or current.reported_at < previous.reported_at
-        )
-    ):
+    if current is None or (previous is not None and current.regressed_since(previous)):
         raise _DirectESSModeConflict("Current SigEnergy Mode could not be verified")
-    if previous is not None and (
-        current.mode != previous.mode or current.changed_at != previous.changed_at
-    ):
+    if previous is not None and not current.matches(previous):
         raise _DirectESSModeConflict("SigEnergy Mode changed during the direct ESS request")
     return current
 
@@ -1526,10 +1524,10 @@ async def _set_ess_locked(request: Request, body: ESSRequest | ESSFieldsRequest)
         and (failure is None or (edited_fields_only and not isinstance(failure, _DirectESSModeConflict)))
     ):
         try:
-            await _require_direct_ess_selection(opt, selection)
-            set_overrides = getattr(opt, "set_manual_ess_overrides", None)
+            verified_selection = await _require_direct_ess_selection(opt, selection)
+            set_overrides = getattr(opt, "set_direct_ess_overrides", None)
             if callable(set_overrides):
-                set_overrides(charge_kw=charge_kw, discharge_kw=discharge_kw)
+                set_overrides(verified_selection, charge_kw=charge_kw, discharge_kw=discharge_kw)
         except Exception as exc:
             if failure is None:
                 failure = exc

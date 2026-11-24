@@ -2,9 +2,13 @@
 
 ## Published release and live verification
 
-`2.3.93-haos104` was published on 23 November 2026 from source `a2e343993673e30309cca36053f58c647669f4e4`. It verifies SigEnergy Mode before direct ESS writes and reports which fields Home Assistant accepted when a request stops early. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.93-haos104) · [Control contract](CONTROL_CONTRACT.md)
+`2.3.94-haos105` rechecks authorization for queued mode requests and scopes direct ESS edits to the current Prevent Import & Export selection. The GitHub release records the source and verified add-on image digests. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.94-haos105) · [Handover](AI_HANDOVER.md#queued-mode-authorization-and-prevent-limits)
 
-The latest verified Home Assistant startup is `2.3.91-haos102` at 18:59:23 AEDT on 23 November 2026, from source `7107bcc4414a7c3a5831c163a231a564f1a7153a`. Live verification of `.104` requires its startup runtime and source, followed by comparing a routine ESS save with Power Status.
+The latest verified Home Assistant startup is `2.3.91-haos102` at 18:59:23 AEDT on 23 November 2026, from source `7107bcc4414a7c3a5831c163a231a564f1a7153a`. Live verification of `.105` requires its startup runtime and source, followed by comparing a routine ESS save with Power Status.
+
+## Direct ESS writes and external mode changes — .104
+
+`2.3.93-haos104` was published on 23 November 2026 from source `a2e343993673e30309cca36053f58c647669f4e4`. It verifies SigEnergy Mode before direct ESS writes and reports which fields Home Assistant accepted when a request stops early. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.93-haos104) · [Control contract](CONTROL_CONTRACT.md)
 
 ## Settings ownership across restart — .103
 

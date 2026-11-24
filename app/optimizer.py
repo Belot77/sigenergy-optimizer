@@ -25,7 +25,7 @@ import math
 import os
 from time import monotonic
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Callable, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings
@@ -157,7 +157,7 @@ _POWER_LIMIT_MAX_KW = 100.0
 # timestamp jitter; keep derived-flow coherence equally narrow and independent
 # of the much wider per-sensor freshness window.
 _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
-_RUNTIME_SIGNATURE = "2.3.93-haos104"
+_RUNTIME_SIGNATURE = "2.3.94-haos105"
 _MSC_EXPORT_PENDING_REASON = (
     "Waiting for confirmation of export closure and Maximum Self Consumption."
 )
@@ -605,10 +605,31 @@ class _MscMaintenanceEpoch:
 
 @dataclass(frozen=True)
 class _DirectESSSelection:
+    entity_id: str
     mode: str
     changed_at: datetime
     updated_at: datetime
     reported_at: datetime
+
+    def matches(self, previous: _DirectESSSelection) -> bool:
+        return (
+            self.entity_id == previous.entity_id
+            and self.mode == previous.mode
+            and self.changed_at == previous.changed_at
+        )
+
+    def regressed_since(self, previous: _DirectESSSelection) -> bool:
+        return (
+            self.changed_at < previous.changed_at
+            or self.updated_at < previous.updated_at
+            or self.reported_at < previous.reported_at
+        )
+
+
+@dataclass(frozen=True)
+class _DirectESSOverride:
+    selection: _DirectESSSelection
+    kw: float | None
 
 
 class SigEnergyOptimizer:
@@ -662,6 +683,8 @@ class SigEnergyOptimizer:
         self._number_settlement_requests: dict[str, tuple[float, float, bool]] = {}
         self._manual_ess_charge_override_kw: Optional[float] = None
         self._manual_ess_discharge_override_kw: Optional[float] = None
+        self._direct_ess_overrides: dict[str, _DirectESSOverride] = {}
+        self._direct_ess_display_selection: _DirectESSSelection | None = None
         self._morning_slow_charge_runtime_disabled: bool = False
         self._morning_slow_disable_logged: bool = False
         logger.warning(
@@ -3429,8 +3452,16 @@ class SigEnergyOptimizer:
         )
 
     def _remember_control_mode(
-        self, observation: HVACObservedValue, state_obj: Optional[dict[str, Any]] = None,
+        self,
+        observation: HVACObservedValue,
+        state_obj: Optional[dict[str, Any]] = None,
+        state_object_report: Optional[dict[str, Any]] = None,
     ) -> None:
+        if self._direct_ess_overrides:
+            current = self._verified_direct_ess_selection(observation, state_obj, state_object_report)
+            self._direct_ess_display_selection = current
+            if current is not None:
+                self._remember_direct_ess_selection(current)
         if not (observation.available and observation.fresh):
             return
         mode = str(observation.value)
@@ -3467,6 +3498,8 @@ class SigEnergyOptimizer:
         entities = [self.cfg.sigenergy_mode_select, self.cfg.ha_control_switch]
         if evidence is not None:
             entities.extend(entity for entity in evidence if entity not in entities)
+        if remember_mode and self._direct_ess_overrides and state_objects is None:
+            state_objects = {}
         try:
             bulk = await self.ha.bulk_states(entities)
             bulk = await self._enrich_state_report_metadata(
@@ -3479,7 +3512,9 @@ class SigEnergyOptimizer:
                 bulk.get(entities[0]), observed_at=datetime.now(timezone.utc),
             )
             if remember_mode:
-                self._remember_control_mode(observation, bulk.get(entities[0]))
+                self._remember_control_mode(
+                    observation, bulk.get(entities[0]), (state_objects or {}).get(entities[0]),
+                )
             switch = bulk.get(entities[1], {})
             switch_state = str(switch.get("state", "")).strip().lower()
             if (
@@ -3492,6 +3527,8 @@ class SigEnergyOptimizer:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if remember_mode:
+                self._direct_ess_display_selection = None
             logger.warning("Current control authority read failed: %s", exc)
             return HVACObservedValue(), "unknown"
 
@@ -3513,7 +3550,25 @@ class SigEnergyOptimizer:
         ):
             return None
 
-        state = evidence[entity_id]
+        current = self._verified_direct_ess_selection(
+            observation, evidence[entity_id], state_objects.get(entity_id),
+        )
+        if current is not None and any(
+            current.entity_id == override.selection.entity_id
+            and current.regressed_since(override.selection)
+            for override in self._direct_ess_overrides.values()
+        ):
+            return None
+        return current
+
+    def _verified_direct_ess_selection(
+        self,
+        observation: HVACObservedValue,
+        state: dict[str, Any] | None,
+        state_object_report: dict[str, Any] | None,
+    ) -> _DirectESSSelection | None:
+        if state is None or not (observation.available and observation.fresh):
+            return None
         changed_at = self._parse_aware_metadata_timestamp(state.get("last_changed"))
         updated_at = self._parse_aware_metadata_timestamp(state.get("last_updated"))
         reported_at = self._state_metadata_timestamp(state)
@@ -3527,10 +3582,13 @@ class SigEnergyOptimizer:
             # snapshot the earlier REST read cannot authorize a direct write.
             if state.get("_msc_metadata_status") != "accepted":
                 return None
-            current = state_objects.get(entity_id, {})
-            if changed_at != self._parse_aware_metadata_timestamp(current.get("last_changed")):
+            if changed_at != self._parse_aware_metadata_timestamp(
+                (state_object_report or {}).get("last_changed")
+            ):
                 return None
-        return _DirectESSSelection(mode, changed_at, updated_at, reported_at)
+        return _DirectESSSelection(
+            self.cfg.sigenergy_mode_select, str(observation.value), changed_at, updated_at, reported_at,
+        )
 
     async def _read_state(self) -> SolarState:
         cfg = self.cfg
@@ -3736,7 +3794,10 @@ class SigEnergyOptimizer:
         control_mode_observation = self._control_mode_observation(
             bulk.get(cfg.sigenergy_mode_select), observed_at=observed_at,
         )
-        self._remember_control_mode(control_mode_observation, bulk.get(cfg.sigenergy_mode_select))
+        self._remember_control_mode(
+            control_mode_observation, bulk.get(cfg.sigenergy_mode_select),
+            state_objects.get(cfg.sigenergy_mode_select),
+        )
 
         pv_power_observation = _observed_number(
             cfg.pv_power_sensor,
@@ -9259,7 +9320,15 @@ class SigEnergyOptimizer:
                 automatic_transition_pending=not authority_revoked and had_automated_authority,
             )
 
-        ownership, remote = await self._read_control_authority()
+        selector_evidence: dict[str, dict[str, Any]] = {}
+        selector_reports: dict[str, dict[str, Any]] = {}
+        if self._direct_ess_overrides:
+            selector_evidence[cfg.sigenergy_mode_select] = {}
+            ownership, remote = await self._read_control_authority(
+                selector_evidence, state_objects=selector_reports,
+            )
+        else:
+            ownership, remote = await self._read_control_authority()
         if not (ownership.available and ownership.fresh):
             return _authority_paused()
         effective_mode = str(ownership.value)
@@ -9288,6 +9357,15 @@ class SigEnergyOptimizer:
                 include_block_flow_ess_limits=(effective_mode == cfg.block_flow_option),
             )
             if manual_targets:
+                direct_ess_selections: dict[str, _DirectESSSelection] = {}
+                if effective_mode == cfg.block_flow_option and self._direct_ess_overrides:
+                    current_selection = self._verified_direct_ess_selection(
+                        ownership, selector_evidence.get(cfg.sigenergy_mode_select),
+                        selector_reports.get(cfg.sigenergy_mode_select),
+                    )
+                    direct_ess_selections = self._overlay_direct_ess_targets(
+                        manual_targets, current_selection, restore_defaults=True,
+                    )
                 threshold = max(0.05, float(cfg.min_change_threshold))
                 drifted_keys: list[str] = []
                 if s.current_ems_mode != str(manual_targets["ems_mode"]):
@@ -9326,6 +9404,7 @@ class SigEnergyOptimizer:
                     write_results = await self._apply_manual_mode_targets(
                         manual_targets,
                         mode_label=effective_mode,
+                        direct_ess_selections=direct_ess_selections,
                     )
                     failed = [name for name, ok in write_results.items() if not ok]
                     self.record_audit_event(
@@ -10246,6 +10325,48 @@ class SigEnergyOptimizer:
             return targets
         return None
 
+    def _manual_mode_display_targets(
+        self,
+        mode_label: str,
+        state: Optional[SolarState] = None,
+        include_block_flow_ess_limits: bool = False,
+    ) -> dict[str, float | str] | None:
+        """Use the retained selector observation for status, never for dispatch."""
+        targets = self._manual_mode_targets(mode_label, state, include_block_flow_ess_limits)
+        if targets is not None and mode_label == self.cfg.block_flow_option:
+            selection = self._direct_ess_display_selection
+            if selection is not None and (
+                selection.entity_id != self.cfg.sigenergy_mode_select or selection.mode != mode_label
+            ):
+                selection = None
+            self._overlay_direct_ess_targets(targets, selection, restore_defaults=False)
+        return targets
+
+    def _overlay_direct_ess_targets(
+        self,
+        targets: dict[str, float | str],
+        selection: _DirectESSSelection | None,
+        *,
+        restore_defaults: bool,
+    ) -> dict[str, _DirectESSSelection]:
+        verified: dict[str, _DirectESSSelection] = {}
+        for key, override in self._direct_ess_overrides.items():
+            if key not in targets:
+                continue
+            if (
+                selection is None or not selection.matches(override.selection)
+                or selection.regressed_since(override.selection)
+                or (override.kw is None and not restore_defaults)
+            ):
+                # A missing selection cannot justify reapplying the edited cap
+                # or restoring the preset. Leave other limits available.
+                del targets[key]
+                continue
+            if override.kw is not None:
+                targets[key] = override.kw
+            verified[key] = selection
+        return verified
+
     def _freeze_decision_to_live_mode(self, state: SolarState, decision: Decision, mode_label: str) -> None:
         if mode_label != self.cfg.automated_option:
             self._reset_solar_reentry("operator_owned")
@@ -10310,50 +10431,114 @@ class SigEnergyOptimizer:
         if discharge_kw is not None:
             self._manual_ess_discharge_override_kw = max(0.0, float(discharge_kw))
 
+    def set_direct_ess_overrides(
+        self,
+        selection: _DirectESSSelection,
+        *,
+        charge_kw: float | None,
+        discharge_kw: float | None,
+    ) -> None:
+        """Retain accepted edits only for the verified selector selection."""
+        self._remember_direct_ess_selection(selection)
+        self._direct_ess_display_selection = selection
+        if charge_kw is not None:
+            self._direct_ess_overrides["ess_charge_limit"] = _DirectESSOverride(selection, charge_kw)
+            self._manual_ess_charge_override_kw = None
+        if discharge_kw is not None:
+            self._direct_ess_overrides["ess_discharge_limit"] = _DirectESSOverride(selection, discharge_kw)
+            self._manual_ess_discharge_override_kw = None
+
+    def _remember_direct_ess_selection(self, current: _DirectESSSelection) -> None:
+        for key, override in tuple(self._direct_ess_overrides.items()):
+            previous = override.selection
+            if current.regressed_since(previous):
+                continue
+            same_entity = current.entity_id == previous.entity_id
+            if not same_entity and (
+                self._control_identity_activated_at is None
+                or current.changed_at.timestamp() <= self._control_identity_activated_at
+            ):
+                # A newly bound selector can be reporting a choice from before activation.
+                continue
+            if current.changed_at > previous.changed_at:
+                # The old target is gone, but restoring the preset also requires
+                # the new selection to stay verified until the request is sent.
+                self._direct_ess_overrides[key] = _DirectESSOverride(current, None)
+            elif current.matches(previous) and current != previous:
+                self._direct_ess_overrides[key] = replace(override, selection=current)
+
     async def _apply_manual_mode_targets(
         self,
         targets: dict[str, float | str],
         mode_label: Optional[str] = None,
+        *,
+        direct_ess_selections: dict[str, _DirectESSSelection] | None = None,
     ) -> dict[str, bool]:
         cfg = self.cfg
         ha = self.ha
         superseded = False
+        direct_ess_selections = direct_ess_selections or {}
 
-        async def _still_owned() -> bool:
+        async def _still_owned(direct_ess_field: str | None = None) -> bool:
             nonlocal superseded
             if superseded:
                 return False
             if mode_label is None:
                 return True
-            observation, _remote = await self._read_control_authority()
+            if direct_ess_field is None:
+                observation, _remote = await self._read_control_authority()
+            else:
+                selector = cfg.sigenergy_mode_select
+                evidence: dict[str, dict[str, Any]] = {selector: {}}
+                reports: dict[str, dict[str, Any]] = {}
+                observation, _remote = await self._read_control_authority(
+                    evidence, state_objects=reports,
+                )
             if observation.available and observation.fresh and observation.value == mode_label:
-                return True
+                if direct_ess_field is None:
+                    return True
+                current = self._verified_direct_ess_selection(
+                    observation, evidence[selector], reports.get(selector),
+                )
+                override = self._direct_ess_overrides.get(direct_ess_field)
+                return (
+                    current is not None and override is not None
+                    and current.matches(direct_ess_selections[direct_ess_field])
+                    and not current.regressed_since(override.selection)
+                )
             if self._manual_mode_override == mode_label and self._manual_mode_requested_at is not None:
                 # The authenticated request owns this transaction while HA is
                 # catching up. A newer credible selection clears the pin in
                 # _remember_control_mode, and stops all subsequent retries.
-                return True
+                return direct_ess_field is None
             superseded = True
             return False
 
-        async def _set_number_with_retry(entity_id: str, value: float, retries: int = 3) -> bool:
-            if not await _still_owned():
-                return False
-            ok = await ha.set_number(entity_id, value)
-            if ok:
-                return True
-            for attempt in range(1, retries):
-                # Allow EMS mode transition and HA integration state to settle.
-                await asyncio.sleep(0.7)
-                if not await _still_owned():
+        async def _set_number_with_retry(
+            entity_id: str, value: float, retries: int = 3, *, field: str | None = None,
+        ) -> bool:
+            direct_ess_field = field if field in direct_ess_selections else None
+            for attempt in range(retries):
+                if attempt:
+                    # Allow EMS mode transition and HA integration state to settle.
+                    await asyncio.sleep(0.7)
+                if not await _still_owned(direct_ess_field):
                     return False
                 ok = await ha.set_number(entity_id, value)
                 if ok:
-                    logger.info(
-                        "Manual set_number retry succeeded for %s on attempt %d",
-                        entity_id,
-                        attempt + 1,
-                    )
+                    if direct_ess_field is not None:
+                        override = self._direct_ess_overrides.get(direct_ess_field)
+                        if (
+                            override is not None and override.kw is None
+                            and override.selection.matches(direct_ess_selections[direct_ess_field])
+                        ):
+                            del self._direct_ess_overrides[direct_ess_field]
+                    if attempt:
+                        logger.info(
+                            "Manual set_number retry succeeded for %s on attempt %d",
+                            entity_id,
+                            attempt + 1,
+                        )
                     return True
             return False
 
@@ -10404,6 +10589,7 @@ class SigEnergyOptimizer:
                 cfg.ess_max_charging_limit,
                 float(targets["ess_charge_limit"]),
                 retries=retries,
+                field="ess_charge_limit",
             )
 
         ok_dis = True
@@ -10413,6 +10599,7 @@ class SigEnergyOptimizer:
                 cfg.ess_max_discharging_limit,
                 float(targets["ess_discharge_limit"]),
                 retries=retries,
+                field="ess_discharge_limit",
             )
 
         if not all([ok_mode, ok_exp, ok_imp, ok_pv, ok_chg, ok_dis]):
@@ -10438,13 +10625,20 @@ class SigEnergyOptimizer:
     # 4. Manual mode application (mirrors sigenergy_manual_control.yaml)
     # ------------------------------------------------------------------
 
-    async def apply_manual_mode(self, mode_label: str) -> None:
+    async def apply_manual_mode(
+        self,
+        mode_label: str,
+        *,
+        authorize_before_apply: Callable[[], None] | None = None,
+    ) -> None:
         """Push EMS settings for a manual mode selection."""
         cfg = self.cfg
         ha = self.ha
         requested_identity = tuple(getattr(cfg, name) for name in _CONFIG_OWNER_IDENTITY_ATTRS)
 
         async with self._control_lock:
+            if authorize_before_apply is not None:
+                authorize_before_apply()
             if requested_identity != tuple(getattr(cfg, name) for name in _CONFIG_OWNER_IDENTITY_ATTRS):
                 # Renamed or swapped labels must never reinterpret a queued choice.
                 raise RuntimeError("Mode configuration changed while request was waiting; retry the selection")
@@ -10458,6 +10652,8 @@ class SigEnergyOptimizer:
                 raise RuntimeError(
                     f"Failed to set mode selector {cfg.sigenergy_mode_select} to '{mode_label}'"
                 )
+            self._direct_ess_overrides.clear()
+            self._direct_ess_display_selection = None
             if mode_label == cfg.automated_option:
                 self._manual_mode_override = None
                 self._manual_mode_requested_at = None

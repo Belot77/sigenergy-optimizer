@@ -1,5 +1,13 @@
 # SigEnergy Optimizer AI Handover
 
+## Queued mode authorization and Prevent limits
+
+Release `2.3.94-haos105` comes from `fix/operator-mode-handoff`, based on main `3234eb46ebebb6dbf4ded98918586887da19d0ac`. The `.104` review reproduced two issues in simulated Home Assistant. A queued mode request could dispatch after authorization was withdrawn, and a new externally selected Prevent Import & Export session could inherit an accepted ESS edit from an earlier selection. The release rechecks authorization under the existing lock and scopes accepted direct ESS edits to the verified Prevent selection. [Control contract](CONTROL_CONTRACT.md) · [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.94-haos105)
+
+For offline verification, simulate authorization changes while the control lock is held and observe the selector's change and report times across Prevent exit and re-entry. For a later supervised check, compare the runtime and source with the published build, then observe an ordinary ESS edit and the requested and reported limits in Power Status. Use the verified `.104` image or a scoped revert for rollback.
+
+Guarded validation passed 321 tests and 103 subtests across 13 Python modules. The 39 dashboard checks and independent source and simulation review passed. Coverage includes key rotation and removal, same-selection edits, unseen exit and re-entry, replacement-selector evidence, and loss of verification before a retry or default restoration. Power Status uses cached verified evidence for accepted targets and shows Home Assistant readback separately. Physical settlement remains unverified.
+
 ## Direct ESS writes and external mode changes
 
 Branch `fix/ess-external-mode-guard` starts at main `6111e173622befee4cd53914544c730a8a528d9c`. The `.104` change checks fresh SigEnergy Mode evidence at direct ESS write boundaries. When a selection changes or its evidence becomes unverified, the API stops the rest of the request. Service acceptance remains evidence only for calls already dispatched. The approved rollback is a scoped revert or the published `.103` image. The last confirmed runtime from the operator's startup log is `.102`. [Control contract](CONTROL_CONTRACT.md)

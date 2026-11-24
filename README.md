@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.94-haos105
+
+A queued mode change must still be authorized when it reaches the control lock. In Prevent Import & Export, accepted dashboard ESS charge and discharge edits apply to that verified selection. A verified new selection uses current preset defaults. If the selection cannot be verified, maintenance waits before changing the affected limits. [Control contract](docs/CONTROL_CONTRACT.md)
+
 ## Release 2.3.93-haos104
 
 Direct ESS requests verify the current SigEnergy Mode before each write. If Home Assistant reports a different selection or loses a trustworthy observation, the dashboard shows which writes Home Assistant already accepted. An accepted service call can still take effect.
