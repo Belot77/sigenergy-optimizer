@@ -1,5 +1,13 @@
 # SigEnergy Optimizer AI Handover
 
+## Solar Override status wording
+
+Release `2.3.95-haos106` comes from `fix/solar-override-status`, based on main `9c42d3105e54361f2b4561507ae1932783f3f5cf`. The prior summary could use Solar Override eligibility to display “Exporting” while the final target was closed and the final battery-export owner was absent. The revised summary follows the final target and owner. Power Status still shows measured export separately. Use the verified `.105` image or a scoped revert for rollback. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.95-haos106) · [Control contract](CONTROL_CONTRACT.md)
+
+For offline verification, compare the summary and actuator targets for a closed target, an active Solar Override and a cost veto. After installation, check the runtime and source from startup. If a closed Solar Override target occurs in normal operation, compare the summary with the requested limit and measured power.
+
+Guarded validation passed 168 Python tests and 134 subtests across eight modules, along with 39 dashboard checks. The closed-target cases reproduced the old wording with both zero and positive measured power. The Windows run used IANA timezone data from a temporary test directory. Independent review verified that executable changes were confined to summary formatting and the release version.
+
 ## Queued mode authorization and Prevent limits
 
 Release `2.3.94-haos105` comes from `fix/operator-mode-handoff`, based on main `3234eb46ebebb6dbf4ded98918586887da19d0ac`. The `.104` review reproduced two issues in simulated Home Assistant. A queued mode request could dispatch after authorization was withdrawn, and a new externally selected Prevent Import & Export session could inherit an accepted ESS edit from an earlier selection. The release rechecks authorization under the existing lock and scopes accepted direct ESS edits to the verified Prevent selection. [Control contract](CONTROL_CONTRACT.md) · [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.94-haos105)

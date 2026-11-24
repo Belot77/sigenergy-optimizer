@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.95-haos106
+
+The control summary shows **Export target closed** when a Solar Override decision ends with a closed target. Power Status continues to show measured export separately. [Control contract](docs/CONTROL_CONTRACT.md)
+
 ## Release 2.3.94-haos105
 
 A queued mode change must still be authorized when it reaches the control lock. In Prevent Import & Export, accepted dashboard ESS charge and discharge edits apply to that verified selection. A verified new selection uses current preset defaults. If the selection cannot be verified, maintenance waits before changing the affected limits. [Control contract](docs/CONTROL_CONTRACT.md)

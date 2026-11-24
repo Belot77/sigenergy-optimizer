@@ -157,7 +157,7 @@ _POWER_LIMIT_MAX_KW = 100.0
 # timestamp jitter; keep derived-flow coherence equally narrow and independent
 # of the much wider per-sensor freshness window.
 _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
-_RUNTIME_SIGNATURE = "2.3.94-haos105"
+_RUNTIME_SIGNATURE = "2.3.95-haos106"
 _MSC_EXPORT_PENDING_REASON = (
     "Waiting for confirmation of export closure and Maximum Self Consumption."
 )
@@ -7318,7 +7318,7 @@ class SigEnergyOptimizer:
 
         # ---- Reason strings -----------------------------------------
         d.export_reason = self._export_reason(
-            s, export_spike_active, export_solar_override, morning_dump_active,
+            s, export_spike_active, desired_export_source == "solar_override", morning_dump_active,
             export_blocked_effective, export_forecast_guard, is_evening_or_night,
             export_min_soc, pv_safeguard_active, export_tier_limit,
             morning_slow_charge_active, solar_surplus_bypass, evening_export_boost_active,
@@ -13406,7 +13406,9 @@ class SigEnergyOptimizer:
             return f"Exporting {export_kw_label}, High tier @ {fit_d}¢{est}"
         if battery_export_owner == "evening_export_boost":
             return f"Exporting {export_kw_label}, Evening Boost @ {fit_d}¢{est}"
-        if solar_override:
+        if solar_override and target_export <= 0.01:
+            return "Export target closed"
+        if battery_export_owner == "solar_override":
             return f"Exporting {export_kw_label}, Solar override{est}"
         if morning_slow_charge:
             return f"Exporting {export_kw_label}, Slow charge"

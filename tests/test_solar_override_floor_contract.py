@@ -218,6 +218,7 @@ class SolarOverrideFloorCharacterizationTests(Haos49CharacterizationCase):
                 self.assertEqual("none", decision.trace_values["battery_export_final_owner"])
                 self.assertEqual(MODE_MAX_SELF, decision.ems_mode)
                 self.assertEqual(0.0, decision.export_limit)
+                self.assertIn("actual import-cost guard", decision.export_reason)
 
     def test_unknown_cost_history_alone_keeps_qualified_solar_override(self):
         decision = self.characterize(medium_floor=90.0, import_summary={
