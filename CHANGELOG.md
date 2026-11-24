@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.94-haos105
+
+- Recheck authorization under the control lock before applying a queued mode change.
+- Keep accepted dashboard ESS limits with their current Prevent Import & Export selection. A verified new entry uses current preset defaults.
+
 ## 2.3.93-haos104
 
 - Confirm the Home Assistant SigEnergy Mode before each direct ESS write. Stop sending further commands when the mode changes or becomes unverified, and report the fields already accepted.

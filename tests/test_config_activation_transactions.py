@@ -363,42 +363,85 @@ def test_queued_manual_mode_rejects_changed_configuration_interpretation(rig, ch
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("path", ["/api/config", "/api/config/batch", "/api/set_ess"])
-def test_queued_mutation_rechecks_revoked_key_before_activation_or_write(rig, path):
+@pytest.mark.parametrize("path", ["/api/config", "/api/config/batch", "/api/set_ess", "/api/set_mode"])
+@pytest.mark.parametrize(
+    "new_key, expected_status",
+    [
+        pytest.param("synthetic-replacement-key", 401, id="replaced-key"),
+        pytest.param("", 403, id="removed-key"),
+    ],
+)
+def test_queued_mutation_rechecks_revoked_key_before_activation_or_write(rig, path, new_key, expected_status):
     async def run():
         attempted = asyncio.Event()
         original_auth = api._require_mutation_auth
         transport = httpx.ASGITransport(app=_app(rig), client=("198.51.100.14", 12345))
-        old_export = rig.opt.cfg.grid_export_limit
+        opt = rig.opt
+        old_export = opt.cfg.grid_export_limit
+        boost_generation = opt._evening_boost_reentry.generation
         item = {"key": "grid_export_limit", "value": "number.o14_revoked"}
         bodies = {
             "/api/config": {**item, "persist": False},
             "/api/config/batch": {"updates": [item], "persist": False},
             "/api/set_ess": {"ems_mode": MODE_MAX_SELF, "grid_export_limit": 4.0,
                              "grid_import_limit": 0.0, "pv_max_power_limit": 25.0},
+            "/api/set_mode": {"mode": opt.cfg.automated_option},
         }
 
         def checked_auth(request):
             original_auth(request)
             attempted.set()
 
-        with patch.object(api, "_require_mutation_auth", checked_auth):
+        with (
+            patch.object(api, "_require_mutation_auth", checked_auth),
+            patch.object(opt, "invalidate_import_accounting", wraps=opt.invalidate_import_accounting) as invalidate,
+        ):
             async with httpx.AsyncClient(transport=transport, base_url="http://o14.invalid") as client:
-                async with rig.opt._control_lock:
-                    task = asyncio.create_task(client.post(
-                        path, json=bodies[path],
-                        headers={"x-api-key": "synthetic-o14-key-for-offline-tests"},
-                    ))
-                    await asyncio.wait_for(attempted.wait(), timeout=3.0)
-                    api.settings.ui_api_key = "synthetic-replacement-key"
+                task = asyncio.create_task(client.post(
+                    path, json=bodies[path],
+                    headers={"x-api-key": "synthetic-o14-key-for-offline-tests"},
+                ))
                 try:
+                    async with opt._control_lock:
+                        await asyncio.wait_for(attempted.wait(), timeout=3.0)
+                        assert not task.done()
+                        api.settings.ui_api_key = new_key
                     response = await asyncio.wait_for(task, timeout=3.0)
                 finally:
                     if not task.done():
                         task.cancel()
                     await asyncio.gather(task, return_exceptions=True)
-        assert response.status_code == 401
-        assert rig.opt.cfg.grid_export_limit == old_export
+            assert response.status_code == expected_status
+            invalidate.assert_not_called()
+        assert opt.cfg.grid_export_limit == old_export
+        assert opt._evening_boost_reentry.generation == boost_generation
+        assert opt._manual_mode_override is None
+        assert opt._manual_mode_requested_at is None
         assert not rig.ha.calls
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("valid", [True, False], ids=["automated", "unsupported"])
+def test_mode_reauthorization_preserves_supported_mode_response(rig, valid):
+    async def run():
+        cfg = rig.opt.cfg
+        mode = cfg.automated_option if valid else "Unsupported test mode"
+        transport = httpx.ASGITransport(app=_app(rig), client=("198.51.100.14", 12345))
+        with patch.object(api, "_require_mutation_auth", wraps=api._require_mutation_auth) as authorize:
+            async with httpx.AsyncClient(transport=transport, base_url="http://o14.invalid") as client:
+                response = await client.post(
+                    "/api/set_mode", json={"mode": mode},
+                    headers={"x-api-key": "synthetic-o14-key-for-offline-tests"},
+                )
+        if valid:
+            assert response.status_code == 200
+            assert response.json() == {"ok": True, "mode": mode}
+            assert authorize.call_count == 2
+            assert rig.ha.calls == [("select_option", cfg.sigenergy_mode_select, mode)]
+        else:
+            assert response.status_code == 400
+            assert authorize.call_count == 1
+            assert not rig.ha.calls
 
     asyncio.run(run())

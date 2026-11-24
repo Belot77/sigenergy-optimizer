@@ -10,7 +10,7 @@ from fastapi import WebSocketDisconnect
 
 from app.config import Settings
 from app.models import Decision, HVACObservedValue, HVACSolarInputContext, SolarState
-from app.optimizer import SigEnergyOptimizer, _MscTransition
+from app.optimizer import SigEnergyOptimizer, _DirectESSSelection, _MscTransition
 from app.routers.api import get_status, ws_status
 
 
@@ -41,6 +41,9 @@ class DashboardPowerStatusTests(unittest.IsolatedAsyncioTestCase):
         self.opt._manual_mode_override = ""
         self.opt._manual_ess_charge_override_kw = None
         self.opt._manual_ess_discharge_override_kw = None
+        self.opt._direct_ess_overrides = {}
+        self.opt._direct_ess_display_selection = None
+        self.opt._control_identity_activated_at = None
         self.opt._msc_transition = None
         self.opt._pending_msc_status = None
         self.opt._last_decision = Decision(
@@ -98,7 +101,7 @@ class DashboardPowerStatusTests(unittest.IsolatedAsyncioTestCase):
         frame = websocket.send_json.await_args.args[0]
         for key in (
             "power_status", "sigenergy_mode", "export_limit", "import_limit",
-            "ess_charge_limit", "grid_export_power_kw", "grid_import_power_kw",
+            "ess_charge_limit", "ess_discharge_limit", "grid_export_power_kw", "grid_import_power_kw",
             "battery_power_sensor_kw", "battery_power_kw", "outcome_reason",
         ):
             self.assertEqual(rest[key], frame[key], key)
@@ -144,6 +147,38 @@ class DashboardPowerStatusTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(status["export_limit"], export)
                 self.assertEqual(status["import_limit"], 0.01)
                 self.assertEqual(status["ess_charge_limit"], 25.0)
+
+    async def test_prevent_displays_verified_direct_limits_and_hides_pending_targets(self) -> None:
+        cfg = self.opt.cfg
+        self.opt.last_state.sigenergy_mode = cfg.block_flow_option
+        self.opt.last_state.current_ess_discharge_limit = 8.5
+        selected_at = NOW - timedelta(seconds=20)
+        selection = _DirectESSSelection(
+            cfg.sigenergy_mode_select, cfg.block_flow_option, selected_at, selected_at, selected_at,
+        )
+        self.opt.set_direct_ess_overrides(selection, charge_kw=6.0, discharge_kw=7.0)
+
+        status = await self._status()
+        self._assert_row(status, "ess_charge", 6.0, "preset", 9.5, "reported", -2.5, "reported")
+        self.assertEqual(status["ess_charge_limit"], 6.0)
+        self.assertEqual(status["ess_discharge_limit"], 7.0)
+
+        self.opt._direct_ess_display_selection = None
+        missing_selection = await self._status()
+
+        changed_at = NOW - timedelta(seconds=5)
+        new_selection = replace(
+            selection, changed_at=changed_at, updated_at=changed_at, reported_at=changed_at,
+        )
+        self.opt._direct_ess_display_selection = new_selection
+        self.opt._remember_direct_ess_selection(new_selection)
+        pending_defaults = await self._status()
+
+        for status in (missing_selection, pending_defaults):
+            self._assert_row(status, "ess_charge", None, None, 9.5, "reported", -2.5, "reported")
+            self.assertEqual(status["ess_charge_limit"], 9.5)
+            self.assertEqual(status["ess_discharge_limit"], 8.5)
+            self.assertEqual(status["export_limit"], 0.01)
 
     async def test_pending_msc_masks_committed_export_outcome_until_cleared(self) -> None:
         committed = "Exporting 7.5kW, Spike @ 120¢"
