@@ -1,5 +1,11 @@
 # SigEnergy Optimizer AI Handover
 
+## Local Solar Bypass charge-planning refactor
+
+`refactor/solar-charge-planning` starts from main `c96ef6e05311f2a0a98134da496a6c30781e4cae`, which matches the released `.108` tree. The optimizer now passes already-qualified inputs to `plan_solar_charge` for exact forecast coverage, the Decimal charge trajectory and diagnostic values. The optimizer retains forecast verification, ownership, reentry, physical relief and actuator application. The release and this local branch can be used independently. Withhold the branch or revert the extraction if a behavior difference is found.
+
+The guarded suite passed 278 tests and 209 subtests. Independent before-and-after replay passed all 53 characterization tests on both trees and matched 293 decisions, 198 simulated applications and 1,004 ordered Home Assistant writes. An additional 10,000 generated forecast inputs matched the original Decimal calculation, including partial intervals, rejected coverage, and rounding at charge limits. These checks used simulated Home Assistant and temporary storage.
+
 ## Solcast v4.6.4 compatibility
 
 Release `2.3.97-haos108` comes from `fix/solar-provider-464-handoff`, based on main `cb7809b74e62ad859a29527d258872f040c7aa62`. The operator confirmed Solcast v4.6.4, which reports `4.6.3` from its manifest. It uses the same native entity identity and cache refresh as v4.6.3. The `.107` handoff only accepted `4.6.1`. The `.108` checkpoint binds the actual supported version along with the existing evidence and expiry. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.97-haos108) · [Control contract](CONTROL_CONTRACT.md#clean-optimizer-restart)

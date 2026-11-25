@@ -19,7 +19,7 @@ import json
 from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
-from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
+from decimal import Decimal, ROUND_FLOOR
 import logging
 import math
 import os
@@ -51,6 +51,7 @@ from .models import (
 )
 from .state_store import StateStore
 from .storage_worker import StorageWorker, StorageUnavailable
+from .solar_charge_planning import plan_solar_charge
 from .solar_provider_handoff import SolarProviderHandoff, evidence_digest
 from .solar_reentry import SOLAR_REENTRY_MAX_REPORT_GAP_SECONDS, SolarReentryGuard
 
@@ -7374,63 +7375,21 @@ class SigEnergyOptimizer:
             ):
                 solar_charge_ceiling_reason = "detailed_forecast_does_not_cover_horizon"
             else:
-                # Decimal arithmetic avoids a binary floating-point residue
-                # turning an exact 1.20 kW request into 1.21 when rounding up.
-                period_seconds = Decimal(str(cfg.solcast_forecast_period_hours)) * 3600
-                window_start = Decimal(str(now_ts))
-                fill_deadline = Decimal(str(solar_fill_deadline))
-                # Preserve the normal request's existing safe command precision.
-                normal_cap = min(
-                    Decimal(str(trusted_charge_capability_kw)),
-                    Decimal(str(d.ess_charge_limit)),
+                charge_plan = plan_solar_charge(
+                    detailed_forecast_periods,
+                    forecast_period_hours=cfg.solcast_forecast_period_hours,
+                    now_ts=now_ts,
+                    fill_deadline_ts=solar_fill_deadline,
+                    charge_capability_kw=trusted_charge_capability_kw,
+                    normal_charge_request_kw=d.ess_charge_limit,
+                    load_kw=control_load_kw,
+                    safety_factor=solar_safety_factor,
+                    battery_capacity_kwh=battery_capacity_value,
+                    battery_soc_pct=battery_soc_value,
                 )
-                load = Decimal(str(control_load_kw))
-                protected_fill = (
-                    Decimal(str(solar_safety_factor))
-                    * Decimal(str(battery_capacity_value))
-                    * (100 - Decimal(str(battery_soc_value))) / 100
-                )
-                covered_until = window_start
-                current_hours = Decimal(0)
-                future_opportunity = Decimal(0)
-                for start_ts, pv_kw in detailed_forecast_periods:
-                    start = Decimal(str(start_ts))
-                    end = min(start + period_seconds, fill_deadline)
-                    if end <= window_start or start >= fill_deadline:
-                        continue
-                    overlap_start = max(start, window_start)
-                    # Existing eligibility tolerates timestamp jitter; reduced
-                    # charging must not assume opportunity across gaps/overlaps.
-                    if overlap_start != covered_until:
-                        break
-                    hours = (end - overlap_start) / 3600
-                    if start <= window_start < end:
-                        current_hours = hours
-                    else:
-                        future_opportunity += min(
-                            max(Decimal(str(pv_kw)) - load, Decimal(0)), normal_cap,
-                        ) * hours
-                    covered_until = end
-                if covered_until != fill_deadline or current_hours <= 0:
+                if charge_plan is None:
                     solar_charge_ceiling_reason = "detailed_forecast_current_window_or_coverage_invalid"
                 else:
-                    required_now = max(Decimal(0), protected_fill - future_opportunity)
-                    # Approved fill-progress policy: future opportunity may not
-                    # defer every present charge request while partial. This is
-                    # an ESS permission floor, not proof of actual absorption.
-                    fill_progress_hours = (fill_deadline - window_start) / 3600
-                    fill_progress_floor = protected_fill / fill_progress_hours
-                    urgent_current_kw = required_now / current_hours
-                    trajectory_source = (
-                        "exact_full" if protected_fill == 0
-                        else "urgent_current_interval" if urgent_current_kw > fill_progress_floor
-                        else "fill_progress_floor"
-                    )
-                    requested = min(normal_cap, max(fill_progress_floor, urgent_current_kw))
-                    requested = min(
-                        normal_cap,
-                        requested.quantize(Decimal("0.01"), rounding=ROUND_CEILING),
-                    )
                     solar_charge_reentry_candidate = True
                     # Exact-full keeps its separate semantics. This guard only
                     # postpones a partial-battery restriction after a relieved
@@ -7445,14 +7404,14 @@ class SigEnergyOptimizer:
                         )
                     )
                     if solar_charge_reentry_allowed:
-                        d.ess_charge_limit = float(requested)
+                        d.ess_charge_limit = charge_plan.requested_kw
                         solar_charge_ceiling_owned = True
                     solar_charge_ceiling_evidence_trusted = True
                     solar_charge_ceiling_reason = (
                         "fill_progress_floor_for_protected_fill"
-                        if trajectory_source == "fill_progress_floor"
+                        if charge_plan.trajectory_source == "fill_progress_floor"
                         else "present_charging_required_for_fill_trajectory"
-                        if trajectory_source == "urgent_current_interval"
+                        if charge_plan.trajectory_source == "urgent_current_interval"
                         else "battery_exact_full"
                     )
                     solar_charge_ceiling_values.update({
@@ -7460,18 +7419,15 @@ class SigEnergyOptimizer:
                             "solar_surplus" if solar_charge_ceiling_owned else "normal"
                         ),
                         "solar_charge_ceiling_requested_kw": (
-                            float(requested) if solar_charge_ceiling_owned else None
+                            charge_plan.requested_kw if solar_charge_ceiling_owned else None
                         ),
-                        "solar_charge_ceiling_protected_fill_need_kwh": float(protected_fill),
-                        "solar_charge_ceiling_future_opportunity_kwh": float(future_opportunity),
-                        "solar_charge_ceiling_required_now_kwh": float(required_now),
-                        "solar_charge_ceiling_current_window_hours": float(current_hours),
-                        "solar_charge_ceiling_fill_progress_floor_kw": float(min(
-                            normal_cap,
-                            fill_progress_floor.quantize(Decimal("0.01"), rounding=ROUND_CEILING),
-                        )),
-                        "solar_charge_ceiling_fill_progress_hours": float(fill_progress_hours),
-                        "solar_charge_ceiling_trajectory_source": trajectory_source,
+                        "solar_charge_ceiling_protected_fill_need_kwh": charge_plan.protected_fill_kwh,
+                        "solar_charge_ceiling_future_opportunity_kwh": charge_plan.future_opportunity_kwh,
+                        "solar_charge_ceiling_required_now_kwh": charge_plan.required_now_kwh,
+                        "solar_charge_ceiling_current_window_hours": charge_plan.current_window_hours,
+                        "solar_charge_ceiling_fill_progress_floor_kw": charge_plan.fill_progress_floor_kw,
+                        "solar_charge_ceiling_fill_progress_hours": charge_plan.fill_progress_hours,
+                        "solar_charge_ceiling_trajectory_source": charge_plan.trajectory_source,
                     })
                     if not solar_charge_reentry_allowed:
                         solar_charge_ceiling_reason = "morning_handoff_qualifying"
