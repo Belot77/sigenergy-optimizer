@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.98-haos109
+
+- Move the existing Solar Bypass charge calculation into a standalone module while preserving its targets, decision reasons, and actuator behavior.
+
 ## 2.3.97-haos108
 
 - Support the native Solcast `4.6.3` identity reported by the upstream v4.6.3 and v4.6.4 releases when revalidating a forecast after a clean add-on restart.

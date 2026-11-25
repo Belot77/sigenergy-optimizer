@@ -2,9 +2,9 @@
 
 ## Published release and live verification
 
-`2.3.97-haos108` adds compatibility with upstream Solcast v4.6.3 and v4.6.4 for the clean restart handoff introduced in `.107`. The GitHub release records the source and add-on image digests. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.97-haos108) · [Handover](AI_HANDOVER.md#solcast-v464-compatibility)
+`2.3.98-haos109` packages the Solar Bypass charge-planning refactor from PR #109. The GitHub release records the source and add-on image digests. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.98-haos109) · [Handover](AI_HANDOVER.md#solar-bypass-charge-planning-refactor)
 
-The latest verified Home Assistant startup is `2.3.96-haos107` at 14:27:31 AEDT on 24 November 2026, from source `7966a7cf87b93a1d023f56cd107d9a053fbb9f36`. After installing `.108`, let the add-on verify a Solcast poll. Compare the poll, provider deadline and Home Assistant charge limit before and after a clean daytime add-on restart. Live acceptance remains open.
+The latest verified Home Assistant startup is `2.3.97-haos108` at 15:24:07 AEDT on 24 November 2026, from source `3d195f4e699165f068f06c15ce983b540765c801`. Its first successful cycle after the startup fallback was at 15:24:21. The trace showed 3.20 kW of actual export by 15:24:32, with the battery full. Live verification of `.109` and of the Solcast handoff across a qualifying restart remains open.
 
 ## Solar Override status wording — .106
 

@@ -1,10 +1,12 @@
 # SigEnergy Optimizer AI Handover
 
-## Local Solar Bypass charge-planning refactor
+## Solar Bypass charge-planning refactor
 
-`refactor/solar-charge-planning` starts from main `c96ef6e05311f2a0a98134da496a6c30781e4cae`, which matches the released `.108` tree. The optimizer now passes already-qualified inputs to `plan_solar_charge` for exact forecast coverage, the Decimal charge trajectory and diagnostic values. The optimizer retains forecast verification, ownership, reentry, physical relief and actuator application. The release and this local branch can be used independently. Withhold the branch or revert the extraction if a behavior difference is found.
+Release `2.3.98-haos109` packages PR #109, merged at `91333739a24dce8ff35c4ad9e3c9da63d8a604ed`. The optimizer now passes already-qualified inputs to `plan_solar_charge` for exact forecast coverage, the Decimal charge trajectory and diagnostic values. The optimizer retains forecast verification, ownership, reentry, physical relief and actuator application. Roll back with a pre-update add-on backup or publish a scoped revert of PR #109. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.98-haos109)
 
 The guarded suite passed 278 tests and 209 subtests. Independent before-and-after replay passed all 53 characterization tests on both trees and matched 293 decisions, 198 simulated applications and 1,004 ordered Home Assistant writes. An additional 10,000 generated forecast inputs matched the original Decimal calculation, including partial intervals, rejected coverage, and rounding at charge limits. These checks used simulated Home Assistant and temporary storage.
+
+After installation, verify the runtime identity. While Solar Bypass is active and the battery is still filling, compare the decision reason and requested charge target with the Home Assistant limit and measured battery and grid power. The Solcast restart handoff can be verified separately with a trusted poll and original deadline on either side of a clean restart. Live verification remains open.
 
 ## Solcast v4.6.4 compatibility
 
