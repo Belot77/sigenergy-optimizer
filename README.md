@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.98-haos109
+
+Solar Bypass charge planning now has a standalone calculation module. Offline replay matched `.108` charge targets, decision reasons, and simulated Home Assistant writes. [Handover](docs/AI_HANDOVER.md#solar-bypass-charge-planning-refactor)
+
 ## Release 2.3.97-haos108
 
 Solar Bypass restart recovery supports native BJReplay Solcast v4.6.3 and v4.6.4. Both report `4.6.3` to Home Assistant. Existing Solcast v4.6.1 support and forecast expiry checks still apply. [Control contract](docs/CONTROL_CONTRACT.md#clean-optimizer-restart)

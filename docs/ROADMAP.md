@@ -1,10 +1,10 @@
 # Roadmap
 
-## Current release 2.3.97-haos108
+## Current release 2.3.98-haos109
 
-`.108` supports upstream Solcast v4.6.4 in the Solar Bypass restart handoff. Live verification needs a successful provider poll on `.108` and one subsequent clean daytime add-on restart. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.97-haos108) · [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
+`.109` releases the first architecture slice, the standalone Solar Bypass charge calculation. Verify the requested and reported charge limit during active Solar Bypass before proceeding to another refactor. Verify the Solcast handoff across a qualifying clean restart as a separate observation. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.98-haos109) · [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
 
-The latest verified Home Assistant startup is `.107`. Observe the corrected summary when Solar Override ends with a closed export target. The routine ESS save and qualifying Evening Boost sunset checks can happen during normal use. The operator deferred the proposed Force settlement gate to preserve responsive Force presets. [Prior release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.96-haos107)
+The latest verified Home Assistant startup is `.108`. Observe the corrected summary when Solar Override ends with a closed export target. The routine ESS save and qualifying Evening Boost sunset checks can happen during normal use. The operator deferred the proposed Force settlement gate to preserve responsive Force presets. [Prior release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.97-haos108)
 
 The longer-term roadmap covers [architecture consolidation](#6-architecture-refactor--consolidation), [repository cleanup](#7-repository--project-cleanup), [dashboard UX](#8-full-gui--ux-redesign-and-functional-corrections), and [Climate Manager](#9-climate-manager-integration).
 
