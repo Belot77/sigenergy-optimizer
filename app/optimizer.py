@@ -164,7 +164,7 @@ _POWER_LIMIT_MAX_KW = 100.0
 # timestamp jitter; keep derived-flow coherence equally narrow and independent
 # of the much wider per-sensor freshness window.
 _DERIVED_POWER_FLOW_MAX_SKEW_SECONDS = 5.0
-_RUNTIME_SIGNATURE = "2.3.100-haos111"
+_RUNTIME_SIGNATURE = "2.3.102-haos113"
 _SOLAR_HANDOFF_HA_TIMEOUT_SECONDS = 3.0
 _MSC_EXPORT_PENDING_REASON = (
     "Waiting for confirmation of export closure and Maximum Self Consumption."
@@ -955,6 +955,10 @@ class SigEnergyOptimizer:
             if evidence is None or polled is None or deadline is None or digest is None:
                 logger.info("Solar restart handoff save: verified_evidence_missing")
                 return
+            periods = evidence[4]
+            if self.cfg.solcast_forecast_period_hours != 0.5 or not periods:
+                logger.info("Solar restart handoff save: unsupported_forecast_period")
+                return
             day = datetime.fromtimestamp(wall, self._tz).date().isoformat()
             inherited_clock = self._solar_provider_handoff_clock
             if inherited_clock is not None:
@@ -965,6 +969,7 @@ class SigEnergyOptimizer:
                 boot_id=boot_id, source=self._solar_provider_source,
                 day=day,
                 poll=polled, deadline=deadline,
+                forecast_start=periods[0][0], forecast_end=periods[-1][0] + 1800,
                 forecast_digest=self._solar_handoff_forecast_digest(evidence), witness_digest=digest,
                 saved_wall=wall, saved_monotonic=elapsed,
             )
@@ -981,7 +986,7 @@ class SigEnergyOptimizer:
 
     @staticmethod
     def _solar_handoff_witness_digest(witness: dict[str, dict[str, Any]]) -> str:
-        # Unchanged reports advance last_reported without changing the State revision.
+        # Reporting time can change independently of the native State revision.
         return evidence_digest({
             entity: {key: value for key, value in row.items() if key != "last_reported"}
             for entity, row in witness.items()
@@ -989,42 +994,67 @@ class SigEnergyOptimizer:
 
     async def _read_solar_handoff_witness(
         self, source: tuple[str, str], receipt: SolarProviderHandoff | None,
-    ) -> dict[str, dict[str, Any]]:
-        """For restore, prove both matching native entities can still report."""
+    ) -> tuple[dict[str, dict[str, Any]], list[tuple[float, float]] | None]:
+        """Bind the restored forecast to the loaded Solcast integration's cache."""
         try:
             async with asyncio.timeout(_SOLAR_HANDOFF_HA_TIMEOUT_SECONDS):
                 before = await self.ha.get_solar_provider_handoff_witness(source)
                 if receipt is None:
-                    return before
+                    return before, None
                 if not before:
-                    logger.info("Solar restart handoff restore: witness_unavailable_before_refresh")
-                    return before
+                    logger.info("Solar restart handoff restore: witness_unavailable_before_query")
+                    return {}, None
                 if self._solar_handoff_witness_digest(before) != receipt.witness_digest:
-                    logger.info("Solar restart handoff restore: native_revision_changed_before_refresh")
-                    return {}
-                # The supported Solcast coordinator publishes its local cache for
-                # update_entity. The provider's forced forecast action is separate.
-                if not await self.ha.call_service("homeassistant", "update_entity", {"entity_id": list(source)}):
-                    logger.info("Solar restart handoff restore: refresh_rejected")
-                    return {}
+                    logger.info("Solar restart handoff restore: native_revision_changed_before_query")
+                    return {}, None
+                entry_id = before[source[0]]["entry_id"]
+                if await self.ha.get_loaded_solcast_entry_id() != entry_id:
+                    logger.info("Solar restart handoff restore: cache_entry_unverified_before_query")
+                    return {}, None
+                # The query uses half-hour periods and an exclusive UTC end.
+                start = datetime.fromtimestamp(receipt.forecast_start, timezone.utc)
+                end = datetime.fromtimestamp(receipt.forecast_end, timezone.utc)
+                last = end - timedelta(minutes=30)
+                local_day = date.fromisoformat(receipt.day)
+                if (
+                    self.cfg.solcast_forecast_period_hours != 0.5
+                    or start.astimezone(self._tz).date() != local_day
+                    or last.astimezone(self._tz).date() != local_day
+                ):
+                    logger.info("Solar restart handoff restore: cache_forecast_unverified")
+                    return {}, None
+                raw_forecast = await self.ha.query_solcast_cached_forecast(start, end)
+                periods = self._normalize_detailed_forecast(raw_forecast)
+                if (
+                    not periods or not self._solar_provider_periods_strict(periods)
+                    or periods[0][0] != receipt.forecast_start
+                    or periods[-1][0] != last.timestamp()
+                ):
+                    logger.info("Solar restart handoff restore: cache_forecast_unverified")
+                    return {}, None
+                if await self.ha.get_loaded_solcast_entry_id() != entry_id:
+                    logger.info("Solar restart handoff restore: cache_entry_unverified_after_query")
+                    return {}, None
                 after = await self.ha.get_solar_provider_handoff_witness(source)
                 if not after:
-                    logger.info("Solar restart handoff restore: witness_unavailable_after_refresh")
-                    return {}
+                    logger.info("Solar restart handoff restore: witness_unavailable_after_query")
+                    return {}, None
                 if self._solar_handoff_witness_digest(after) != receipt.witness_digest:
-                    logger.info("Solar restart handoff restore: native_revision_changed_after_refresh")
-                    return {}
+                    logger.info("Solar restart handoff restore: native_revision_changed_after_query")
+                    return {}, None
                 now = datetime.now(timezone.utc).timestamp()
                 for entity in source:
                     earlier = self._solar_provider_instant(before[entity]["last_reported"])
                     later = self._solar_provider_instant(after[entity]["last_reported"])
-                    if earlier is None or later is None or not earlier < later <= now + 5.0:
-                        logger.info("Solar restart handoff restore: reports_unverified_after_refresh")
-                        return {}
-                return after
+                    if earlier is None or later is None or not earlier <= later <= now + 5.0:
+                        logger.info("Solar restart handoff restore: reports_unverified_after_query")
+                        return {}, None
+                return after, periods
         except TimeoutError:
             logger.info("Solar restart handoff witness: timed_out")
-            return {}
+        except (ValueError, OverflowError, OSError):
+            logger.info("Solar restart handoff restore: cache_forecast_unverified")
+        return {}, None
 
     def _solar_handoff_matches_rest(
         self, witness: dict[str, dict[str, Any]], bulk: dict[str, dict[str, Any]],
@@ -3724,6 +3754,7 @@ class SigEnergyOptimizer:
         s.solcast_provider_continuity = self._ws_connected
         handoff_revision = self._solar_provider_revision
         handoff_witness = {}
+        cached_handoff_forecast = None
         if s.solcast_provider_continuity and (
             capture_solar_handoff or (
                 solar_handoff is not None and solar_handoff.source == s.solcast_provider_source
@@ -3732,8 +3763,8 @@ class SigEnergyOptimizer:
                 )
             )
         ):
-            handoff_witness = await self._read_solar_handoff_witness(
-                self._solar_provider_source, solar_handoff,
+            handoff_witness, cached_handoff_forecast = await self._read_solar_handoff_witness(
+                s.solcast_provider_source, solar_handoff,
             )
         elif solar_handoff is not None or capture_solar_handoff:
             logger.info("Solar restart handoff witness: probe_not_eligible")
@@ -3775,12 +3806,21 @@ class SigEnergyOptimizer:
                 entity_ids.append(candidate)
         bulk = await self.ha.bulk_states(entity_ids)
         if handoff_witness:
-            if self._solar_handoff_matches_rest(handoff_witness, bulk):
-                s.solcast_handoff_receipt = solar_handoff
-                s.solcast_handoff_witness_digest = self._solar_handoff_witness_digest(handoff_witness)
-                s.solcast_handoff_revision = handoff_revision
-            else:
+            if not self._solar_handoff_matches_rest(handoff_witness, bulk):
                 logger.info("Solar restart handoff witness: rest_snapshot_mismatch")
+            else:
+                forecast_row = bulk.get(s.solcast_provider_source[0], {})
+                attributes = forecast_row.get("attributes")
+                forecast = attributes.get("detailedForecast") if isinstance(attributes, dict) else None
+                if solar_handoff is not None and (
+                    cached_handoff_forecast is None
+                    or self._normalize_detailed_forecast(forecast) != cached_handoff_forecast
+                ):
+                    logger.info("Solar restart handoff restore: cache_snapshot_mismatch")
+                else:
+                    s.solcast_handoff_receipt = solar_handoff
+                    s.solcast_handoff_witness_digest = self._solar_handoff_witness_digest(handoff_witness)
+                    s.solcast_handoff_revision = handoff_revision
 
         # REST state JSON may retain a frozen last_reported value for unchanged
         # entities.  Only the optimizer's freshness-sensitive observations request

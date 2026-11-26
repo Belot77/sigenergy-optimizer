@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
 
@@ -15,10 +15,6 @@ import httpx
 logger = logging.getLogger(__name__)
 
 UNAVAILABLE = {"unknown", "unavailable", "none", ""}
-# These native versions re-report the cache through Home Assistant update_entity.
-# Check the device software version. The integration manifest may report an older version.
-_SOLCAST_HANDOFF_VERSIONS = frozenset({"4.6.1", "4.6.3", "4.6.4"})
-
 
 class HAClient:
     def __init__(self, base_url: str, token: str) -> None:
@@ -191,7 +187,7 @@ class HAClient:
         self,
         entities: tuple[str, str],
     ) -> dict[str, dict[str, Any]]:
-        """Read live State revisions for two sensors on one supported Solcast entry."""
+        """Read live State revisions for two sensors on one loaded native Solcast entry."""
         if (
             len(entities) != 2
             or entities[0] == entities[1]
@@ -237,33 +233,35 @@ class HAClient:
             witness: dict[str, dict[str, Any]] = {}
             integration_identity = set()
             timestamp_fields = ("last_changed", "last_updated", "last_reported")
-            result_fields = ("state", "context_id", *timestamp_fields, "entry_id", "domain", "entry_state")
+            result_fields = (
+                "state", "context_id", *timestamp_fields, "entry_id", "domain", "entry_state", "device_id",
+            )
             for row in rows:
                 if not isinstance(row, dict):
                     logger.info("Solar restart handoff witness: invalid_native_row")
                     return {}
                 missing_field = next((
                     field
-                    for field in (*result_fields, "entity_id", "version", "device_id")
+                    for field in (*result_fields, "entity_id", "version")
                     if not (isinstance(row.get(field), str) and 0 < len(row[field]) <= 255)
                 ), None)
                 if missing_field is not None:
                     logger.info("Solar restart handoff witness: native_metadata_incomplete_%s", missing_field)
                     return {}
                 entity_id = row["entity_id"]
-                version = row["version"].removeprefix("v")
+                version = row["version"].strip().removeprefix("v")
                 if (
                     entity_id not in entities
                     or entity_id in witness
                     or row["state"].strip().lower() in UNAVAILABLE
                     or row["domain"] != "solcast_solar"
                     or row["entry_state"] != "loaded"
-                    or version not in _SOLCAST_HANDOFF_VERSIONS
+                    or version.lower() in UNAVAILABLE
+                    or not version.isprintable()
+                    or version != version.strip()
                     or not all(row[field].strip() == row[field] for field in ("context_id", "entry_id", "device_id"))
                 ):
-                    logger.info("Solar restart handoff witness: %s",
-                                "unsupported_native_version" if version not in _SOLCAST_HANDOFF_VERSIONS
-                                else "native_entity_unverified")
+                    logger.info("Solar restart handoff witness: native_entity_unverified")
                     return {}
                 changed, updated, reported = (
                     datetime.fromisoformat(row[field].replace("Z", "+00:00"))
@@ -292,6 +290,74 @@ class HAClient:
         except (ValueError, OverflowError):
             logger.info("Solar restart handoff witness: invalid_template_data")
             return {}
+
+    async def get_loaded_solcast_entry_id(self) -> str | None:
+        """Identify the sole configured Solcast entry when it is loaded."""
+        try:
+            response = await self._client.get(
+                "/api/config/config_entries/entry", params={"domain": "solcast_solar"},
+            )
+            response.raise_for_status()
+            entries = response.json()
+        except (httpx.HTTPError, ValueError):
+            logger.info("Solar restart handoff entry: lookup_failed")
+            return None
+
+        # The Solcast cache query addresses the integration rather than an entry.
+        if not isinstance(entries, list) or len(entries) != 1 or not isinstance(entries[0], dict):
+            logger.info("Solar restart handoff entry: missing_or_ambiguous")
+            return None
+        entry = entries[0]
+        entry_id = entry.get("entry_id")
+        if (
+            entry.get("domain") != "solcast_solar"
+            or entry.get("state") != "loaded"
+            or not isinstance(entry_id, str)
+            or re.fullmatch(r"[a-zA-Z0-9_-]{1,255}", entry_id) is None
+        ):
+            logger.info("Solar restart handoff entry: unverified")
+            return None
+        return entry_id
+
+    async def query_solcast_cached_forecast(
+        self, start: datetime, end: datetime,
+    ) -> list[dict[str, Any]] | None:
+        """Read the aggregate dampened cache for an exact, end-exclusive interval."""
+        if start.utcoffset() is None or end.utcoffset() is None:
+            logger.info("Solar restart handoff cache: invalid_interval")
+            return None
+        start_utc = start.astimezone(timezone.utc)
+        end_utc = end.astimezone(timezone.utc)
+        if start_utc >= end_utc:
+            logger.info("Solar restart handoff cache: invalid_interval")
+            return None
+
+        try:
+            response = await self._client.post(
+                "/api/services/solcast_solar/query_forecast_data",
+                params={"return_response": "true"},
+                json={
+                    "start_date_time": start_utc.isoformat(),
+                    "end_date_time": end_utc.isoformat(),
+                    "site": "all",
+                    "undampened": False,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError):
+            logger.info("Solar restart handoff cache: query_failed")
+            return None
+
+        if not isinstance(payload, dict) or payload.get("changed_states") != []:
+            logger.info("Solar restart handoff cache: unexpected_state_changes")
+            return None
+        result = payload.get("service_response")
+        periods = result.get("data") if isinstance(result, dict) else None
+        if not isinstance(periods, list) or not periods or not all(isinstance(row, dict) for row in periods):
+            logger.info("Solar restart handoff cache: invalid_response")
+            return None
+        return periods
 
     async def set_state(
         self,
