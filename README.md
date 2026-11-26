@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.100-haos111
+
+The add-on log now reports whether a Solcast forecast checkpoint was saved and what happened when the optimizer tried to restore it after restart. Search for `Solar restart handoff`. [Handover](docs/AI_HANDOVER.md#solcast-restart-handoff-diagnostics)
+
 ## Release 2.3.99-haos110
 
 Solar Bypass energy and timing budgets now live in a dedicated module. Offline replay matched `.109` decisions and simulated inverter writes, including when Bypass leaves and regains charge ownership. [Handover](docs/AI_HANDOVER.md#solar-bypass-energy-and-timing-budgets)

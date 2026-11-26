@@ -2,9 +2,9 @@
 
 ## Published release and live verification
 
-`2.3.99-haos110` packages the Solar Bypass energy and timing budget refactor from PR #111. The GitHub release records the source and add-on image digests. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.99-haos110) · [Handover](AI_HANDOVER.md#solar-bypass-energy-and-timing-budgets)
+`2.3.100-haos111` adds one-time add-on log outcomes for the Solcast restart handoff. The existing forecast checks and control behavior are preserved. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.100-haos111) · [Handover](AI_HANDOVER.md#solcast-restart-handoff-diagnostics)
 
-The latest verified Home Assistant startup is `2.3.98-haos109` at 07:40:46 AEDT on 26 November 2026, from source `d4e15abb38ac1fefef94af3ca2411166794c1b51`. The midday trace passed the Solar Bypass charge-planning check. Verify `.110` under active Solar Bypass. Verify the Solcast handoff separately across one clean add-on restart after a successful poll.
+The latest confirmed Home Assistant update is `2.3.99-haos110` at 13:02:28 AEDT on 26 November 2026, from `f5165b865ee21fa37d058d7dc7aa404defaee0e9`. The trace at 14:53:55 AEDT shows a same-version restart losing authority over a previously verified Solcast poll. The cause and the `.111` live result remain open. Collect the before-and-after trace and add-on log across one clean `.111` restart after it has verified a poll. [Restart control contract](CONTROL_CONTRACT.md#clean-optimizer-restart)
 
 ## Solar Override status wording — .106
 

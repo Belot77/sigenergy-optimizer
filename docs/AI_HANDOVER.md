@@ -2,6 +2,8 @@
 
 ## Solcast restart handoff diagnostics
 
+Release `2.3.100-haos111` packages the handoff diagnostics. Install the add-on update before collecting a new restart pair. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.100-haos111)
+
 On 26 November 2026, the `.109` to `.110` update at 13:02:28 AEDT lost trust in the 11:24:55 Solcast poll before its 14:17:08 deadline. The charge cap had been 5.90 kW and returned to 21 kW. A clean `.110` restart at 14:53:55 also left the previously verified 14:17:09 poll unverified before its 17:09:22 deadline. In the second trace the charge cap was already 21 kW, so that trace establishes loss of forecast trust alone.
 
 The diagnostic patch adds fixed `Solar restart handoff` outcomes for shutdown capture, checkpoint save and load, the native Solcast witness, and startup revalidation. The logs distinguish a missing checkpoint from a rejected checkpoint and identify whether final provider authority was restored. The existing validity checks, storage, HA requests, timeouts and control behavior are preserved. The live cause is still open. A scoped revert or a pre-update `.110` add-on backup rolls back the diagnostic patch.
