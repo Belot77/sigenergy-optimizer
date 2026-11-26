@@ -2,9 +2,9 @@
 
 ## Published release and live verification
 
-`2.3.100-haos111` adds one-time add-on log outcomes for the Solcast restart handoff. The existing forecast checks and control behavior are preserved. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.100-haos111) · [Handover](AI_HANDOVER.md#solcast-restart-handoff-diagnostics)
+`2.3.102-haos113` uses a read of the loaded Solcast integration's local cache to revalidate an unchanged checkpoint across a clean optimizer restart. The same HA sensors, exact forecast and original expiry remain required. The Home Assistant add-on log records the handoff result. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.102-haos113) · [Handover](AI_HANDOVER.md#version-independent-solcast-restart-handoff)
 
-The latest confirmed Home Assistant update is `2.3.99-haos110` at 13:02:28 AEDT on 26 November 2026, from `f5165b865ee21fa37d058d7dc7aa404defaee0e9`. The trace at 14:53:55 AEDT shows a same-version restart losing authority over a previously verified Solcast poll. The cause and the `.111` live result remain open. Collect the before-and-after trace and add-on log across one clean `.111` restart after it has verified a poll. [Restart control contract](CONTROL_CONTRACT.md#clean-optimizer-restart)
+The latest confirmed Home Assistant runtime is `2.3.100-haos111` at 17:23:39 AEDT on 26 November 2026, from `5dea7a7fcac40acc27f2183e2d1dc981d20bb8b0`. That restart found no checkpoint and left a verified poll unverified. The `.112` Home Assistant release was withheld. Live restart acceptance of `.113` remains pending. [Restart control contract](CONTROL_CONTRACT.md#clean-optimizer-restart)
 
 ## Solar Override status wording — .106
 

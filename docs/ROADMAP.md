@@ -1,10 +1,10 @@
 # Roadmap
 
-## Current release 2.3.100-haos111
+## Current release 2.3.102-haos113
 
-Capture the Solcast handoff during a clean restart once `.111` has verified a poll. Use the save, load, and restore outcomes to locate the failure before deciding whether the handoff needs a code change. The `.109` charge-planning check passed. Observe the existing Solar Bypass budget decisions and charge readback during normal daytime operation. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.100-haos111) · [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
+Verify the version-independent Solcast handoff across one clean `.113` restart after a verified poll. Read the save, load and restore outcomes in the add-on log. The cache proof keeps the original deadline. Ordinary provider verification applies when the cache proof is unavailable. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.102-haos113) · [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
 
-The latest verified Home Assistant startup is `.110`. Observe the corrected summary when Solar Override ends with a closed export target. The routine ESS save and qualifying Evening Boost sunset checks can happen during normal use. The operator deferred the proposed Force settlement gate to preserve responsive Force presets. [Prior release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.99-haos110)
+Observe Solar Bypass budget decisions, the corrected Solar Override summary, ordinary ESS saves, and qualifying Evening Boost sunset behavior during normal use. The operator deferred the proposed Force settlement gate to preserve responsive Force presets.
 
 The longer-term roadmap covers [architecture consolidation](#6-architecture-refactor--consolidation), [repository cleanup](#7-repository--project-cleanup), [dashboard UX](#8-full-gui--ux-redesign-and-functional-corrections), and [Climate Manager](#9-climate-manager-integration).
 

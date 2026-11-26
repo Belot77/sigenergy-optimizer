@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.102-haos113
+
+- Verify Solcast restart handoff using a read of the integration's local cache and the exact saved forecast, with no fixed version list.
+- Retain the original forecast expiry and expose the handoff results in the Home Assistant add-on log.
+
 ## 2.3.100-haos111
 
 - Log the outcome of each one-time Solcast forecast handoff stage across a clean add-on restart.
