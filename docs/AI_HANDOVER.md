@@ -1,12 +1,22 @@
 # SigEnergy Optimizer AI Handover
 
+## Decision Trace preview
+
+Release `2.3.103-haos114` opens a compact view with the latest Solcast state, verified poll and expiry, plus up to 20 recent decisions. The preview uses a small read endpoint with a request timeout. **Copy Trace JSON** fetches the full selected row count on demand. **24 Hour Trace** downloads the persisted history.
+
+The Decision Trace interface, API and trace generation matched between `.109` and `.113`. The previous default fetched and rendered up to 500 raw decisions. An offline 500-row request returned more than 5 MB and produced zero lines through the new handoff console handler. The cause of the reported live browser hang remains unconfirmed.
+
+After installation, open **Logs** and select **Decision Trace**. Check that the summary loads and that **Copy Trace JSON** returns the selected count when that many decisions are available. The browser performance of this release on the operator's system is still unverified. A scoped revert or pre-update `.113` add-on backup provides rollback.
+
 ## Version-independent Solcast restart handoff
 
 Release `2.3.102-haos113` verifies the handoff with Solcast's read-only `query_forecast_data` action. It compares the ordered, normalized aggregate dampened half-hour cache with the live Forecast Today sensor and the forecast saved from the last verified poll. Both native sensors must still match the saved revisions, device and single loaded Solcast entry. The reported version remains part of the device evidence without a list of accepted releases. The query does not force a Solcast API call or republish either HA entity. A mismatch, unsupported response, ambiguous entry or denied HA request leaves the optimizer waiting for ordinary provider verification. [Restart control contract](CONTROL_CONTRACT.md#clean-optimizer-restart)
 
-The last confirmed installed runtime is `.111`. The first `.113` startup may need one verified poll because schema 2 adds the native device binding and verified UTC query bounds. Prefer the next scheduled poll. A single manual **Force Update Forecasts** can supply it if Solcast quota allows. After verification, a clean add-on shutdown can save the checkpoint. Subsequent qualifying restarts can restore the same verified poll without waiting for another one. The original expiry can only stay the same or move earlier.
+The first `.113` startup may need one verified poll because schema 2 adds the native device binding and verified UTC query bounds. Prefer the next scheduled poll. A single manual **Force Update Forecasts** can supply it if Solcast quota allows. After verification, a clean add-on shutdown can save the checkpoint. Subsequent qualifying restarts can restore the same verified poll without waiting for another one. The original expiry can only stay the same or move earlier.
 
-For monitor-only verification, check the installed runtime, then compare the verified poll and deadline on both sides of one clean add-on restart. Look for `provider_clean_restart_revalidated` in the trace and inspect the `Solar restart handoff` save, load and restore outcomes in the Home Assistant add-on log. In simulation, confirm changed or incomplete cache data and ambiguous entries leave the provider unverified. During normal Automated operation, observe the requested and reported charge limits only when the existing Solar ownership checks pass. Live acceptance is pending. A scoped revert or a pre-update `.111` add-on backup provides rollback. [Solcast refresh documentation](https://github.com/BJReplay/ha-solcast-solar/blob/v4.6.4/README.md#auto-update-of-forecasts)
+Home Assistant confirmed runtime `2.3.102-haos113`. On 26 November 2026 at 18:38:58 AEDT, the latest decision showed the verified 18:33:47 Solcast poll with an expiry of 05:40:06 AEDT on 27 November. The Home Assistant add-on log shows the checkpoint saved at 18:42:11.581, loaded at 18:42:13.186, and revalidated at 18:42:14.021 AEDT. Revalidation requires the same verified poll and preserves the original expiry or adopts an earlier deadline. This clean restart passed live handoff verification.
+
+For monitor-only verification, check the installed runtime, then compare the verified poll and deadline on both sides of one clean add-on restart. Look for `provider_clean_restart_revalidated` in the trace and inspect the `Solar restart handoff` save, load and restore outcomes in the Home Assistant add-on log. In simulation, confirm changed or incomplete cache data and ambiguous entries leave the provider unverified. During normal Automated operation, observe the requested and reported charge limits only when the existing Solar ownership checks pass. A scoped revert or a pre-update `.111` add-on backup provides rollback. [Solcast refresh documentation](https://github.com/BJReplay/ha-solcast-solar/blob/v4.6.4/README.md#auto-update-of-forecasts)
 
 ## Solcast v4.6.4 device version and restart logging
 
@@ -40,7 +50,7 @@ Release `2.3.98-haos109` packages PR #109, merged at `91333739a24dce8ff35c4ad9e3
 
 The guarded suite passed 278 tests and 209 subtests. Independent before-and-after replay passed all 53 characterization tests on both trees and matched 293 decisions, 198 simulated applications and 1,004 ordered Home Assistant writes. An additional 10,000 generated forecast inputs matched the original Decimal calculation, including partial intervals, rejected coverage, and rounding at charge limits. These checks used simulated Home Assistant and temporary storage.
 
-On 26 November at 07:40:46 AEDT, Home Assistant reported `.109`, source `d4e15abb38ac1fefef94af3ca2411166794c1b51`. All 500 applications in the 12:06:51–12:43:49 trace succeeded. At 12:30:04, Home Assistant reported the requested 5.86 kW charge cap, with 5.856 kW measured charging and 1.204 kW measured grid export. The 12:35 budget exit and 12:40:59 reentry exercised the existing safeguards. This passes the live charge-planning check. Verification of the Solcast restart handoff remains open.
+On 26 November at 07:40:46 AEDT, Home Assistant reported `.109`, source `d4e15abb38ac1fefef94af3ca2411166794c1b51`. All 500 applications in the 12:06:51–12:43:49 trace succeeded. At 12:30:04, Home Assistant reported the requested 5.86 kW charge cap, with 5.856 kW measured charging and 1.204 kW measured grid export. The 12:35 budget exit and 12:40:59 reentry exercised the existing safeguards. This passes the live charge-planning check. The later `.113` restart passed the Solcast handoff check described above.
 
 ## Solcast v4.6.4 compatibility
 

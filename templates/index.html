@@ -258,6 +258,13 @@ select:focus,input:focus{border-color:#276749}
 .log-block .err{color:#fc8181}
 .log-block .dbg{color:#93c5fd}
 .log-block .trace{color:#94a3b8}
+.trace-preview{white-space:normal;overflow:auto}
+.trace-solar-status{display:flex;flex-wrap:wrap;gap:4px 16px;margin-bottom:12px}
+.trace-solar-status strong{color:#e2e8f0}
+.trace-preview table{width:100%;border-collapse:collapse;text-align:left}
+.trace-preview th,.trace-preview td{padding:5px 10px 5px 0;border-bottom:1px solid #334155;vertical-align:top}
+.trace-preview th{color:#e2e8f0}
+.trace-preview th:not(:last-child),.trace-preview td:not(:last-child){white-space:nowrap}
 .log-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
 .log-meta{font-size:12px;color:#64748b}
 .audit-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
@@ -813,7 +820,7 @@ html.theme-dark .cfg-help{color:#9fb3cf}
     <button class="hbtn" type="button" onclick="loadLogs()">Refresh Logs</button>
     <button class="hbtn" type="button" onclick="downloadLogs()">Download Logs</button>
     <button class="hbtn" type="button" onclick="loadDecisionTrace()">Decision Trace</button>
-    <button class="hbtn" type="button" onclick="copyDecisionTrace()">Copy Trace JSON</button>
+    <button class="hbtn" type="button" onclick="copyDecisionTrace(this)" title="Copy the full JSON for the selected number of recent decisions">Copy Trace JSON</button>
     <button class="hbtn" type="button" onclick="download24HourTrace(this)" title="Download persisted decisions; updated every 15 minutes">24 Hour Trace</button>
     <select id="logLineLimit" onchange="loadLogs()" title="Number of recent lines to fetch">
       <option value="200">200 lines</option>
@@ -827,7 +834,7 @@ html.theme-dark .cfg-help{color:#9fb3cf}
       <option value="error">error+</option>
       <option value="critical">critical+</option>
     </select>
-    <span class="log-meta" id="logMeta">Loading...</span>
+    <span class="log-meta" id="logMeta" role="status">Loading...</span>
   </div>
   <div id="logContent"><div class="log-block" style="color:#718096">Loading---</div></div>
 </div>
@@ -866,7 +873,8 @@ let auditRows = [];
 let entitySearchTimers = {};
 let entityPickerState = {};
 let configPickerGlobalBound = false;
-let decisionTraceRows = [];
+let logViewGeneration = 0;
+let preparedTraceCopy = null;
 const POLL = 15000;
 const USE_MATE_CHARTS = true;
 const LIVE_POWER_COLORS = ['#1d4ed8','#14b8a6','#f59e0b','#dc2626','#7c3aed'];
@@ -4573,6 +4581,8 @@ async function applyConfigSection(btn, sectionKey) {
 
 // ------ Logs tab ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 async function loadLogs() {
+  const generation = ++logViewGeneration;
+  preparedTraceCopy = null;
   const el = document.getElementById('logContent');
   const metaEl = document.getElementById('logMeta');
   const lineLimit = Number(document.getElementById('logLineLimit')?.value || '500');
@@ -4600,6 +4610,7 @@ async function loadLogs() {
 
   try {
     const r = await fetch(addonApiUrl(`api/logs?n=${encodeURIComponent(lineLimit)}`), { headers: buildAuthHeaders() }); const text = await r.text();
+    if (generation !== logViewGeneration) return;
     const rawLines = text.split('\n').filter(line => line.trim());
     const kept = rawLines.filter((line) => (levelRank[parseLevel(line)] || levelRank.info) >= minRank);
     const coloured = kept.map(line => {
@@ -4610,48 +4621,149 @@ async function loadLogs() {
     el.innerHTML = `<div class="log-block">${coloured}</div>`;
     if (metaEl) metaEl.textContent = `${kept.length} of ${rawLines.length} lines shown (${selected}+) | refreshed ${ts()}`;
   } catch(e){
+    if (generation !== logViewGeneration) return;
     el.innerHTML=`<div class="log-block" style="color:#718096">No logs yet.</div>`;
     if (metaEl) metaEl.textContent = 'No logs available';
   }
 }
 
+async function fetchDecisionTrace(path, timeoutMs, readResponse) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(addonApiUrl(path), {
+      headers: buildAuthHeaders(), cache: 'no-store', signal: controller.signal,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(typeof error?.detail === 'string' ? error.detail : response.statusText);
+    }
+    return await readResponse(response);
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Trace request timed out');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function traceTime(value) {
+  if (typeof value !== 'string' || !value) return '—';
+  const stamp = new Date(value);
+  return Number.isFinite(stamp.getTime()) ? stamp.toLocaleString() : '—';
+}
+
+function tracePowerLimit(value) {
+  return Number.isFinite(value) ? value.toFixed(2) + ' kW' : '—';
+}
+
 async function loadDecisionTrace() {
+  const generation = ++logViewGeneration;
+  preparedTraceCopy = null;
   const el = document.getElementById('logContent');
   const metaEl = document.getElementById('logMeta');
-  const limit = Number(document.getElementById('logLineLimit')?.value || '500');
-  if (metaEl) metaEl.textContent = 'Loading decision trace...';
+  if (metaEl) metaEl.textContent = 'Loading decision trace…';
   try {
-    const data = await getJson(`api/decision_trace?limit=${encodeURIComponent(limit)}`);
-    decisionTraceRows = Array.isArray(data?.rows) ? data.rows : [];
-    el.innerHTML = `<div class="log-block">${escH(JSON.stringify(decisionTraceRows, null, 2))}</div>`;
-    if (metaEl) metaEl.textContent = `${decisionTraceRows.length} decision cycles | refreshed ${ts()}`;
-  } catch (e) {
-    el.innerHTML = `<div class="log-block" style="color:#fc8181">Failed to load decision trace: ${escH(e.message || String(e))}</div>`;
+    const data = await fetchDecisionTrace('api/decision_trace/preview', 10000, response => response.json());
+    if (generation !== logViewGeneration) return;
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    if (!rows.length) {
+      el.innerHTML = '<div class="log-block">No decisions recorded yet.</div>';
+      if (metaEl) metaEl.textContent = 'No decision trace available yet';
+      return;
+    }
+    const latest = rows[0];
+    const solcastStatus = { VALID: 'Verified', UNVERIFIED: 'Unverified', EXPIRED: 'Expired' };
+    const providerState = Object.hasOwn(solcastStatus, latest.solar_provider_state)
+      ? solcastStatus[latest.solar_provider_state] : 'Unavailable';
+    const cells = rows.map(row => [
+      traceTime(row.ts), row.ems_mode || '—', row.application_status || '—',
+      tracePowerLimit(row.export_limit_kw), tracePowerLimit(row.ess_charge_limit_kw),
+      row.outcome_reason || '—',
+    ].map(value => `<td>${escH(value)}</td>`).join('')).map(row => `<tr>${row}</tr>`).join('');
+    el.innerHTML = `<div class="log-block trace-preview">
+      <div class="trace-solar-status">
+        <strong>Solcast ${providerState}</strong>
+        <span>Verified poll ${escH(traceTime(latest.solar_provider_verified_polled))}</span>
+        <span>Expiry ${escH(traceTime(latest.solar_provider_deadline))}</span>
+        ${latest.solar_provider_reason ? `<span>${escH(latest.solar_provider_reason.replace(/_/g, ' '))}</span>` : ''}
+      </div>
+      <table aria-label="Recent optimizer decisions">
+        <thead><tr><th scope="col">Time</th><th scope="col">EMS mode</th><th scope="col">Application</th><th scope="col">Export limit</th><th scope="col">Charge limit</th><th scope="col">Decision</th></tr></thead>
+        <tbody>${cells}</tbody>
+      </table>
+    </div>`;
+    if (metaEl) metaEl.textContent = `${rows.length} recent decisions | refreshed ${ts()}`;
+  } catch (error) {
+    if (generation !== logViewGeneration) return;
+    el.innerHTML = `<div class="log-block" style="color:#fc8181">Failed to load decision trace: ${escH(error.message || String(error))}</div>`;
     if (metaEl) metaEl.textContent = 'Decision trace unavailable';
   }
 }
 
-async function copyDecisionTrace() {
+async function copyDecisionTrace(btn) {
+  const generation = logViewGeneration;
   const metaEl = document.getElementById('logMeta');
-  if (!Array.isArray(decisionTraceRows) || !decisionTraceRows.length) {
-    if (metaEl) metaEl.textContent = 'No decision trace loaded yet';
-    return;
-  }
-  const text = JSON.stringify(decisionTraceRows, null, 2);
+  const updateStatus = message => {
+    if (metaEl && generation === logViewGeneration) metaEl.textContent = message;
+  };
+  const limit = Number(document.getElementById('logLineLimit')?.value || '500');
+  const prepared = preparedTraceCopy;
+  preparedTraceCopy = null;
+  let restoreFocus = false;
+  if (btn) btn.disabled = true;
+  updateStatus('Preparing trace JSON…');
   try {
-    if (navigator?.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      if (metaEl) metaEl.textContent = `Decision trace copied to clipboard at ${ts()}`;
+    const retainedText = prepared?.generation === generation && prepared.limit === limit
+      ? prepared.text : null;
+    const text = retainedText ?? (await fetchDecisionTrace(
+      `api/decision_trace?limit=${encodeURIComponent(limit)}&as_array=true`, 30000, response => response.text(),
+    )).trim();
+    if (text === '[]') {
+      updateStatus('No decisions recorded yet');
       return;
     }
-  } catch (_) {}
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand('copy');
-  document.body.removeChild(ta);
-  if (metaEl) metaEl.textContent = `Decision trace copied to clipboard at ${ts()}`;
+    if (!text.startsWith('[') || !text.endsWith(']')) throw new Error('Trace JSON unavailable');
+
+    let copied = false;
+    if (navigator?.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      } catch (_) {
+        // Ingress over HTTP can require the browser's legacy copy path.
+      }
+    }
+    if (!copied) {
+      const field = document.createElement('textarea');
+      field.value = text;
+      field.readOnly = true;
+      field.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0';
+      document.body.appendChild(field);
+      try {
+        field.select();
+        copied = document.execCommand('copy');
+      } catch (_) {
+        // A delayed fetch can use up the browser's clipboard activation.
+      } finally {
+        field.remove();
+        restoreFocus = true;
+      }
+    }
+    if (!copied && generation === logViewGeneration) {
+      preparedTraceCopy = { generation, limit, text };
+      updateStatus('Trace JSON ready. Select Copy Trace JSON again.');
+      return;
+    }
+    updateStatus(`Decision trace copied to clipboard at ${ts()}`);
+  } catch (error) {
+    updateStatus(`Could not copy trace: ${error.message || String(error)}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      if (restoreFocus && generation === logViewGeneration) btn.focus();
+    }
+  }
 }
 
 async function download24HourTrace(btn) {
