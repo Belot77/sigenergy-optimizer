@@ -12,6 +12,7 @@ Starts three background tasks:
 import asyncio
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -34,6 +35,35 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def _add_solar_handoff_console_logging() -> None:
+    # The dashboard installs a root handler before basicConfig can add a console.
+    app_logger = logging.getLogger(__package__)
+    handler_name = "sigenergy_solar_handoff_console"
+    handlers = app_logger.handlers
+    if app_logger.propagate:
+        handlers = handlers + logging.getLogger().handlers
+    console_streams = (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__)
+    for existing in handlers:
+        if existing.name == handler_name or (
+            isinstance(existing, logging.StreamHandler)
+            and existing.level <= logging.INFO
+            and any(existing.stream is stream for stream in console_streams)
+        ):
+            return
+
+    handler = logging.StreamHandler()
+    handler.set_name(handler_name)
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(name)s — %(message)s"))
+    handler.addFilter(
+        lambda record: isinstance(record.msg, str) and record.msg.startswith("Solar restart handoff")
+    )
+    app_logger.addHandler(handler)
+
+
+_add_solar_handoff_console_logging()
 
 
 def _parse_csv_list(value: str) -> list[str]:

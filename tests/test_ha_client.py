@@ -156,16 +156,18 @@ class SolarProviderHandoffWitnessTests(unittest.IsolatedAsyncioTestCase):
         expected[self.entities[1]]["version"] = "4.6.1"
         self.assertEqual(result, expected)
 
-    async def test_preserves_version_reported_by_solcast_v464(self):
-        rows = [
-            {**self._row(entity_id), "version": version}
-            for entity_id, version in zip(self.entities, ("4.6.3", "v4.6.3"), strict=True)
-        ]
-        result, _ = await self._read(httpx.Response(200, json=rows))
+    async def test_normalizes_and_preserves_supported_solcast_device_versions(self):
+        for version in ("4.6.3", "4.6.4"):
+            with self.subTest(version=version):
+                rows = [
+                    {**self._row(entity_id), "version": reported}
+                    for entity_id, reported in zip(self.entities, (version, f"v{version}"), strict=True)
+                ]
+                result, _ = await self._read(httpx.Response(200, json=rows))
 
-        self.assertEqual({entity: row["version"] for entity, row in result.items()}, {
-            entity: "4.6.3" for entity in self.entities
-        })
+                self.assertEqual({entity: row["version"] for entity, row in result.items()}, {
+                    entity: version for entity in self.entities
+                })
 
     async def test_rejects_incomplete_or_conflicting_evidence(self):
         first, second = [self._row(entity_id) for entity_id in self.entities]
@@ -180,6 +182,8 @@ class SolarProviderHandoffWitnessTests(unittest.IsolatedAsyncioTestCase):
             [first, {**second, "entry_state": "setup_retry"}],
             [first, {**second, "version": "4.6.2"}],
             [first, {**second, "version": "4.6.3"}],
+            [{**first, "version": "4.6.3"}, {**second, "version": "v4.6.4"}],
+            [{**first, "version": "4.6.5"}, {**second, "version": "4.6.5"}],
             [{**first, "version": "4.7.0"}, {**second, "version": "4.7.0"}],
             [first, {**second, "state": "unavailable"}],
             [first, {**second, "context_id": ""}],

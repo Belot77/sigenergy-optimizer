@@ -1,4 +1,4 @@
-"""Regression coverage for keeping successful HTTP chatter out of the UI log ring."""
+"""Regression coverage for dashboard and console log routing."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app import main
 from app.routers import api
 
 
@@ -149,3 +150,65 @@ def test_logs_endpoints_serve_retained_diagnostics(isolated_log_buffer):
     assert "retained warning" in download.body.decode()
     assert "HTTP/1.1 200" not in download.body.decode()
     assert "attachment; filename=sigenergy_logs_" in download.headers["content-disposition"]
+
+
+@pytest.fixture
+def isolated_app_logging(monkeypatch, isolated_log_buffer):
+    # Uvicorn's default console handlers belong to uvicorn.*, while the API's
+    # dashboard ring is the sole root handler after the application import.
+    root = logging.getLogger()
+    app_logger = logging.getLogger("app")
+    monkeypatch.setattr(root, "handlers", [api._handler])
+    monkeypatch.setattr(root, "level", logging.INFO)
+    monkeypatch.setattr(app_logger, "handlers", [])
+    monkeypatch.setattr(app_logger, "level", logging.NOTSET)
+    monkeypatch.setattr(app_logger, "propagate", True)
+    yield root, app_logger, isolated_log_buffer
+    for handler in app_logger.handlers:
+        handler.close()
+
+
+def test_solar_handoff_reaches_console_and_dashboard_once(capsys, isolated_app_logging):
+    _, app_logger, dashboard = isolated_app_logging
+    main._add_solar_handoff_console_logging()
+    main._add_solar_handoff_console_logging()
+
+    messages = (
+        "Solar restart handoff shutdown: capture_attempted",
+        "Solar restart handoff save: saved",
+        "Solar restart handoff restore: revalidated",
+    )
+    logging.getLogger("app.main").info(messages[0])
+    logging.getLogger("app.optimizer").info("Solar restart handoff save: %s", "saved")
+    logging.getLogger("app.optimizer").warning(messages[2])
+    logging.getLogger("app.optimizer").info("Ordinary optimizer update")
+    logging.getLogger("other").info("Solar restart handoff emitted elsewhere")
+    logging.getLogger("httpx").info('HTTP Request: GET https://example.test/x "HTTP/2 200"')
+
+    output = capsys.readouterr()
+    assert len(app_logger.handlers) == 1
+    assert output.out == ""
+    assert len(output.err.splitlines()) == len(messages)
+    for message in messages:
+        assert output.err.count(message) == 1
+        assert sum(message in entry for entry in dashboard) == 1
+    assert any("Ordinary optimizer update" in entry for entry in dashboard)
+    assert all("HTTP Request:" not in entry for entry in dashboard)
+
+
+@pytest.mark.parametrize("location", ["app", "root"])
+def test_preserves_preconfigured_console(location, capsys, isolated_app_logging):
+    root, app_logger, dashboard = isolated_app_logging
+    host = app_logger if location == "app" else root
+    console = logging.StreamHandler()
+    host.addHandler(console)
+    message = "Solar restart handoff load: loaded"
+    try:
+        main._add_solar_handoff_console_logging()
+        logging.getLogger("app.optimizer").info(message)
+        assert capsys.readouterr().err.count(message) == 1
+        assert sum(message in entry for entry in dashboard) == 1
+        assert console in host.handlers
+    finally:
+        host.removeHandler(console)
+        console.close()
