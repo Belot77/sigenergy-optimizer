@@ -1,5 +1,11 @@
 # SigEnergy Optimizer AI Handover
 
+## Solar Bypass energy and timing budgets
+
+`refactor/solar-surplus-budget` starts at main `6b7548b42cb13337b8f1289daf2df63e7e479e70`, which matches the released `.109` source tree. The aggregate energy budget, detailed timing budget, and shared scalar validator moved to `app/solar_surplus_budget.py` with their original definitions. The optimizer still verifies inputs, handles ownership and reentry, and applies the decision. The strict positive surplus boundary and timing equality rules are part of the comparison. If a regression is found, revert this extraction or restore the `.109` backup. [Control contract](CONTROL_CONTRACT.md#solar-surplus)
+
+The guarded suite passed 224 tests and 330 subtests. Independent replay passed 146 tests on both trees and matched 228 decisions, 34 simulated applications, and 174 ordered Home Assistant writes. All 10,001 generated budget comparisons matched, including exact zero and timing equality. A syntax tree comparison confirmed the three moved definitions and the rest of the optimizer match `.109` apart from the new import.
+
 ## Solar Bypass charge-planning refactor
 
 Release `2.3.98-haos109` packages PR #109, merged at `91333739a24dce8ff35c4ad9e3c9da63d8a604ed`. The optimizer now passes already-qualified inputs to `plan_solar_charge` for exact forecast coverage, the Decimal charge trajectory and diagnostic values. The optimizer retains forecast verification, ownership, reentry, physical relief and actuator application. Roll back with a pre-update add-on backup or publish a scoped revert of PR #109. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.98-haos109)
