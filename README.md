@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.103-haos114
+
+**Logs → Decision Trace** shows up to 20 recent decisions and the latest Solcast verification status, poll and expiry. **Copy Trace JSON** fetches the selected number of complete rows when clicked. If the browser asks for another click, use the same button to copy the prepared trace. **24 Hour Trace** exports the persisted history. [Handover](docs/AI_HANDOVER.md)
+
 ## Release 2.3.102-haos113
 
 After a clean restart, the optimizer can recover a verified Solcast forecast by comparing the local Solcast cache, the Home Assistant sensors and the saved checkpoint. It keeps the original expiry and searches for the same native sources without a fixed Solcast version list. Search the add-on log for `Solar restart handoff`. [Handover](docs/AI_HANDOVER.md#version-independent-solcast-restart-handoff)

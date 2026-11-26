@@ -1,8 +1,8 @@
 # Roadmap
 
-## Current release 2.3.102-haos113
+## Current release 2.3.103-haos114
 
-Verify the version-independent Solcast handoff across one clean `.113` restart after a verified poll. Read the save, load and restore outcomes in the add-on log. The cache proof keeps the original deadline. Ordinary provider verification applies when the cache proof is unavailable. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.102-haos113) · [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
+Confirm that Decision Trace opens promptly in Home Assistant and that **Copy Trace JSON** exports all selected rows on demand. The `.113` live Solcast restart test passed on 26 November. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.103-haos114) · [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
 
 Observe Solar Bypass budget decisions, the corrected Solar Override summary, ordinary ESS saves, and qualifying Evening Boost sunset behavior during normal use. The operator deferred the proposed Force settlement gate to preserve responsive Force presets.
 
