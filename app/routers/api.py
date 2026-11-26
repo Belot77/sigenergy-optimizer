@@ -2011,11 +2011,54 @@ async def download_logs(request: Request, n: int = 500) -> PlainTextResponse:
     )
 
 
+def _decision_trace_preview_row(row: dict[str, Any]) -> dict[str, str | float | None]:
+    def section(key: str) -> dict[str, Any]:
+        value = row.get(key)
+        return value if isinstance(value, dict) else {}
+
+    def short_text(value: Any, limit: int = 80) -> str | None:
+        return value[:limit] if isinstance(value, str) else None
+
+    def number(value: Any) -> float | None:
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return None
+        try:
+            parsed = float(value)
+        except OverflowError:
+            return None
+        return parsed if math.isfinite(parsed) else None
+
+    summary = section("summary")
+    application = section("application")
+    values = section("values")
+    return {
+        "ts": short_text(row.get("ts")),
+        "ems_mode": short_text(summary.get("ems_mode")),
+        "outcome_reason": short_text(summary.get("outcome_reason"), limit=240),
+        "export_limit_kw": number(summary.get("export_limit_kw")),
+        "ess_charge_limit_kw": number(summary.get("ess_charge_limit_kw")),
+        "application_status": short_text(application.get("status")),
+        "solar_provider_state": short_text(values.get("solar_provider_state")),
+        "solar_provider_reason": short_text(values.get("solar_provider_reason")),
+        "solar_provider_verified_polled": short_text(values.get("solar_provider_verified_polled")),
+        "solar_provider_deadline": short_text(values.get("solar_provider_deadline")),
+    }
+
+
+@router.get("/decision_trace/preview")
+async def get_decision_trace_preview(request: Request) -> dict[str, list[dict[str, str | float | None]]]:
+    _require_config_read_auth(request)
+    rows = _opt(request).decision_trace(limit=20)
+    return {"rows": [_decision_trace_preview_row(row) for row in rows]}
+
+
 @router.get("/decision_trace")
-async def get_decision_trace(request: Request, limit: int = 200) -> dict[str, Any]:
+async def get_decision_trace(
+    request: Request, limit: int = 200, as_array: bool = False,
+) -> dict[str, Any] | list[dict[str, Any]]:
     _require_config_read_auth(request)
     rows = _opt(request).decision_trace(limit=max(1, min(int(limit), 2000)))
-    return {"rows": rows}
+    return rows if as_array else {"rows": rows}
 
 
 class _TraceDownloadResponse(StreamingResponse):

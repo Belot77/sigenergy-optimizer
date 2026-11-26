@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.103-haos114
+
+- Open a compact Decision Trace preview with the latest Solcast verification status and up to 20 recent decisions.
+- Fetch full JSON when requested for copying and show a recoverable timeout if the preview or copy request stalls.
+
 ## 2.3.102-haos113
 
 - Verify Solcast restart handoff using a read of the integration's local cache and the exact saved forecast, with no fixed version list.
