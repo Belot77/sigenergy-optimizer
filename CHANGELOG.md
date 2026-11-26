@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.101-haos112
+
+- Accept the Solcast `4.6.4` device version for clean restart handoff.
+- Send handoff diagnostics to the Home Assistant add-on log alongside the dashboard log.
+
 ## 2.3.100-haos111
 
 - Log the outcome of each one-time Solcast forecast handoff stage across a clean add-on restart.

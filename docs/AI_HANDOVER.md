@@ -2,6 +2,8 @@
 
 ## Solcast v4.6.4 device version and restart logging
 
+Release `2.3.101-haos112` packages this compatibility and logging fix. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.101-haos112)
+
 On 26 November 2026, a same-version `.111` restart at 17:23:39 AEDT found no checkpoint. The optimizer had verified the 17:09:23 Solcast poll before restart with a deadline of 05:40:06 AEDT on 27 November. The same poll remained unverified after startup. The charge cap was 21 kW on both sides. The retained add-on log confirms Uvicorn completed application shutdown.
 
 A read-only Home Assistant check confirmed that Forecast Today and API Last Polled belonged to the same loaded native Solcast entry and device. Both witnesses reported device software version `v4.6.4`, while the upstream manifest lists `4.6.3`. The published parser's rejection of the observed device version was reproduced with simulated HA. The parser now accepts normalized `4.6.4` alongside `4.6.1` and `4.6.3`. The version must still agree across sensors and match the checkpoint during restoration. Both clock checks, the original expiry, and the existing forecast and authority checks still apply.
