@@ -327,8 +327,15 @@ def test_main_lifespan_closes_ha_and_storage_on_all_exit_paths(failure):
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("exit_path", ["clean", "body_error", "optimizer_error", "storage_error"])
-def test_solar_handoff_lifecycle_quiesces_control_before_saving(exit_path):
+@pytest.mark.parametrize(("exit_path", "capture_outcome"), [
+    ("clean", "capture_attempted"),
+    ("body_error", "capture_skipped"),
+    ("optimizer_error", "capture_skipped"),
+    ("optimizer_return", "capture_skipped"),
+    ("storage_error", "capture_attempted"),
+    ("lifespan_cancelled", "lifespan_cancelled"),
+])
+def test_solar_handoff_lifecycle_quiesces_control_before_saving(exit_path, capture_outcome, caplog):
     async def scenario():
         events = []
 
@@ -346,6 +353,8 @@ def test_solar_handoff_lifecycle_quiesces_control_before_saving(exit_path):
             try:
                 if exit_path == "optimizer_error":
                     raise RuntimeError("synthetic")
+                if exit_path == "optimizer_return":
+                    return
                 await asyncio.Future()
             finally:
                 events.append("optimizer_stopped")
@@ -367,20 +376,35 @@ def test_solar_handoff_lifecycle_quiesces_control_before_saving(exit_path):
             patch.object(main, "SigEnergyOptimizer", return_value=optimizer),
             patch.object(main, "HAWebSocketClient", return_value=SimpleNamespace(run_forever=websocket_loop)),
             patch.object(main, "DecisionTraceStore", side_effect=OSError("synthetic")),
+            ExitStack() as expected_exit,
         ):
-            try:
-                async with main._optimizer_lifespan(FastAPI(), None, None):
+            if exit_path == "body_error":
+                expected_exit.enter_context(pytest.raises(RuntimeError, match="synthetic"))
+            elif exit_path == "lifespan_cancelled":
+                expected_exit.enter_context(pytest.raises(asyncio.CancelledError))
+            async with main._optimizer_lifespan(FastAPI(), None, None):
+                await asyncio.sleep(0)
+                if exit_path == "body_error":
+                    raise RuntimeError("synthetic")
+                if exit_path == "lifespan_cancelled":
+                    task = asyncio.current_task()
+                    assert task is not None
+                    task.cancel()
                     await asyncio.sleep(0)
-                    if exit_path == "body_error":
-                        raise RuntimeError("synthetic")
-            except RuntimeError:
-                assert exit_path == "body_error"
 
         assert events[0] == "load"
         assert events[-1] == "websocket_stopped"
         assert ("save" in events) == (exit_path in {"clean", "storage_error"})
 
-    asyncio.run(scenario())
+    with caplog.at_level("INFO", logger=main.logger.name):
+        asyncio.run(scenario())
+    prefix = "Solar restart handoff shutdown: "
+    shutdown_messages = [
+        record.getMessage() for record in caplog.records
+        if record.name == main.logger.name and record.getMessage().startswith(prefix)
+    ]
+    assert len(shutdown_messages) == 1
+    assert shutdown_messages[0].startswith(prefix + capture_outcome)
 
 
 @pytest.mark.parametrize("boundary", ["capture", "permission", "invalidate", "source-revert", "midnight"])

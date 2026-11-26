@@ -1,5 +1,13 @@
 # SigEnergy Optimizer AI Handover
 
+## Solcast restart handoff diagnostics
+
+On 26 November 2026, the `.109` to `.110` update at 13:02:28 AEDT lost trust in the 11:24:55 Solcast poll before its 14:17:08 deadline. The charge cap had been 5.90 kW and returned to 21 kW. A clean `.110` restart at 14:53:55 also left the previously verified 14:17:09 poll unverified before its 17:09:22 deadline. In the second trace the charge cap was already 21 kW, so that trace establishes loss of forecast trust alone.
+
+The diagnostic patch adds fixed `Solar restart handoff` outcomes for shutdown capture, checkpoint save and load, the native Solcast witness, and startup revalidation. The logs distinguish a missing checkpoint from a rejected checkpoint and identify whether final provider authority was restored. The existing validity checks, storage, HA requests, timeouts and control behavior are preserved. The live cause is still open. A scoped revert or a pre-update `.110` add-on backup rolls back the diagnostic patch.
+
+After the diagnostic release has verified a Solcast poll, capture the trace before a clean add-on restart and again after startup. Save the add-on log lines beginning with `Solar restart handoff` across the stop and startup if available. Compare the poll and original expiry as well as the save, load and restore outcomes. [Restart control contract](CONTROL_CONTRACT.md#clean-optimizer-restart)
+
 ## Solar Bypass energy and timing budgets
 
 Release `2.3.99-haos110` packages PR #111, merged at `8a2896d38b5fef27c4f8a3b5b1047395aa5d59af`. The aggregate energy budget, detailed timing budget, and shared scalar validator moved to `app/solar_surplus_budget.py` with their original definitions. The optimizer still verifies inputs, handles ownership and reentry, and applies the decision. The strict positive surplus boundary and timing equality rules are part of the comparison. If a regression is found, revert PR #111 and publish the reverted build, or restore a pre-update `.109` backup. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.99-haos110) · [Control contract](CONTROL_CONTRACT.md#solar-surplus)

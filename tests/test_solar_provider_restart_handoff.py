@@ -170,17 +170,23 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
     def test_clean_restart_restores_only_after_connected_read_and_uses_fresh_inputs(self):
         async def run(version):
             async with self._storage() as worker:
-                original = await self._save_previously_verified(worker, version=version)
-                opt = self._with_ha(ProviderHA(version), worker)
-                with self._clock(8):
-                    self._live_states(opt, seconds=8, pv_kw=4.0, load_kw=2.0, due=1200)
-                    await opt.load_solar_provider_handoff()
-                    self.assertIsNotNone(opt._solar_provider_handoff)
-                    self.assertIsNone(await worker.call("take_solar_provider_handoff"))
-                    self._assert_ordinary(await opt.run_once(), reason=None)
-                    self.assertEqual(opt.ha.services, [])
-                    opt.on_ws_connect()
-                    restored = await opt.run_once()
+                with self.assertLogs("app.optimizer", level="INFO") as handoff_log:
+                    original = await self._save_previously_verified(worker, version=version)
+                    opt = self._with_ha(ProviderHA(version), worker)
+                    with self._clock(8):
+                        self._live_states(opt, seconds=8, pv_kw=4.0, load_kw=2.0, due=1200)
+                        await opt.load_solar_provider_handoff()
+                        self.assertIsNotNone(opt._solar_provider_handoff)
+                        self.assertIsNone(await worker.call("take_solar_provider_handoff"))
+                        self._assert_ordinary(await opt.run_once(), reason=None)
+                        self.assertEqual(opt.ha.services, [])
+                        opt.on_ws_connect()
+                        restored = await opt.run_once()
+                messages = [record.getMessage() for record in handoff_log.records]
+                for outcome in (
+                    "load: checkpoint_missing", "save: saved", "load: loaded", "restore: revalidated",
+                ):
+                    self.assertEqual(messages.count(f"Solar restart handoff {outcome}"), 1, messages)
                 self.assertIsNone(opt._solar_provider_handoff)
                 self.assertEqual(opt.ha.services, [(
                     "homeassistant", "update_entity", {"entity_id": list(opt._solar_provider_source)},
@@ -201,13 +207,13 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
                 asyncio.run(run(version))
 
     def test_ineligible_witnesses_never_resume_or_retry_the_same_receipt(self):
-        async def run(case, expected_calls):
+        async def run(case, expected_calls, expected_rejection):
             async with self._storage() as worker:
                 await self._save_previously_verified(worker)
                 version = "4.6.3" if case == "integration_version_changed" else "4.6.1"
                 opt = self._with_ha(ProviderHA(version), worker)
                 seconds = self.DUE_IN if case == "expired" else 8
-                with self._clock(seconds):
+                with self._clock(seconds), self.assertLogs("app.optimizer", level="INFO") as handoff_log:
                     await opt.load_solar_provider_handoff()
                     opt.on_ws_connect()
                     self._live_states(opt, seconds=seconds, due=1200)
@@ -230,15 +236,43 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
                     self.assertIsNone(opt._solar_provider_handoff)
                     self._assert_ordinary(await opt.run_once())
                     self.assertEqual(len(opt.ha.services), expected_calls)
+                if expected_rejection is not None:
+                    messages = [record.getMessage() for record in handoff_log.records]
+                    self.assertEqual(
+                        messages.count(f"Solar restart handoff restore: {expected_rejection}"), 1, messages,
+                    )
 
-        for case, expected_calls in (
-            ("expired", 0), ("witness_missing_or_unsupported", 0), ("revision_changed", 0),
-            ("integration_version_changed", 0),
-            ("no_report_advanced", 1), ("only_one_report_advanced", 1), ("service_failed", 1),
-            ("rest_context_changed", 1), ("rest_forecast_changed", 1),
+        for case, expected_calls, expected_rejection in (
+            ("expired", 0, None),
+            ("witness_missing_or_unsupported", 0, None),
+            ("revision_changed", 0, "native_revision_changed_before_refresh"),
+            ("integration_version_changed", 0, "native_revision_changed_before_refresh"),
+            ("no_report_advanced", 1, "reports_unverified_after_refresh"),
+            ("only_one_report_advanced", 1, "reports_unverified_after_refresh"),
+            ("service_failed", 1, "refresh_rejected"),
+            ("rest_context_changed", 1, None),
+            ("rest_forecast_changed", 1, None),
         ):
             with self.subTest(case=case):
-                asyncio.run(run(case, expected_calls))
+                asyncio.run(run(case, expected_calls, expected_rejection))
+
+    def test_malformed_checkpoint_is_logged_without_its_contents(self):
+        async def run():
+            async with self._storage() as worker:
+                malformed = "diagnostic-fixture-malformed-receipt"
+                await worker.call("save_solar_provider_handoff", malformed)
+                opt = self._with_ha(ProviderHA(), worker)
+                with self._clock(0), self.assertLogs("app.optimizer", level="INFO") as handoff_log:
+                    await opt.load_solar_provider_handoff()
+
+                self.assertIsNone(opt._solar_provider_handoff)
+                self.assertIsNone(await worker.call("take_solar_provider_handoff"))
+                messages = [record.getMessage() for record in handoff_log.records]
+                self.assertIn("Solar restart handoff load: checkpoint_invalid", messages)
+                self.assertNotIn("Solar restart handoff load: checkpoint_missing", messages)
+                self.assertTrue(all(malformed not in message for message in messages))
+
+        asyncio.run(run())
 
     def test_in_flight_provider_revision_change_and_reconnect_reject_receipt(self):
         async def run(disconnect):
