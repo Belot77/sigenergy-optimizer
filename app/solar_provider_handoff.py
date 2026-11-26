@@ -11,7 +11,8 @@ from datetime import date
 from uuid import UUID
 
 
-_SCHEMA_VERSION = 1
+# Version 2 binds the native device ID and records the verified forecast's query bounds.
+_SCHEMA_VERSION = 2
 _MAX_RECEIPT_LENGTH = 2048
 _CLOCK_SKEW_SECONDS = 5.0
 _ENTITY_ID = re.compile(r"[a-z0-9_]+\.[a-z0-9_]+")
@@ -60,6 +61,8 @@ class SolarProviderHandoff:
     day: str
     poll: float
     deadline: float
+    forecast_start: float
+    forecast_end: float
     forecast_digest: str
     witness_digest: str
     saved_wall: float
@@ -89,9 +92,15 @@ class SolarProviderHandoff:
             raise ValueError("Invalid handoff evidence digest")
         if not all(
             _finite_number(value)
-            for value in (self.poll, self.deadline, self.saved_wall, self.saved_monotonic)
+            for value in (self.poll, self.deadline, self.saved_wall, self.saved_monotonic,
+                          self.forecast_start, self.forecast_end)
         ) or not (0 < self.poll <= self.saved_wall < self.deadline and self.saved_monotonic >= 0):
             raise ValueError("Invalid handoff clock")
+        if (
+            not 0 < self.forecast_start <= self.saved_wall < self.forecast_end
+            or (self.forecast_end - self.forecast_start) % 1800
+        ):
+            raise ValueError("Invalid handoff forecast range")
 
     @classmethod
     def from_json(cls, raw: str | None) -> SolarProviderHandoff | None:

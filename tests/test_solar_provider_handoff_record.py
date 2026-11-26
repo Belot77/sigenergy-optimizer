@@ -22,6 +22,8 @@ def handoff() -> SolarProviderHandoff:
         day="2026-01-01",
         poll=SAVED_WALL - 60.0,
         deadline=SAVED_WALL + 120.0,
+        forecast_start=SAVED_WALL,
+        forecast_end=SAVED_WALL + 3600,
         forecast_digest=evidence_digest([[SAVED_WALL, 3.1], [SAVED_WALL + 1800, 4.2]]),
         witness_digest=evidence_digest(["synthetic-ha-revision"]),
         saved_wall=SAVED_WALL,
@@ -31,16 +33,17 @@ def handoff() -> SolarProviderHandoff:
 
 def test_roundtrip_keeps_source_and_deadline(handoff):
     encoded = handoff.to_json()
-    assert json.loads(encoded)["schema_version"] == 1
+    assert json.loads(encoded)["schema_version"] == 2
     assert SolarProviderHandoff.from_json(encoded) == handoff
 
 
 @pytest.mark.parametrize(
     ("field", "bad_value"),
     [
-        ("schema_version", 2),
+        ("schema_version", 1),
+        ("schema_version", 3),
         ("schema_version", True),
-        ("schema_version", 1.0),
+        ("schema_version", 2.0),
         ("boot_id", "boot-a"),
         ("boot_id", BOOT_ID.upper()),
         ("boot_id", "00000000-0000-0000-0000-000000000000"),
@@ -51,6 +54,11 @@ def test_roundtrip_keeps_source_and_deadline(handoff):
         ("source", [SOURCE[0], ["sensor.test_solcast_last_polled"]]),
         ("day", "2026-02-30"),
         ("day", "20260101"),
+        ("forecast_start", True),
+        ("forecast_start", SAVED_WALL + 1800),
+        ("forecast_end", SAVED_WALL),
+        ("forecast_end", SAVED_WALL + 1801),
+        ("forecast_end", float("inf")),
         ("forecast_digest", "a" * 63),
         ("witness_digest", "f" * 63 + "g"),
         ("poll", SAVED_WALL + 1),
@@ -80,7 +88,7 @@ def test_unknown_missing_and_duplicate_fields_are_rejected(handoff):
     assert SolarProviderHandoff.from_json(json.dumps({**data, "future_field": 1})) is None
     del data["source"]
     assert SolarProviderHandoff.from_json(json.dumps(data)) is None
-    duplicate = handoff.to_json().replace('"schema_version":1', '"schema_version":2,"schema_version":1')
+    duplicate = handoff.to_json().replace('"schema_version":2', '"schema_version":1,"schema_version":2')
     assert SolarProviderHandoff.from_json(duplicate) is None
 
 

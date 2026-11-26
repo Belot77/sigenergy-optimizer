@@ -16,31 +16,47 @@ from test_phase1_solar_dynamic_charge_ceiling_characterization import SolarDynam
 
 
 class ProviderHA(RecordingHA):
+    ENTRY_ID = "native-solcast-test"
+    DEVICE_ID = "native-solcast-device"
+
     def __init__(self, version="4.6.1"):
         super().__init__()
         self.version = version
         self.witness = {}
-        self.report_advances = 2
-        self.republish_at = None
         self.witness_available = True
-        self.service_accepted = True
+        self.loaded_entry_id = self.ENTRY_ID
+        self.cached_forecast = None
+        self.handoff_reads = []
         self.services = []
-        self.after_republish = None
+        self.after_query = None
+
+    async def bulk_states(self, entity_ids):
+        return deepcopy(await super().bulk_states(entity_ids))
 
     async def get_solar_provider_handoff_witness(self, entities):
+        self.handoff_reads.append(("witness", entities))
         if not self.witness_available:
             return {}
         return {entity: deepcopy(self.witness[entity]) for entity in entities}
 
+    async def get_loaded_solcast_entry_id(self):
+        self.handoff_reads.append(("entry", self.loaded_entry_id))
+        return self.loaded_entry_id
+
+    async def query_solcast_cached_forecast(self, start, end):
+        self.handoff_reads.append(("cache", start, end))
+        self.events.append(("cache", "", None))
+        result = deepcopy(self.cached_forecast)
+        if self.after_query:
+            self.after_query()
+        return result
+
     async def call_service(self, domain, service, data):
         self.services.append((domain, service, data))
-        if not self.service_accepted:
-            return False
-        for entity in data["entity_id"][:self.report_advances]:
-            self.witness[entity]["last_reported"] = self.republish_at
-        if self.after_republish:
-            self.after_republish()
         return True
+
+    def cache_query_count(self):
+        return sum(read[0] == "cache" for read in self.handoff_reads)
 
 
 class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
@@ -134,12 +150,13 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
                 **{key: ha.states[entity][key] for key in ("state", "last_changed", "last_updated")},
                 "last_reported": self._iso(max(poll, seconds - 1)),
                 "context_id": context_id,
-                "entry_id": "native-solcast-test",
+                "entry_id": ha.ENTRY_ID,
+                "device_id": ha.DEVICE_ID,
                 "domain": "solcast_solar",
                 "entry_state": "loaded",
                 "version": ha.version,
             }
-        ha.republish_at = self._iso(seconds)
+        ha.cached_forecast = deepcopy(ha.states[cfg.forecast_today_sensor]["attributes"]["detailedForecast"])
 
     async def _save_previously_verified(self, worker, *, version="4.6.1"):
         opt = self._with_ha(ProviderHA(version), worker)
@@ -158,6 +175,7 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
             )
             await opt.save_solar_provider_handoff()
         self.assertEqual(opt.ha.services, [])
+        self.assertEqual(opt.ha.cache_query_count(), 0)
         return decision
 
     def _assert_ordinary(self, decision, *, reason="baseline_requires_provider_advance"):
@@ -175,11 +193,18 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
                     opt = self._with_ha(ProviderHA(version), worker)
                     with self._clock(8):
                         self._live_states(opt, seconds=8, pv_kw=4.0, load_kw=2.0, due=1200)
+                        startup_witness = deepcopy(opt.ha.witness)
+                        # The cache may encode equivalent instants with local offsets.
+                        provider_zone = timezone(timedelta(hours=11))
+                        for period in opt.ha.cached_forecast:
+                            period["period_start"] = datetime.fromisoformat(
+                                period["period_start"]
+                            ).astimezone(provider_zone).isoformat()
                         await opt.load_solar_provider_handoff()
                         self.assertIsNotNone(opt._solar_provider_handoff)
                         self.assertIsNone(await worker.call("take_solar_provider_handoff"))
                         self._assert_ordinary(await opt.run_once(), reason=None)
-                        self.assertEqual(opt.ha.services, [])
+                        self.assertEqual(opt.ha.handoff_reads, [])
                         opt.on_ws_connect()
                         restored = await opt.run_once()
                 messages = [record.getMessage() for record in handoff_log.records]
@@ -188,9 +213,22 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
                 ):
                     self.assertEqual(messages.count(f"Solar restart handoff {outcome}"), 1, messages)
                 self.assertIsNone(opt._solar_provider_handoff)
-                self.assertEqual(opt.ha.services, [(
-                    "homeassistant", "update_entity", {"entity_id": list(opt._solar_provider_source)},
-                )])
+                self.assertEqual(opt.ha.services, [])
+                self.assertEqual(opt.ha.witness, startup_witness)
+                self.assertEqual(opt.ha.handoff_reads, [
+                    ("witness", opt._solar_provider_source),
+                    ("entry", ProviderHA.ENTRY_ID),
+                    ("cache", self._at(-1800), self._at(8 * 1800)),
+                    ("entry", ProviderHA.ENTRY_ID),
+                    ("witness", opt._solar_provider_source),
+                ])
+                cache_read = opt.ha.handoff_reads[2]
+                self.assertIs(cache_read[1].tzinfo, timezone.utc)
+                self.assertIs(cache_read[2].tzinfo, timezone.utc)
+                fresh_meter_read = ("bulk_states", opt.cfg.pv_power_sensor, None)
+                # The disconnected tick reads meters without attempting a handoff.
+                meter_reads = [index for index, event in enumerate(opt.ha.events) if event == fresh_meter_read]
+                self.assertLess(opt.ha.events.index(("cache", "", None)), meter_reads[-1])
                 self.assertTrue(restored.trace_gates["solar_provider_authority_trusted"])
                 self.assertTrue(restored.trace_gates["solar_charge_ceiling_owned"])
                 self.assertEqual(restored.trace_values["solar_provider_reason"], "provider_clean_restart_revalidated")
@@ -202,15 +240,15 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
                 self.assertEqual(opt._apply.await_args.args[0].pv_kw, 4.0)
                 self.assertEqual(opt._apply.await_args.args[0].load_kw, 2.0)
 
-        for version in ("4.6.1", "4.6.3", "4.6.4"):
+        for version in ("4.6.1", "4.6.3", "4.6.4", "4.6.5"):
             with self.subTest(version=version):
                 asyncio.run(run(version))
 
-    def test_ineligible_witnesses_never_resume_or_retry_the_same_receipt(self):
-        async def run(case, expected_calls, expected_rejection):
+    def test_ineligible_cache_proofs_never_resume_or_retry_the_same_receipt(self):
+        async def run(case, expected_queries, expected_rejection):
             async with self._storage() as worker:
                 await self._save_previously_verified(worker)
-                version = "4.6.3" if case == "integration_version_changed" else "4.6.1"
+                version = "4.6.5" if case == "integration_version_changed" else "4.6.1"
                 opt = self._with_ha(ProviderHA(version), worker)
                 seconds = self.DUE_IN if case == "expired" else 8
                 with self._clock(seconds), self.assertLogs("app.optimizer", level="INFO") as handoff_log:
@@ -218,43 +256,108 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
                     opt.on_ws_connect()
                     self._live_states(opt, seconds=seconds, due=1200)
                     first, second = opt._solar_provider_source
-                    if case == "witness_missing_or_unsupported":
-                        opt.ha.witness_available = False
+                    ha = opt.ha
+                    if case == "witness_missing":
+                        ha.witness_available = False
                     elif case == "revision_changed":
-                        opt.ha.witness[first]["context_id"] = "replacement-provider-state"
-                    elif case == "no_report_advanced":
-                        opt.ha.report_advances = 0
-                    elif case == "only_one_report_advanced":
-                        opt.ha.report_advances = 1
-                    elif case == "service_failed":
-                        opt.ha.service_accepted = False
+                        ha.witness[first]["context_id"] = "replacement-provider-state"
+                    elif case == "device_changed":
+                        for witness in ha.witness.values():
+                            witness["device_id"] = "replacement-solcast-device"
+                    elif case == "entry_unavailable":
+                        ha.loaded_entry_id = None
+                    elif case == "entry_differs_from_witness":
+                        ha.loaded_entry_id = "different-entry"
+                    elif case == "entry_changed_during_query":
+                        ha.after_query = lambda: setattr(ha, "loaded_entry_id", "different-entry")
+                    elif case == "witness_missing_after_query":
+                        ha.after_query = lambda: setattr(ha, "witness_available", False)
+                    elif case == "witness_changed_after_query":
+                        def replace_native_device():
+                            for witness in ha.witness.values():
+                                witness["device_id"] = "different-device"
+
+                        ha.after_query = replace_native_device
+                    elif case == "report_regressed_after_query":
+                        ha.after_query = lambda: ha.witness[first].update(last_reported=self._iso(seconds - 2))
+                    elif case == "report_in_future_after_query":
+                        ha.after_query = lambda: ha.witness[first].update(last_reported=self._iso(seconds + 60))
+                    elif case == "cache_missing":
+                        ha.cached_forecast = None
+                    elif case == "cache_incomplete":
+                        ha.cached_forecast.pop(3)
+                    elif case == "cache_estimate_changed":
+                        ha.cached_forecast[1]["pv_estimate"] = 2.5
                     elif case == "rest_context_changed":
-                        opt.ha.states[second]["context"]["id"] = "changed-after-witness"
+                        ha.states[second]["context"]["id"] = "changed-after-witness"
                     elif case == "rest_forecast_changed":
-                        opt.ha.states[first]["attributes"]["detailedForecast"][1]["pv_estimate"] = 2.5
+                        ha.states[first]["attributes"]["detailedForecast"][1]["pv_estimate"] = 2.5
+                    elif case == "rest_forecast_changed_after_query":
+                        def change_rest_forecast():
+                            ha.states[first]["attributes"]["detailedForecast"][1]["pv_estimate"] = 2.5
+
+                        ha.after_query = change_rest_forecast
+                    elif case == "both_forecasts_changed":
+                        ha.states[first]["attributes"]["detailedForecast"][1]["pv_estimate"] = 2.5
+                        ha.cached_forecast[1]["pv_estimate"] = 2.5
                     self._assert_ordinary(await opt.run_once())
                     self.assertIsNone(opt._solar_provider_handoff)
+                    queries = opt.ha.cache_query_count()
                     self._assert_ordinary(await opt.run_once())
-                    self.assertEqual(len(opt.ha.services), expected_calls)
+                    self.assertEqual(opt.ha.services, [])
+                    self.assertEqual(opt.ha.cache_query_count(), queries)
+                    if expected_queries is not None:
+                        self.assertEqual(queries, expected_queries)
                 if expected_rejection is not None:
                     messages = [record.getMessage() for record in handoff_log.records]
                     self.assertEqual(
                         messages.count(f"Solar restart handoff restore: {expected_rejection}"), 1, messages,
                     )
 
-        for case, expected_calls, expected_rejection in (
+        for case, expected_queries, expected_rejection in (
             ("expired", 0, None),
-            ("witness_missing_or_unsupported", 0, None),
-            ("revision_changed", 0, "native_revision_changed_before_refresh"),
-            ("integration_version_changed", 0, "native_revision_changed_before_refresh"),
-            ("no_report_advanced", 1, "reports_unverified_after_refresh"),
-            ("only_one_report_advanced", 1, "reports_unverified_after_refresh"),
-            ("service_failed", 1, "refresh_rejected"),
-            ("rest_context_changed", 1, None),
-            ("rest_forecast_changed", 1, None),
+            ("witness_missing", 0, "witness_unavailable_before_query"),
+            ("revision_changed", 0, "native_revision_changed_before_query"),
+            ("device_changed", 0, "native_revision_changed_before_query"),
+            ("integration_version_changed", 0, "native_revision_changed_before_query"),
+            ("entry_unavailable", 0, "cache_entry_unverified_before_query"),
+            ("entry_differs_from_witness", 0, "cache_entry_unverified_before_query"),
+            ("entry_changed_during_query", 1, "cache_entry_unverified_after_query"),
+            ("witness_missing_after_query", 1, "witness_unavailable_after_query"),
+            ("witness_changed_after_query", 1, "native_revision_changed_after_query"),
+            ("report_regressed_after_query", 1, "reports_unverified_after_query"),
+            ("report_in_future_after_query", 1, "reports_unverified_after_query"),
+            ("cache_missing", 1, "cache_forecast_unverified"),
+            ("cache_incomplete", 1, "cache_forecast_unverified"),
+            ("cache_estimate_changed", 1, "cache_snapshot_mismatch"),
+            ("rest_context_changed", None, None),
+            ("rest_forecast_changed", None, None),
+            ("rest_forecast_changed_after_query", 1, "cache_snapshot_mismatch"),
+            ("both_forecasts_changed", None, None),
         ):
             with self.subTest(case=case):
-                asyncio.run(run(case, expected_calls, expected_rejection))
+                asyncio.run(run(case, expected_queries, expected_rejection))
+
+    def test_cache_handoff_respects_shortened_advertised_deadline(self):
+        async def run():
+            async with self._storage() as worker:
+                await self._save_previously_verified(worker)
+                opt = self._with_ha(ProviderHA(), worker)
+                shortened = self.DUE_IN // 2
+                with self._clock(8):
+                    await opt.load_solar_provider_handoff()
+                    opt.on_ws_connect()
+                    self._live_states(opt, seconds=8, due=shortened)
+                    restored = await opt.run_once()
+                    self.assertTrue(restored.trace_gates["solar_provider_authority_trusted"])
+                    self.assertEqual(restored.trace_values["solar_provider_deadline"], self._iso(shortened))
+                with self._clock(shortened):
+                    self._live_states(opt, seconds=shortened, due=self.DUE_IN)
+                    self._assert_ordinary(await opt.run_once(), reason=None)
+                    self.assertEqual(opt.ha.cache_query_count(), 1)
+                    self.assertEqual(opt.ha.services, [])
+
+        asyncio.run(run())
 
     def test_malformed_checkpoint_is_logged_without_its_contents(self):
         async def run():
@@ -293,9 +396,10 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
                     await opt.load_solar_provider_handoff()
                     opt.on_ws_connect()
                     self._live_states(opt, seconds=8)
-                    opt.ha.after_republish = provider_changed
+                    opt.ha.after_query = provider_changed
                     self._assert_ordinary(await opt.run_once(), reason=None)
-                    self.assertEqual(len(opt.ha.services), 1)
+                    self.assertEqual(opt.ha.cache_query_count(), 1)
+                    self.assertEqual(opt.ha.services, [])
                 with self._clock(9):
                     self._live_states(opt, seconds=9)
                     self._assert_ordinary(await opt.run_once(), reason=None)
