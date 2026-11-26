@@ -194,15 +194,19 @@ class SolarProviderHandoffWitnessTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result, {})
 
     async def test_rejects_failed_template_requests(self):
-        for response in (
-            httpx.Response(403),
-            httpx.Response(200, text="invalid JSON"),
-            httpx.ReadTimeout("no response"),
+        for response, reason in (
+            (httpx.Response(403), "template_http_status_403"),
+            (httpx.Response(200, text="invalid JSON"), "invalid_template_data"),
+            (httpx.ReadTimeout("no response"), "template_request_failed"),
         ):
             with self.subTest(response=response):
-                result, requests = await self._read(response)
+                with self.assertLogs("app.ha_client", level="INFO") as logs:
+                    result, requests = await self._read(response)
                 self.assertEqual(result, {})
                 self.assertEqual(len(requests), 1)
+                self.assertEqual([record.getMessage() for record in logs.records], [
+                    f"Solar restart handoff witness: {reason}"
+                ])
 
     async def test_rejects_non_sensor_or_duplicate_ids_before_request(self):
         for entities in (

@@ -201,6 +201,7 @@ class HAClient:
                 for entity_id in entities
             )
         ):
+            logger.info("Solar restart handoff witness: invalid_source_ids")
             return {}
 
         encoded_entities = json.dumps(entities)
@@ -230,6 +231,7 @@ class HAClient:
             response.raise_for_status()
             rows = response.json()
             if not isinstance(rows, list) or len(rows) != 2:
+                logger.info("Solar restart handoff witness: native_entities_incomplete")
                 return {}
 
             witness: dict[str, dict[str, Any]] = {}
@@ -237,10 +239,16 @@ class HAClient:
             timestamp_fields = ("last_changed", "last_updated", "last_reported")
             result_fields = ("state", "context_id", *timestamp_fields, "entry_id", "domain", "entry_state")
             for row in rows:
-                if not isinstance(row, dict) or not all(
-                    isinstance(row.get(field), str) and 0 < len(row[field]) <= 255
+                if not isinstance(row, dict):
+                    logger.info("Solar restart handoff witness: invalid_native_row")
+                    return {}
+                missing_field = next((
+                    field
                     for field in (*result_fields, "entity_id", "version", "device_id")
-                ):
+                    if not (isinstance(row.get(field), str) and 0 < len(row[field]) <= 255)
+                ), None)
+                if missing_field is not None:
+                    logger.info("Solar restart handoff witness: native_metadata_incomplete_%s", missing_field)
                     return {}
                 entity_id = row["entity_id"]
                 version = row["version"].removeprefix("v")
@@ -253,22 +261,36 @@ class HAClient:
                     or version not in _SOLCAST_HANDOFF_VERSIONS
                     or not all(row[field].strip() == row[field] for field in ("context_id", "entry_id", "device_id"))
                 ):
+                    logger.info("Solar restart handoff witness: %s",
+                                "unsupported_native_version" if version not in _SOLCAST_HANDOFF_VERSIONS
+                                else "native_entity_unverified")
                     return {}
                 changed, updated, reported = (
                     datetime.fromisoformat(row[field].replace("Z", "+00:00"))
                     for field in timestamp_fields
                 )
                 if any(stamp.utcoffset() is None for stamp in (changed, updated, reported)):
+                    logger.info("Solar restart handoff witness: timestamp_missing_timezone")
                     return {}
                 if not changed <= updated <= reported:
+                    logger.info("Solar restart handoff witness: timestamp_order_invalid")
                     return {}
                 integration_identity.add((row["entry_id"], row["device_id"], version))
                 witness[entity_id] = {field: row[field] for field in result_fields}
                 witness[entity_id]["version"] = version
 
-            return witness if len(integration_identity) == 1 else {}
-        except (httpx.HTTPError, ValueError, OverflowError):
-            logger.debug("Unable to read Solar provider handoff witness")
+            if len(integration_identity) == 1:
+                return witness
+            logger.info("Solar restart handoff witness: conflicting_native_identity")
+            return {}
+        except httpx.HTTPStatusError as exc:
+            logger.info("Solar restart handoff witness: template_http_status_%d", exc.response.status_code)
+            return {}
+        except httpx.HTTPError:
+            logger.info("Solar restart handoff witness: template_request_failed")
+            return {}
+        except (ValueError, OverflowError):
+            logger.info("Solar restart handoff witness: invalid_template_data")
             return {}
 
     async def set_state(

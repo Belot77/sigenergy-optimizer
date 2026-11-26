@@ -756,6 +756,8 @@ class SigEnergyOptimizer:
     ) -> None:
         self._solar_provider_epoch += 1
         if not keep_startup_handoff:
+            if getattr(self, "_solar_provider_handoff", None) is not None:
+                logger.info("Solar restart handoff restore: discarded_before_probe")
             self._solar_provider_handoff = None
         self._solar_provider_handoff_clock = None
         self._solar_provider_state = "UNVERIFIED"
@@ -889,40 +891,69 @@ class SigEnergyOptimizer:
     async def load_solar_provider_handoff(self) -> None:
         """Consume the checkpoint before either control or WebSocket startup."""
         if self._storage_worker is None:
+            logger.info("Solar restart handoff load: storage_unavailable")
             return
+        operation = "checkpoint_read"
         try:
             raw = await self._storage_worker.call("take_solar_provider_handoff")
+            operation = "boot_identity_read"
             self._solar_provider_boot_id = await self._storage_worker.call("solar_provider_host_boot_id")
-        except StorageUnavailable:
-            logger.info("Solar restart handoff storage unavailable")
+        except StorageUnavailable as exc:
+            logger.info("Solar restart handoff load: %s_%s", operation,
+                        "unconfirmed" if exc.unconfirmed else "unavailable")
             return
         receipt = SolarProviderHandoff.from_json(raw)
-        if receipt is not None and receipt.source == self._solar_provider_source and receipt.clock_is_current(
+        if receipt is None:
+            logger.info("Solar restart handoff load: %s", "checkpoint_missing" if raw is None else "checkpoint_invalid")
+        elif receipt.source != self._solar_provider_source:
+            logger.info("Solar restart handoff load: source_changed")
+        elif receipt.clock_is_current(
             self._solar_provider_boot_id, datetime.now(timezone.utc).timestamp(), monotonic(),
         ):
             self._solar_provider_handoff = receipt
+            logger.info("Solar restart handoff load: loaded")
+        elif self._solar_provider_boot_id is None:
+            logger.info("Solar restart handoff load: boot_identity_unavailable")
+        elif receipt.boot_id != self._solar_provider_boot_id:
+            logger.info("Solar restart handoff load: host_boot_changed")
+        else:
+            logger.info("Solar restart handoff load: clock_or_expiry_rejected")
 
     async def save_solar_provider_handoff(self) -> None:
         """Record a verified current generation after control stops and before WS stops."""
         storage = self._storage_worker
         boot_id = self._solar_provider_boot_id
-        if storage is None or boot_id is None or not self._ws_connected or self._solar_provider_state != "VALID":
+        if storage is None:
+            logger.info("Solar restart handoff save: storage_unavailable")
+            return
+        if boot_id is None:
+            logger.info("Solar restart handoff save: boot_identity_unavailable")
+            return
+        if not self._ws_connected:
+            logger.info("Solar restart handoff save: websocket_disconnected")
+            return
+        if self._solar_provider_state != "VALID":
+            logger.info("Solar restart handoff save: provider_not_valid")
             return
         try:
             async with asyncio.timeout(_SOLAR_HANDOFF_HA_TIMEOUT_SECONDS):
                 state = await self._read_state(capture_solar_handoff=True)
             wall = datetime.now(timezone.utc).timestamp()
             elapsed = monotonic()
-            if (
-                not self._solar_handoff_snapshot_current(state)
-                or not self._solar_provider_authority_current(state, wall)
-            ):
+            if not self._solar_handoff_snapshot_current(state):
+                logger.info("Solar restart handoff save: %s",
+                            "native_witness_unavailable" if state.solcast_handoff_witness_digest is None
+                            else "snapshot_changed")
+                return
+            if not self._solar_provider_authority_current(state, wall):
+                logger.info("Solar restart handoff save: provider_authority_lost")
                 return
             evidence = self._solar_provider_verified_evidence
             polled = self._solar_provider_verified
             deadline = self._solar_provider_deadline
             digest = state.solcast_handoff_witness_digest
             if evidence is None or polled is None or deadline is None or digest is None:
+                logger.info("Solar restart handoff save: verified_evidence_missing")
                 return
             day = datetime.fromtimestamp(wall, self._tz).date().isoformat()
             inherited_clock = self._solar_provider_handoff_clock
@@ -938,8 +969,15 @@ class SigEnergyOptimizer:
                 saved_wall=wall, saved_monotonic=elapsed,
             )
             await storage.call("save_solar_provider_handoff", receipt.to_json())
-        except (StorageUnavailable, TimeoutError, ValueError):
-            logger.info("Solar restart handoff could not be saved")
+        except StorageUnavailable as exc:
+            logger.info("Solar restart handoff save: %s",
+                        "storage_write_unconfirmed" if exc.unconfirmed else "storage_unavailable")
+        except TimeoutError:
+            logger.info("Solar restart handoff save: snapshot_timeout")
+        except ValueError:
+            logger.info("Solar restart handoff save: invalid_snapshot_or_checkpoint")
+        else:
+            logger.info("Solar restart handoff save: saved")
 
     @staticmethod
     def _solar_handoff_witness_digest(witness: dict[str, dict[str, Any]]) -> str:
@@ -956,25 +994,36 @@ class SigEnergyOptimizer:
         try:
             async with asyncio.timeout(_SOLAR_HANDOFF_HA_TIMEOUT_SECONDS):
                 before = await self.ha.get_solar_provider_handoff_witness(source)
-                if receipt is None or not before:
+                if receipt is None:
+                    return before
+                if not before:
+                    logger.info("Solar restart handoff restore: witness_unavailable_before_refresh")
                     return before
                 if self._solar_handoff_witness_digest(before) != receipt.witness_digest:
+                    logger.info("Solar restart handoff restore: native_revision_changed_before_refresh")
                     return {}
                 # The supported Solcast coordinator publishes its local cache for
                 # update_entity. The provider's forced forecast action is separate.
                 if not await self.ha.call_service("homeassistant", "update_entity", {"entity_id": list(source)}):
+                    logger.info("Solar restart handoff restore: refresh_rejected")
                     return {}
                 after = await self.ha.get_solar_provider_handoff_witness(source)
-                if not after or self._solar_handoff_witness_digest(after) != receipt.witness_digest:
+                if not after:
+                    logger.info("Solar restart handoff restore: witness_unavailable_after_refresh")
+                    return {}
+                if self._solar_handoff_witness_digest(after) != receipt.witness_digest:
+                    logger.info("Solar restart handoff restore: native_revision_changed_after_refresh")
                     return {}
                 now = datetime.now(timezone.utc).timestamp()
                 for entity in source:
                     earlier = self._solar_provider_instant(before[entity]["last_reported"])
                     later = self._solar_provider_instant(after[entity]["last_reported"])
                     if earlier is None or later is None or not earlier < later <= now + 5.0:
+                        logger.info("Solar restart handoff restore: reports_unverified_after_refresh")
                         return {}
                 return after
         except TimeoutError:
+            logger.info("Solar restart handoff witness: timed_out")
             return {}
 
     def _solar_handoff_matches_rest(
@@ -1006,19 +1055,30 @@ class SigEnergyOptimizer:
         self, s: SolarState, evidence: tuple, now_ts: float, polled: float, advertised: float, day: date,
     ) -> bool:
         receipt = s.solcast_handoff_receipt
+        if receipt is None:
+            return False
+        if not self._solar_handoff_snapshot_current(s):
+            logger.info("Solar restart handoff restore: snapshot_changed")
+            return False
         if not (
-            receipt is not None and self._solar_handoff_snapshot_current(s)
-            and receipt.source == s.solcast_provider_source
+            receipt.source == s.solcast_provider_source
             and receipt.day == day.isoformat() and receipt.poll == polled
-            and receipt.witness_digest == s.solcast_handoff_witness_digest
-            and receipt.forecast_digest == self._solar_handoff_forecast_digest(evidence)
         ):
+            logger.info("Solar restart handoff restore: source_day_or_poll_changed")
+            return False
+        if receipt.witness_digest != s.solcast_handoff_witness_digest:
+            logger.info("Solar restart handoff restore: witness_changed")
+            return False
+        if receipt.forecast_digest != self._solar_handoff_forecast_digest(evidence):
+            logger.info("Solar restart handoff restore: forecast_changed")
             return False
         deadline = min(receipt.deadline, advertised)
         if deadline <= receipt.saved_wall:
+            logger.info("Solar restart handoff restore: invalid_deadline")
             return False
         receipt = replace(receipt, deadline=deadline)
         if not receipt.clock_is_current(self._solar_provider_boot_id, now_ts, monotonic()):
+            logger.info("Solar restart handoff restore: clock_or_expiry_rejected")
             return False
         self._solar_provider_deadline = receipt.deadline
         self._solar_provider_verified = polled
@@ -1064,6 +1124,8 @@ class SigEnergyOptimizer:
             or s.solcast_provider_source != self._solar_provider_source
             or not s.solcast_provider_continuity
         ):
+            if s.solcast_handoff_receipt is not None:
+                logger.info("Solar restart handoff restore: observation_continuity_untrusted")
             if s.solcast_provider_epoch == self._solar_provider_epoch:
                 self._invalidate_solar_provider(
                     "provider_observation_continuity_untrusted", wake=False,
@@ -1076,15 +1138,21 @@ class SigEnergyOptimizer:
         advertised = self._solar_provider_instant(s.solcast_provider_next_update)
         self._solar_provider_advertised = advertised
         if polled is None or polled > now_ts + 5.0:
+            if s.solcast_handoff_receipt is not None:
+                logger.info("Solar restart handoff restore: provider_timestamp_invalid")
             self._invalidate_solar_provider("provider_timestamp_invalid", wake=False)
             return False
         if s.solcast_detailed_source_trusted is not True:
+            if s.solcast_handoff_receipt is not None:
+                logger.info("Solar restart handoff restore: forecast_source_unavailable")
             self._invalidate_solar_provider("forecast_today_source_unavailable", wake=False)
             return False
         observed = [p for p in (
             self._solar_provider_high_water, self._solar_provider_ws_high_water,
         ) if p is not None]
         if observed and polled < max(observed):
+            if s.solcast_handoff_receipt is not None:
+                logger.info("Solar restart handoff restore: provider_timestamp_regressed")
             self._invalidate_solar_provider("provider_timestamp_regressed", wake=False)
             return False
         previous = self._solar_provider_high_water
@@ -1117,6 +1185,8 @@ class SigEnergyOptimizer:
             # never inherit recovery permission from the previous generation.
             self._solar_provider_verified_evidence = None
         if rejection:
+            if s.solcast_handoff_receipt is not None:
+                logger.info("Solar restart handoff restore: %s", rejection)
             if not (metadata_loss_only and advertised is not None
                     and advertised > now_ts and not expired):
                 self._solar_provider_verified_evidence = None
@@ -1127,7 +1197,12 @@ class SigEnergyOptimizer:
             self._solar_provider_baselined = True
             self._solar_provider_day = day
             if self._restore_solar_provider_handoff(s, evidence, now_ts, polled, advertised, day):
-                return self._solar_provider_authority_current(s, now_ts)
+                authority_current = self._solar_provider_authority_current(s, now_ts)
+                logger.info(
+                    "Solar restart handoff restore: %s",
+                    "revalidated" if authority_current else "final_authority_unverified",
+                )
+                return authority_current
             self._solar_provider_deadline = advertised if retained is None else retained
             self._solar_provider_state = "UNVERIFIED"
             self._solar_provider_reason = "baseline_requires_provider_advance"
@@ -3660,6 +3735,8 @@ class SigEnergyOptimizer:
             handoff_witness = await self._read_solar_handoff_witness(
                 self._solar_provider_source, solar_handoff,
             )
+        elif solar_handoff is not None or capture_solar_handoff:
+            logger.info("Solar restart handoff witness: probe_not_eligible")
 
         # ---- bulk fetch -----------------------------------------------
         entity_ids = [
@@ -3697,10 +3774,13 @@ class SigEnergyOptimizer:
             if candidate and candidate not in entity_ids:
                 entity_ids.append(candidate)
         bulk = await self.ha.bulk_states(entity_ids)
-        if handoff_witness and self._solar_handoff_matches_rest(handoff_witness, bulk):
-            s.solcast_handoff_receipt = solar_handoff
-            s.solcast_handoff_witness_digest = self._solar_handoff_witness_digest(handoff_witness)
-            s.solcast_handoff_revision = handoff_revision
+        if handoff_witness:
+            if self._solar_handoff_matches_rest(handoff_witness, bulk):
+                s.solcast_handoff_receipt = solar_handoff
+                s.solcast_handoff_witness_digest = self._solar_handoff_witness_digest(handoff_witness)
+                s.solcast_handoff_revision = handoff_revision
+            else:
+                logger.info("Solar restart handoff witness: rest_snapshot_mismatch")
 
         # REST state JSON may retain a frozen last_reported value for unchanged
         # entities.  Only the optimizer's freshness-sensitive observations request

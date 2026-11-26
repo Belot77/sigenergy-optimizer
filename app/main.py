@@ -157,14 +157,21 @@ async def _optimizer_lifespan(app: FastAPI, ha: HAClient, storage: StorageWorker
                 await optimizer_task
             except asyncio.CancelledError:
                 if lifespan_task is not None and lifespan_task.cancelling():
+                    logger.info("Solar restart handoff shutdown: lifespan_cancelled")
                     raise
                 if clean_shutdown and optimizer_running and optimizer_task.cancelled() and not ws_task.done():
+                    logger.info("Solar restart handoff shutdown: capture_attempted")
                     try:
                         await optimizer.save_solar_provider_handoff()
                     except Exception:
                         logger.warning("Solar restart handoff failed during shutdown")
+                else:
+                    logger.info("Solar restart handoff shutdown: capture_skipped")
             except Exception:
                 logger.warning("Optimizer task failed during shutdown")
+                logger.info("Solar restart handoff shutdown: capture_skipped")
+            else:
+                logger.info("Solar restart handoff shutdown: capture_skipped")
         finally:
             ws_task.cancel()
             try:
