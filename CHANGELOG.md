@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.99-haos110
+
+- Move the existing Solar Bypass aggregate energy and detailed timing calculations into their own module while preserving their eligibility boundaries and diagnostic output.
+
 ## 2.3.98-haos109
 
 - Move the existing Solar Bypass charge calculation into a standalone module while preserving its targets, decision reasons, and actuator behavior.

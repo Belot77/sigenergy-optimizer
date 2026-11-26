@@ -2,9 +2,11 @@
 
 ## Solar Bypass energy and timing budgets
 
-`refactor/solar-surplus-budget` starts at main `6b7548b42cb13337b8f1289daf2df63e7e479e70`, which matches the released `.109` source tree. The aggregate energy budget, detailed timing budget, and shared scalar validator moved to `app/solar_surplus_budget.py` with their original definitions. The optimizer still verifies inputs, handles ownership and reentry, and applies the decision. The strict positive surplus boundary and timing equality rules are part of the comparison. If a regression is found, revert this extraction or restore the `.109` backup. [Control contract](CONTROL_CONTRACT.md#solar-surplus)
+Release `2.3.99-haos110` packages PR #111, merged at `8a2896d38b5fef27c4f8a3b5b1047395aa5d59af`. The aggregate energy budget, detailed timing budget, and shared scalar validator moved to `app/solar_surplus_budget.py` with their original definitions. The optimizer still verifies inputs, handles ownership and reentry, and applies the decision. The strict positive surplus boundary and timing equality rules are part of the comparison. If a regression is found, revert PR #111 and publish the reverted build, or restore a pre-update `.109` backup. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.99-haos110) · [Control contract](CONTROL_CONTRACT.md#solar-surplus)
 
 The guarded suite passed 224 tests and 330 subtests. Independent replay passed 146 tests on both trees and matched 228 decisions, 34 simulated applications, and 174 ordered Home Assistant writes. All 10,001 generated budget comparisons matched, including exact zero and timing equality. A syntax tree comparison confirmed the three moved definitions and the rest of the optimizer match `.109` apart from the new import.
+
+After installation, verify the runtime identity and observe Solar Bypass with a partial battery. Compare the energy and timing diagnostics, ownership, and requested and reported charge limits. After `.110` has verified a Solcast poll, a clean add-on restart can separately verify that the same poll and expiry carry across. Live verification remains open.
 
 ## Solar Bypass charge-planning refactor
 
@@ -12,7 +14,7 @@ Release `2.3.98-haos109` packages PR #109, merged at `91333739a24dce8ff35c4ad9e3
 
 The guarded suite passed 278 tests and 209 subtests. Independent before-and-after replay passed all 53 characterization tests on both trees and matched 293 decisions, 198 simulated applications and 1,004 ordered Home Assistant writes. An additional 10,000 generated forecast inputs matched the original Decimal calculation, including partial intervals, rejected coverage, and rounding at charge limits. These checks used simulated Home Assistant and temporary storage.
 
-After installation, verify the runtime identity. While Solar Bypass is active and the battery is still filling, compare the decision reason and requested charge target with the Home Assistant limit and measured battery and grid power. The Solcast restart handoff can be verified separately with a trusted poll and original deadline on either side of a clean restart. Live verification remains open.
+On 26 November at 07:40:46 AEDT, Home Assistant reported `.109`, source `d4e15abb38ac1fefef94af3ca2411166794c1b51`. All 500 applications in the 12:06:51–12:43:49 trace succeeded. At 12:30:04, Home Assistant reported the requested 5.86 kW charge cap, with 5.856 kW measured charging and 1.204 kW measured grid export. The 12:35 budget exit and 12:40:59 reentry exercised the existing safeguards. This passes the live charge-planning check. Verification of the Solcast restart handoff remains open.
 
 ## Solcast v4.6.4 compatibility
 

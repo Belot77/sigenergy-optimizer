@@ -1,5 +1,9 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.99-haos110
+
+Solar Bypass energy and timing budgets now live in a dedicated module. Offline replay matched `.109` decisions and simulated inverter writes, including when Bypass leaves and regains charge ownership. [Handover](docs/AI_HANDOVER.md#solar-bypass-energy-and-timing-budgets)
+
 ## Release 2.3.98-haos109
 
 Solar Bypass charge planning now has a standalone calculation module. Offline replay matched `.108` charge targets, decision reasons, and simulated Home Assistant writes. [Handover](docs/AI_HANDOVER.md#solar-bypass-charge-planning-refactor)
