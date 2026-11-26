@@ -1,10 +1,10 @@
 # Roadmap
 
-## Current release 2.3.100-haos111
+## Current release 2.3.101-haos112
 
-Capture the Solcast handoff during a clean restart once `.111` has verified a poll. Use the save, load, and restore outcomes to locate the failure before deciding whether the handoff needs a code change. The `.109` charge-planning check passed. Observe the existing Solar Bypass budget decisions and charge readback during normal daytime operation. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.100-haos111) · [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
+Verify the Solcast handoff across one clean `.112` add-on restart after a successfully verified poll. The add-on log records the save, load and restore outcomes. Ordinary provider polling can still verify fresh forecasts on an unsupported software version. Expanding restart support to another version requires verifying its cache behavior. [Publication receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.101-haos112) · [Live verification](CURRENT_STATE.md#published-release-and-live-verification)
 
-The latest verified Home Assistant startup is `.110`. Observe the corrected summary when Solar Override ends with a closed export target. The routine ESS save and qualifying Evening Boost sunset checks can happen during normal use. The operator deferred the proposed Force settlement gate to preserve responsive Force presets. [Prior release](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.99-haos110)
+The latest confirmed Home Assistant runtime is `.111`. The `.109` Solar Bypass charge-planning check passed. Observe Solar Bypass budget decisions, the corrected Solar Override summary, routine ESS saves, and qualifying Evening Boost sunset behavior during normal use. The operator deferred the proposed Force settlement gate to preserve responsive Force presets.
 
 The longer-term roadmap covers [architecture consolidation](#6-architecture-refactor--consolidation), [repository cleanup](#7-repository--project-cleanup), [dashboard UX](#8-full-gui--ux-redesign-and-functional-corrections), and [Climate Manager](#9-climate-manager-integration).
 

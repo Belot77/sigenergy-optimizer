@@ -1,8 +1,12 @@
 # SigEnergy Optimizer for Home Assistant OS
 
+## Release 2.3.101-haos112
+
+The restart handoff accepts the native Solcast `4.6.4` device version. Search the Home Assistant add-on log for `Solar restart handoff` to see checkpoint save and restore outcomes. [Handover](docs/AI_HANDOVER.md#solcast-v464-device-version-and-restart-logging)
+
 ## Release 2.3.100-haos111
 
-The add-on log now reports whether a Solcast forecast checkpoint was saved and what happened when the optimizer tried to restore it after restart. Search for `Solar restart handoff`. [Handover](docs/AI_HANDOVER.md#solcast-restart-handoff-diagnostics)
+The dashboard log reports the results of saving and restoring the Solcast forecast checkpoint. Its log buffer lasts for the current optimizer process. [Handover](docs/AI_HANDOVER.md#solcast-restart-handoff-diagnostics)
 
 ## Release 2.3.99-haos110
 
