@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 UNAVAILABLE = {"unknown", "unavailable", "none", ""}
 # These native versions re-report the cache through Home Assistant update_entity.
-# The upstream v4.6.4 release still reports 4.6.3 in its integration manifest.
-_SOLCAST_HANDOFF_VERSIONS = frozenset({"4.6.1", "4.6.3"})
+# Check the device software version. The integration manifest may report an older version.
+_SOLCAST_HANDOFF_VERSIONS = frozenset({"4.6.1", "4.6.3", "4.6.4"})
 
 
 class HAClient:

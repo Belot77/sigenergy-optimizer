@@ -202,7 +202,7 @@ class SolarProviderRestartHandoffTests(SolarDynamicChargeFixture):
                 self.assertEqual(opt._apply.await_args.args[0].pv_kw, 4.0)
                 self.assertEqual(opt._apply.await_args.args[0].load_kw, 2.0)
 
-        for version in ("4.6.1", "4.6.3"):
+        for version in ("4.6.1", "4.6.3", "4.6.4"):
             with self.subTest(version=version):
                 asyncio.run(run(version))
 

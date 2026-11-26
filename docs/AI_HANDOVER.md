@@ -1,14 +1,22 @@
 # SigEnergy Optimizer AI Handover
 
+## Solcast v4.6.4 device version and restart logging
+
+On 26 November 2026, a same-version `.111` restart at 17:23:39 AEDT found no checkpoint. The optimizer had verified the 17:09:23 Solcast poll before restart with a deadline of 05:40:06 AEDT on 27 November. The same poll remained unverified after startup. The charge cap was 21 kW on both sides. The retained add-on log confirms Uvicorn completed application shutdown.
+
+A read-only Home Assistant check confirmed that Forecast Today and API Last Polled belonged to the same loaded native Solcast entry and device. Both witnesses reported device software version `v4.6.4`, while the upstream manifest lists `4.6.3`. The published parser's rejection of the observed device version was reproduced with simulated HA. The parser now accepts normalized `4.6.4` alongside `4.6.1` and `4.6.3`. The version must still agree across sensors and match the checkpoint during restoration. Both clock checks, the original expiry, and the existing forecast and authority checks still apply.
+
+The `.111` dashboard received the handoff logs in its per-process memory buffer while the HA add-on log had only Uvicorn output. The console fix preserves the dashboard log and sends the handoff messages to the add-on log so the shutdown evidence survives the Optimizer restart.
+
+After installing the fix, wait for the Optimizer to verify one successful poll. If Solcast quota allows, use one manual **Force Update Forecasts** to avoid waiting for the schedule. Once verified, capture the trace, restart the add-on cleanly once, and take the second trace. Compare the verified poll and original deadline, and check the Home Assistant add-on log for the `Solar restart handoff` save, load and restore outcomes. Live restoration is still unverified. A scoped revert or a pre-update `.111` add-on backup provides rollback. [Restart control contract](CONTROL_CONTRACT.md#clean-optimizer-restart) · [Solcast refresh documentation](https://github.com/BJReplay/ha-solcast-solar/blob/v4.6.4/README.md#auto-update-of-forecasts)
+
 ## Solcast restart handoff diagnostics
 
-Release `2.3.100-haos111` packages the handoff diagnostics. Install the add-on update before collecting a new restart pair. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.100-haos111)
+Release `2.3.100-haos111` added the original handoff diagnostics. See the device version and restart logging findings above for the same-version live test. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.100-haos111)
 
 On 26 November 2026, the `.109` to `.110` update at 13:02:28 AEDT lost trust in the 11:24:55 Solcast poll before its 14:17:08 deadline. The charge cap had been 5.90 kW and returned to 21 kW. A clean `.110` restart at 14:53:55 also left the previously verified 14:17:09 poll unverified before its 17:09:22 deadline. In the second trace the charge cap was already 21 kW, so that trace establishes loss of forecast trust alone.
 
-The diagnostic patch adds fixed `Solar restart handoff` outcomes for shutdown capture, checkpoint save and load, the native Solcast witness, and startup revalidation. The logs distinguish a missing checkpoint from a rejected checkpoint and identify whether final provider authority was restored. The existing validity checks, storage, HA requests, timeouts and control behavior are preserved. The live cause is still open. A scoped revert or a pre-update `.110` add-on backup rolls back the diagnostic patch.
-
-After the diagnostic release has verified a Solcast poll, capture the trace before a clean add-on restart and again after startup. Save the add-on log lines beginning with `Solar restart handoff` across the stop and startup if available. Compare the poll and original expiry as well as the save, load and restore outcomes. [Restart control contract](CONTROL_CONTRACT.md#clean-optimizer-restart)
+The diagnostic patch adds fixed `Solar restart handoff` outcomes for shutdown capture, checkpoint save and load, the native Solcast witness, and startup revalidation. The logs distinguish a missing checkpoint from a rejected checkpoint and identify whether final provider authority was restored. The existing validity checks, storage, HA requests, timeouts and control behavior are preserved. The later `.111` test exposed the device-version rejection and the missing console output described above. A scoped revert or a pre-update `.110` add-on backup rolls back the diagnostic patch.
 
 ## Solar Bypass energy and timing budgets
 
@@ -28,7 +36,7 @@ On 26 November at 07:40:46 AEDT, Home Assistant reported `.109`, source `d4e15ab
 
 ## Solcast v4.6.4 compatibility
 
-Release `2.3.97-haos108` comes from `fix/solar-provider-464-handoff`, based on main `cb7809b74e62ad859a29527d258872f040c7aa62`. The operator confirmed Solcast v4.6.4, which reports `4.6.3` from its manifest. It uses the same native entity identity and cache refresh as v4.6.3. The `.107` handoff only accepted `4.6.1`. The `.108` checkpoint binds the actual supported version along with the existing evidence and expiry. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.97-haos108) · [Control contract](CONTROL_CONTRACT.md#clean-optimizer-restart)
+Release `2.3.97-haos108` comes from `fix/solar-provider-464-handoff`, based on main `cb7809b74e62ad859a29527d258872f040c7aa62`. The operator confirmed Solcast v4.6.4. Its manifest lists `4.6.3`, and the release uses the same native entity identity and cache refresh as v4.6.3. The `.107` handoff only accepted `4.6.1`. The `.108` checkpoint added support for a reported `4.6.3` version. The later HA check found the live device reported `v4.6.4`, which still required the correction documented above. [Release receipt](https://github.com/Belot77/sigenergy-optimizer/releases/tag/v2.3.97-haos108) · [Control contract](CONTROL_CONTRACT.md#clean-optimizer-restart)
 
 The 24-hour archive shows `.106` verified the 14:16:17 AEDT Solcast poll at 14:16:21. It reported a 4.81 kW charge limit and 11.90 kW export at 14:22:03. The first recorded `.107` session started at 14:27:32 and used the normal 21 kW charge limit through 14:42:32. The archive has a 5-minute 29-second gap between sessions. It covers the upgrade and leaves recovery across a qualifying restart unverified. A scoped revert or the `.107` release provides rollback.
 
