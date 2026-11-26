@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.100-haos111
+
+- Log the outcome of each one-time Solcast forecast handoff stage across a clean add-on restart.
+
 ## 2.3.99-haos110
 
 - Move the existing Solar Bypass aggregate energy and detailed timing calculations into their own module while preserving their eligibility boundaries and diagnostic output.
